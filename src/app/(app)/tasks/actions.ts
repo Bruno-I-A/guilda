@@ -214,17 +214,20 @@ export async function updateTask(
   return result;
 }
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 /**
  * Núcleo compartilhado das transições de status.
  * `allowedFrom` declara a intenção da action (dupla validação: intenção
- * da action + máquina de estados + papel).
+ * da action + máquina de estados + papel). `sideEffect` roda DENTRO da
+ * mesma transação — é onde o crédito/estorno de XP acontece.
  */
 async function transitionTask(options: {
   taskId: string;
   to: TaskStatus;
   allowedFrom: TaskStatus[];
   note?: string;
-  onApproved?: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0], task: schema.Task) => Promise<void>;
+  sideEffect?: (tx: Tx, task: schema.Task) => Promise<void>;
 }): Promise<ActionResult> {
   const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
@@ -297,8 +300,8 @@ async function transitionTask(options: {
       note: options.note ?? null,
     });
 
-    if (options.to === "completed" && options.onApproved) {
-      await options.onApproved(tx, task);
+    if (options.sideEffect) {
+      await options.sideEffect(tx, task);
     }
 
     return { ok: true };
@@ -336,7 +339,12 @@ export async function submitTask(input: { taskId: string }): Promise<ActionResul
   });
 }
 
-/** Criador ou admin aprova; a Fase 3 credita o XP nesta mesma transação. */
+/**
+ * Criador ou admin aprova — e o XP é creditado NA MESMA TRANSAÇÃO da
+ * transição. Idempotente: o índice único parcial
+ * (task_id) WHERE reason = 'task_completed' impede crédito duplo;
+ * onConflictDoNothing faz a reinserção ser um no-op.
+ */
 export async function approveTask(input: { taskId: string }): Promise<ActionResult> {
   const parsed = taskIdSchema.safeParse(input);
   if (!parsed.success) return err("Tarefa inválida.");
@@ -344,6 +352,61 @@ export async function approveTask(input: { taskId: string }): Promise<ActionResu
     taskId: parsed.data.taskId,
     to: "completed",
     allowedFrom: ["awaiting_approval"],
+    sideEffect: async (tx, task) => {
+      await tx
+        .insert(schema.xpLedger)
+        .values({
+          orgId: task.orgId,
+          userId: task.assigneeId,
+          taskId: task.id,
+          amount: task.xpValue, // congelado na criação — nunca vem do cliente
+          reason: "task_completed",
+        })
+        .onConflictDoNothing();
+    },
+  });
+}
+
+const revertSchema = z.object({
+  taskId: z.uuid(),
+  note: z
+    .string()
+    .trim()
+    .max(2000, "Nota muito longa.")
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+});
+
+/**
+ * Admin/owner reverte uma conclusão: a tarefa volta a in_progress e o
+ * estorno entra como NOVO lançamento negativo (reason 'reversal') —
+ * o crédito original nunca é apagado. Único por tarefa (índice parcial).
+ */
+export async function revertCompletion(input: {
+  taskId: string;
+  note?: string;
+}): Promise<ActionResult> {
+  const parsed = revertSchema.safeParse(input);
+  if (!parsed.success) {
+    return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+  }
+  return transitionTask({
+    taskId: parsed.data.taskId,
+    to: "in_progress",
+    allowedFrom: ["completed"],
+    note: parsed.data.note,
+    sideEffect: async (tx, task) => {
+      await tx
+        .insert(schema.xpLedger)
+        .values({
+          orgId: task.orgId,
+          userId: task.assigneeId,
+          taskId: task.id,
+          amount: -task.xpValue,
+          reason: "reversal",
+        })
+        .onConflictDoNothing();
+    },
   });
 }
 

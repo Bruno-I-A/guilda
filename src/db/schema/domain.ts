@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -7,6 +7,7 @@ import {
   smallint,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -80,6 +81,49 @@ export const taskEvents = pgTable(
   },
   (t) => [index("task_events_org_task_idx").on(t.orgId, t.taskId)],
 );
+
+/**
+ * Ledger IMUTÁVEL de XP — NUNCA sofre UPDATE/DELETE (o role da aplicação
+ * tem esses privilégios revogados via migration). Crédito e estorno são
+ * sempre NOVOS lançamentos:
+ *   - reason 'task_completed': crédito na aprovação (único por tarefa —
+ *     índice parcial impede crédito duplo);
+ *   - reason 'reversal': lançamento negativo quando admin reverte
+ *     (também único por tarefa);
+ *   - reason 'bonus': reservado para usos futuros.
+ */
+export const xpLedger = pgTable(
+  "xp_ledger",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    taskId: uuid("task_id").references(() => tasks.id),
+    amount: integer("amount").notNull(), // positivo = crédito, negativo = estorno
+    reason: varchar("reason", { length: 50 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("xp_ledger_org_user_idx").on(t.orgId, t.userId),
+    uniqueIndex("xp_ledger_task_completed_uidx")
+      .on(t.taskId)
+      .where(sql`reason = 'task_completed'`),
+    uniqueIndex("xp_ledger_task_reversal_uidx")
+      .on(t.taskId)
+      .where(sql`reason = 'reversal'`),
+  ],
+);
+
+export const xpLedgerRelations = relations(xpLedger, ({ one }) => ({
+  user: one(user, { fields: [xpLedger.userId], references: [user.id] }),
+  task: one(tasks, { fields: [xpLedger.taskId], references: [tasks.id] }),
+}));
+
+export type XpLedgerEntry = typeof xpLedger.$inferSelect;
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
   creator: one(user, { fields: [tasks.creatorId], references: [user.id] }),

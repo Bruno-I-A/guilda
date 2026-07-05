@@ -30,6 +30,7 @@ import {
   approveTask,
   cancelTask,
   rejectTask,
+  revertCompletion,
   startTask,
   submitTask,
   updateTask,
@@ -58,6 +59,7 @@ export function TaskActionBar({
     reject: boolean;
     cancel: boolean;
     edit: boolean;
+    revert: boolean;
   };
 }) {
   const router = useRouter();
@@ -65,7 +67,9 @@ export function TaskActionBar({
   const [rejectOpen, setRejectOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [revertOpen, setRevertOpen] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
+  const [revertNote, setRevertNote] = useState("");
 
   function run(action: () => Promise<ActionResult>, successMessage: string) {
     startTransition(async () => {
@@ -81,7 +85,7 @@ export function TaskActionBar({
 
   const hasPrimary =
     can.start || can.resume || can.submit || can.approve || can.reject;
-  if (!hasPrimary && !can.edit && !can.cancel) {
+  if (!hasPrimary && !can.edit && !can.cancel && !can.revert) {
     return null;
   }
 
@@ -153,6 +157,12 @@ export function TaskActionBar({
         </Button>
       ) : null}
 
+      {can.revert ? (
+        <Button variant="outline" disabled={pending} onClick={() => setRevertOpen(true)}>
+          <Undo2 aria-hidden /> Reverter conclusão
+        </Button>
+      ) : null}
+
       {/* Rejeitar — nota obrigatória */}
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
         <DialogContent className="sm:max-w-md">
@@ -217,6 +227,53 @@ export function TaskActionBar({
               }}
             >
               Cancelar tarefa
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reverter conclusão — estorna o XP com lançamento negativo */}
+      <Dialog open={revertOpen} onOpenChange={setRevertOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reverter conclusão?</DialogTitle>
+            <DialogDescription>
+              A tarefa volta para “Em andamento” e {task.assigneeName} tem{" "}
+              {task.xpValue} XP estornados (lançamento negativo no ledger — o
+              crédito original não é apagado).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <Label htmlFor="revert-note">Motivo (opcional)</Label>
+            <Textarea
+              id="revert-note"
+              value={revertNote}
+              onChange={(e) => setRevertNote(e.target.value)}
+              placeholder="Ex.: Aprovada por engano, entrega incompleta…"
+              rows={3}
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setRevertOpen(false)}>
+              Voltar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={pending}
+              onClick={() => {
+                setRevertOpen(false);
+                run(
+                  () =>
+                    revertCompletion({
+                      taskId: task.id,
+                      note: revertNote.trim() || undefined,
+                    }),
+                  "Conclusão revertida — XP estornado.",
+                );
+                setRevertNote("");
+              }}
+            >
+              Reverter e estornar XP
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -22,6 +22,20 @@
       "when": 1783202994198,
       "tag": "0002_rls-domain",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783248857390,
+      "tag": "0003_dear_punisher",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783248861144,
+      "tag": "0004_rls-xp-ledger",
+      "breakpoints": true
     }
   ]
 }

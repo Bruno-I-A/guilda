@@ -104,6 +104,8 @@ export default async function TaskDetailPage({
     edit:
       ["pending", "in_progress", "rejected"].includes(task.status) &&
       (task.creatorId === session.user.id || isAdmin),
+    revert:
+      task.status === "completed" && authorizeTransition("in_progress", ctx).allowed,
   };
 
   const awaitingMyApproval = task.status === "awaiting_approval" && can.approve;
@@ -145,6 +147,26 @@ export default async function TaskDetailPage({
         <div className="rounded-lg border border-orange-300 bg-orange-50 p-4 text-sm text-orange-900 dark:border-orange-900 dark:bg-orange-950 dark:text-orange-200">
           <p className="font-medium">Devolvida para ajustes</p>
           <p className="whitespace-pre-wrap">{lastRejection.note}</p>
+        </div>
+      ) : null}
+
+      {task.status === "completed" && task.assigneeId === session.user.id ? (
+        <div className="flex items-center gap-3 rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+          <Star className="size-5 shrink-0 text-amber-500" aria-hidden />
+          <div>
+            <p className="font-medium">Entrega aprovada — você ganhou {task.xpValue} XP! 🎉</p>
+            <p>
+              Confira seu progresso no{" "}
+              <Link href="/profile" className="font-medium underline underline-offset-4">
+                perfil
+              </Link>{" "}
+              e sua posição no{" "}
+              <Link href="/leaderboard" className="font-medium underline underline-offset-4">
+                ranking
+              </Link>
+              .
+            </p>
+          </div>
         </div>
       ) : null}
 
@@ -197,6 +219,17 @@ export default async function TaskDetailPage({
                     <p className="text-sm">
                       <span className="font-medium">{event.actor.name}</span>{" "}
                       {eventLabel(event.fromStatus, event.toStatus)}
+                      {event.toStatus === "completed" ? (
+                        <span className="ml-1.5 font-semibold text-amber-600 dark:text-amber-400">
+                          +{task.xpValue} XP
+                        </span>
+                      ) : null}
+                      {event.fromStatus === "completed" &&
+                      event.toStatus === "in_progress" ? (
+                        <span className="ml-1.5 font-semibold text-destructive">
+                          −{task.xpValue} XP
+                        </span>
+                      ) : null}
                     </p>
                     {event.note ? (
                       <p className="mt-1 whitespace-pre-wrap rounded-md bg-muted/60 px-2.5 py-1.5 text-sm text-muted-foreground">

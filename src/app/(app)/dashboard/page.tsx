@@ -1,5 +1,5 @@
 import { and, count, eq, inArray } from "drizzle-orm";
-import { ListTodo, Trophy, Users } from "lucide-react";
+import { ListTodo, Star, Trophy, Users } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -10,10 +10,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { db } from "@/db";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { levelProgress } from "@/domain/xp";
 import { requireOrgSession } from "@/lib/session";
+import { getUserXpTotal } from "@/lib/xp-queries";
 
 export const metadata: Metadata = { title: "Início" };
 
@@ -51,6 +54,8 @@ export default async function DashboardPage() {
     },
   );
 
+  const totalXp = await getUserXpTotal(session.orgId, session.user.id);
+  const progress = levelProgress(totalXp);
   const firstName = session.user.name.split(" ")[0];
 
   return (
@@ -63,6 +68,25 @@ export default async function DashboardPage() {
           Bem-vindo(a) à sua guilda. Conclua tarefas, ganhe XP e suba no ranking.
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Star className="size-4 text-amber-500" aria-hidden />
+            Nível {progress.level}
+          </CardTitle>
+          <CardDescription>
+            {totalXp} XP · faltam {progress.nextLevelXp - progress.totalXp} XP para o
+            nível {progress.level + 1}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Progress
+            value={Math.round(progress.ratio * 100)}
+            aria-label={`Progresso para o nível ${progress.level + 1}`}
+          />
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
