@@ -1,36 +1,161 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Guilda — Gestão de Tarefas Gamificada
 
-## Getting Started
+Plataforma **multi-tenant** de gestão de tarefas com sistema de recompensa:
+cada entrega aprovada vale **XP**, XP acumulado vira **nível**, e o
+**leaderboard** mostra quem está carregando a guilda. Cada empresa
+(organização) tem usuários, tarefas e ranking totalmente isolados.
 
-First, run the development server:
+> Projeto de portfólio com foco em **segurança em profundidade**:
+> Row Level Security no Postgres, ledger imutável de XP e máquina de
+> estados validada no servidor.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Screenshots
+
+| Fluxo de aprovação | Ranking da guilda |
+| --- | --- |
+| ![Tarefa aguardando aprovação, com linha do tempo e recompensa](docs/screenshots/task-completed.png) | ![Leaderboard por período](docs/screenshots/leaderboard.png) |
+
+| Mobile-first (dashboard, tarefa, perfil) |
+| --- |
+| <img src="docs/screenshots/mobile-dashboard.png" width="220" /> <img src="docs/screenshots/mobile-task-awaiting.png" width="220" /> <img src="docs/screenshots/mobile-profile.png" width="220" /> |
+
+## Stack
+
+- **Next.js 16 (App Router) + TypeScript estrito** — full-stack, deploy único
+- **Drizzle ORM + PostgreSQL 17** — migrations versionadas + RLS
+- **better-auth** com plugin de organizations — sessões, membros, convites por link, papéis
+- **Tailwind CSS 4 + shadcn/ui** — mobile-first
+- **Zod** validando todo input externo nas Server Actions
+- **Vitest** (70 testes de domínio) + **Playwright** (E2E com 2 usuários)
+- **Docker** (output standalone) + **Caddy** com HTTPS automático
+
+## Decisões de arquitetura
+
+### 1. Isolamento multi-tenant com RLS (defesa em profundidade)
+
+Toda tabela de domínio tem `org_id` e **duas** camadas garantem o isolamento:
+
+1. A aplicação filtra por `org_id` em toda query;
+2. O Postgres aplica Row Level Security com política baseada em
+   `current_setting('app.org_id')`, setado por transação:
+
+```ts
+// src/db/org-tx.ts — toda query de domínio passa por aqui
+await tx.execute(sql`SELECT set_config('app.org_id', ${orgId}, true)`);
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Detalhe importante: **RLS não se aplica a superuser nem ao owner das
+tabelas**. Por isso a aplicação conecta com um role dedicado
+(`guilda_app`, não-superuser e não-owner), enquanto migrations rodam como
+owner. Um `INSERT` cruzando organizações morre no banco com
+`new row violates row-level security policy`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 2. XP é um ledger imutável
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Saldo de XP **nunca sofre UPDATE**. Crédito e estorno são lançamentos
+novos em `xp_ledger`:
 
-## Learn More
+- Aprovou → `+xp` (`reason = 'task_completed'`), **na mesma transação**
+  da transição de status;
+- Admin reverteu → `-xp` (`reason = 'reversal'`), sem apagar o crédito;
+- Índice único parcial `(task_id) WHERE reason = 'task_completed'`
+  torna o crédito **idempotente** (impossível creditar duas vezes);
+- O role da aplicação tem `UPDATE/DELETE` **revogados** na tabela —
+  imutabilidade garantida pelo banco, não por disciplina.
 
-To learn more about Next.js, take a look at the following resources:
+O nível deriva do total: `levelFromXp` puro, com thresholds
+`floor(100 · n^1.5)` e testes de borda (0→0, 100→1, 282→2…).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 3. Máquina de estados no servidor
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+pending → in_progress → awaiting_approval → completed
+   ↘          ↘              ↙        ↘         ↓ (reversão, admin)
+    cancelled  cancelled   rejected    cancelled → in_progress
+                              ↺ in_progress (retomar)
+```
 
-## Deploy on Vercel
+- Só o **responsável** inicia/envia/retoma; só **criador ou admin/owner**
+  aprova, rejeita ou cancela; rejeição **exige nota**.
+- **Auto-aprovação controlada**: se criador == responsável, outro
+  admin/owner precisa aprovar — a menos que não exista outro (org de uma
+  pessoa não trava).
+- Transições concorrentes serializam com `SELECT … FOR UPDATE`; a
+  segunda falha na validação de estado.
+- Cada Server Action revalida **sessão + papel + input (Zod)** — a UI
+  apenas reflete as permissões, nunca as define.
+- Toda transição vira evento em `task_events` (auditoria completa).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 4. Produção
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Rate limiting** nas rotas de auth (login 5/min, registro 3/min,
+  convite 10/min) com storage no banco;
+- **Headers de segurança**: CSP sem `unsafe-eval`, HSTS, `nosniff`,
+  `frame-ancestors 'none'` (upgrade natural: CSP com nonce via proxy);
+- **Docker multi-stage**: imagem final só com o standalone do Next
+  rodando como usuário sem privilégio; serviço `migrate` aplica as
+  migrations antes do app subir; **Caddy** cuida do TLS.
+
+## Rodando localmente
+
+Pré-requisitos: Node 22+, Docker.
+
+```bash
+cp .env.example .env          # ajuste BETTER_AUTH_SECRET (openssl rand -base64 32)
+npm install
+npm run db:up                 # Postgres 17 em container (cria o role guilda_app)
+npm run db:migrate            # aplica migrations (como owner)
+npm run seed                  # organização demo com tarefas e XP (opcional)
+npm run dev
+```
+
+Logins da demo (senha `demo123456`):
+
+| Papel  | E-mail                  |
+| ------ | ----------------------- |
+| owner  | helena@demo.guilda.dev  |
+| admin  | rafael@demo.guilda.dev  |
+| member | juliana@demo.guilda.dev |
+| member | tiago@demo.guilda.dev   |
+
+### Testes
+
+```bash
+npm test             # 70 testes de domínio (máquina de estados, XP, níveis)
+npm run build && npm start
+npm run e2e:phase2   # fluxo completo de aprovação com 2 usuários (Playwright)
+npm run e2e:phase3   # gamificação: crédito, níveis, ranking, reversão
+```
+
+## Deploy na VPS
+
+```bash
+cp .env.production.example .env   # DOMAIN, senhas e BETTER_AUTH_SECRET
+docker compose up -d --build
+```
+
+Sobe Postgres (com role dedicado), roda as migrations, inicia o app
+standalone e o Caddy publica `https://$DOMAIN` com certificado
+automático. Postgres já provisionado fora do Docker? Remova o serviço
+`db` e aponte as URLs — instruções no próprio `docker-compose.yml`.
+
+## Estrutura
+
+```
+src/
+  domain/        máquina de estados + XP/níveis (puros, testados)
+  db/            schema Drizzle, migrations (incl. RLS), withOrgTx
+  lib/           auth (better-auth), sessão, queries de XP/leaderboard
+  app/
+    (auth)/      login e cadastro (com aceite de convite)
+    (app)/       dashboard, tarefas, ranking, membros, perfil
+    invite/[id]  página pública do convite
+  proxy.ts       proteção de rotas (checagem otimista de cookie)
+scripts/         seed de demonstração + E2E Playwright
+docker/          init do Postgres (roles) + Caddyfile
+```
+
+## Fora do escopo da v1
+
+Badges/conquistas, notificações, tarefas recorrentes, calendário,
+comentários, billing — decisões registradas no `CLAUDE.md`.

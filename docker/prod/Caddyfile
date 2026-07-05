@@ -1,0 +1,5 @@
+# Caddy obtém e renova o certificado TLS automaticamente para {$DOMAIN}.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}

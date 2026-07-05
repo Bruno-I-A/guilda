@@ -14,6 +14,20 @@ export const auth = betterAuth({
     enabled: true,
     minPasswordLength: 8,
   },
+  // Rate limiting nas rotas de auth (regra inegociável nº 7).
+  // Ativo em produção; janela/limite mais duros para login, registro e convite.
+  rateLimit: {
+    enabled: process.env.NODE_ENV === "production",
+    window: 60,
+    max: 100,
+    storage: "database",
+    customRules: {
+      "/sign-in/email": { window: 60, max: 5 },
+      "/sign-up/email": { window: 60, max: 3 },
+      "/organization/invite-member": { window: 60, max: 10 },
+      "/organization/accept-invitation": { window: 60, max: 10 },
+    },
+  },
   databaseHooks: {
     session: {
       create: {

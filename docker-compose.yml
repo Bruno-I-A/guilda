@@ -1,0 +1,72 @@
+# Stack de produção na VPS: Postgres + migrations + app (standalone) + Caddy (HTTPS).
+# Configure o .env ao lado deste arquivo (ver .env.production.example).
+#
+# Se a VPS já tem Postgres provisionado fora do Docker, remova o serviço
+# `db`, aponte DATABASE_URL/MIGRATION_DATABASE_URL para ele e garanta o
+# role dedicado guilda_app (ver docker/prod/init/01-roles.sh).
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: guilda
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?defina APP_DB_PASSWORD no .env}
+    volumes:
+      - guilda_pgdata:/var/lib/postgresql/data
+      - ./docker/prod/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d guilda"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  migrate:
+    build:
+      context: .
+      target: migrator
+    environment:
+      MIGRATION_DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/guilda
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    environment:
+      # Role dedicado NÃO-superuser: é o que faz o RLS valer
+      DATABASE_URL: postgresql://guilda_app:${APP_DB_PASSWORD}@db:5432/guilda
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?defina BETTER_AUTH_SECRET no .env}
+      BETTER_AUTH_URL: https://${DOMAIN:?defina DOMAIN no .env}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./docker/prod/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  guilda_pgdata:
+  caddy_data:
+  caddy_config:

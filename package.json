@@ -13,7 +13,10 @@
     "db:studio": "drizzle-kit studio",
     "auth:schema": "npx --yes @better-auth/cli@latest generate --config src/lib/auth.ts --output src/db/schema/auth.ts --yes",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "seed": "node --conditions=react-server --import=tsx scripts/seed.ts",
+    "e2e:phase2": "node scripts/e2e-phase2.mjs",
+    "e2e:phase3": "node scripts/e2e-phase3.mjs"
   },
   "dependencies": {
     "better-auth": "^1.6.23",
