@@ -34,9 +34,10 @@ COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
-COPY --from=build --chown=nextjs:nodejs /app/drizzle.config.ts ./drizzle.config.ts
-COPY --from=build --chown=nextjs:nodejs /app/src/db ./src/db
+COPY --from=build --chown=nextjs:nodejs /app/tsconfig.json ./tsconfig.json
+COPY --from=build --chown=nextjs:nodejs /app/src ./src
 COPY --from=build --chown=nextjs:nodejs /app/scripts ./scripts
+COPY --from=build --chown=nextjs:nodejs /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=build --chown=nextjs:nodejs /app/package.json ./package.json
 USER nextjs
 EXPOSE 3000
