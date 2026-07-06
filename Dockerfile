@@ -15,7 +15,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # nenhuma conexão acontece). Os valores reais entram em runtime.
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
 ENV BETTER_AUTH_SECRET=placeholder-somente-para-o-build-32ch
-ENV BETTER_AUTH_URL=http://localhost:3000
+ENV BETTER_AUTH_URL=http://localhost:4000
 RUN npm run build
 
 # Roda as migrations do Drizzle (precisa das devDependencies)
@@ -40,7 +40,7 @@ COPY --from=build --chown=nextjs:nodejs /app/scripts ./scripts
 COPY --from=build --chown=nextjs:nodejs /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=build --chown=nextjs:nodejs /app/package.json ./package.json
 USER nextjs
-EXPOSE 3000
-ENV PORT=3000
+EXPOSE 4000
+ENV PORT=4000
 ENV HOSTNAME=0.0.0.0
 CMD ["node", "server.js"]

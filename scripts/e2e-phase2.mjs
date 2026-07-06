@@ -3,13 +3,13 @@
  * cadastro → org → convite → criar tarefa → iniciar → enviar →
  * rejeitar com nota → retomar → reenviar → aprovar.
  *
- * Pré-requisito: servidor rodando em http://localhost:3000 (npm start)
+ * Pré-requisito: servidor rodando em http://localhost:4000 (npm start)
  * Uso: node scripts/e2e-phase2.mjs
  */
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 
-const BASE = "http://localhost:3000";
+const BASE = "http://localhost:4000";
 const SHOTS = "docs/screenshots";
 mkdirSync(SHOTS, { recursive: true });
 

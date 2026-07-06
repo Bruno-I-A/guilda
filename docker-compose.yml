@@ -49,7 +49,7 @@ services:
       migrate:
         condition: service_completed_successfully
     expose:
-      - "3000"
+      - "4000"
 
   caddy:
     image: caddy:2-alpine

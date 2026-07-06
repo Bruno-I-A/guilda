@@ -4,12 +4,12 @@
  * período, reversão com estorno e conclusão direta de auto-missão
  * (criador == responsável nunca passa por aprovação — regra de 2026-07-06).
  *
- * Pré-requisito: servidor em http://localhost:3000 (npm start)
+ * Pré-requisito: servidor em http://localhost:4000 (npm start)
  */
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 
-const BASE = "http://localhost:3000";
+const BASE = "http://localhost:4000";
 const SHOTS = "docs/screenshots";
 mkdirSync(SHOTS, { recursive: true });
 

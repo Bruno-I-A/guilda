@@ -1,11 +1,11 @@
 /**
  * Gera os screenshots do README a partir da organização demo (npm run seed).
- * Pré-requisito: servidor em http://localhost:3000 + seed aplicado.
+ * Pré-requisito: servidor em http://localhost:4000 + seed aplicado.
  */
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 
-const BASE = "http://localhost:3000";
+const BASE = "http://localhost:4000";
 const SHOTS = "docs/screenshots";
 mkdirSync(SHOTS, { recursive: true });
 
