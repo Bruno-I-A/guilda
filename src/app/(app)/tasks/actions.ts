@@ -1,20 +1,19 @@
 "use server";
 
 import { and, eq } from "drizzle-orm";
-import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { db } from "@/db";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
-import {
-  authorizeTransition,
-  type OrgRole,
-  type TaskStatus,
-} from "@/domain/task-state";
+import { authorizeTransition, type TaskStatus } from "@/domain/task-state";
 import { calculateTaskXp } from "@/domain/xp";
-import { auth } from "@/lib/auth";
+import {
+  err,
+  requireMemberContext,
+  type ActionResult,
+} from "@/lib/action-context";
 
 /**
  * Server Actions de tarefas.
@@ -26,43 +25,7 @@ import { auth } from "@/lib/auth";
  * - transições de status validadas pela máquina de estados no servidor.
  */
 
-export type ActionResult<T = undefined> =
-  | { ok: true; data?: T }
-  | { ok: false; error: string };
-
-function err(error: string): { ok: false; error: string } {
-  return { ok: false, error };
-}
-
-/** Sessão + organização ativa + papel — obrigatório em toda action. */
-async function requireMemberContext(): Promise<
-  | { ok: true; userId: string; orgId: string; role: OrgRole }
-  | { ok: false; error: string }
-> {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) {
-    return err("Sessão expirada. Entre novamente.");
-  }
-  const orgId = session.session.activeOrganizationId;
-  if (!orgId) {
-    return err("Nenhuma organização ativa.");
-  }
-  const membership = await db.query.member.findFirst({
-    where: and(
-      eq(schema.member.userId, session.user.id),
-      eq(schema.member.organizationId, orgId),
-    ),
-  });
-  if (!membership) {
-    return err("Você não é membro desta organização.");
-  }
-  return {
-    ok: true,
-    userId: session.user.id,
-    orgId,
-    role: membership.role as OrgRole,
-  };
-}
+export type { ActionResult };
 
 /** 'YYYY-MM-DD' → Date ao meio-dia UTC (evita virada de dia por fuso). */
 function dueDateFromInput(value: string | undefined): Date | null {

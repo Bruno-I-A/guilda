@@ -1,5 +1,6 @@
 import { relations, sql } from "drizzle-orm";
 import {
+  boolean,
   index,
   integer,
   pgEnum,
@@ -138,3 +139,36 @@ export const taskEventsRelations = relations(taskEvents, ({ one }) => ({
 
 export type Task = typeof tasks.$inferSelect;
 export type TaskEvent = typeof taskEvents.$inferSelect;
+
+/** Regime tributário — chave que casa template→cliente nas Campanhas (Fase 5). */
+export const taxRegime = pgEnum("tax_regime", ["simples", "presumido", "real"]);
+
+/**
+ * Empresas-cliente (Fase 5a): OBJETO do trabalho das campanhas, NÃO usuárias
+ * do sistema (não confundir com organization = tenant). Cadastro estável,
+ * carga inicial via `npm run import:clients`. Sem DELETE no fluxo — cliente
+ * sai de cena com active = false (campanhas futuras referenciam clients).
+ */
+export const clients = pgTable(
+  "clients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    name: varchar("name", { length: 200 }).notNull(),
+    taxRegime: taxRegime("tax_regime").notNull(),
+    cnpj: varchar("cnpj", { length: 14 }), // opcional; normalizado (só dígitos)
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("clients_org_active_idx").on(t.orgId, t.active),
+    // CNPJ único por org QUANDO presente (chave de dedup do import)
+    uniqueIndex("clients_org_cnpj_uidx")
+      .on(t.orgId, t.cnpj)
+      .where(sql`cnpj IS NOT NULL`),
+  ],
+);
+
+export type Client = typeof clients.$inferSelect;
