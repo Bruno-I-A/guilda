@@ -19,18 +19,20 @@ export type OrgRole = "owner" | "admin" | "member";
 export interface TransitionContext {
   actor: { id: string; role: OrgRole };
   task: { creatorId: string; assigneeId: string; status: TaskStatus };
-  /** Existe admin/owner na org além do ator? (regra de auto-aprovação) */
-  orgHasOtherApprover: boolean;
 }
 
 export type TransitionDecision =
   | { allowed: true }
   | { allowed: false; reason: string };
 
-/** Grafo de transições válidas. `completed → in_progress` é a reversão administrativa. */
+/**
+ * Grafo de transições válidas. `completed → in_progress` é a reversão
+ * administrativa; `in_progress → completed` é a conclusão direta de
+ * auto-tarefa (criador == responsável — autorização restringe).
+ */
 const TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
   pending: ["in_progress", "cancelled"],
-  in_progress: ["awaiting_approval", "cancelled"],
+  in_progress: ["awaiting_approval", "completed", "cancelled"],
   awaiting_approval: ["completed", "rejected", "cancelled"],
   rejected: ["in_progress", "cancelled"],
   completed: ["in_progress"],
@@ -56,9 +58,10 @@ const ALLOW: TransitionDecision = { allowed: true };
  * estados com as regras de papel/propriedade:
  *
  * - iniciar / enviar para aprovação / retomar: só o responsável;
- * - aprovar / rejeitar: criador ou admin/owner — e se criador == responsável,
- *   outro admin/owner precisa aprovar (a menos que não exista outro, caso
- *   de org de 1 pessoa, para não travar);
+ * - auto-tarefa (criador == responsável): o próprio responsável conclui
+ *   direto, sem aprovação — decisão de produto (2026-07-06), o risco de
+ *   farm de XP foi aceito conscientemente;
+ * - aprovar / rejeitar tarefa de terceiros: criador ou admin/owner;
  * - cancelar: criador ou admin/owner;
  * - reverter conclusão: apenas admin/owner.
  */
@@ -66,7 +69,7 @@ export function authorizeTransition(
   to: TaskStatus,
   ctx: TransitionContext,
 ): TransitionDecision {
-  const { actor, task, orgHasOtherApprover } = ctx;
+  const { actor, task } = ctx;
   const from = task.status;
 
   if (!canTransition(from, to)) {
@@ -98,16 +101,22 @@ export function authorizeTransition(
       : deny("Apenas a pessoa responsável pode enviar para aprovação.");
   }
 
+  // in_progress → completed (conclusão direta — exclusiva de auto-tarefa)
+  if (to === "completed" && from === "in_progress") {
+    const selfAssigned = task.creatorId === task.assigneeId;
+    return selfAssigned && isAssignee
+      ? ALLOW
+      : deny("Tarefas criadas para outra pessoa passam pela aprovação de quem criou.");
+  }
+
   // awaiting_approval → completed | rejected (decisão de aprovação)
   if (to === "completed" || to === "rejected") {
     const selfAssigned = task.creatorId === task.assigneeId;
 
     if (selfAssigned && isAssignee) {
-      // Auto-aprovação: permitida somente quando não há outro admin/owner
-      // na organização (org de 1 pessoa) — independente do papel do ator.
-      return orgHasOtherApprover
-        ? deny("Tarefas criadas para si precisam ser aprovadas por outro admin.")
-        : ALLOW;
+      // Auto-tarefa não precisa de aprovação de terceiros (cobre também
+      // tarefas antigas que já estavam paradas em awaiting_approval).
+      return ALLOW;
     }
 
     if (isAdmin) {

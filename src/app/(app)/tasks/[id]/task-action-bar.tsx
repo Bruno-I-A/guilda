@@ -29,6 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   approveTask,
   cancelTask,
+  completeOwnTask,
   rejectTask,
   revertCompletion,
   startTask,
@@ -55,6 +56,7 @@ export function TaskActionBar({
     start: boolean;
     resume: boolean;
     submit: boolean;
+    completeSelf: boolean;
     approve: boolean;
     reject: boolean;
     cancel: boolean;
@@ -84,7 +86,12 @@ export function TaskActionBar({
   }
 
   const hasPrimary =
-    can.start || can.resume || can.submit || can.approve || can.reject;
+    can.start ||
+    can.resume ||
+    can.submit ||
+    can.completeSelf ||
+    can.approve ||
+    can.reject;
   if (!hasPrimary && !can.edit && !can.cancel && !can.revert) {
     return null;
   }
@@ -117,6 +124,20 @@ export function TaskActionBar({
           }
         >
           <Send aria-hidden /> Marcar como feita
+        </Button>
+      ) : null}
+
+      {can.completeSelf ? (
+        <Button
+          disabled={pending}
+          onClick={() =>
+            run(
+              () => completeOwnTask({ taskId: task.id }),
+              `Concluída! Você ganhou ${task.xpValue} XP.`,
+            )
+          }
+        >
+          <Check aria-hidden /> Concluir
         </Button>
       ) : null}
 

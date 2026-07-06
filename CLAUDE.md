@@ -115,11 +115,13 @@ CREATE POLICY org_isolation ON tasks
 - **XP da tarefa** definido na criação e congelado:
   `xp_value = difficulty * 20 + (priority - 1) * 10`
   (dificuldade 1–5 → 20 a 100 XP base; prioridade adiciona 0/10/20).
-- **Fluxo de aprovação obrigatório**: o responsável marca a tarefa como feita
-  (`awaiting_approval`); só o **criador da tarefa** ou um **admin/owner** pode aprovar
-  (→ `completed`, credita XP) ou rejeitar (→ `rejected`, com nota obrigatória).
-  Auto-aprovação: se criador == responsável, um admin/owner precisa aprovar
-  (se não houver outro admin, permite auto-aprovar — não travar orgs de 1 pessoa).
+- **Fluxo de aprovação para tarefas de terceiros**: o responsável marca a tarefa
+  como feita (`awaiting_approval`); só o **criador da tarefa** ou um **admin/owner**
+  pode aprovar (→ `completed`, credita XP) ou rejeitar (→ `rejected`, com nota
+  obrigatória). **Auto-tarefa (criador == responsável) NÃO passa por aprovação**:
+  o responsável conclui direto (`in_progress → completed`, credita XP) — decisão
+  de 2026-07-06 que substitui a regra anterior de exigir outro admin; o risco de
+  farm de XP foi aceito conscientemente (reavaliar se o ranking degradar).
 - **Crédito de XP é transacional e idempotente**: dentro da mesma transação da
   transição para `completed`, inserir no `xp_ledger`. Constraint de unicidade parcial
   `(task_id) WHERE reason = 'task_completed'` impede crédito duplo.

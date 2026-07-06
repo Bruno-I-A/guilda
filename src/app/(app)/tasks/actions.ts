@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -249,26 +249,6 @@ async function transitionTask(options: {
       return err("A tarefa não está mais neste estado — atualize a página.");
     }
 
-    // Regra de auto-aprovação: precisa saber se existe OUTRO admin/owner
-    let orgHasOtherApprover = false;
-    if (
-      (options.to === "completed" || options.to === "rejected") &&
-      task.creatorId === task.assigneeId
-    ) {
-      const others = await tx
-        .select({ id: schema.member.id })
-        .from(schema.member)
-        .where(
-          and(
-            eq(schema.member.organizationId, ctx.orgId),
-            ne(schema.member.userId, ctx.userId),
-            inArray(schema.member.role, ["admin", "owner"]),
-          ),
-        )
-        .limit(1);
-      orgHasOtherApprover = others.length > 0;
-    }
-
     const decision = authorizeTransition(options.to, {
       actor: { id: ctx.userId, role: ctx.role },
       task: {
@@ -276,7 +256,6 @@ async function transitionTask(options: {
         assigneeId: task.assigneeId,
         status: task.status,
       },
-      orgHasOtherApprover,
     });
     if (!decision.allowed) {
       return err(decision.reason);
@@ -340,11 +319,25 @@ export async function submitTask(input: { taskId: string }): Promise<ActionResul
 }
 
 /**
- * Criador ou admin aprova — e o XP é creditado NA MESMA TRANSAÇÃO da
- * transição. Idempotente: o índice único parcial
- * (task_id) WHERE reason = 'task_completed' impede crédito duplo;
- * onConflictDoNothing faz a reinserção ser um no-op.
+ * Crédito de XP da conclusão — SEMPRE na mesma transação da transição.
+ * Idempotente: o índice único parcial (task_id) WHERE reason =
+ * 'task_completed' impede crédito duplo; onConflictDoNothing faz a
+ * reinserção ser um no-op.
  */
+async function creditTaskXp(tx: Tx, task: schema.Task): Promise<void> {
+  await tx
+    .insert(schema.xpLedger)
+    .values({
+      orgId: task.orgId,
+      userId: task.assigneeId,
+      taskId: task.id,
+      amount: task.xpValue, // congelado na criação — nunca vem do cliente
+      reason: "task_completed",
+    })
+    .onConflictDoNothing();
+}
+
+/** Criador ou admin aprova uma entrega em awaiting_approval. */
 export async function approveTask(input: { taskId: string }): Promise<ActionResult> {
   const parsed = taskIdSchema.safeParse(input);
   if (!parsed.success) return err("Tarefa inválida.");
@@ -352,18 +345,24 @@ export async function approveTask(input: { taskId: string }): Promise<ActionResu
     taskId: parsed.data.taskId,
     to: "completed",
     allowedFrom: ["awaiting_approval"],
-    sideEffect: async (tx, task) => {
-      await tx
-        .insert(schema.xpLedger)
-        .values({
-          orgId: task.orgId,
-          userId: task.assigneeId,
-          taskId: task.id,
-          amount: task.xpValue, // congelado na criação — nunca vem do cliente
-          reason: "task_completed",
-        })
-        .onConflictDoNothing();
-    },
+    sideEffect: creditTaskXp,
+  });
+}
+
+/**
+ * Auto-tarefa (criador == responsável) conclui direto de in_progress,
+ * sem aprovação — a autorização no domínio garante a exclusividade.
+ */
+export async function completeOwnTask(input: {
+  taskId: string;
+}): Promise<ActionResult> {
+  const parsed = taskIdSchema.safeParse(input);
+  if (!parsed.success) return err("Tarefa inválida.");
+  return transitionTask({
+    taskId: parsed.data.taskId,
+    to: "completed",
+    allowedFrom: ["in_progress"],
+    sideEffect: creditTaskXp,
   });
 }
 

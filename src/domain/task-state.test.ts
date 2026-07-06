@@ -15,7 +15,6 @@ function ctx(overrides: {
   creatorId?: string;
   assigneeId?: string;
   status: TaskStatus;
-  orgHasOtherApprover?: boolean;
 }): TransitionContext {
   return {
     actor: { id: overrides.actorId, role: overrides.actorRole ?? "member" },
@@ -24,7 +23,6 @@ function ctx(overrides: {
       assigneeId: overrides.assigneeId ?? "assignee-1",
       status: overrides.status,
     },
-    orgHasOtherApprover: overrides.orgHasOtherApprover ?? true,
   };
 }
 
@@ -33,6 +31,7 @@ describe("canTransition — grafo de transições", () => {
     ["pending", "in_progress"],
     ["pending", "cancelled"],
     ["in_progress", "awaiting_approval"],
+    ["in_progress", "completed"], // conclusão direta de auto-tarefa
     ["in_progress", "cancelled"],
     ["awaiting_approval", "completed"],
     ["awaiting_approval", "rejected"],
@@ -45,9 +44,8 @@ describe("canTransition — grafo de transições", () => {
   });
 
   test.each([
-    ["pending", "completed"], // nunca pular a aprovação
+    ["pending", "completed"], // precisa iniciar antes
     ["pending", "awaiting_approval"], // precisa iniciar antes
-    ["in_progress", "completed"], // nunca pular a aprovação
     ["in_progress", "rejected"],
     ["awaiting_approval", "in_progress"],
     ["completed", "pending"],
@@ -165,54 +163,45 @@ describe("aprovação (awaiting_approval → completed) — criador ≠ respons�
   });
 });
 
-describe("auto-aprovação (criador == responsável)", () => {
+describe("auto-tarefa (criador == responsável) — sem aprovação de terceiros", () => {
   const selfTask = {
     creatorId: "self-1",
     assigneeId: "self-1",
   };
 
-  test("com outro admin na org, a própria pessoa NÃO pode aprovar", () => {
+  test("responsável conclui direto de in_progress (member, sem aprovação)", () => {
     const decision = authorizeTransition(
       "completed",
-      ctx({
-        actorId: "self-1",
-        status: "awaiting_approval",
-        ...selfTask,
-        orgHasOtherApprover: true,
-      }),
-    );
-    expect(decision.allowed).toBe(false);
-  });
-
-  test("owner de org de 1 pessoa pode auto-aprovar (não travar a org)", () => {
-    const decision = authorizeTransition(
-      "completed",
-      ctx({
-        actorId: "self-1",
-        actorRole: "owner",
-        status: "awaiting_approval",
-        ...selfTask,
-        orgHasOtherApprover: false,
-      }),
+      ctx({ actorId: "self-1", status: "in_progress", ...selfTask }),
     );
     expect(decision.allowed).toBe(true);
   });
 
-  test("mesmo sendo owner, com outro admin disponível a aprovação é dele", () => {
+  test("conclusão direta é EXCLUSIVA de auto-tarefa (tarefa de terceiros nega)", () => {
     const decision = authorizeTransition(
       "completed",
-      ctx({
-        actorId: "self-1",
-        actorRole: "owner",
-        status: "awaiting_approval",
-        ...selfTask,
-        orgHasOtherApprover: true,
-      }),
+      ctx({ actorId: "assignee-1", status: "in_progress" }),
     );
     expect(decision.allowed).toBe(false);
   });
 
-  test("outro admin pode aprovar a tarefa auto-atribuída", () => {
+  test("nem admin conclui direto tarefa que não é auto-atribuída a ele", () => {
+    const decision = authorizeTransition(
+      "completed",
+      ctx({ actorId: "admin-1", actorRole: "admin", status: "in_progress" }),
+    );
+    expect(decision.allowed).toBe(false);
+  });
+
+  test("auto-tarefa antiga parada em awaiting_approval pode ser auto-aprovada", () => {
+    const decision = authorizeTransition(
+      "completed",
+      ctx({ actorId: "self-1", status: "awaiting_approval", ...selfTask }),
+    );
+    expect(decision.allowed).toBe(true);
+  });
+
+  test("outro admin ainda pode aprovar a auto-tarefa em awaiting_approval", () => {
     const decision = authorizeTransition(
       "completed",
       ctx({
@@ -225,7 +214,7 @@ describe("auto-aprovação (criador == responsável)", () => {
     expect(decision.allowed).toBe(true);
   });
 
-  test("member comum não aprova tarefa auto-atribuída de outra pessoa", () => {
+  test("member comum não aprova auto-tarefa de outra pessoa", () => {
     const decision = authorizeTransition(
       "completed",
       ctx({

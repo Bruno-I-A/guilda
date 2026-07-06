@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { ArrowLeft, CalendarClock, Star } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -8,7 +8,6 @@ import { z } from "zod";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { db } from "@/db";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { authorizeTransition, type OrgRole } from "@/domain/task-state";
@@ -59,22 +58,6 @@ export default async function TaskDetailPage({
   if (!task) notFound();
 
   // Contexto de autorização do VISITANTE (as actions revalidam tudo).
-  let orgHasOtherApprover = false;
-  if (task.creatorId === task.assigneeId) {
-    const others = await db
-      .select({ id: schema.member.id })
-      .from(schema.member)
-      .where(
-        and(
-          eq(schema.member.organizationId, session.orgId),
-          ne(schema.member.userId, session.user.id),
-          inArray(schema.member.role, ["admin", "owner"]),
-        ),
-      )
-      .limit(1);
-    orgHasOtherApprover = others.length > 0;
-  }
-
   const ctx = {
     actor: { id: session.user.id, role: member.role as OrgRole },
     task: {
@@ -82,14 +65,18 @@ export default async function TaskDetailPage({
       assigneeId: task.assigneeId,
       status: task.status,
     },
-    orgHasOtherApprover,
   };
 
   const isAdmin = member.role === "admin" || member.role === "owner";
+  const completeSelf =
+    task.status === "in_progress" && authorizeTransition("completed", ctx).allowed;
   const can = {
     start: task.status === "pending" && authorizeTransition("in_progress", ctx).allowed,
     resume: task.status === "rejected" && authorizeTransition("in_progress", ctx).allowed,
+    completeSelf,
+    // Auto-tarefa conclui direto — não oferecer o desvio por aprovação.
     submit:
+      !completeSelf &&
       task.status === "in_progress" &&
       authorizeTransition("awaiting_approval", ctx).allowed,
     approve:
