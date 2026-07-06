@@ -3,6 +3,15 @@
 Data: 2026-07-06. Aprovado em conversa. Escopo: tema viking dark aplicado às telas
 existentes. A skill tree do perfil fica para uma rodada dedicada, em cima deste tema.
 
+> **Adendo (mesma data, após review do usuário):** a primeira entrega foi rejeitada
+> por parecer "SaaS recolorido". O passe épico/funcional substituiu `frame-carved`
+> por **`panel-cut`** (cantos chanfrados via clip-path), adicionou os componentes
+> `LevelEmblem`, `XpBar` (segmentada, valor interno) e `Pips`, os utilitários
+> `hud-label` e `chip-loot`, vinheta + tramado nórdico no body, primary mais
+> profundo (0.66) e a hierarquia Cinzel-display vs mono-HUD. O dashboard virou
+> "mesa de guerra" (aprovações pendentes + tarefas por prazo). A regra segue:
+> Cinzel só em display, ouro só em recompensa, sem glow.
+
 ## Decisões (fechadas — não redecidir)
 
 - **Direção**: dark, estilo viking, estética de game. **Sem brilho/glow/neon** — isto
