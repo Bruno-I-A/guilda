@@ -90,12 +90,10 @@ await anaPage.fill("#title", "Preparar relatório mensal");
 await anaPage.fill("#description", "Consolidar números de junho e montar a apresentação.");
 await anaPage.locator("#assignee").click();
 await anaPage.getByRole("option", { name: beto.name }).click();
-await anaPage.locator("#priority").click();
-await anaPage.getByRole("option", { name: "Alta" }).click();
-await anaPage.locator("#difficulty").click();
-await anaPage.getByRole("option", { name: /4 — Difícil/ }).click();
+await anaPage.getByRole("radio", { name: "Alta" }).click();
+await anaPage.getByRole("radio", { name: /4 — Difícil/ }).click();
 await expectVisible(anaPage, "text=100 XP", "preview de XP mostra 100");
-await anaPage.getByRole("button", { name: /Criar tarefa/ }).click();
+await anaPage.getByRole("button", { name: /Criar missão/ }).click();
 // aguarda a URL do DETALHE (uuid) — '/tasks/new' também casaria com glob
 await anaPage.waitForURL(/\/tasks\/[0-9a-f]{8}-[0-9a-f-]{27}/, { timeout: 15_000 });
 const taskUrl = anaPage.url();
@@ -145,7 +143,7 @@ console.log("8) Lista de tarefas e filtros");
 await anaPage.goto(`${BASE}/tasks?tab=created&status=completed`);
 await expectVisible(anaPage, "text=Preparar relatório mensal", "filtro criadas+concluídas encontra a tarefa");
 await anaPage.goto(`${BASE}/tasks?tab=mine`);
-await expectVisible(anaPage, "text=Nenhuma tarefa", "aba Minhas da Ana está vazia (estado vazio ok)");
+await expectVisible(anaPage, "text=Nenhuma missão", "aba Minhas da Ana está vazia (estado vazio ok)");
 
 await browser.close();
 

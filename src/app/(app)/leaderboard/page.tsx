@@ -72,7 +72,7 @@ export default async function LeaderboardPage({
           <Trophy className="size-8 text-muted-foreground" aria-hidden />
           <p className="font-medium">Ninguém pontuou neste período</p>
           <p className="max-w-sm text-sm text-muted-foreground">
-            Conclua tarefas e tenha as entregas aprovadas para aparecer aqui.
+            Conclua missões e tenha as entregas aprovadas para aparecer aqui.
           </p>
         </div>
       ) : (

@@ -1,6 +1,6 @@
 import type { TaskStatus } from "@/domain/task-state";
 
-/** Rótulos e estilos de apresentação das tarefas (pt-BR). */
+/** Rótulos e estilos de apresentação das missões (pt-BR). */
 
 export const STATUS_LABELS: Record<TaskStatus, string> = {
   pending: "Pendente",
@@ -21,7 +21,7 @@ export const STATUS_BADGE_CLASSES: Record<TaskStatus, string> = {
   cancelled: "bg-muted text-muted-foreground/70 border-transparent",
 };
 
-/** Trilho de cor na borda esquerda das linhas de tarefa (atrasada usa destructive). */
+/** Trilho de cor na borda esquerda das linhas de missão (atrasada usa destructive). */
 export const STATUS_RAIL_CLASSES: Record<TaskStatus, string> = {
   pending: "border-l-silver/50",
   in_progress: "border-l-primary",
@@ -75,14 +75,14 @@ export function eventLabel(
   fromStatus: TaskStatus | null,
   toStatus: TaskStatus,
 ): string {
-  if (fromStatus === null) return "criou a tarefa";
-  if (toStatus === "in_progress" && fromStatus === "pending") return "iniciou a tarefa";
-  if (toStatus === "in_progress" && fromStatus === "rejected") return "retomou a tarefa";
+  if (fromStatus === null) return "criou a missão";
+  if (toStatus === "in_progress" && fromStatus === "pending") return "iniciou a missão";
+  if (toStatus === "in_progress" && fromStatus === "rejected") return "retomou a missão";
   if (toStatus === "in_progress" && fromStatus === "completed")
     return "reverteu a conclusão";
   if (toStatus === "awaiting_approval") return "enviou para aprovação";
   if (toStatus === "completed") return "aprovou a entrega";
   if (toStatus === "rejected") return "devolveu para ajustes";
-  if (toStatus === "cancelled") return "cancelou a tarefa";
+  if (toStatus === "cancelled") return "cancelou a missão";
   return `moveu para ${STATUS_LABELS[toStatus]}`;
 }

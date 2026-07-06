@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 
 import { TaskFilters } from "./task-filters";
 
-export const metadata: Metadata = { title: "Tarefas" };
+export const metadata: Metadata = { title: "Missões" };
 
 const TABS = [
   { key: "mine", label: "Minhas" },
@@ -100,10 +100,10 @@ export default async function TasksPage({
   return (
     <div className="grid gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-wide">Tarefas</h1>
+        <h1 className="text-2xl font-semibold tracking-wide">Missões</h1>
         <Button asChild>
           <Link href="/tasks/new">
-            <Plus aria-hidden /> Nova tarefa
+            <Plus aria-hidden /> Nova missão
           </Link>
         </Button>
       </div>
@@ -135,15 +135,15 @@ export default async function TasksPage({
       {taskList.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-12 text-center">
           <ListTodo className="size-8 text-muted-foreground" aria-hidden />
-          <p className="font-medium">Nenhuma tarefa por aqui</p>
+          <p className="font-medium">Nenhuma missão por aqui</p>
           <p className="max-w-sm text-sm text-muted-foreground">
             {tab === "mine"
-              ? "Você não tem tarefas com estes filtros. Crie uma ou ajuste os filtros."
+              ? "Você não tem missões com estes filtros. Crie uma ou ajuste os filtros."
               : "Nada encontrado com estes filtros."}
           </p>
           <Button asChild variant="outline" size="sm">
             <Link href="/tasks/new">
-              <Plus aria-hidden /> Criar tarefa
+              <Plus aria-hidden /> Criar missão
             </Link>
           </Button>
         </div>

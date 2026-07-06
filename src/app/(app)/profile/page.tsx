@@ -26,7 +26,7 @@ import {
 export const metadata: Metadata = { title: "Perfil" };
 
 const REASON_LABELS: Record<string, string> = {
-  task_completed: "Tarefa aprovada",
+  task_completed: "Missão aprovada",
   reversal: "Conclusão revertida",
   bonus: "Bônus",
 };
@@ -94,7 +94,7 @@ export default async function ProfilePage() {
         <CardContent className="grid gap-1 p-0 pb-3">
           {history.length === 0 ? (
             <p className="px-6 pb-3 text-sm text-muted-foreground">
-              Nenhum XP ainda — conclua tarefas para começar a pontuar!
+              Nenhum XP ainda — conclua missões para começar a pontuar!
             </p>
           ) : (
             history.map((entry) => (

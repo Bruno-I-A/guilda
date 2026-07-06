@@ -130,7 +130,7 @@ export function TaskForm({
       toast.error(result.error);
       return;
     }
-    toast.success("Tarefa criada!");
+    toast.success("Missão criada!");
     router.push(`/tasks/${result.data?.taskId}`);
     router.refresh();
   }
@@ -213,7 +213,7 @@ export function TaskForm({
           </div>
 
           <Button type="submit" disabled={submitting} size="lg">
-            {submitting ? "Criando…" : "Criar tarefa"}
+            {submitting ? "Criando…" : "Criar missão"}
           </Button>
         </form>
       </CardContent>

@@ -183,15 +183,15 @@ export async function updateTask(
       .where(and(eq(schema.tasks.id, data.taskId), eq(schema.tasks.orgId, ctx.orgId)))
       .for("update");
 
-    if (!task) return err("Tarefa não encontrada.");
+    if (!task) return err("Missão não encontrada.");
 
     const isAdmin = ctx.role === "admin" || ctx.role === "owner";
     if (task.creatorId !== ctx.userId && !isAdmin) {
-      return err("Apenas quem criou a tarefa ou um admin pode editá-la.");
+      return err("Apenas quem criou a missão ou um admin pode editá-la.");
     }
     const editableStatuses: TaskStatus[] = ["pending", "in_progress", "rejected"];
     if (!editableStatuses.includes(task.status)) {
-      return err("Tarefas em aprovação, concluídas ou canceladas não podem ser editadas.");
+      return err("Missões em aprovação, concluídas ou canceladas não podem ser editadas.");
     }
 
     await tx
@@ -233,7 +233,7 @@ async function transitionTask(options: {
   if (!ctx.ok) return ctx;
 
   const idParse = z.uuid().safeParse(options.taskId);
-  if (!idParse.success) return err("Tarefa inválida.");
+  if (!idParse.success) return err("Missão inválida.");
 
   const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
     // Lock da linha: transições concorrentes serializam aqui e a segunda
@@ -244,9 +244,9 @@ async function transitionTask(options: {
       .where(and(eq(schema.tasks.id, idParse.data), eq(schema.tasks.orgId, ctx.orgId)))
       .for("update");
 
-    if (!task) return err("Tarefa não encontrada.");
+    if (!task) return err("Missão não encontrada.");
     if (!options.allowedFrom.includes(task.status)) {
-      return err("A tarefa não está mais neste estado — atualize a página.");
+      return err("A missão não está mais neste estado — atualize a página.");
     }
 
     const decision = authorizeTransition(options.to, {
@@ -299,7 +299,7 @@ const taskIdSchema = z.object({ taskId: z.uuid() });
 /** Responsável inicia (pending) ou retoma após rejeição (rejected). */
 export async function startTask(input: { taskId: string }): Promise<ActionResult> {
   const parsed = taskIdSchema.safeParse(input);
-  if (!parsed.success) return err("Tarefa inválida.");
+  if (!parsed.success) return err("Missão inválida.");
   return transitionTask({
     taskId: parsed.data.taskId,
     to: "in_progress",
@@ -310,7 +310,7 @@ export async function startTask(input: { taskId: string }): Promise<ActionResult
 /** Responsável marca como feita — vai para aprovação. */
 export async function submitTask(input: { taskId: string }): Promise<ActionResult> {
   const parsed = taskIdSchema.safeParse(input);
-  if (!parsed.success) return err("Tarefa inválida.");
+  if (!parsed.success) return err("Missão inválida.");
   return transitionTask({
     taskId: parsed.data.taskId,
     to: "awaiting_approval",
@@ -340,7 +340,7 @@ async function creditTaskXp(tx: Tx, task: schema.Task): Promise<void> {
 /** Criador ou admin aprova uma entrega em awaiting_approval. */
 export async function approveTask(input: { taskId: string }): Promise<ActionResult> {
   const parsed = taskIdSchema.safeParse(input);
-  if (!parsed.success) return err("Tarefa inválida.");
+  if (!parsed.success) return err("Missão inválida.");
   return transitionTask({
     taskId: parsed.data.taskId,
     to: "completed",
@@ -357,7 +357,7 @@ export async function completeOwnTask(input: {
   taskId: string;
 }): Promise<ActionResult> {
   const parsed = taskIdSchema.safeParse(input);
-  if (!parsed.success) return err("Tarefa inválida.");
+  if (!parsed.success) return err("Missão inválida.");
   return transitionTask({
     taskId: parsed.data.taskId,
     to: "completed",

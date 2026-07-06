@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     template: "%s · Guilda",
   },
   description:
-    "Gestão de tarefas gamificada para equipes: conclua tarefas, ganhe XP e suba de nível.",
+    "Gestão de missões gamificada para equipes: conclua missões, ganhe XP e suba de nível.",
 };
 
 export default function RootLayout({

@@ -6,8 +6,14 @@ Projeto de portfólio: qualidade de código e segurança são requisitos, não o
 
 O produto tem DOIS modos de uso, construídos em ordem:
 1. **Tarefas ad-hoc + gamificação** (Fases 1–4) — o núcleo, construído e validado primeiro.
-2. **Missões / processo recorrente** (Fase 5) — orquestração de fechamento de N
+2. **Campanhas / processo recorrente** (Fase 5) — orquestração de fechamento de N
    empresas-cliente via templates por regime. Só depois da equipe usar o núcleo.
+
+NOMENCLATURA (decisão de 2026-07-06): na UI, tarefas se chamam **"missões"**
+(rename apenas de texto visível — código, schema e URLs continuam em inglês:
+`tasks`, `/tasks` etc.). O guarda-chuva da Fase 5 se chama **"Campanha"** na UI
+(as tabelas continuam `missions`/`mission_*`), para não colidir com as missões
+do dia a dia.
 
 ATENÇÃO à distinção de duas entidades diferentes chamadas "empresa":
 - **organization** = o TENANT (a conta dona do sistema; a contabilidade). Já modelada.
@@ -150,7 +156,7 @@ CREATE POLICY org_isolation ON tasks
 
 - **Grafo estilo Obsidian foi CONSIDERADO E REJEITADO.** Motivo: tarefas de
   trabalho não têm relação orgânica entre si (dependência real só existiria nas
-  Missões da Fase 5, e mesmo assim é hierárquica, não uma rede). Um grafo aqui
+  Campanhas da Fase 5, e mesmo assim é hierárquica, não uma rede). Um grafo aqui
   esconderia a informação que mais importa ("o que vence hoje", "o que é meu")
   atrás de uma visualização bonita mas pouco funcional. NÃO reintroduzir essa
   ideia sem antes revisitar esta nota.
@@ -204,7 +210,7 @@ vazios decentes. Seed de demonstração. Dockerfile (standalone) + docker-compos
 proxy reverso com HTTPS na VPS. README de portfólio com screenshots e decisões de
 arquitetura (RLS, ledger, máquina de estados).
 
-### Fase 5 — Missões (processo recorrente) — SÓ após Fases 1–4 validadas em uso real
+### Fase 5 — Campanhas (processo recorrente) — SÓ após Fases 1–4 validadas em uso real
 
 Objetivo: orquestrar trabalho recorrente e padronizado sobre ~250 empresas-cliente
 (ex.: fechamento anual/trimestral), sem criar tudo na mão.
@@ -242,7 +248,7 @@ CREATE TABLE mission_template_items (   -- as tarefas-modelo do checklist
   order_index  smallint NOT NULL DEFAULT 0    -- define a SEQUÊNCIA de execução (gate abaixo)
 );
 
--- Missão = a campanha guarda-chuva (ex.: "Fechamento Anual 2025").
+-- Campanha (na UI) = o guarda-chuva (ex.: "Fechamento Anual 2025"). Tabela mantém o nome missions.
 CREATE TABLE missions (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id      text NOT NULL REFERENCES organization(id),

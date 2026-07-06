@@ -1,8 +1,8 @@
 /**
  * E2E da Fase 3 — gamificação de ponta a ponta:
  * crédito de XP na aprovação, nível/progresso no perfil, leaderboard por
- * período, reversão com estorno e regra de auto-aprovação (com e sem
- * outro admin na org).
+ * período, reversão com estorno e conclusão direta de auto-missão
+ * (criador == responsável nunca passa por aprovação — regra de 2026-07-06).
  *
  * Pré-requisito: servidor em http://localhost:3000 (npm start)
  */
@@ -50,14 +50,14 @@ async function createTask(page, { title, assignee, priority, difficulty }) {
   await page.locator("#assignee").click();
   await page.getByRole("option", { name: assignee }).click();
   if (priority) {
-    await page.locator("#priority").click();
-    await page.getByRole("option", { name: priority, exact: true }).click();
+    // prioridade agora é segmentada (botões com role=radio)
+    await page.getByRole("radio", { name: priority, exact: true }).click();
   }
   if (difficulty) {
-    await page.locator("#difficulty").click();
-    await page.getByRole("option", { name: difficulty }).click();
+    // dificuldade agora são pips clicáveis (role=radio com aria-label "N — Rótulo")
+    await page.getByRole("radio", { name: difficulty }).click();
   }
-  await page.getByRole("button", { name: /Criar tarefa/ }).click();
+  await page.getByRole("button", { name: /Criar missão/ }).click();
   await page.waitForURL(/\/tasks\/[0-9a-f]{8}-[0-9a-f-]{27}/, { timeout: 15_000 });
   return page.url();
 }
@@ -124,15 +124,19 @@ await carlaPage.waitForSelector("text=Concluída");
 await daniPage.goto(`${BASE}/profile`);
 await expectVisible(daniPage, "text=140 XP no total", "perfil Dani: 140 XP acumulados");
 
-console.log("4) Task C: Carla para SI MESMA (sem outro admin → pode auto-aprovar)");
+console.log("4) Task C: Carla para SI MESMA → conclui direto, sem aprovação");
 const taskC = await createTask(carlaPage, {
   title: "Planejar retrospectiva do trimestre",
   assignee: carla.name,
 });
-await runTaskFlow(carlaPage, taskC);
-const carlaSeesApprove = await carlaPage.getByRole("button", { name: "Aprovar" }).count();
-check("Carla (única admin) VÊ botão Aprovar na própria tarefa", carlaSeesApprove === 1);
-await carlaPage.getByRole("button", { name: "Aprovar" }).click();
+await carlaPage.goto(taskC);
+await carlaPage.getByRole("button", { name: "Iniciar" }).click();
+await carlaPage.waitForSelector("text=Em andamento");
+const carlaSeesSubmit = await carlaPage
+  .getByRole("button", { name: /Marcar como feita/ })
+  .count();
+check("auto-missão NÃO oferece 'Marcar como feita'", carlaSeesSubmit === 0);
+await carlaPage.getByRole("button", { name: "Concluir" }).click();
 await expectVisible(carlaPage, "text=você ganhou 50 XP", "banner de XP ganho para Carla");
 
 console.log("5) Leaderboard (semana): Dani 140 em 1º, Carla 50 em 2º");
@@ -160,7 +164,7 @@ await daniPage.screenshot({ path: `${SHOTS}/mobile-profile.png`, fullPage: true 
 await carlaPage.goto(`${BASE}/leaderboard`);
 await expectVisible(carlaPage, "text=+120 XP", "leaderboard atualizado: Dani +120");
 
-console.log("7) Com Dani promovida a admin, Carla NÃO pode mais se auto-aprovar");
+console.log("7) Mesmo com Dani promovida a admin, auto-missão segue concluindo direto");
 await carlaPage.goto(`${BASE}/members`);
 await carlaPage.getByRole("button", { name: `Ações para ${dani.name}` }).click();
 await carlaPage.getByRole("menuitem", { name: /Promover a admin/ }).click();
@@ -170,13 +174,15 @@ const taskD = await createTask(carlaPage, {
   title: "Definir metas do próximo ciclo",
   assignee: carla.name,
 });
-await runTaskFlow(carlaPage, taskD);
-const carlaSeesApprove2 = await carlaPage.getByRole("button", { name: "Aprovar" }).count();
-check("Carla NÃO vê Aprovar (agora existe outra admin)", carlaSeesApprove2 === 0);
-
-await daniPage.goto(taskD);
-await daniPage.getByRole("button", { name: "Aprovar" }).click();
-await expectVisible(daniPage, "text=Concluída", "Dani (admin) aprova a tarefa da Carla");
+await carlaPage.goto(taskD);
+await carlaPage.getByRole("button", { name: "Iniciar" }).click();
+await carlaPage.waitForSelector("text=Em andamento");
+await carlaPage.getByRole("button", { name: "Concluir" }).click();
+await expectVisible(
+  carlaPage,
+  "text=Concluída",
+  "auto-missão concluída direto mesmo com outra admin na org",
+);
 
 await browser.close();
 console.log(

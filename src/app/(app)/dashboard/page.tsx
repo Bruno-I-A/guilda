@@ -78,7 +78,7 @@ export default async function DashboardPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-wide">Olá, {firstName}</h1>
         <p className="text-muted-foreground">
-          Conclua tarefas, ganhe XP e suba no ranking da guilda.
+          Conclua missões, ganhe XP e suba no ranking da guilda.
         </p>
       </div>
 
@@ -107,7 +107,7 @@ export default async function DashboardPage() {
               {memberCount} na guilda
             </Link>
             <Link href="/tasks" className="hover:text-foreground">
-              {sortedMine.length > 0 ? `${myTasks.length} abertas com você` : "nenhuma tarefa aberta"}
+              {sortedMine.length > 0 ? `${myTasks.length} abertas com você` : "nenhuma missão aberta"}
             </Link>
             <Link href="/leaderboard" className="hover:text-foreground">
               ver ranking →
@@ -149,7 +149,7 @@ export default async function DashboardPage() {
 
       <section className="grid gap-3">
         <div className="flex items-center gap-3">
-          <h2 className="hud-label">Suas tarefas</h2>
+          <h2 className="hud-label">Suas missões</h2>
           <div className="divider-rune flex-1" />
           <Link
             href="/tasks"
@@ -162,13 +162,13 @@ export default async function DashboardPage() {
           <div className="panel-cut flex flex-col items-center gap-2 p-8 text-center">
             <p className="font-medium">Nenhuma missão em aberto</p>
             <p className="text-sm text-muted-foreground">
-              Crie uma tarefa ou aguarde uma atribuição da guilda.
+              Crie uma missão ou aguarde uma atribuição da guilda.
             </p>
             <Link
               href="/tasks/new"
               className="mt-1 font-mono text-xs text-primary hover:underline"
             >
-              + nova tarefa
+              + nova missão
             </Link>
           </div>
         ) : (

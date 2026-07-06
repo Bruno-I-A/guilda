@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 
 import { TaskActionBar } from "./task-action-bar";
 
-export const metadata: Metadata = { title: "Tarefa" };
+export const metadata: Metadata = { title: "Missão" };
 
 export default async function TaskDetailPage({
   params,
@@ -74,7 +74,7 @@ export default async function TaskDetailPage({
     start: task.status === "pending" && authorizeTransition("in_progress", ctx).allowed,
     resume: task.status === "rejected" && authorizeTransition("in_progress", ctx).allowed,
     completeSelf,
-    // Auto-tarefa conclui direto — não oferecer o desvio por aprovação.
+    // Auto-missão conclui direto — não oferecer o desvio por aprovação.
     submit:
       !completeSelf &&
       task.status === "in_progress" &&
@@ -108,7 +108,7 @@ export default async function TaskDetailPage({
           href="/tasks"
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft className="size-4" aria-hidden /> Tarefas
+          <ArrowLeft className="size-4" aria-hidden /> Missões
         </Link>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
           <h1 className="max-w-xl font-sans text-2xl font-semibold leading-tight tracking-tight">
@@ -122,7 +122,7 @@ export default async function TaskDetailPage({
 
       {awaitingMyApproval ? (
         <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-200">
-          <p className="font-medium">Esta tarefa aguarda a sua aprovação.</p>
+          <p className="font-medium">Esta missão aguarda a sua aprovação.</p>
           <p>
             Ao aprovar, {task.assignee.name} recebe {task.xpValue} XP. Se algo
             precisa de ajuste, rejeite com uma nota explicando.

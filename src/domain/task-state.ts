@@ -84,7 +84,7 @@ export function authorizeTransition(
   if (to === "in_progress" && (from === "pending" || from === "rejected")) {
     return isAssignee
       ? ALLOW
-      : deny("Apenas a pessoa responsável pode trabalhar na tarefa.");
+      : deny("Apenas a pessoa responsável pode trabalhar na missão.");
   }
 
   // completed → in_progress (reversão administrativa)
@@ -106,7 +106,7 @@ export function authorizeTransition(
     const selfAssigned = task.creatorId === task.assigneeId;
     return selfAssigned && isAssignee
       ? ALLOW
-      : deny("Tarefas criadas para outra pessoa passam pela aprovação de quem criou.");
+      : deny("Missões criadas para outra pessoa passam pela aprovação de quem criou.");
   }
 
   // awaiting_approval → completed | rejected (decisão de aprovação)
@@ -125,14 +125,14 @@ export function authorizeTransition(
     if (isCreator && !selfAssigned) {
       return ALLOW;
     }
-    return deny("Apenas quem criou a tarefa ou um admin pode aprovar/rejeitar.");
+    return deny("Apenas quem criou a missão ou um admin pode aprovar/rejeitar.");
   }
 
   // → cancelled
   if (to === "cancelled") {
     return isCreator || isAdmin
       ? ALLOW
-      : deny("Apenas quem criou a tarefa ou um admin pode cancelar.");
+      : deny("Apenas quem criou a missão ou um admin pode cancelar.");
   }
 
   return deny("Transição de status inválida.");

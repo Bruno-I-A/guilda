@@ -101,7 +101,7 @@ export function TaskActionBar({
       {can.start ? (
         <Button
           disabled={pending}
-          onClick={() => run(() => startTask({ taskId: task.id }), "Tarefa iniciada!")}
+          onClick={() => run(() => startTask({ taskId: task.id }), "Missão iniciada!")}
         >
           <Play aria-hidden /> Iniciar
         </Button>
@@ -110,7 +110,7 @@ export function TaskActionBar({
       {can.resume ? (
         <Button
           disabled={pending}
-          onClick={() => run(() => startTask({ taskId: task.id }), "Tarefa retomada!")}
+          onClick={() => run(() => startTask({ taskId: task.id }), "Missão retomada!")}
         >
           <RotateCcw aria-hidden /> Retomar ajustes
         </Button>
@@ -215,7 +215,7 @@ export function TaskActionBar({
                 setRejectOpen(false);
                 run(
                   () => rejectTask({ taskId: task.id, note: rejectNote.trim() }),
-                  "Tarefa devolvida para ajustes.",
+                  "Missão devolvida para ajustes.",
                 );
                 setRejectNote("");
               }}
@@ -230,7 +230,7 @@ export function TaskActionBar({
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Cancelar esta tarefa?</DialogTitle>
+            <DialogTitle>Cancelar esta missão?</DialogTitle>
             <DialogDescription>
               O cancelamento é definitivo e nenhum XP é creditado.
             </DialogDescription>
@@ -244,10 +244,10 @@ export function TaskActionBar({
               disabled={pending}
               onClick={() => {
                 setCancelOpen(false);
-                run(() => cancelTask({ taskId: task.id }), "Tarefa cancelada.");
+                run(() => cancelTask({ taskId: task.id }), "Missão cancelada.");
               }}
             >
-              Cancelar tarefa
+              Cancelar missão
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -259,7 +259,7 @@ export function TaskActionBar({
           <DialogHeader>
             <DialogTitle>Reverter conclusão?</DialogTitle>
             <DialogDescription>
-              A tarefa volta para “Em andamento” e {task.assigneeName} tem{" "}
+              A missão volta para “Em andamento” e {task.assigneeName} tem{" "}
               {task.xpValue} XP estornados (lançamento negativo no ledger — o
               crédito original não é apagado).
             </DialogDescription>
@@ -304,7 +304,7 @@ export function TaskActionBar({
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Editar tarefa</DialogTitle>
+            <DialogTitle>Editar missão</DialogTitle>
             <DialogDescription>
               Dificuldade e prioridade não mudam após a criação — o XP é
               congelado.
@@ -324,7 +324,7 @@ export function TaskActionBar({
                     description: String(form.get("description") ?? ""),
                     dueDate: String(form.get("dueDate") ?? ""),
                   }),
-                "Tarefa atualizada!",
+                "Missão atualizada!",
               );
             }}
           >

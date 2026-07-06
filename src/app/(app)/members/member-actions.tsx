@@ -249,7 +249,7 @@ export function MemberActions({
           <DialogHeader>
             <DialogTitle>Remover {memberName}?</DialogTitle>
             <DialogDescription>
-              A pessoa perde o acesso à organização. O histórico de tarefas e XP
+              A pessoa perde o acesso à organização. O histórico de missões e XP
               é preservado.
             </DialogDescription>
           </DialogHeader>

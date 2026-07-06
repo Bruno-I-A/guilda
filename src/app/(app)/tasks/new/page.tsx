@@ -5,7 +5,7 @@ import { requireOrgSession } from "@/lib/session";
 
 import { TaskForm } from "./task-form";
 
-export const metadata: Metadata = { title: "Nova tarefa" };
+export const metadata: Metadata = { title: "Nova missão" };
 
 export default async function NewTaskPage() {
   const session = await requireOrgSession();
@@ -14,7 +14,7 @@ export default async function NewTaskPage() {
   return (
     <div className="mx-auto grid w-full max-w-2xl gap-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-wide">Nova tarefa</h1>
+        <h1 className="text-2xl font-semibold tracking-wide">Nova missão</h1>
         <p className="text-muted-foreground">
           O XP é definido pela dificuldade e prioridade e fica congelado na
           criação.

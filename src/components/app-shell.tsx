@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Início", icon: Home },
-  { href: "/tasks", label: "Tarefas", icon: ListTodo },
+  { href: "/tasks", label: "Missões", icon: ListTodo },
   { href: "/leaderboard", label: "Ranking", icon: Trophy },
   { href: "/members", label: "Membros", icon: Users },
   { href: "/profile", label: "Perfil", icon: CircleUser },
