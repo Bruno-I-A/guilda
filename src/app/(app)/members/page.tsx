@@ -50,7 +50,7 @@ export default async function MembersPage() {
     <div className="grid gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Membros</h1>
+          <h1 className="text-2xl font-semibold tracking-wide">Membros</h1>
           <p className="text-muted-foreground">
             {members.length} {members.length === 1 ? "pessoa" : "pessoas"} em{" "}
             {org.name}

@@ -140,7 +140,11 @@ CREATE POLICY org_isolation ON tasks
 
 - **Direção estética**: dark, denso, "espaço próprio" — explicitamente NÃO
   corporativo/sério. O objetivo é não parecer "trabalho", e sim algo que estimule
-  o uso voluntário. Acentos neon, tipografia mono para números de XP/nível.
+  o uso voluntário. Estilo viking "Gelo e Ferro" (spec em
+  `docs/superpowers/specs/2026-07-06-viking-theme-design.md`): paleta fria
+  azul-gelo/prata, títulos em Cinzel, tipografia mono para números de XP/nível,
+  ouro EXCLUSIVO para recompensa. **Sem brilho/glow/neon** (decisão de 2026-07-06,
+  substitui a ideia anterior de "acentos neon"). Dark é o tema único, sem toggle.
 
 - **Grafo estilo Obsidian foi CONSIDERADO E REJEITADO.** Motivo: tarefas de
   trabalho não têm relação orgânica entre si (dependência real só existiria nas

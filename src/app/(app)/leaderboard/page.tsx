@@ -24,9 +24,9 @@ function parsePeriod(value: string | undefined): LeaderboardPeriod {
 }
 
 const RANK_ICONS = [
-  { icon: Crown, className: "text-amber-500" },
-  { icon: Medal, className: "text-zinc-400" },
-  { icon: Medal, className: "text-amber-700" },
+  { icon: Crown, className: "text-gold" },
+  { icon: Medal, className: "text-silver" },
+  { icon: Medal, className: "text-bronze" },
 ];
 
 export default async function LeaderboardPage({
@@ -43,7 +43,7 @@ export default async function LeaderboardPage({
   return (
     <div className="grid gap-5">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Ranking</h1>
+        <h1 className="text-2xl font-semibold tracking-wide">Ranking</h1>
         <p className="text-muted-foreground">
           Soma de XP da guilda por período — só entregas aprovadas pontuam.
         </p>
@@ -76,7 +76,7 @@ export default async function LeaderboardPage({
           </p>
         </div>
       ) : (
-        <Card>
+        <Card className="frame-carved texture-iron">
           <CardContent className="divide-y p-0">
             {rows.map((row, index) => {
               const isSelf = row.userId === session.user.id;
@@ -119,7 +119,7 @@ export default async function LeaderboardPage({
                   </div>
                   <Badge
                     variant="secondary"
-                    className="tabular-nums text-amber-700 dark:text-amber-400"
+                    className="font-mono tabular-nums text-gold"
                   >
                     {row.periodXp >= 0 ? "+" : ""}
                     {row.periodXp} XP

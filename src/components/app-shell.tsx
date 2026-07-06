@@ -99,8 +99,8 @@ export function AppShell({
   return (
     <div className="flex min-h-svh w-full">
       {/* Sidebar — desktop */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 flex-col border-r bg-background md:flex">
-        <div className="flex h-14 items-center gap-2 border-b px-4 font-semibold">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 flex-col border-r bg-sidebar md:flex">
+        <div className="flex h-14 items-center gap-2 border-b px-4 font-heading text-lg font-semibold tracking-wider">
           <span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <Swords className="size-4" aria-hidden />
           </span>
@@ -119,10 +119,10 @@ export function AppShell({
                 href={href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  "flex items-center gap-3 rounded-md border-l-2 px-3 py-2 text-sm font-medium transition-colors",
                   active
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                    ? "border-primary bg-accent/60 text-foreground"
+                    : "border-transparent text-muted-foreground hover:bg-accent/40 hover:text-foreground",
                 )}
               >
                 <Icon className="size-4" aria-hidden />
@@ -170,8 +170,8 @@ export function AppShell({
                 href={href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center gap-1 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-[11px] font-medium",
-                  active ? "text-foreground" : "text-muted-foreground",
+                  "flex flex-col items-center gap-1 border-t-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-[11px] font-medium",
+                  active ? "border-primary text-primary" : "border-transparent text-muted-foreground",
                 )}
               >
                 <Icon className="size-5" aria-hidden />

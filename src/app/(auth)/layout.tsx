@@ -4,10 +4,10 @@ export default function AuthLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-muted/40 p-4">
-      <div className="flex items-center gap-2 font-semibold text-lg">
-        <span className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <Swords className="size-4" aria-hidden />
+    <div className="flex min-h-svh flex-col items-center justify-center gap-6 p-4">
+      <div className="flex items-center gap-3 font-heading text-2xl font-semibold tracking-widest">
+        <span className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <Swords className="size-5" aria-hidden />
         </span>
         Guilda
       </div>

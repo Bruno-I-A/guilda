@@ -150,7 +150,7 @@ export function TaskForm({
             <span className="text-sm text-muted-foreground">
               Recompensa ao concluir
             </span>
-            <span className="inline-flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
+            <span className="inline-flex items-center gap-1 font-mono font-semibold text-gold">
               <Star className="size-4" aria-hidden />
               {xpPreview} XP
             </span>

@@ -61,7 +61,7 @@ export default async function DashboardPage() {
   return (
     <div className="grid gap-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="text-2xl font-semibold tracking-wide">
           Olá, {firstName} 👋
         </h1>
         <p className="text-muted-foreground">
@@ -72,8 +72,8 @@ export default async function DashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Star className="size-4 text-amber-500" aria-hidden />
-            Nível {progress.level}
+            <Star className="size-4 text-gold" aria-hidden />
+            Nível <span className="font-mono text-gold">{progress.level}</span>
           </CardTitle>
           <CardDescription>
             {totalXp} XP · faltam {progress.nextLevelXp - progress.totalXp} XP para o

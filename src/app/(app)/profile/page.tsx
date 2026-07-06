@@ -48,9 +48,9 @@ export default async function ProfilePage() {
 
   return (
     <div className="grid gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Perfil</h1>
+      <h1 className="text-2xl font-semibold tracking-wide">Perfil</h1>
 
-      <Card>
+      <Card className="frame-carved texture-iron">
         <CardContent className="flex flex-wrap items-center gap-4">
           <Avatar className="size-14">
             <AvatarFallback className="text-lg">
@@ -66,11 +66,13 @@ export default async function ProfilePage() {
               {ROLE_LABELS[member.role] ?? member.role}
             </Badge>
           </div>
-          <div className="flex flex-col items-center rounded-lg border bg-muted/40 px-5 py-3">
-            <span className="text-xs uppercase tracking-wide text-muted-foreground">
+          <div className="flex flex-col items-center rounded-lg border border-gold/30 bg-muted/40 px-5 py-3">
+            <span className="text-xs uppercase tracking-widest text-muted-foreground">
               Nível
             </span>
-            <span className="text-3xl font-bold tabular-nums">{progress.level}</span>
+            <span className="font-heading text-4xl font-bold text-gold tabular-nums">
+              {progress.level}
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -79,7 +81,7 @@ export default async function ProfilePage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Star className="size-4 text-amber-500" aria-hidden />
+              <Star className="size-4 text-gold" aria-hidden />
               Progresso de XP
             </CardTitle>
             <CardDescription>
@@ -91,8 +93,9 @@ export default async function ProfilePage() {
             <Progress
               value={Math.round(progress.ratio * 100)}
               aria-label={`Progresso para o nível ${progress.level + 1}`}
+              className="h-2 rounded-sm border border-border bg-secondary [&>[data-slot=progress-indicator]]:bg-gold"
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="font-mono text-xs text-muted-foreground">
               {xpIntoLevel} / {xpLevelSpan} XP dentro do nível {progress.level}
             </p>
           </CardContent>
@@ -101,13 +104,13 @@ export default async function ProfilePage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <CheckCircle2 className="size-4 text-emerald-600" aria-hidden />
+              <CheckCircle2 className="size-4 text-primary" aria-hidden />
               Entregas aprovadas
             </CardTitle>
             <CardDescription>Tarefas concluídas com XP creditado</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold tabular-nums">{completedCount}</p>
+            <p className="font-mono text-3xl font-semibold tabular-nums">{completedCount}</p>
           </CardContent>
         </Card>
       </div>
@@ -129,7 +132,7 @@ export default async function ProfilePage() {
                 className="flex items-center gap-3 border-b px-6 py-2.5 text-sm last:border-b-0"
               >
                 {entry.amount >= 0 ? (
-                  <TrendingUp className="size-4 shrink-0 text-emerald-600" aria-hidden />
+                  <TrendingUp className="size-4 shrink-0 text-gold" aria-hidden />
                 ) : (
                   <TrendingDown className="size-4 shrink-0 text-destructive" aria-hidden />
                 )}
@@ -145,8 +148,8 @@ export default async function ProfilePage() {
                 <span
                   className={
                     entry.amount >= 0
-                      ? "font-semibold tabular-nums text-emerald-600"
-                      : "font-semibold tabular-nums text-destructive"
+                      ? "font-mono font-semibold tabular-nums text-gold"
+                      : "font-mono font-semibold tabular-nums text-destructive"
                   }
                 >
                   {entry.amount >= 0 ? "+" : ""}

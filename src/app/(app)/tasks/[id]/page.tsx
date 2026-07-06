@@ -124,7 +124,7 @@ export default async function TaskDetailPage({
           <ArrowLeft className="size-4" aria-hidden /> Tarefas
         </Link>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
-          <h1 className="max-w-xl text-2xl font-semibold leading-tight tracking-tight">
+          <h1 className="max-w-xl text-2xl font-semibold leading-tight">
             {task.title}
           </h1>
           <Badge className={STATUS_BADGE_CLASSES[task.status]}>
@@ -134,7 +134,7 @@ export default async function TaskDetailPage({
       </div>
 
       {awaitingMyApproval ? (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-200">
           <p className="font-medium">Esta tarefa aguarda a sua aprovação.</p>
           <p>
             Ao aprovar, {task.assignee.name} recebe {task.xpValue} XP. Se algo
@@ -144,15 +144,15 @@ export default async function TaskDetailPage({
       ) : null}
 
       {task.status === "rejected" && lastRejection?.note ? (
-        <div className="rounded-lg border border-orange-300 bg-orange-50 p-4 text-sm text-orange-900 dark:border-orange-900 dark:bg-orange-950 dark:text-orange-200">
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm">
           <p className="font-medium">Devolvida para ajustes</p>
           <p className="whitespace-pre-wrap">{lastRejection.note}</p>
         </div>
       ) : null}
 
       {task.status === "completed" && task.assigneeId === session.user.id ? (
-        <div className="flex items-center gap-3 rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-          <Star className="size-5 shrink-0 text-amber-500" aria-hidden />
+        <div className="frame-carved flex items-center gap-3 rounded-lg bg-gold/10 p-4 text-sm">
+          <Star className="size-5 shrink-0 text-gold" aria-hidden />
           <div>
             <p className="font-medium">Entrega aprovada — você ganhou {task.xpValue} XP! 🎉</p>
             <p>
@@ -220,7 +220,7 @@ export default async function TaskDetailPage({
                       <span className="font-medium">{event.actor.name}</span>{" "}
                       {eventLabel(event.fromStatus, event.toStatus)}
                       {event.toStatus === "completed" ? (
-                        <span className="ml-1.5 font-semibold text-amber-600 dark:text-amber-400">
+                        <span className="ml-1.5 font-mono font-semibold text-gold">
                           +{task.xpValue} XP
                         </span>
                       ) : null}
@@ -253,7 +253,7 @@ export default async function TaskDetailPage({
           <CardContent className="grid gap-3 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Recompensa</span>
-              <span className="inline-flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
+              <span className="inline-flex items-center gap-1 font-mono font-semibold text-gold">
                 <Star className="size-4" aria-hidden /> {task.xpValue} XP
               </span>
             </div>

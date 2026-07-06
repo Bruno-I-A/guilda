@@ -11,20 +11,14 @@ export const STATUS_LABELS: Record<TaskStatus, string> = {
   cancelled: "Cancelada",
 };
 
-/** Classes de badge por status (fundo suave + texto forte, ok em dark). */
+/** Classes de badge por status (tema único gelo/ferro; concluída é a única em ouro). */
 export const STATUS_BADGE_CLASSES: Record<TaskStatus, string> = {
-  pending:
-    "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border-transparent",
-  in_progress:
-    "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border-transparent",
-  awaiting_approval:
-    "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-transparent",
-  completed:
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border-transparent",
-  rejected:
-    "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300 border-transparent",
-  cancelled:
-    "bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-500 border-transparent",
+  pending: "bg-secondary text-silver border-transparent",
+  in_progress: "bg-primary/15 text-primary border-transparent",
+  awaiting_approval: "bg-amber-400/10 text-amber-300 border-transparent",
+  completed: "bg-gold/15 text-gold border-transparent",
+  rejected: "bg-destructive/15 text-destructive border-transparent",
+  cancelled: "bg-muted text-muted-foreground/70 border-transparent",
 };
 
 export const PRIORITY_LABELS: Record<number, string> = {

@@ -14,7 +14,7 @@ export default async function NewTaskPage() {
   return (
     <div className="mx-auto grid w-full max-w-lg gap-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Nova tarefa</h1>
+        <h1 className="text-2xl font-semibold tracking-wide">Nova tarefa</h1>
         <p className="text-muted-foreground">
           O XP é definido pela dificuldade e prioridade e fica congelado na
           criação.

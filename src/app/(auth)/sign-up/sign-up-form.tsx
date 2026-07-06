@@ -125,7 +125,7 @@ export function SignUpForm({
   }
 
   return (
-    <Card>
+    <Card className="frame-carved texture-iron">
       <CardHeader>
         <CardTitle>Criar conta</CardTitle>
         <CardDescription>

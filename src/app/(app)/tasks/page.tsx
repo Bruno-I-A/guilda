@@ -98,7 +98,7 @@ export default async function TasksPage({
   return (
     <div className="grid gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Tarefas</h1>
+        <h1 className="text-2xl font-semibold tracking-wide">Tarefas</h1>
         <Button asChild>
           <Link href="/tasks/new">
             <Plus aria-hidden /> Nova tarefa
@@ -162,7 +162,7 @@ export default async function TasksPage({
                     </Badge>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400">
+                    <span className="inline-flex items-center gap-1 font-mono font-medium text-gold">
                       <Star className="size-3.5" aria-hidden />
                       {task.xpValue} XP
                     </span>
