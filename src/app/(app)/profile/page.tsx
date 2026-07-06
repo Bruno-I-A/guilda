@@ -1,4 +1,4 @@
-import { CheckCircle2, Star, TrendingDown, TrendingUp } from "lucide-react";
+import { TrendingDown, TrendingUp } from "lucide-react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
@@ -11,7 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { LevelEmblem } from "@/components/level-emblem";
+import { Constellation } from "@/components/constellation";
 import { XpBar } from "@/components/xp-bar";
 import { levelProgress } from "@/domain/xp";
 import { initials, ROLE_LABELS } from "@/lib/people";
@@ -51,66 +51,40 @@ export default async function ProfilePage() {
     <div className="grid gap-6">
       <h1 className="text-2xl font-semibold tracking-wide">Perfil</h1>
 
-      <Card className="panel-cut texture-iron">
-        <CardContent className="flex flex-wrap items-center gap-4">
-          <Avatar className="size-14">
-            <AvatarFallback className="text-lg">
-              {initials(session.user.name)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-lg font-semibold">{session.user.name}</p>
-            <p className="truncate text-sm text-muted-foreground">
-              {session.user.email}
-            </p>
-            <Badge variant="secondary" className="mt-1">
-              {ROLE_LABELS[member.role] ?? member.role}
-            </Badge>
-          </div>
-          <div className="flex flex-col items-center gap-1">
-            <LevelEmblem level={progress.level} />
-            <span className="hud-label">Nível</span>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card className="panel-cut">
-          <CardHeader>
-            <CardTitle className="hud-label flex items-center gap-2">
-              <Star className="size-4 text-gold" aria-hidden />
-              Progresso de XP
-            </CardTitle>
-            <CardDescription>
-              {totalXp} XP no total · faltam {progress.nextLevelXp - progress.totalXp}{" "}
-              XP para o nível {progress.level + 1}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-2">
-            <XpBar
-              current={xpIntoLevel}
-              target={xpLevelSpan}
-              label={`Progresso para o nível ${progress.level + 1}`}
-            />
-            <p className="font-mono text-xs text-muted-foreground">
-              dentro do nível {progress.level}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="panel-cut">
-          <CardHeader>
-            <CardTitle className="hud-label flex items-center gap-2">
-              <CheckCircle2 className="size-4 text-primary" aria-hidden />
-              Entregas aprovadas
-            </CardTitle>
-            <CardDescription>Tarefas concluídas com XP creditado</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="font-mono text-3xl font-semibold tabular-nums">{completedCount}</p>
-          </CardContent>
-        </Card>
+      <div className="flex items-center gap-3">
+        <Avatar className="size-10">
+          <AvatarFallback>{initials(session.user.name)}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{session.user.name}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {session.user.email}
+          </p>
+        </div>
+        <Badge variant="secondary">{ROLE_LABELS[member.role] ?? member.role}</Badge>
       </div>
+
+      {/* Vitrine: a constelação de progressão é a peça central do perfil */}
+      <section className="panel-cut texture-iron grid gap-4 p-4 sm:p-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="hud-label">Constelação de progressão</h2>
+          <span className="font-mono text-xs text-gold">
+            {totalXp.toLocaleString("pt-BR")} XP no total
+          </span>
+        </div>
+        <Constellation totalXp={totalXp} />
+        <XpBar
+          current={xpIntoLevel}
+          target={xpLevelSpan}
+          label={`Progresso para o nível ${progress.level + 1}`}
+        />
+        <p className="font-mono text-xs text-muted-foreground">
+          nível {progress.level} · faltam{" "}
+          {(progress.nextLevelXp - progress.totalXp).toLocaleString("pt-BR")} XP
+          para o nível {progress.level + 1} · {completedCount}{" "}
+          {completedCount === 1 ? "entrega aprovada" : "entregas aprovadas"}
+        </p>
+      </section>
 
       <Card className="panel-cut">
         <CardHeader>
