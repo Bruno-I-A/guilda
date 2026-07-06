@@ -21,6 +21,16 @@ export const STATUS_BADGE_CLASSES: Record<TaskStatus, string> = {
   cancelled: "bg-muted text-muted-foreground/70 border-transparent",
 };
 
+/** Trilho de cor na borda esquerda das linhas de tarefa (atrasada usa destructive). */
+export const STATUS_RAIL_CLASSES: Record<TaskStatus, string> = {
+  pending: "border-l-silver/50",
+  in_progress: "border-l-primary",
+  awaiting_approval: "border-l-amber-400/70",
+  completed: "border-l-gold/60",
+  rejected: "border-l-destructive",
+  cancelled: "border-l-border",
+};
+
 export const PRIORITY_LABELS: Record<number, string> = {
   1: "Baixa",
   2: "Média",

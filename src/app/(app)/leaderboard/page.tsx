@@ -76,7 +76,7 @@ export default async function LeaderboardPage({
           </p>
         </div>
       ) : (
-        <Card className="frame-carved texture-iron">
+        <Card className="panel-cut texture-iron">
           <CardContent className="divide-y p-0">
             {rows.map((row, index) => {
               const isSelf = row.userId === session.user.id;
@@ -85,7 +85,10 @@ export default async function LeaderboardPage({
                 <div
                   key={row.userId}
                   className={cn(
-                    "flex items-center gap-3 px-4 py-3",
+                    "flex items-center gap-3 border-l-2 border-l-transparent px-4 py-3",
+                    index === 0 && "border-l-gold/70",
+                    index === 1 && "border-l-silver/60",
+                    index === 2 && "border-l-bronze/70",
                     isSelf && "bg-accent/40",
                   )}
                 >

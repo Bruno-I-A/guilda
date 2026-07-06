@@ -57,7 +57,7 @@ export function SignInForm({ next }: { next?: string }) {
   }
 
   return (
-    <Card className="frame-carved texture-iron">
+    <Card className="panel-cut texture-iron">
       <CardHeader>
         <CardTitle>Entrar</CardTitle>
         <CardDescription>Acesse sua guilda para continuar.</CardDescription>

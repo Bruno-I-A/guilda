@@ -124,7 +124,7 @@ export default async function TaskDetailPage({
           <ArrowLeft className="size-4" aria-hidden /> Tarefas
         </Link>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
-          <h1 className="max-w-xl text-2xl font-semibold leading-tight">
+          <h1 className="max-w-xl font-sans text-2xl font-semibold leading-tight tracking-tight">
             {task.title}
           </h1>
           <Badge className={STATUS_BADGE_CLASSES[task.status]}>
@@ -151,7 +151,7 @@ export default async function TaskDetailPage({
       ) : null}
 
       {task.status === "completed" && task.assigneeId === session.user.id ? (
-        <div className="frame-carved flex items-center gap-3 rounded-lg bg-gold/10 p-4 text-sm">
+        <div className="panel-cut panel-cut-sm flex items-center gap-3 bg-gold/10 p-4 text-sm shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--gold)_35%,transparent)]">
           <Star className="size-5 shrink-0 text-gold" aria-hidden />
           <div>
             <p className="font-medium">Entrega aprovada — você ganhou {task.xpValue} XP! 🎉</p>

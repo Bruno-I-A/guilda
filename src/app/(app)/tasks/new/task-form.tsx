@@ -18,8 +18,84 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { DIFFICULTY_LABELS, PRIORITY_LABELS } from "@/lib/task-ui";
+import { cn } from "@/lib/utils";
 
 import { createTask } from "../actions";
+
+/** Seletor de dificuldade como pips clicáveis (1–5), estilo alocação de pontos. */
+function DifficultyPips({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (d: number) => void;
+}) {
+  return (
+    <div
+      className="flex items-center gap-3"
+      role="radiogroup"
+      aria-label="Dificuldade"
+    >
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map((d) => (
+          <button
+            key={d}
+            type="button"
+            role="radio"
+            aria-checked={value === d}
+            aria-label={`${d} — ${DIFFICULTY_LABELS[d]}`}
+            onClick={() => onChange(d)}
+            className={cn(
+              "h-7 w-4 skew-x-[-8deg] border transition-colors focus-visible:outline-2 focus-visible:outline-ring",
+              d <= value
+                ? "border-primary/60 bg-primary"
+                : "border-border bg-secondary hover:bg-accent",
+            )}
+          />
+        ))}
+      </div>
+      <span className="font-mono text-xs text-muted-foreground">
+        {value} — {DIFFICULTY_LABELS[value]}
+      </span>
+    </div>
+  );
+}
+
+/** Prioridade como 3 botões segmentados. */
+function PrioritySegments({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (p: number) => void;
+}) {
+  return (
+    <div
+      className="grid grid-cols-3 border border-border"
+      role="radiogroup"
+      aria-label="Prioridade"
+    >
+      {[1, 2, 3].map((p) => (
+        <button
+          key={p}
+          type="button"
+          role="radio"
+          aria-checked={value === p}
+          onClick={() => onChange(p)}
+          className={cn(
+            "px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-ring",
+            value === p
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            p < 3 && "border-r border-border",
+          )}
+        >
+          {PRIORITY_LABELS[p]}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function TaskForm({
   members,
@@ -60,11 +136,13 @@ export function TaskForm({
   }
 
   return (
-    <Card>
+    <Card className="panel-cut texture-iron">
       <CardContent>
-        <form onSubmit={onSubmit} className="grid gap-4" noValidate>
+        <form onSubmit={onSubmit} className="grid gap-5" noValidate>
           <div className="grid gap-2">
-            <Label htmlFor="title">Título</Label>
+            <Label htmlFor="title" className="hud-label">
+              Título
+            </Label>
             <Input
               id="title"
               name="title"
@@ -75,7 +153,9 @@ export function TaskForm({
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="description">Descrição (opcional)</Label>
+            <Label htmlFor="description" className="hud-label">
+              Descrição (opcional)
+            </Label>
             <Textarea
               id="description"
               name="description"
@@ -85,78 +165,54 @@ export function TaskForm({
             />
           </div>
 
-          <div className="grid gap-2">
-            <Label htmlFor="assignee">Responsável</Label>
-            <Select value={assigneeId} onValueChange={setAssigneeId}>
-              <SelectTrigger id="assignee" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {members.map((m) => (
-                  <SelectItem key={m.userId} value={m.userId}>
-                    {m.name}
-                    {m.userId === currentUserId ? " (você)" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="priority">Prioridade</Label>
-              <Select
-                value={String(priority)}
-                onValueChange={(v) => setPriority(Number(v))}
-              >
-                <SelectTrigger id="priority" className="w-full">
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div className="grid content-start gap-2">
+              <Label htmlFor="assignee" className="hud-label">
+                Responsável
+              </Label>
+              <Select value={assigneeId} onValueChange={setAssigneeId}>
+                <SelectTrigger id="assignee" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {[1, 2, 3].map((p) => (
-                    <SelectItem key={p} value={String(p)}>
-                      {PRIORITY_LABELS[p]}
+                  {members.map((m) => (
+                    <SelectItem key={m.userId} value={m.userId}>
+                      {m.name}
+                      {m.userId === currentUserId ? " (você)" : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="difficulty">Dificuldade</Label>
-              <Select
-                value={String(difficulty)}
-                onValueChange={(v) => setDifficulty(Number(v))}
-              >
-                <SelectTrigger id="difficulty" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[1, 2, 3, 4, 5].map((d) => (
-                    <SelectItem key={d} value={String(d)}>
-                      {d} — {DIFFICULTY_LABELS[d]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid content-start gap-2">
+              <Label htmlFor="dueDate" className="hud-label">
+                Prazo (opcional)
+              </Label>
+              <Input id="dueDate" name="dueDate" type="date" />
             </div>
           </div>
 
-          <div className="grid gap-2">
-            <Label htmlFor="dueDate">Prazo (opcional)</Label>
-            <Input id="dueDate" name="dueDate" type="date" />
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div className="grid content-start gap-2">
+              <span className="hud-label">Prioridade</span>
+              <PrioritySegments value={priority} onChange={setPriority} />
+            </div>
+            <div className="grid content-start gap-2">
+              <span className="hud-label">Dificuldade</span>
+              <DifficultyPips value={difficulty} onChange={setDifficulty} />
+            </div>
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-4 py-3">
-            <span className="text-sm text-muted-foreground">
-              Recompensa ao concluir
-            </span>
-            <span className="inline-flex items-center gap-1 font-mono font-semibold text-gold">
+          {/* Banner de loot: a recompensa reage às escolhas acima. */}
+          <div className="panel-cut panel-cut-sm flex items-center justify-between bg-gold/10 px-4 py-3 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--gold)_35%,transparent)]">
+            <span className="hud-label !text-gold/80">Recompensa ao concluir</span>
+            <span className="inline-flex items-center gap-1.5 font-mono text-lg font-bold text-gold">
               <Star className="size-4" aria-hidden />
               {xpPreview} XP
             </span>
           </div>
 
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" disabled={submitting} size="lg">
             {submitting ? "Criando…" : "Criar tarefa"}
           </Button>
         </form>

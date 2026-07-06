@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Pips } from "@/components/pips";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { TASK_STATUSES, type TaskStatus } from "@/domain/task-state";
@@ -14,6 +15,7 @@ import {
   isOverdue,
   STATUS_BADGE_CLASSES,
   STATUS_LABELS,
+  STATUS_RAIL_CLASSES,
 } from "@/lib/task-ui";
 import { cn } from "@/lib/utils";
 
@@ -146,26 +148,34 @@ export default async function TasksPage({
           </Button>
         </div>
       ) : (
-        <ul className="grid gap-2">
+        <ul className="grid gap-1.5">
           {taskList.map((task) => {
             const overdue = isOverdue(task.dueDate, task.status);
             return (
               <li key={task.id}>
                 <Link
                   href={`/tasks/${task.id}`}
-                  className="flex flex-col gap-2 rounded-lg border bg-card p-4 transition-colors hover:bg-accent/40"
+                  className={cn(
+                    "panel-cut panel-cut-sm flex flex-col gap-1.5 border-l-2 px-4 py-3 transition-colors hover:bg-accent/40",
+                    overdue
+                      ? "border-l-destructive"
+                      : STATUS_RAIL_CLASSES[task.status],
+                  )}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <p className="font-medium leading-snug">{task.title}</p>
-                    <Badge className={STATUS_BADGE_CLASSES[task.status]}>
-                      {STATUS_LABELS[task.status]}
-                    </Badge>
+                    <p className="min-w-0 flex-1 truncate font-medium leading-snug">
+                      {task.title}
+                    </p>
+                    <span className="chip-loot shrink-0">
+                      <Star className="size-3" aria-hidden /> {task.xpValue} XP
+                    </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1 font-mono font-medium text-gold">
-                      <Star className="size-3.5" aria-hidden />
-                      {task.xpValue} XP
-                    </span>
+                    <Badge className={cn("h-4 px-1.5", STATUS_BADGE_CLASSES[task.status])}>
+                      {STATUS_LABELS[task.status]}
+                    </Badge>
+                    <Pips value={task.priority} max={3} label="Prioridade" />
+                    <Pips value={task.difficulty} max={5} label="Dificuldade" />
                     <span>
                       {tab === "mine"
                         ? `criada por ${task.creator.name}`

@@ -107,9 +107,10 @@ export function AppShell({
           Guilda
         </div>
         <div className="px-4 py-3">
-          <p className="text-xs text-muted-foreground">Organização</p>
+          <p className="hud-label">Organização</p>
           <p className="truncate text-sm font-medium">{orgName}</p>
         </div>
+        <div className="divider-rune mx-4 mb-2" />
         <nav className="flex flex-1 flex-col gap-1 px-2" aria-label="Principal">
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href);

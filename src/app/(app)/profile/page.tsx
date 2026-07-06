@@ -11,7 +11,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
+import { LevelEmblem } from "@/components/level-emblem";
+import { XpBar } from "@/components/xp-bar";
 import { levelProgress } from "@/domain/xp";
 import { initials, ROLE_LABELS } from "@/lib/people";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
@@ -50,7 +51,7 @@ export default async function ProfilePage() {
     <div className="grid gap-6">
       <h1 className="text-2xl font-semibold tracking-wide">Perfil</h1>
 
-      <Card className="frame-carved texture-iron">
+      <Card className="panel-cut texture-iron">
         <CardContent className="flex flex-wrap items-center gap-4">
           <Avatar className="size-14">
             <AvatarFallback className="text-lg">
@@ -66,21 +67,17 @@ export default async function ProfilePage() {
               {ROLE_LABELS[member.role] ?? member.role}
             </Badge>
           </div>
-          <div className="flex flex-col items-center rounded-lg border border-gold/30 bg-muted/40 px-5 py-3">
-            <span className="text-xs uppercase tracking-widest text-muted-foreground">
-              Nível
-            </span>
-            <span className="font-heading text-4xl font-bold text-gold tabular-nums">
-              {progress.level}
-            </span>
+          <div className="flex flex-col items-center gap-1">
+            <LevelEmblem level={progress.level} />
+            <span className="hud-label">Nível</span>
           </div>
         </CardContent>
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
+        <Card className="panel-cut">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="hud-label flex items-center gap-2">
               <Star className="size-4 text-gold" aria-hidden />
               Progresso de XP
             </CardTitle>
@@ -90,20 +87,20 @@ export default async function ProfilePage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-2">
-            <Progress
-              value={Math.round(progress.ratio * 100)}
-              aria-label={`Progresso para o nível ${progress.level + 1}`}
-              className="h-2 rounded-sm border border-border bg-secondary [&>[data-slot=progress-indicator]]:bg-gold"
+            <XpBar
+              current={xpIntoLevel}
+              target={xpLevelSpan}
+              label={`Progresso para o nível ${progress.level + 1}`}
             />
             <p className="font-mono text-xs text-muted-foreground">
-              {xpIntoLevel} / {xpLevelSpan} XP dentro do nível {progress.level}
+              dentro do nível {progress.level}
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="panel-cut">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="hud-label flex items-center gap-2">
               <CheckCircle2 className="size-4 text-primary" aria-hidden />
               Entregas aprovadas
             </CardTitle>
@@ -115,9 +112,9 @@ export default async function ProfilePage() {
         </Card>
       </div>
 
-      <Card>
+      <Card className="panel-cut">
         <CardHeader>
-          <CardTitle className="text-base">Histórico de XP</CardTitle>
+          <CardTitle className="hud-label">Histórico de XP</CardTitle>
           <CardDescription>Últimos lançamentos do seu ledger</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-1 p-0 pb-3">
