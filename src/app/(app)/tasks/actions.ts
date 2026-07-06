@@ -25,7 +25,6 @@ import {
  * - transições de status validadas pela máquina de estados no servidor.
  */
 
-export type { ActionResult };
 
 /** 'YYYY-MM-DD' → Date ao meio-dia UTC (evita virada de dia por fuso). */
 function dueDateFromInput(value: string | undefined): Date | null {

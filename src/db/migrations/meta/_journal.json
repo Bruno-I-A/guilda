@@ -57,6 +57,20 @@
       "when": 1783360666475,
       "tag": "0007_rls-clients",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783362171506,
+      "tag": "0008_clever_madame_masque",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783362171507,
+      "tag": "0009_rls-mission-templates",
+      "breakpoints": true
     }
   ]
 }

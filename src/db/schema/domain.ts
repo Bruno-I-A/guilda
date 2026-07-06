@@ -172,3 +172,58 @@ export const clients = pgTable(
 );
 
 export type Client = typeof clients.$inferSelect;
+
+/**
+ * Templates de campanha (Fase 5b): checklist reutilizável POR REGIME
+ * (~3–5 no total, não 250). Vários templates por regime são permitidos —
+ * a criação de campanha (5c) seleciona qual usar. A instanciação COPIA
+ * os itens para `tasks`; nada referencia estas tabelas, então delete
+ * físico é permitido e nunca afeta campanhas já instanciadas.
+ */
+export const missionTemplates = pgTable(
+  "mission_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    name: varchar("name", { length: 120 }).notNull(),
+    taxRegime: taxRegime("tax_regime").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("mission_templates_org_idx").on(t.orgId)],
+);
+
+export const missionTemplateItems = pgTable(
+  "mission_template_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    templateId: uuid("template_id")
+      .notNull()
+      .references(() => missionTemplates.id),
+    title: varchar("title", { length: 200 }).notNull(),
+    difficulty: smallint("difficulty").notNull().default(2), // 1–5, alimenta o XP
+    orderIndex: smallint("order_index").notNull().default(0), // sequência de execução (gate na 5c)
+  },
+  (t) => [index("mission_template_items_org_template_idx").on(t.orgId, t.templateId)],
+);
+
+export const missionTemplatesRelations = relations(missionTemplates, ({ many }) => ({
+  items: many(missionTemplateItems),
+}));
+
+export const missionTemplateItemsRelations = relations(
+  missionTemplateItems,
+  ({ one }) => ({
+    template: one(missionTemplates, {
+      fields: [missionTemplateItems.templateId],
+      references: [missionTemplates.id],
+    }),
+  }),
+);
+
+export type MissionTemplate = typeof missionTemplates.$inferSelect;
+export type MissionTemplateItem = typeof missionTemplateItems.$inferSelect;

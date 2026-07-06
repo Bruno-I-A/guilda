@@ -20,8 +20,6 @@ import { TAX_REGIMES } from "@/lib/clients-ui";
  * Sem DELETE: cliente sai de cena com active = false.
  */
 
-export type { ActionResult };
-
 const clientFieldsSchema = z.object({
   name: z
     .string()

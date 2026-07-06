@@ -26,12 +26,9 @@ import {
 import { formatCnpj } from "@/domain/cnpj";
 import { TAX_REGIME_LABELS, TAX_REGIMES, type TaxRegime } from "@/lib/clients-ui";
 
-import {
-  createClient,
-  setClientActive,
-  updateClient,
-  type ActionResult,
-} from "./actions";
+import type { ActionResult } from "@/lib/action-context";
+
+import { createClient, setClientActive, updateClient } from "./actions";
 
 interface ClientView {
   id: string;
