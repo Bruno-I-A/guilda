@@ -2,8 +2,8 @@
 
 import {
   Building2,
+  CalendarCheck2,
   CircleUser,
-  Flag,
   Home,
   ListTodo,
   LogOut,
@@ -31,7 +31,7 @@ import { cn } from "@/lib/utils";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Início", icon: Home },
   { href: "/tasks", label: "Missões", icon: ListTodo },
-  { href: "/campaigns", label: "Campanhas", icon: Flag },
+  { href: "/closings", label: "Fechamentos", icon: CalendarCheck2 },
   { href: "/clients", label: "Clientes", icon: Building2 },
   { href: "/leaderboard", label: "Ranking", icon: Trophy },
   { href: "/members", label: "Membros", icon: Users },
@@ -180,7 +180,7 @@ export function AppShell({
                 )}
               >
                 <Icon className="size-5" aria-hidden />
-                {label}
+                <span className="max-w-full truncate px-0.5">{label}</span>
               </Link>
             );
           })}

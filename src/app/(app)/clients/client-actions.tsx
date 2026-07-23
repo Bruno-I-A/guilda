@@ -24,6 +24,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatCnpj } from "@/domain/cnpj";
+import {
+  CLOSING_CADENCES,
+  CLOSING_CADENCE_LABELS,
+  type ClosingCadence,
+} from "@/lib/closings-ui";
 import { TAX_REGIME_LABELS, TAX_REGIMES, type TaxRegime } from "@/lib/clients-ui";
 
 import type { ActionResult } from "@/lib/action-context";
@@ -34,6 +39,7 @@ interface ClientView {
   id: string;
   name: string;
   taxRegime: TaxRegime;
+  closingCadence: ClosingCadence;
   cnpj: string | null;
   active: boolean;
 }
@@ -54,11 +60,19 @@ function ClientFormDialog({
   description: string;
   initial?: ClientView;
   submitLabel: string;
-  onSubmit: (fields: { name: string; taxRegime: TaxRegime; cnpj: string }) => void;
+  onSubmit: (fields: {
+    name: string;
+    taxRegime: TaxRegime;
+    closingCadence: ClosingCadence;
+    cnpj: string;
+  }) => void;
   pending: boolean;
 }) {
   const [taxRegime, setTaxRegime] = useState<TaxRegime>(
     initial?.taxRegime ?? "simples",
+  );
+  const [closingCadence, setClosingCadence] = useState<ClosingCadence>(
+    initial?.closingCadence ?? "quarterly",
   );
 
   return (
@@ -76,6 +90,7 @@ function ClientFormDialog({
             onSubmit({
               name: String(form.get("name") ?? ""),
               taxRegime,
+              closingCadence,
               cnpj: String(form.get("cnpj") ?? ""),
             });
           }}
@@ -92,13 +107,38 @@ function ClientFormDialog({
             />
           </div>
           <div className="grid gap-2">
+            <Label htmlFor="client-closing-cadence">
+              Periodicidade do fechamento
+            </Label>
+            <Select
+              value={closingCadence}
+              onValueChange={(v) => setClosingCadence(v as ClosingCadence)}
+            >
+              <SelectTrigger id="client-closing-cadence" className="w-full">
+                <SelectValue>
+                  {CLOSING_CADENCE_LABELS[closingCadence]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {CLOSING_CADENCES.map((cadence) => (
+                  <SelectItem key={cadence} value={cadence}>
+                    {CLOSING_CADENCE_LABELS[cadence]}
+                    {cadence === "quarterly"
+                      ? " — 4 períodos por ano"
+                      : " — 1 período por ano"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
             <Label htmlFor="client-regime">Regime tributário</Label>
             <Select
               value={taxRegime}
               onValueChange={(v) => setTaxRegime(v as TaxRegime)}
             >
               <SelectTrigger id="client-regime" className="w-full">
-                <SelectValue />
+                <SelectValue>{TAX_REGIME_LABELS[taxRegime]}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {TAX_REGIMES.map((regime) => (
@@ -144,7 +184,7 @@ export function NewClientButton() {
         open={open}
         onOpenChange={setOpen}
         title="Nova empresa-cliente"
-        description="Empresas-cliente são o objeto das campanhas — não têm acesso ao sistema."
+        description="Cadastre as empresas que serão acompanhadas nos fechamentos."
         submitLabel="Cadastrar"
         pending={pending}
         onSubmit={(fields) =>
@@ -213,7 +253,7 @@ export function ClientRowActions({ client }: { client: ClientView }) {
           open={editOpen}
           onOpenChange={setEditOpen}
           title="Editar empresa"
-          description="O regime tributário define qual template de campanha se aplica."
+          description="O regime define o grupo; a periodicidade define quantos fechamentos aparecem no ano."
           initial={client}
           submitLabel="Salvar alterações"
           pending={pending}

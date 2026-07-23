@@ -71,6 +71,20 @@
       "when": 1783362171507,
       "tag": "0009_rls-mission-templates",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784842877627,
+      "tag": "0010_lively_tigra",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784842887103,
+      "tag": "0011_rls-accounting-closings",
+      "breakpoints": true
     }
   ]
 }

@@ -23,6 +23,8 @@ const REGIME_ALIASES: Record<string, TaxRegime> = {
   "simples nacional": "simples",
   presumido: "presumido",
   "lucro presumido": "presumido",
+  associacao: "association",
+  association: "association",
   real: "real",
   "lucro real": "real",
 };
@@ -57,7 +59,7 @@ export function parseClientCsvLine(line: string): ClientCsvLineResult {
   if (!taxRegime) {
     return {
       kind: "error",
-      error: `regime desconhecido "${rawRegime}" (use simples, presumido ou real)`,
+      error: `regime desconhecido "${rawRegime}" (use simples, presumido, associação ou real)`,
     };
   }
 

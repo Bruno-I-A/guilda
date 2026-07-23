@@ -15,6 +15,7 @@ import {
   TAX_REGIMES,
   type TaxRegime,
 } from "@/lib/clients-ui";
+import { CLOSING_CADENCE_LABELS } from "@/lib/closings-ui";
 import { cn } from "@/lib/utils";
 
 import { ClientRowActions, NewClientButton } from "./client-actions";
@@ -65,7 +66,7 @@ export default async function ClientsPage({
         <div>
           <h1 className="text-2xl font-semibold tracking-wide">Clientes</h1>
           <p className="text-muted-foreground">
-            Empresas-cliente das campanhas — {activeCount}{" "}
+            Empresas acompanhadas pela contabilidade — {activeCount}{" "}
             {activeCount === 1 ? "ativa" : "ativas"} de {clientList.length}.
           </p>
         </div>
@@ -75,7 +76,7 @@ export default async function ClientsPage({
       <div className="flex flex-wrap items-center gap-2">
         <nav
           aria-label="Filtrar por regime"
-          className="flex rounded-lg border bg-muted/40 p-0.5"
+          className="flex max-w-full overflow-x-auto rounded-lg border bg-muted/40 p-0.5"
         >
           {(["all", ...TAX_REGIMES] as const).map((key) => (
             <Link
@@ -83,7 +84,7 @@ export default async function ClientsPage({
               href={regimeHref(key)}
               aria-current={regime === key ? "page" : undefined}
               className={cn(
-                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                "whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                 regime === key
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground",
@@ -147,6 +148,7 @@ export default async function ClientsPage({
                   >
                     {TAX_REGIME_LABELS[client.taxRegime]}
                   </Badge>
+                  <span>{CLOSING_CADENCE_LABELS[client.closingCadence]}</span>
                   {client.cnpj ? (
                     <span className="font-mono">{formatCnpj(client.cnpj)}</span>
                   ) : null}
@@ -162,6 +164,7 @@ export default async function ClientsPage({
                   id: client.id,
                   name: client.name,
                   taxRegime: client.taxRegime,
+                  closingCadence: client.closingCadence,
                   cnpj: client.cnpj,
                   active: client.active,
                 }}

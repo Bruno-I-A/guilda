@@ -34,6 +34,14 @@ describe("parseClientCsvLine", () => {
     expect(parseClientCsvLine("NOME;CNPJ;REGIME")).toEqual({ kind: "skip" });
   });
 
+  it("reconhece associação como regime próprio", () => {
+    const result = parseClientCsvLine("Instituto do Bairro;;Associação");
+    expect(result.kind).toBe("row");
+    if (result.kind === "row") {
+      expect(result.row.taxRegime).toBe("association");
+    }
+  });
+
   it("rejeita regime desconhecido", () => {
     const result = parseClientCsvLine("Empresa X;;MEI");
     expect(result.kind).toBe("error");

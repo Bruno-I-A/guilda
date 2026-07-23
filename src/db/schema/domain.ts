@@ -141,7 +141,24 @@ export type Task = typeof tasks.$inferSelect;
 export type TaskEvent = typeof taskEvents.$inferSelect;
 
 /** Regime tributário — chave que casa template→cliente nas Campanhas (Fase 5). */
-export const taxRegime = pgEnum("tax_regime", ["simples", "presumido", "real"]);
+export const taxRegime = pgEnum("tax_regime", [
+  "simples",
+  "presumido",
+  "association",
+  "real",
+]);
+
+/** Periodicidade padrão do fechamento contábil de uma empresa. */
+export const closingCadence = pgEnum("closing_cadence", ["quarterly", "annual"]);
+
+/** Período fechado dentro de um ano-calendário. */
+export const closingPeriod = pgEnum("closing_period", [
+  "q1",
+  "q2",
+  "q3",
+  "q4",
+  "annual",
+]);
 
 /**
  * Empresas-cliente (Fase 5a): OBJETO do trabalho das campanhas, NÃO usuárias
@@ -158,6 +175,9 @@ export const clients = pgTable(
       .references(() => organization.id),
     name: varchar("name", { length: 200 }).notNull(),
     taxRegime: taxRegime("tax_regime").notNull(),
+    closingCadence: closingCadence("closing_cadence")
+      .notNull()
+      .default("quarterly"),
     cnpj: varchar("cnpj", { length: 14 }), // opcional; normalizado (só dígitos)
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -172,6 +192,57 @@ export const clients = pgTable(
 );
 
 export type Client = typeof clients.$inferSelect;
+
+/**
+ * Marcações de fechamento concluído. A ausência de uma linha representa
+ * pendência; isso mantém a tabela pequena e permite montar qualquer ano sem
+ * pré-criar centenas de registros.
+ */
+export const accountingClosings = pgTable(
+  "accounting_closings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id),
+    year: smallint("year").notNull(),
+    period: closingPeriod("period").notNull(),
+    completedBy: text("completed_by")
+      .notNull()
+      .references(() => user.id),
+    completedAt: timestamp("completed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("accounting_closings_org_year_idx").on(t.orgId, t.year),
+    uniqueIndex("accounting_closings_org_client_year_period_uidx").on(
+      t.orgId,
+      t.clientId,
+      t.year,
+      t.period,
+    ),
+  ],
+);
+
+export const accountingClosingsRelations = relations(
+  accountingClosings,
+  ({ one }) => ({
+    client: one(clients, {
+      fields: [accountingClosings.clientId],
+      references: [clients.id],
+    }),
+    completedByUser: one(user, {
+      fields: [accountingClosings.completedBy],
+      references: [user.id],
+    }),
+  }),
+);
+
+export type AccountingClosing = typeof accountingClosings.$inferSelect;
 
 /**
  * Templates de campanha (Fase 5b): checklist reutilizável POR REGIME
