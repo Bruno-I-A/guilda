@@ -1,6 +1,17 @@
 "use client";
 
-import { Check, Circle, LoaderCircle } from "lucide-react";
+import {
+  CalendarDays,
+  Check,
+  CircleAlert,
+  CircleDot,
+  LoaderCircle,
+  MessageSquareText,
+  Pencil,
+  Plus,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -8,19 +19,29 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
-  CLOSING_CADENCES,
-  CLOSING_CADENCE_LABELS,
-  CLOSING_PERIOD_LABELS,
-  periodsForCadence,
-  type ClosingCadence,
-  type ClosingPeriod,
+  CLOSING_STATUSES,
+  CLOSING_STATUS_BADGE_CLASSES,
+  CLOSING_STATUS_LABELS,
+  isClosingOverdue,
+  type ClosingStatus,
 } from "@/lib/closings-ui";
 import {
   TAX_REGIME_BADGE_CLASSES,
@@ -29,216 +50,425 @@ import {
 } from "@/lib/clients-ui";
 import { cn } from "@/lib/utils";
 
-import { setClientClosingCadence, setClosingCompletion } from "./actions";
+import {
+  createClosing,
+  deleteClosing,
+  setClosingStatus,
+  updateClosing,
+} from "./actions";
 
-export interface ClosingClientView {
+export interface ClosingClientOption {
   id: string;
   name: string;
   taxRegime: TaxRegime;
-  closingCadence: ClosingCadence;
-  completions: Partial<
-    Record<
-      ClosingPeriod,
-      {
-        completedAt: string;
-        completedBy: string;
-      }
-    >
-  >;
 }
 
-function completionTitle(
-  completion: ClosingClientView["completions"][ClosingPeriod],
-): string {
-  if (!completion) return "Pendente — clique para concluir";
-  const date = new Intl.DateTimeFormat("pt-BR", {
+export interface ClosingView {
+  id: string;
+  clientId: string;
+  clientName: string;
+  taxRegime: TaxRegime;
+  title: string;
+  dueDate: string;
+  status: ClosingStatus;
+  notes: string | null;
+  completedAt: string | null;
+  completedBy: string | null;
+}
+
+interface ClosingFields {
+  clientId: string;
+  title: string;
+  dueDate: string;
+  status: ClosingStatus;
+  notes: string;
+}
+
+function ClosingFormDialog({
+  open,
+  onOpenChange,
+  clients,
+  year,
+  initial,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  clients: ClosingClientOption[];
+  year: number;
+  initial?: ClosingView;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [clientId, setClientId] = useState(initial?.clientId ?? clients[0]?.id ?? "");
+  const [status, setStatus] = useState<ClosingStatus>(initial?.status ?? "pending");
+
+  function submit(fields: ClosingFields) {
+    startTransition(async () => {
+      const result = initial
+        ? await updateClosing({ closingId: initial.id, ...fields })
+        : await createClosing(fields);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(initial ? "Fechamento atualizado." : "Fechamento planejado.");
+      onOpenChange(false);
+      router.refresh();
+    });
+  }
+
+  function remove() {
+    if (!initial) return;
+    if (!window.confirm(`Excluir o fechamento “${initial.title}”?`)) return;
+    startTransition(async () => {
+      const result = await deleteClosing({ closingId: initial.id });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Fechamento excluído.");
+      onOpenChange(false);
+      router.refresh();
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {initial ? "Editar fechamento" : "Novo fechamento"}
+          </DialogTitle>
+          <DialogDescription>
+            Defina livremente o que precisa ser fechado e até quando.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            submit({
+              clientId,
+              title: String(form.get("title") ?? ""),
+              dueDate: String(form.get("dueDate") ?? ""),
+              status,
+              notes: String(form.get("notes") ?? ""),
+            });
+          }}
+        >
+          <div className="grid gap-2">
+            <Label htmlFor="closing-client">Empresa</Label>
+            <Select value={clientId} onValueChange={setClientId}>
+              <SelectTrigger id="closing-client" className="w-full">
+                <SelectValue>
+                  {clients.find((client) => client.id === clientId)?.name ??
+                    "Escolha uma empresa"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {clients.map((client) => (
+                  <SelectItem key={client.id} value={client.id}>
+                    {client.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="closing-title">Identificação do fechamento</Label>
+            <Input
+              id="closing-title"
+              name="title"
+              defaultValue={initial?.title ?? ""}
+              placeholder="Ex.: Fechamento solicitado pelo cliente"
+              maxLength={160}
+              required
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="closing-due-date">Prazo</Label>
+              <Input
+                id="closing-due-date"
+                name="dueDate"
+                type="date"
+                min={`${year}-01-01`}
+                max={`${year}-12-31`}
+                defaultValue={initial?.dueDate ?? ""}
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="closing-status">Situação</Label>
+              <Select
+                value={status}
+                onValueChange={(value) => setStatus(value as ClosingStatus)}
+              >
+                <SelectTrigger id="closing-status" className="w-full">
+                  <SelectValue>{CLOSING_STATUS_LABELS[status]}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {CLOSING_STATUSES.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {CLOSING_STATUS_LABELS[item]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="closing-notes">
+              Observações {status === "blocked" ? "(obrigatórias)" : "(opcional)"}
+            </Label>
+            <Textarea
+              id="closing-notes"
+              name="notes"
+              defaultValue={initial?.notes ?? ""}
+              placeholder="Ex.: aguardando extratos; documento com divergência; solicitar novamente ao cliente…"
+              maxLength={3000}
+              rows={5}
+              required={status === "blocked"}
+            />
+            <p className="text-xs text-muted-foreground">
+              Registre documentos faltantes, erros encontrados e próximos passos.
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2 sm:justify-between">
+            {initial ? (
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={pending}
+                onClick={remove}
+              >
+                <Trash2 aria-hidden /> Excluir
+              </Button>
+            ) : (
+              <span />
+            )}
+            <Button type="submit" disabled={pending || !clientId}>
+              {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : null}
+              {initial ? "Salvar alterações" : "Adicionar fechamento"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function NewClosingButton({
+  clients,
+  year,
+}: {
+  clients: ClosingClientOption[];
+  year: number;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <Button disabled={clients.length === 0} onClick={() => setOpen(true)}>
+        <Plus aria-hidden /> Novo fechamento
+      </Button>
+      {open ? (
+        <ClosingFormDialog
+          open={open}
+          onOpenChange={setOpen}
+          clients={clients}
+          year={year}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function formatDueDate(value: string): string {
+  return new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T12:00:00`));
+}
+
+function formatCompletedAt(value: string): string {
+  return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
-  }).format(new Date(completion.completedAt));
-  return `Concluído por ${completion.completedBy} em ${date}. Clique para reabrir.`;
+  }).format(new Date(value));
 }
 
-function PeriodButton({
-  period,
-  completion,
-  pending,
-  onToggle,
-  className,
+function ClosingRow({
+  closing,
+  clients,
+  year,
+  today,
 }: {
-  period: ClosingPeriod;
-  completion: ClosingClientView["completions"][ClosingPeriod];
-  pending: boolean;
-  onToggle: () => void;
-  className?: string;
+  closing: ClosingView;
+  clients: ClosingClientOption[];
+  year: number;
+  today: string;
 }) {
-  const complete = Boolean(completion);
+  const router = useRouter();
+  const [editOpen, setEditOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const overdue = isClosingOverdue(closing.dueDate, closing.status, today);
+  const completed = closing.status === "completed";
+
+  function toggleCompleted() {
+    startTransition(async () => {
+      const result = await setClosingStatus({
+        closingId: closing.id,
+        status: completed ? "pending" : "completed",
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(completed ? "Fechamento reaberto." : "Fechamento concluído.");
+      router.refresh();
+    });
+  }
 
   return (
-    <Button
-      type="button"
-      variant="outline"
-      disabled={pending}
-      aria-pressed={complete}
-      aria-label={`${CLOSING_PERIOD_LABELS[period]}: ${complete ? "concluído" : "pendente"}`}
-      title={completionTitle(completion)}
-      onClick={onToggle}
+    <li
       className={cn(
-        "h-9 min-w-0 justify-start gap-2 px-2.5 md:size-9 md:justify-center md:px-0",
-        complete
-          ? "border-primary/50 bg-primary/15 text-primary hover:bg-primary/20"
-          : "text-muted-foreground",
-        period === "annual" &&
-          "w-full md:h-9 md:w-auto md:justify-start md:px-3",
-        className,
+        "panel-cut panel-cut-sm grid gap-3 border-l-2 p-4",
+        completed
+          ? "border-l-emerald-400/60 opacity-75"
+          : overdue
+            ? "border-l-destructive"
+            : closing.status === "blocked"
+              ? "border-l-destructive/70"
+              : "border-l-primary/60",
       )}
     >
-      {pending ? (
-        <LoaderCircle className="animate-spin" aria-hidden />
-      ) : complete ? (
-        <Check aria-hidden />
-      ) : (
-        <Circle aria-hidden />
-      )}
-      <span className="md:hidden">{CLOSING_PERIOD_LABELS[period]}</span>
-      {period === "annual" ? (
-        <span className="hidden md:inline">Fechamento anual</span>
-      ) : null}
-    </Button>
-  );
-}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className={cn("font-medium", completed && "line-through")}>
+              {closing.title}
+            </p>
+            <Badge
+              className={cn(
+                "h-5 px-1.5",
+                CLOSING_STATUS_BADGE_CLASSES[closing.status],
+              )}
+            >
+              {closing.status === "blocked" ? (
+                <CircleAlert aria-hidden />
+              ) : completed ? (
+                <Check aria-hidden />
+              ) : (
+                <CircleDot aria-hidden />
+              )}
+              {CLOSING_STATUS_LABELS[closing.status]}
+            </Badge>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">{closing.clientName}</span>
+            <Badge
+              className={cn(
+                "h-4 px-1.5",
+                TAX_REGIME_BADGE_CLASSES[closing.taxRegime],
+              )}
+            >
+              {TAX_REGIME_LABELS[closing.taxRegime]}
+            </Badge>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 font-mono",
+                overdue && "font-semibold text-destructive",
+              )}
+            >
+              <CalendarDays className="size-3" aria-hidden />
+              {overdue ? "Atrasado · " : "Prazo "}
+              {formatDueDate(closing.dueDate)}
+            </span>
+          </div>
+        </div>
 
-function ClosingRow({ client, year }: { client: ClosingClientView; year: number }) {
-  const router = useRouter();
-  const [pendingKey, setPendingKey] = useState<ClosingPeriod | "cadence" | null>(
-    null,
-  );
-  const [, startTransition] = useTransition();
-  const periods = periodsForCadence(client.closingCadence);
-
-  function toggle(period: ClosingPeriod) {
-    const completion = client.completions[period];
-    setPendingKey(period);
-    startTransition(async () => {
-      const result = await setClosingCompletion({
-        clientId: client.id,
-        year,
-        period,
-        completed: !completion,
-      });
-      if (!result.ok) {
-        toast.error(result.error);
-      }
-      setPendingKey(null);
-      router.refresh();
-    });
-  }
-
-  function changeCadence(cadence: ClosingCadence) {
-    if (cadence === client.closingCadence) return;
-    setPendingKey("cadence");
-    startTransition(async () => {
-      const result = await setClientClosingCadence({
-        clientId: client.id,
-        cadence,
-      });
-      if (!result.ok) {
-        toast.error(result.error);
-      } else {
-        toast.success(
-          `${client.name}: fechamento ${CLOSING_CADENCE_LABELS[cadence].toLowerCase()}.`,
-        );
-      }
-      setPendingKey(null);
-      router.refresh();
-    });
-  }
-
-  return (
-    <li className="panel-cut panel-cut-sm grid gap-3 p-3 md:grid-cols-[minmax(13rem,1fr)_8.75rem_repeat(4,2.25rem)] md:items-center md:gap-2 md:px-4">
-      <div className="min-w-0">
-        <p className="truncate font-medium leading-snug">{client.name}</p>
-        <Badge
-          className={cn(
-            "mt-1 h-4 px-1.5 md:hidden",
-            TAX_REGIME_BADGE_CLASSES[client.taxRegime],
-          )}
-        >
-          {TAX_REGIME_LABELS[client.taxRegime]}
-        </Badge>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            type="button"
+            variant={completed ? "ghost" : "outline"}
+            size="sm"
+            disabled={pending}
+            onClick={toggleCompleted}
+          >
+            {pending ? (
+              <LoaderCircle className="animate-spin" aria-hidden />
+            ) : completed ? (
+              <Undo2 aria-hidden />
+            ) : (
+              <Check aria-hidden />
+            )}
+            {completed ? "Reabrir" : "Concluir"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            disabled={pending}
+            aria-label={`Editar ${closing.title}`}
+            onClick={() => setEditOpen(true)}
+          >
+            <Pencil aria-hidden />
+          </Button>
+        </div>
       </div>
 
-      <Select
-        value={client.closingCadence}
-        disabled={pendingKey !== null}
-        onValueChange={(value) => changeCadence(value as ClosingCadence)}
-      >
-        <SelectTrigger
-          size="sm"
-          className="w-full md:w-[8.75rem]"
-          aria-label={`Periodicidade de ${client.name}`}
-        >
-          <SelectValue>
-            {CLOSING_CADENCE_LABELS[client.closingCadence]}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          {CLOSING_CADENCES.map((cadence) => (
-            <SelectItem key={cadence} value={cadence}>
-              {CLOSING_CADENCE_LABELS[cadence]}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {closing.notes ? (
+        <div className="flex gap-2 border-l-2 border-border pl-3 text-sm text-muted-foreground">
+          <MessageSquareText className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <p className="whitespace-pre-wrap">{closing.notes}</p>
+        </div>
+      ) : null}
 
-      {client.closingCadence === "quarterly" ? (
-        <div className="grid grid-cols-2 gap-2 md:contents">
-          {periods.map((period) => (
-            <PeriodButton
-              key={period}
-              period={period}
-              completion={client.completions[period]}
-              pending={pendingKey !== null}
-              onToggle={() => toggle(period)}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="md:col-span-4">
-          <PeriodButton
-            period="annual"
-            completion={client.completions.annual}
-            pending={pendingKey !== null}
-            onToggle={() => toggle("annual")}
-          />
-        </div>
-      )}
+      {completed && closing.completedAt && closing.completedBy ? (
+        <p className="font-mono text-[11px] text-muted-foreground">
+          Concluído por {closing.completedBy} em{" "}
+          {formatCompletedAt(closing.completedAt)}
+        </p>
+      ) : null}
+
+      {editOpen ? (
+        <ClosingFormDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          clients={clients}
+          year={year}
+          initial={closing}
+        />
+      ) : null}
     </li>
   );
 }
 
 export function ClosingBoard({
+  closings,
   clients,
   year,
+  today,
 }: {
-  clients: ClosingClientView[];
+  closings: ClosingView[];
+  clients: ClosingClientOption[];
   year: number;
+  today: string;
 }) {
   return (
-    <div className="grid gap-2">
-      <div className="hidden grid-cols-[minmax(13rem,1fr)_8.75rem_repeat(4,2.25rem)] items-end gap-2 px-4 md:grid">
-        <span className="hud-label">Empresa</span>
-        <span className="hud-label">Periodicidade</span>
-        {(["q1", "q2", "q3", "q4"] as const).map((period) => (
-          <span key={period} className="text-center font-mono text-[10px] text-muted-foreground">
-            {CLOSING_PERIOD_LABELS[period]}
-          </span>
-        ))}
-      </div>
-      <ul className="grid gap-1.5">
-        {clients.map((client) => (
-          <ClosingRow key={client.id} client={client} year={year} />
-        ))}
-      </ul>
-    </div>
+    <ul className="grid gap-2">
+      {closings.map((closing) => (
+        <ClosingRow
+          key={closing.id}
+          closing={closing}
+          clients={clients}
+          year={year}
+          today={today}
+        />
+      ))}
+    </ul>
   );
 }

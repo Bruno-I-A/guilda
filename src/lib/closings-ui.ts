@@ -1,24 +1,20 @@
-import type { AccountingClosing, Client } from "@/db/schema";
+import type { AccountingClosing } from "@/db/schema";
 
-export type ClosingCadence = Client["closingCadence"];
-export type ClosingPeriod = AccountingClosing["period"];
+export type ClosingStatus = AccountingClosing["status"];
 export type ClosingGroup = "simples" | "presumido_association" | "real";
 
-export const CLOSING_CADENCES = ["quarterly", "annual"] as const;
-export const CLOSING_PERIODS = ["q1", "q2", "q3", "q4", "annual"] as const;
-export const QUARTERLY_PERIODS = ["q1", "q2", "q3", "q4"] as const;
+export const CLOSING_STATUSES = ["pending", "blocked", "completed"] as const;
 
-export const CLOSING_CADENCE_LABELS: Record<ClosingCadence, string> = {
-  quarterly: "Trimestral",
-  annual: "Anual",
+export const CLOSING_STATUS_LABELS: Record<ClosingStatus, string> = {
+  pending: "Pendente",
+  blocked: "Com pendência",
+  completed: "Concluído",
 };
 
-export const CLOSING_PERIOD_LABELS: Record<ClosingPeriod, string> = {
-  q1: "1º tri",
-  q2: "2º tri",
-  q3: "3º tri",
-  q4: "4º tri",
-  annual: "Fechamento anual",
+export const CLOSING_STATUS_BADGE_CLASSES: Record<ClosingStatus, string> = {
+  pending: "border-primary/25 bg-primary/10 text-primary",
+  blocked: "border-destructive/30 bg-destructive/10 text-destructive",
+  completed: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300",
 };
 
 export const CLOSING_GROUPS: {
@@ -35,8 +31,10 @@ export const CLOSING_GROUPS: {
   { key: "real", label: "Lucro Real", shortLabel: "Real" },
 ];
 
-export function periodsForCadence(
-  cadence: ClosingCadence,
-): readonly ClosingPeriod[] {
-  return cadence === "annual" ? ["annual"] : QUARTERLY_PERIODS;
+export function isClosingOverdue(
+  dueDate: string,
+  status: ClosingStatus,
+  today: string,
+): boolean {
+  return status !== "completed" && dueDate < today;
 }

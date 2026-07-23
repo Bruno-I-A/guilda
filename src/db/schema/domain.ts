@@ -1,6 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
   boolean,
+  date,
   index,
   integer,
   pgEnum,
@@ -148,16 +149,11 @@ export const taxRegime = pgEnum("tax_regime", [
   "real",
 ]);
 
-/** Periodicidade padrão do fechamento contábil de uma empresa. */
-export const closingCadence = pgEnum("closing_cadence", ["quarterly", "annual"]);
-
-/** Período fechado dentro de um ano-calendário. */
-export const closingPeriod = pgEnum("closing_period", [
-  "q1",
-  "q2",
-  "q3",
-  "q4",
-  "annual",
+/** Situação operacional de um fechamento contábil planejado. */
+export const closingStatus = pgEnum("closing_status", [
+  "pending",
+  "blocked",
+  "completed",
 ]);
 
 /**
@@ -175,9 +171,6 @@ export const clients = pgTable(
       .references(() => organization.id),
     name: varchar("name", { length: 200 }).notNull(),
     taxRegime: taxRegime("tax_regime").notNull(),
-    closingCadence: closingCadence("closing_cadence")
-      .notNull()
-      .default("quarterly"),
     cnpj: varchar("cnpj", { length: 14 }), // opcional; normalizado (só dígitos)
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -194,9 +187,9 @@ export const clients = pgTable(
 export type Client = typeof clients.$inferSelect;
 
 /**
- * Marcações de fechamento concluído. A ausência de uma linha representa
- * pendência; isso mantém a tabela pequena e permite montar qualquer ano sem
- * pré-criar centenas de registros.
+ * Fechamentos contábeis livres: cada linha é uma necessidade real com prazo,
+ * situação e observações próprias. Uma empresa pode ter qualquer quantidade
+ * de fechamentos no ano.
  */
 export const accountingClosings = pgTable(
   "accounting_closings",
@@ -208,23 +201,21 @@ export const accountingClosings = pgTable(
     clientId: uuid("client_id")
       .notNull()
       .references(() => clients.id),
-    year: smallint("year").notNull(),
-    period: closingPeriod("period").notNull(),
-    completedBy: text("completed_by")
+    title: varchar("title", { length: 160 }).notNull(),
+    dueDate: date("due_date", { mode: "string" }).notNull(),
+    status: closingStatus("status").notNull().default("pending"),
+    notes: text("notes"),
+    createdBy: text("created_by")
       .notNull()
       .references(() => user.id),
-    completedAt: timestamp("completed_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    completedBy: text("completed_by").references(() => user.id),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    index("accounting_closings_org_year_idx").on(t.orgId, t.year),
-    uniqueIndex("accounting_closings_org_client_year_period_uidx").on(
-      t.orgId,
-      t.clientId,
-      t.year,
-      t.period,
-    ),
+    index("accounting_closings_org_due_date_idx").on(t.orgId, t.dueDate),
+    index("accounting_closings_org_client_idx").on(t.orgId, t.clientId),
   ],
 );
 
@@ -237,6 +228,10 @@ export const accountingClosingsRelations = relations(
     }),
     completedByUser: one(user, {
       fields: [accountingClosings.completedBy],
+      references: [user.id],
+    }),
+    createdByUser: one(user, {
+      fields: [accountingClosings.createdBy],
       references: [user.id],
     }),
   }),

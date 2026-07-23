@@ -12,7 +12,6 @@ import {
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
-import { CLOSING_CADENCES } from "@/lib/closings-ui";
 import { TAX_REGIMES } from "@/lib/clients-ui";
 
 /**
@@ -28,9 +27,6 @@ const clientFieldsSchema = z.object({
     .min(2, "Nome muito curto.")
     .max(200, "Nome muito longo."),
   taxRegime: z.enum(TAX_REGIMES, { error: "Escolha o regime tributário." }),
-  closingCadence: z.enum(CLOSING_CADENCES, {
-    error: "Escolha a periodicidade do fechamento.",
-  }),
   cnpj: z
     .string()
     .optional()
@@ -61,7 +57,6 @@ export async function createClient(
         orgId: ctx.orgId,
         name: data.name,
         taxRegime: data.taxRegime,
-        closingCadence: data.closingCadence,
         cnpj: data.cnpj ?? null,
       }),
     );
@@ -100,7 +95,6 @@ export async function updateClient(
         .set({
           name: data.name,
           taxRegime: data.taxRegime,
-          closingCadence: data.closingCadence,
           cnpj: data.cnpj ?? null,
         })
         .where(

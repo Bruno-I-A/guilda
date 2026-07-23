@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { periodsForCadence } from "./closings-ui";
+import { isClosingOverdue } from "./closings-ui";
 
-describe("periodsForCadence", () => {
-  it("expõe os quatro períodos para empresas trimestrais", () => {
-    expect(periodsForCadence("quarterly")).toEqual(["q1", "q2", "q3", "q4"]);
+describe("isClosingOverdue", () => {
+  it("identifica fechamento pendente com prazo vencido", () => {
+    expect(isClosingOverdue("2026-05-29", "pending", "2026-05-30")).toBe(true);
   });
 
-  it("expõe somente o fechamento anual para empresas anuais", () => {
-    expect(periodsForCadence("annual")).toEqual(["annual"]);
+  it("não considera concluído como atrasado", () => {
+    expect(isClosingOverdue("2026-05-29", "completed", "2026-05-30")).toBe(false);
+  });
+
+  it("mantém o fechamento do dia dentro do prazo", () => {
+    expect(isClosingOverdue("2026-05-30", "blocked", "2026-05-30")).toBe(false);
   });
 });
