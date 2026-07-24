@@ -461,6 +461,7 @@ function CompanyCard({
   const [pending, startTransition] = useTransition();
   const yearClosed = Boolean(company.yearClosedAt);
   const defisCompleted = Boolean(company.defisCompletedAt);
+  const hasClosings = company.closings.length > 0;
   const hasNotes = Boolean(
     company.yearNotes ||
       company.defisNotes ||
@@ -513,7 +514,13 @@ function CompanyCard({
   }
 
   return (
-    <article className="panel-cut panel-cut-sm overflow-hidden">
+    <article
+      className={cn(
+        "panel-cut panel-cut-sm overflow-hidden transition-colors",
+        hasClosings &&
+          "border-emerald-400/30 bg-emerald-400/[0.04] shadow-[inset_3px_0_0_rgba(52,211,153,0.8)]",
+      )}
+    >
       <div className="flex items-center gap-2 p-3 sm:p-4">
         <button
           type="button"
@@ -524,13 +531,21 @@ function CompanyCard({
           <ChevronDown
             className={cn(
               "size-4 shrink-0 text-muted-foreground transition-transform",
+              hasClosings && "text-emerald-300",
               expanded && "rotate-180",
             )}
             aria-hidden
           />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate font-semibold">{company.name}</h2>
+              <h2
+                className={cn(
+                  "truncate font-semibold",
+                  hasClosings && "text-emerald-100",
+                )}
+              >
+                {company.name}
+              </h2>
               <Badge
                 className={cn(
                   "h-5 px-1.5",
@@ -539,6 +554,12 @@ function CompanyCard({
               >
                 {TAX_REGIME_LABELS[company.taxRegime]}
               </Badge>
+              {hasClosings ? (
+                <Badge className="h-5 border-emerald-400/35 bg-emerald-400/15 px-1.5 text-emerald-200">
+                  <ClipboardCheck aria-hidden />
+                  com fechamento
+                </Badge>
+              ) : null}
               {yearClosed ? (
                 <Badge className="h-5 border-emerald-400/30 bg-emerald-400/10 px-1.5 text-emerald-300">
                   <Check aria-hidden /> {year} fechado
@@ -567,10 +588,18 @@ function CompanyCard({
                 </Badge>
               ) : null}
             </div>
-            <p className="mt-1 font-mono text-xs text-muted-foreground">
-              {company.closings.length === 0
-                ? "Nenhum período lançado"
-                : `${company.closings.length} período${company.closings.length === 1 ? "" : "s"} fechado${company.closings.length === 1 ? "" : "s"}`}
+            <p
+              className={cn(
+                "mt-1 flex items-center gap-1.5 font-mono text-xs text-muted-foreground",
+                hasClosings && "font-semibold text-emerald-300",
+              )}
+            >
+              {hasClosings ? (
+                <ClipboardCheck className="size-3.5" aria-hidden />
+              ) : null}
+              {hasClosings
+                ? `${company.closings.length} período${company.closings.length === 1 ? "" : "s"} fechado${company.closings.length === 1 ? "" : "s"}`
+                : "Nenhum período lançado"}
             </p>
           </div>
         </button>
