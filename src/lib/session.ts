@@ -30,6 +30,9 @@ export async function requireSession() {
  */
 export async function requireOrgSession() {
   const session = await requireSession();
+  if (session.user.mustChangePassword) {
+    redirect("/change-password");
+  }
   const orgId = session.session.activeOrganizationId;
   if (!orgId) {
     redirect("/onboarding");

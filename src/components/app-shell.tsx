@@ -5,6 +5,7 @@ import {
   CalendarCheck2,
   CircleUser,
   Home,
+  KeyRound,
   ListTodo,
   LogOut,
   Swords,
@@ -77,6 +78,11 @@ function UserMenu({
         <DropdownMenuItem asChild>
           <Link href="/profile">
             <CircleUser aria-hidden /> Perfil
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/change-password">
+            <KeyRound aria-hidden /> Alterar senha
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem variant="destructive" onSelect={handleSignOut}>

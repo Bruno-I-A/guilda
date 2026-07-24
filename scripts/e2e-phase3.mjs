@@ -36,10 +36,7 @@ async function expectVisible(page, selector, label, timeout = 10_000) {
 }
 
 const browser = await chromium.launch();
-const carlaCtx = await browser.newContext({
-  viewport: { width: 1280, height: 800 },
-  permissions: ["clipboard-read", "clipboard-write"],
-});
+const carlaCtx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 const carlaPage = await carlaCtx.newPage();
 const daniCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 const daniPage = await daniCtx.newPage();
@@ -70,7 +67,7 @@ async function runTaskFlow(assigneePage, taskUrl) {
   await assigneePage.waitForSelector("text=Aguardando aprovação");
 }
 
-console.log("1) Contas: Carla (owner) + Dani (member via convite)");
+console.log("1) Contas: Carla (owner) + Dani (member, cadastro direto com senha temporária)");
 await carlaPage.goto(`${BASE}/sign-up`);
 await carlaPage.fill("#name", carla.name);
 await carlaPage.fill("#email", carla.email);
@@ -79,18 +76,26 @@ await carlaPage.fill("#organizationName", ORG);
 await carlaPage.click("button[type=submit]");
 await carlaPage.waitForURL("**/dashboard", { timeout: 20_000 });
 
+const daniTempPassword = "temp-e2e-789";
 await carlaPage.goto(`${BASE}/members`);
-await carlaPage.getByRole("button", { name: /Convidar/ }).click();
-await carlaPage.fill("#invite-email", dani.email);
-await carlaPage.getByRole("button", { name: /Criar convite e copiar link/ }).click();
+await carlaPage.getByRole("button", { name: /Adicionar membro/ }).click();
+await carlaPage.fill("#member-name", dani.name);
+await carlaPage.fill("#member-email", dani.email);
+await carlaPage.fill("#member-temp-password", daniTempPassword);
+await carlaPage.getByRole("button", { name: "Criar acesso" }).click();
+await carlaPage.waitForSelector("text=Membro criado!");
+await carlaPage.getByRole("button", { name: "Concluído" }).click();
 await carlaPage.waitForSelector(`text=${dani.email}`);
-const inviteLink = await carlaPage.evaluate(() => navigator.clipboard.readText());
 
-await daniPage.goto(inviteLink);
-await daniPage.getByRole("link", { name: /Criar conta e aceitar/ }).click();
-await daniPage.fill("#name", dani.name);
-await daniPage.fill("#password", dani.pass);
+await daniPage.goto(`${BASE}/sign-in`);
+await daniPage.fill("#email", dani.email);
+await daniPage.fill("#password", daniTempPassword);
 await daniPage.click("button[type=submit]");
+await daniPage.waitForURL("**/change-password", { timeout: 20_000 });
+await daniPage.fill("#currentPassword", daniTempPassword);
+await daniPage.fill("#newPassword", dani.pass);
+await daniPage.fill("#confirmPassword", dani.pass);
+await daniPage.getByRole("button", { name: "Salvar nova senha" }).click();
 await daniPage.waitForURL("**/dashboard", { timeout: 20_000 });
 check("setup completo", true);
 

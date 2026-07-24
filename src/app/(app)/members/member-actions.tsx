@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, MoreHorizontal, ShieldCheck, ShieldOff, Trash2, UserPlus, X } from "lucide-react";
+import { Check, Copy, MoreHorizontal, RefreshCw, ShieldCheck, ShieldOff, Trash2, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -34,16 +34,20 @@ import {
 import { authClient } from "@/lib/auth-client";
 import { authErrorMessage } from "@/lib/auth-errors";
 
-function inviteLink(invitationId: string): string {
-  return `${window.location.origin}/invite/${invitationId}`;
+import { createMemberWithTempPassword } from "./actions";
+
+/** Senha temporária legível (evita caracteres ambíguos tipo 0/O, l/1). */
+function generateTempPassword(): string {
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  let out = "";
+  for (let i = 0; i < 10; i++) {
+    out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return out;
 }
 
-async function copyInviteLink(invitationId: string) {
-  await navigator.clipboard.writeText(inviteLink(invitationId));
-  toast.success("Link do convite copiado!");
-}
-
-const inviteSchema = z.object({
+const addMemberSchema = z.object({
+  name: z.string().trim().min(2, "Nome muito curto."),
   email: z.email("Informe um e-mail válido."),
   role: z.enum(["member", "admin"]),
 });
@@ -54,115 +58,162 @@ export function InviteMemberDialog() {
   const [error, setError] = useState<string | undefined>();
   const [role, setRole] = useState<"member" | "admin">("member");
   const [submitting, setSubmitting] = useState(false);
+  const [tempPassword, setTempPassword] = useState(generateTempPassword);
+  const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  function reset() {
+    setError(undefined);
+    setRole("member");
+    setTempPassword(generateTempPassword());
+    setCreated(null);
+    setCopied(false);
+  }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const parsed = inviteSchema.safeParse({ email: form.get("email"), role });
+    const parsed = addMemberSchema.safeParse({
+      name: form.get("name"),
+      email: form.get("email"),
+      role,
+    });
     if (!parsed.success) {
-      setError(z.flattenError(parsed.error).fieldErrors.email?.[0]);
+      const flat = z.flattenError(parsed.error).fieldErrors;
+      setError(flat.name?.[0] ?? flat.email?.[0]);
       return;
     }
     setError(undefined);
     setSubmitting(true);
-    const { data, error: apiError } = await authClient.organization.inviteMember({
-      email: parsed.data.email,
-      role: parsed.data.role,
+    const result = await createMemberWithTempPassword({
+      ...parsed.data,
+      tempPassword,
     });
     setSubmitting(false);
-    if (apiError || !data) {
-      toast.error(apiError ? authErrorMessage(apiError) : "Não foi possível criar o convite.");
+    if (!result.ok) {
+      toast.error(result.error);
       return;
     }
-    await copyInviteLink(data.id);
-    setOpen(false);
+    setCreated({ email: parsed.data.email, password: tempPassword });
     router.refresh();
   }
 
+  async function copyCredentials() {
+    if (!created) return;
+    await navigator.clipboard.writeText(
+      `Guilda — acesso criado\nE-mail: ${created.email}\nSenha temporária: ${created.password}\n\nVocê vai precisar trocar a senha no primeiro acesso.`,
+    );
+    setCopied(true);
+    toast.success("Credenciais copiadas!");
+  }
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) reset();
+      }}
+    >
       <DialogTrigger asChild>
         <Button>
-          <UserPlus aria-hidden /> Convidar
+          <UserPlus aria-hidden /> Adicionar membro
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Convidar para a guilda</DialogTitle>
-          <DialogDescription>
-            O convite gera um link para compartilhar com a pessoa convidada.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={onSubmit} className="grid gap-4" noValidate>
-          <div className="grid gap-2">
-            <Label htmlFor="invite-email">E-mail</Label>
-            <Input
-              id="invite-email"
-              name="email"
-              type="email"
-              placeholder="colega@empresa.com"
-              aria-invalid={Boolean(error)}
-            />
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="invite-role">Papel</Label>
-            <Select value={role} onValueChange={(v) => setRole(v as "member" | "admin")}>
-              <SelectTrigger id="invite-role" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="member">Membro</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button type="submit" disabled={submitting} className="w-full">
-              {submitting ? "Criando convite…" : "Criar convite e copiar link"}
-            </Button>
-          </DialogFooter>
-        </form>
+        {created ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Membro criado!</DialogTitle>
+              <DialogDescription>
+                Copie e repasse estas credenciais — a senha só aparece aqui uma
+                vez. A pessoa vai precisar trocá-la no primeiro acesso.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="frame-carved grid gap-2 p-4 font-mono text-sm">
+              <div>
+                <span className="text-muted-foreground">E-mail: </span>
+                {created.email}
+              </div>
+              <div>
+                <span className="text-muted-foreground">Senha: </span>
+                <span className="text-gold">{created.password}</span>
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={copyCredentials}>
+                {copied ? <Check aria-hidden /> : <Copy aria-hidden />} Copiar
+              </Button>
+              <Button onClick={() => setOpen(false)}>Concluído</Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Adicionar membro</DialogTitle>
+              <DialogDescription>
+                Cria a conta direto com uma senha temporária — sem link de
+                convite.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={onSubmit} className="grid gap-4" noValidate>
+              <div className="grid gap-2">
+                <Label htmlFor="member-name">Nome</Label>
+                <Input id="member-name" name="name" placeholder="Nome da pessoa" />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="member-email">E-mail</Label>
+                <Input
+                  id="member-email"
+                  name="email"
+                  type="email"
+                  placeholder="colega@empresa.com"
+                  aria-invalid={Boolean(error)}
+                />
+                {error ? <p className="text-sm text-destructive">{error}</p> : null}
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="member-role">Papel</Label>
+                <Select value={role} onValueChange={(v) => setRole(v as "member" | "admin")}>
+                  <SelectTrigger id="member-role" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="member">Membro</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="member-temp-password">Senha temporária</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="member-temp-password"
+                    value={tempPassword}
+                    onChange={(e) => setTempPassword(e.target.value)}
+                    className="font-mono"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    aria-label="Gerar outra senha"
+                    onClick={() => setTempPassword(generateTempPassword())}
+                  >
+                    <RefreshCw aria-hidden />
+                  </Button>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="submit" disabled={submitting} className="w-full">
+                  {submitting ? "Criando…" : "Criar acesso"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </>
+        )}
       </DialogContent>
     </Dialog>
-  );
-}
-
-export function InvitationActions({ invitationId }: { invitationId: string }) {
-  const router = useRouter();
-  const [cancelling, setCancelling] = useState(false);
-
-  async function cancel() {
-    setCancelling(true);
-    const { error } = await authClient.organization.cancelInvitation({ invitationId });
-    setCancelling(false);
-    if (error) {
-      toast.error(authErrorMessage(error));
-      return;
-    }
-    toast.success("Convite cancelado.");
-    router.refresh();
-  }
-
-  return (
-    <div className="flex items-center gap-1">
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => copyInviteLink(invitationId)}
-      >
-        <Copy aria-hidden /> Copiar link
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Cancelar convite"
-        disabled={cancelling}
-        onClick={cancel}
-      >
-        <X aria-hidden />
-      </Button>
-    </div>
   );
 }
 

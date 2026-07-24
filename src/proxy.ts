@@ -31,10 +31,13 @@ export const config = {
   matcher: [
     "/dashboard/:path*",
     "/tasks/:path*",
+    "/clients/:path*",
+    "/campaigns/:path*",
     "/leaderboard/:path*",
     "/members/:path*",
     "/profile/:path*",
     "/onboarding",
+    "/change-password",
     "/sign-in",
     "/sign-up",
   ],

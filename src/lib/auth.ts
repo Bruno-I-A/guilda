@@ -14,6 +14,15 @@ export const auth = betterAuth({
     enabled: true,
     minPasswordLength: 8,
   },
+  user: {
+    additionalFields: {
+      mustChangePassword: {
+        type: "boolean",
+        defaultValue: false,
+        input: true,
+      },
+    },
+  },
   // Rate limiting nas rotas de auth (regra inegociável nº 7).
   // Ativo em produção; janela/limite mais duros para login, registro e convite.
   rateLimit: {

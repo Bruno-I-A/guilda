@@ -40,10 +40,7 @@ async function expectVisible(page, selector, label, timeout = 10_000) {
 const browser = await chromium.launch();
 
 // ── Ana: cadastro criando a organização ────────────────────────────
-const anaCtx = await browser.newContext({
-  viewport: { width: 1280, height: 800 },
-  permissions: ["clipboard-read", "clipboard-write"],
-});
+const anaCtx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 const anaPage = await anaCtx.newPage();
 
 console.log("1) Ana cria conta + organização");
@@ -56,31 +53,35 @@ await anaPage.click("button[type=submit]");
 await anaPage.waitForURL("**/dashboard", { timeout: 20_000 });
 check("Ana chegou ao dashboard", true);
 
-// ── Convite para o Beto ─────────────────────────────────────────────
-console.log("2) Ana convida Beto (link copiado)");
+// ── Ana adiciona Beto direto, com senha temporária ──────────────────
+console.log("2) Ana adiciona Beto (cadastro direto, senha temporária)");
+const betoTempPassword = "temp-e2e-beto-1";
 await anaPage.goto(`${BASE}/members`);
-await anaPage.getByRole("button", { name: /Convidar/ }).click();
-await anaPage.fill("#invite-email", beto.email);
-await anaPage.getByRole("button", { name: /Criar convite e copiar link/ }).click();
+await anaPage.getByRole("button", { name: /Adicionar membro/ }).click();
+await anaPage.fill("#member-name", beto.name);
+await anaPage.fill("#member-email", beto.email);
+await anaPage.fill("#member-temp-password", betoTempPassword);
+await anaPage.getByRole("button", { name: "Criar acesso" }).click();
+await expectVisible(anaPage, "text=Membro criado!", "credenciais exibidas após criar o membro");
+await anaPage.getByRole("button", { name: "Concluído" }).click();
 await anaPage.waitForSelector(`text=${beto.email}`, { timeout: 10_000 });
-const inviteLink = await anaPage.evaluate(() => navigator.clipboard.readText());
-check(`link de convite copiado (${inviteLink.slice(0, 40)}…)`, inviteLink.includes("/invite/"));
 
-// ── Beto: aceita o convite via link ─────────────────────────────────
-console.log("3) Beto abre o link, cria conta e entra na org");
+// ── Beto: login com senha temporária → troca obrigatória ────────────
+console.log("3) Beto loga com a senha temporária e é forçado a trocá-la");
 const betoCtx = await browser.newContext({ viewport: { width: 390, height: 844 } }); // mobile!
 const betoPage = await betoCtx.newPage();
-await betoPage.goto(inviteLink);
-await expectVisible(betoPage, `text=Convite para ${ORG}`, "página do convite mostra a org");
-await betoPage.getByRole("link", { name: /Criar conta e aceitar/ }).click();
-await betoPage.waitForURL("**/sign-up**");
-const emailReadonly = await betoPage.getAttribute("#email", "readonly");
-check("e-mail do convite vem travado no formulário", emailReadonly !== null);
-await betoPage.fill("#name", beto.name);
-await betoPage.fill("#password", beto.pass);
+await betoPage.goto(`${BASE}/sign-in`);
+await betoPage.fill("#email", beto.email);
+await betoPage.fill("#password", betoTempPassword);
 await betoPage.click("button[type=submit]");
+await betoPage.waitForURL("**/change-password", { timeout: 20_000 });
+check("login com senha temporária força troca antes de liberar o app", true);
+await betoPage.fill("#currentPassword", betoTempPassword);
+await betoPage.fill("#newPassword", beto.pass);
+await betoPage.fill("#confirmPassword", beto.pass);
+await betoPage.getByRole("button", { name: "Salvar nova senha" }).click();
 await betoPage.waitForURL("**/dashboard", { timeout: 20_000 });
-check("Beto chegou ao dashboard (org do convite)", true);
+check("Beto chegou ao dashboard após trocar a senha", true);
 await betoPage.screenshot({ path: `${SHOTS}/mobile-dashboard.png` });
 
 // ── Ana cria a tarefa para o Beto ───────────────────────────────────

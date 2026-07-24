@@ -5,18 +5,11 @@ import { redirect } from "next/navigation";
 import { initials, ROLE_LABELS } from "@/lib/people";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { Card, CardContent } from "@/components/ui/card";
 import { auth } from "@/lib/auth";
 import { getActiveMember, isAdminRole, requireOrgSession } from "@/lib/session";
 
-import { InvitationActions, InviteMemberDialog, MemberActions } from "./member-actions";
+import { InviteMemberDialog, MemberActions } from "./member-actions";
 
 export const metadata: Metadata = { title: "Membros" };
 
@@ -33,11 +26,6 @@ export default async function MembersPage() {
   }
 
   const viewerIsAdmin = isAdminRole(viewer.role);
-  const pendingInvitations = org.invitations
-    .filter(
-      (inv) => inv.status === "pending" && new Date(inv.expiresAt).getTime() > Date.now(),
-    )
-    .sort((a, b) => new Date(b.expiresAt).getTime() - new Date(a.expiresAt).getTime());
 
   const roleRank: Record<string, number> = { owner: 0, admin: 1, member: 2 };
   const members = [...org.members].sort(
@@ -99,41 +87,6 @@ export default async function MembersPage() {
           })}
         </CardContent>
       </Card>
-
-      {viewerIsAdmin ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Convites pendentes</CardTitle>
-            <CardDescription>
-              Compartilhe o link do convite — quem abrir poderá criar a conta e
-              entrar na organização.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-1 p-0 pb-2">
-            {pendingInvitations.length === 0 ? (
-              <p className="px-6 pb-4 text-sm text-muted-foreground">
-                Nenhum convite pendente. Convide alguém para a guilda!
-              </p>
-            ) : (
-              pendingInvitations.map((inv, index) => (
-                <div key={inv.id}>
-                  {index > 0 ? <Separator /> : null}
-                  <div className="flex flex-wrap items-center gap-2 px-6 py-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{inv.email}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {ROLE_LABELS[inv.role ?? "member"] ?? inv.role} · expira em{" "}
-                        {new Date(inv.expiresAt).toLocaleDateString("pt-BR")}
-                      </p>
-                    </div>
-                    <InvitationActions invitationId={inv.id} />
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
     </div>
   );
 }
