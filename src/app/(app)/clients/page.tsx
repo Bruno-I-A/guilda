@@ -17,7 +17,11 @@ import {
 } from "@/lib/clients-ui";
 import { cn } from "@/lib/utils";
 
-import { ClientRowActions, NewClientButton } from "./client-actions";
+import {
+  ClientRowActions,
+  ImportClientsButton,
+  NewClientButton,
+} from "./client-actions";
 
 export const metadata: Metadata = { title: "Clientes" };
 
@@ -69,7 +73,10 @@ export default async function ClientsPage({
             {activeCount === 1 ? "ativa" : "ativas"} de {clientList.length}.
           </p>
         </div>
-        <NewClientButton />
+        <div className="flex flex-wrap items-center gap-2">
+          <ImportClientsButton />
+          <NewClientButton />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -123,7 +130,7 @@ export default async function ClientsPage({
           <p className="max-w-sm text-sm text-muted-foreground">
             {q || regime !== "all"
               ? "Ajuste a busca ou o filtro de regime."
-              : "Cadastre manualmente ou importe a carteira via CSV: npm run import:clients -- arquivo.csv --org <slug>."}
+              : "Cadastre manualmente ou importe uma planilha com as empresas."}
           </p>
         </div>
       ) : (

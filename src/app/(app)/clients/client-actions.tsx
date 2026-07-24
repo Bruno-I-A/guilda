@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArchiveRestore, Pencil, Plus } from "lucide-react";
+import { Archive, ArchiveRestore, LoaderCircle, Pencil, Plus, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -28,7 +28,13 @@ import { TAX_REGIME_LABELS, TAX_REGIMES, type TaxRegime } from "@/lib/clients-ui
 
 import type { ActionResult } from "@/lib/action-context";
 
-import { createClient, setClientActive, updateClient } from "./actions";
+import {
+  createClient,
+  importClientsFromSpreadsheet,
+  setClientActive,
+  updateClient,
+  type ImportClientsResult,
+} from "./actions";
 
 interface ClientView {
   id: string;
@@ -163,6 +169,148 @@ export function NewClientButton() {
           })
         }
       />
+    </>
+  );
+}
+
+export function ImportClientsButton() {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [taxRegime, setTaxRegime] = useState<TaxRegime>("simples");
+  const [pending, startTransition] = useTransition();
+  const [summary, setSummary] = useState<ImportClientsResult | null>(null);
+
+  return (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)}>
+        <Upload aria-hidden /> Importar Excel
+      </Button>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (!nextOpen) setSummary(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Importar empresas</DialogTitle>
+            <DialogDescription>
+              Envie uma planilha por regime. Use uma coluna de nome e, se tiver,
+              uma coluna de CNPJ.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const formData = new FormData(event.currentTarget);
+              formData.set("taxRegime", taxRegime);
+              startTransition(async () => {
+                const result = await importClientsFromSpreadsheet(formData);
+                if (!result.ok) {
+                  toast.error(result.error);
+                  return;
+                }
+
+                const data = result.data;
+                if (!data) {
+                  toast.error("Importação sem resumo.");
+                  return;
+                }
+
+                setSummary(data);
+                toast.success(
+                  `${data.created} criada(s), ${data.updated} atualizada(s).`,
+                );
+                router.refresh();
+              });
+            }}
+          >
+            <div className="grid gap-2">
+              <Label htmlFor="import-regime">Regime deste arquivo</Label>
+              <Select
+                value={taxRegime}
+                onValueChange={(v) => setTaxRegime(v as TaxRegime)}
+              >
+                <SelectTrigger id="import-regime" className="w-full">
+                  <SelectValue>{TAX_REGIME_LABELS[taxRegime]}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {TAX_REGIMES.filter((regime) => regime !== "association").map(
+                    (regime) => (
+                      <SelectItem key={regime} value={regime}>
+                        {TAX_REGIME_LABELS[regime]}
+                      </SelectItem>
+                    ),
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="import-file">Planilha</Label>
+              <Input
+                id="import-file"
+                name="file"
+                type="file"
+                accept=".xlsx,.csv"
+                required
+              />
+            </div>
+
+            {summary ? (
+              <div className="rounded-lg border bg-muted/25 p-3 text-sm">
+                <div className="grid grid-cols-2 gap-2 font-mono text-xs sm:grid-cols-4">
+                  <div>
+                    <p className="text-lg font-semibold text-foreground">
+                      {summary.created}
+                    </p>
+                    <p className="text-muted-foreground">criadas</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-semibold text-foreground">
+                      {summary.updated}
+                    </p>
+                    <p className="text-muted-foreground">atualizadas</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-semibold text-foreground">
+                      {summary.unchanged}
+                    </p>
+                    <p className="text-muted-foreground">sem mudança</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-semibold text-foreground">
+                      {summary.rejected.length}
+                    </p>
+                    <p className="text-muted-foreground">rejeitadas</p>
+                  </div>
+                </div>
+                {summary.rejected.length > 0 ? (
+                  <ul className="mt-3 grid max-h-28 gap-1 overflow-auto border-t pt-3 text-xs text-muted-foreground">
+                    {summary.rejected.slice(0, 8).map((item) => (
+                      <li key={`${item.rowNumber}-${item.error}`}>
+                        Linha {item.rowNumber}: {item.error}
+                      </li>
+                    ))}
+                    {summary.rejected.length > 8 ? (
+                      <li>Mais {summary.rejected.length - 8} linha(s) rejeitada(s).</li>
+                    ) : null}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+
+            <DialogFooter>
+              <Button type="submit" disabled={pending}>
+                {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : null}
+                Importar
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
