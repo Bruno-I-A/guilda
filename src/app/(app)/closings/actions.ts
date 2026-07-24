@@ -11,22 +11,8 @@ import {
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
-import { CLOSING_STATUSES } from "@/lib/closings-ui";
 
-const dueDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Informe um prazo válido.")
-  .refine((value) => {
-    const [year, month, day] = value.split("-").map(Number);
-    const date = new Date(Date.UTC(year, month - 1, day));
-    return (
-      year >= 2000 &&
-      year <= 2100 &&
-      date.getUTCFullYear() === year &&
-      date.getUTCMonth() === month - 1 &&
-      date.getUTCDate() === day
-    );
-  }, "Informe um prazo válido.");
+const yearSchema = z.number().int().min(2000).max(2100);
 
 const closingFields = {
   title: z
@@ -34,25 +20,14 @@ const closingFields = {
     .trim()
     .min(2, "Descreva o fechamento.")
     .max(160, "Descrição muito longa."),
-  dueDate: dueDateSchema,
-  status: z.enum(CLOSING_STATUSES),
   notes: z.string().trim().max(3000, "Observação muito longa."),
 };
 
-const blockedNoteRule = {
-  message: "Explique a pendência nas observações.",
-  path: ["notes"] as string[],
-};
-
-const createClosingSchema = z
-  .object({
-    ...closingFields,
-    clientId: z.uuid(),
-  })
-  .refine((data) => data.status !== "blocked" || data.notes.length >= 2, {
-    message: "Explique a pendência nas observações.",
-    path: ["notes"],
-  });
+const createClosingSchema = z.object({
+  ...closingFields,
+  clientId: z.uuid(),
+  year: yearSchema,
+});
 
 export async function createClosing(
   input: z.input<typeof createClosingSchema>,
@@ -84,12 +59,12 @@ export async function createClosing(
         orgId: ctx.orgId,
         clientId: client.id,
         title: data.title,
-        dueDate: data.dueDate,
-        status: data.status,
+        dueDate: `${data.year}-12-31`,
+        status: "completed",
         notes: data.notes || null,
         createdBy: ctx.userId,
-        completedBy: data.status === "completed" ? ctx.userId : null,
-        completedAt: data.status === "completed" ? now : null,
+        completedBy: ctx.userId,
+        completedAt: now,
         updatedAt: now,
       })
       .returning({ id: schema.accountingClosings.id });
@@ -102,16 +77,12 @@ export async function createClosing(
   return result;
 }
 
-const updateClosingSchema = z
-  .object({
-    ...closingFields,
-    closingId: z.uuid(),
-    clientId: z.uuid(),
-  })
-  .refine(
-    (data) => data.status !== "blocked" || data.notes.length >= 2,
-    blockedNoteRule,
-  );
+const updateClosingSchema = z.object({
+  ...closingFields,
+  closingId: z.uuid(),
+  clientId: z.uuid(),
+  year: yearSchema,
+});
 
 export async function updateClosing(
   input: z.input<typeof updateClosingSchema>,
@@ -131,7 +102,7 @@ export async function updateClosing(
         eq(schema.accountingClosings.id, data.closingId),
         eq(schema.accountingClosings.orgId, ctx.orgId),
       ),
-      columns: { id: true, status: true, completedAt: true, completedBy: true },
+      columns: { id: true, completedAt: true, completedBy: true },
     });
     if (!closing) return err("Fechamento não encontrado.");
     const client = await tx.query.clients.findFirst({
@@ -144,26 +115,17 @@ export async function updateClosing(
     });
     if (!client) return err("Empresa não encontrada.");
 
-    const completing = data.status === "completed";
     const now = new Date();
     await tx
       .update(schema.accountingClosings)
       .set({
         clientId: client.id,
         title: data.title,
-        dueDate: data.dueDate,
-        status: data.status,
+        dueDate: `${data.year}-12-31`,
+        status: "completed",
         notes: data.notes || null,
-        completedBy: completing
-          ? closing.status === "completed"
-            ? closing.completedBy
-            : ctx.userId
-          : null,
-        completedAt: completing
-          ? closing.status === "completed"
-            ? closing.completedAt
-            : now
-          : null,
+        completedBy: closing.completedBy ?? ctx.userId,
+        completedAt: closing.completedAt ?? now,
         updatedAt: now,
       })
       .where(

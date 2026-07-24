@@ -16,7 +16,6 @@ import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import {
   CLOSING_GROUPS,
-  isClosingOverdue,
   type ClosingGroup,
 } from "@/lib/closings-ui";
 import { requireOrgSession } from "@/lib/session";
@@ -29,7 +28,7 @@ import {
 
 export const metadata: Metadata = { title: "Fechamentos" };
 
-type StatusFilter = "all" | "open" | "blocked" | "completed";
+type StatusFilter = "all" | "open" | "notes" | "completed";
 
 function todayInSaoPaulo(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -56,7 +55,7 @@ function parseGroup(value: string | undefined): ClosingGroup {
 }
 
 function parseStatus(value: string | undefined): StatusFilter {
-  return value === "open" || value === "blocked" || value === "completed"
+  return value === "open" || value === "notes" || value === "completed"
     ? value
     : "all";
 }
@@ -77,7 +76,6 @@ export default async function ClosingsPage({
   const group = parseGroup(params.group);
   const status = parseStatus(params.status);
   const q = (params.q ?? "").trim();
-  const today = todayInSaoPaulo();
 
   const clientConditions: SQL[] = [
     eq(schema.clients.orgId, session.orgId),
@@ -160,11 +158,11 @@ export default async function ClosingsPage({
     };
   });
 
-  function hasPendingIssue(company: CompanyClosingView): boolean {
-    return company.closings.some(
-      (closing) =>
-        closing.status === "blocked" ||
-        isClosingOverdue(closing.dueDate, closing.status, today),
+  function hasNotes(company: CompanyClosingView): boolean {
+    return Boolean(
+      company.yearNotes ||
+        company.defisNotes ||
+        company.closings.some((closing) => closing.notes),
     );
   }
 
@@ -182,14 +180,14 @@ export default async function ClosingsPage({
       );
     if (!matchesQuery) return false;
     if (status === "open") return !company.yearClosedAt;
-    if (status === "blocked") return hasPendingIssue(company);
+    if (status === "notes") return hasNotes(company);
     if (status === "completed") return Boolean(company.yearClosedAt);
     return true;
   });
 
   const closedCount = allCompanies.filter((company) => company.yearClosedAt).length;
   const openCount = allCompanies.length - closedCount;
-  const issueCount = allCompanies.filter(hasPendingIssue).length;
+  const notesCount = allCompanies.filter(hasNotes).length;
   const defisPendingCount =
     group === "simples"
       ? allCompanies.filter(
@@ -225,8 +223,8 @@ export default async function ClosingsPage({
         <div>
           <h1 className="text-2xl font-semibold tracking-wide">Fechamentos</h1>
           <p className="text-muted-foreground">
-            Abra uma empresa para registrar períodos, pendências e o encerramento
-            anual.
+            Abra uma empresa para registrar períodos fechados, observações e o
+            encerramento anual.
           </p>
         </div>
         <div className="flex items-center rounded-lg border bg-muted/40 p-0.5">
@@ -292,10 +290,10 @@ export default async function ClosingsPage({
             <p className="text-muted-foreground">anos em aberto</p>
           </div>
           <div>
-            <p className={cn("text-lg font-semibold", issueCount && "text-destructive")}>
-              {issueCount}
+            <p className={cn("text-lg font-semibold", notesCount && "text-amber-300")}>
+              {notesCount}
             </p>
-            <p className="text-muted-foreground">com pendência</p>
+            <p className="text-muted-foreground">com observação</p>
           </div>
           <div>
             <p
@@ -322,7 +320,7 @@ export default async function ClosingsPage({
             [
               ["all", "Todas"],
               ["open", "Ano em aberto"],
-              ["blocked", "Com pendência"],
+              ["notes", "Com observação"],
               ["completed", "Ano fechado"],
             ] as const
           ).map(([key, label]) => (
@@ -363,7 +361,7 @@ export default async function ClosingsPage({
       </div>
 
       {companies.length > 0 ? (
-        <CompanyClosingBoard companies={companies} year={year} today={today} />
+        <CompanyClosingBoard companies={companies} year={year} />
       ) : (
         <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-10 text-center">
           <Building2 className="size-8 text-muted-foreground" aria-hidden />
