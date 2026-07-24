@@ -89,6 +89,7 @@ export interface XpHistoryEntry {
   reason: string;
   createdAt: Date;
   taskTitle: string | null;
+  closingTitle: string | null;
 }
 
 /** Últimos lançamentos do usuário (histórico do perfil). */
@@ -105,15 +106,35 @@ export async function getXpHistory(
         reason: schema.xpLedger.reason,
         createdAt: schema.xpLedger.createdAt,
         taskTitle: schema.tasks.title,
+        closingClientName: schema.clients.name,
+        closingYear: schema.accountingClosingYears.year,
       })
       .from(schema.xpLedger)
       .leftJoin(schema.tasks, eq(schema.xpLedger.taskId, schema.tasks.id))
+      .leftJoin(
+        schema.accountingClosingYears,
+        eq(schema.xpLedger.closingYearId, schema.accountingClosingYears.id),
+      )
+      .leftJoin(
+        schema.clients,
+        eq(schema.accountingClosingYears.clientId, schema.clients.id),
+      )
       .where(
         and(eq(schema.xpLedger.orgId, orgId), eq(schema.xpLedger.userId, userId)),
       )
       .orderBy(desc(schema.xpLedger.createdAt))
       .limit(limit);
-    return rows;
+    return rows.map((row) => ({
+      id: row.id,
+      amount: row.amount,
+      reason: row.reason,
+      createdAt: row.createdAt,
+      taskTitle: row.taskTitle,
+      closingTitle:
+        row.closingClientName && row.closingYear
+          ? `${row.closingClientName} · fechamento ${row.closingYear}`
+          : null,
+    }));
   });
 }
 

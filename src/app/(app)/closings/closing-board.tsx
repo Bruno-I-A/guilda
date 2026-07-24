@@ -30,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { ClosingStatus } from "@/lib/closings-ui";
+import { CLOSING_YEAR_XP } from "@/domain/xp";
 import {
   TAX_REGIME_BADGE_CLASSES,
   TAX_REGIME_LABELS,
@@ -381,6 +382,9 @@ function CompanyCard({
         return;
       }
       toast.success(yearClosed ? "Ano reaberto." : `${year} marcado como fechado.`);
+      if (result.data?.xpAwarded) {
+        toast.success(`Você ganhou ${result.data.xp} XP pelo fechamento anual.`);
+      }
       router.refresh();
     });
   }
@@ -504,7 +508,7 @@ function CompanyCard({
                   ) : (
                     <ClipboardCheck aria-hidden />
                   )}
-                  {yearClosed ? "Reabrir ano" : `Fechar ${year}`}
+                  {yearClosed ? "Reabrir ano" : `Fechar ${year} · +${CLOSING_YEAR_XP} XP`}
                 </Button>
               </div>
               {company.yearNotes ? (

@@ -45,7 +45,7 @@ export default async function LeaderboardPage({
       <div>
         <h1 className="text-2xl font-semibold tracking-wide">Ranking</h1>
         <p className="text-muted-foreground">
-          Soma de XP da guilda por período — só entregas aprovadas pontuam.
+          Soma de XP da guilda por período — missões aprovadas e fechamentos pontuam.
         </p>
       </div>
 

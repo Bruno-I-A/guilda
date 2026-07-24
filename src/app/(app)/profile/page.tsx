@@ -27,6 +27,7 @@ export const metadata: Metadata = { title: "Perfil" };
 
 const REASON_LABELS: Record<string, string> = {
   task_completed: "Missão aprovada",
+  closing_year_closed: "Fechamento anual",
   reversal: "Conclusão revertida",
   bonus: "Bônus",
 };
@@ -109,7 +110,10 @@ export default async function ProfilePage() {
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">
-                    {entry.taskTitle ?? REASON_LABELS[entry.reason] ?? entry.reason}
+                    {entry.taskTitle ??
+                      entry.closingTitle ??
+                      REASON_LABELS[entry.reason] ??
+                      entry.reason}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {REASON_LABELS[entry.reason] ?? entry.reason} ·{" "}

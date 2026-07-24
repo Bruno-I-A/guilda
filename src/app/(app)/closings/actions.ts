@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { CLOSING_YEAR_XP } from "@/domain/xp";
 import {
   err,
   requireMemberContext,
@@ -220,7 +221,7 @@ const setYearClosedSchema = closingYearSchema.extend({
 
 export async function setYearClosed(
   input: z.input<typeof setYearClosedSchema>,
-): Promise<ActionResult> {
+): Promise<ActionResult<{ xpAwarded: boolean; xp: number }>> {
   const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
 
@@ -240,39 +241,79 @@ export async function setYearClosed(
     if (!client) return err("Empresa não encontrada.");
 
     const now = new Date();
-    await tx
-      .insert(schema.accountingClosingYears)
-      .values({
-        orgId: ctx.orgId,
-        clientId: client.id,
-        year: data.year,
-        closedAt: data.closed ? now : null,
-        closedBy: data.closed ? ctx.userId : null,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [
-          schema.accountingClosingYears.orgId,
-          schema.accountingClosingYears.clientId,
-          schema.accountingClosingYears.year,
-        ],
-        set: {
-          closedAt: data.closed ? now : null,
-          closedBy: data.closed ? ctx.userId : null,
-          // Uma DEFIS entregue para um ano reaberto precisa ser revisada.
-          ...(data.closed
-            ? {}
-            : { defisCompletedAt: null, defisCompletedBy: null }),
-          updatedAt: now,
-        },
-      });
+    const existing = await tx.query.accountingClosingYears.findFirst({
+      where: and(
+        eq(schema.accountingClosingYears.orgId, ctx.orgId),
+        eq(schema.accountingClosingYears.clientId, client.id),
+        eq(schema.accountingClosingYears.year, data.year),
+      ),
+      columns: { id: true, closedAt: true },
+    });
 
-    return { ok: true } as const;
+    const annual = existing
+      ? (
+          await tx
+            .update(schema.accountingClosingYears)
+            .set({
+              closedAt: data.closed ? now : null,
+              closedBy: data.closed ? ctx.userId : null,
+              // Uma DEFIS entregue para um ano reaberto precisa ser revisada.
+              ...(data.closed
+                ? {}
+                : { defisCompletedAt: null, defisCompletedBy: null }),
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(schema.accountingClosingYears.id, existing.id),
+                eq(schema.accountingClosingYears.orgId, ctx.orgId),
+              ),
+            )
+            .returning({ id: schema.accountingClosingYears.id })
+        )[0]
+      : (
+          await tx
+            .insert(schema.accountingClosingYears)
+            .values({
+              orgId: ctx.orgId,
+              clientId: client.id,
+              year: data.year,
+              closedAt: data.closed ? now : null,
+              closedBy: data.closed ? ctx.userId : null,
+              updatedAt: now,
+            })
+            .returning({ id: schema.accountingClosingYears.id })
+        )[0];
+
+    let xpAwarded = false;
+    if (data.closed) {
+      const credited = await tx
+        .insert(schema.xpLedger)
+        .values({
+          orgId: ctx.orgId,
+          userId: ctx.userId,
+          closingYearId: annual.id,
+          amount: CLOSING_YEAR_XP,
+          reason: "closing_year_closed",
+        })
+        .onConflictDoNothing()
+        .returning({ id: schema.xpLedger.id });
+      xpAwarded = credited.length > 0;
+    }
+
+    return {
+      ok: true,
+      data: { xpAwarded, xp: CLOSING_YEAR_XP },
+    } as const;
   });
 
   if (!result.ok) return result;
   revalidatePath("/closings");
-  return { ok: true };
+  if (result.data.xpAwarded) {
+    revalidatePath("/profile");
+    revalidatePath("/leaderboard");
+  }
+  return result;
 }
 
 const setDefisCompletedSchema = closingYearSchema.extend({

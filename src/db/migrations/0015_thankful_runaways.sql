@@ -1,0 +1,3 @@
+ALTER TABLE "xp_ledger" ADD COLUMN "closing_year_id" uuid;--> statement-breakpoint
+ALTER TABLE "xp_ledger" ADD CONSTRAINT "xp_ledger_closing_year_id_accounting_closing_years_id_fk" FOREIGN KEY ("closing_year_id") REFERENCES "public"."accounting_closing_years"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "xp_ledger_closing_year_closed_uidx" ON "xp_ledger" USING btree ("closing_year_id") WHERE reason = 'closing_year_closed';

@@ -6,6 +6,7 @@ export const MIN_DIFFICULTY = 1;
 export const MAX_DIFFICULTY = 5;
 export const MIN_PRIORITY = 1;
 export const MAX_PRIORITY = 3;
+export const CLOSING_YEAR_XP = 15;
 
 /**
  * XP da tarefa, congelado na criação:

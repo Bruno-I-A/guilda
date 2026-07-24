@@ -105,6 +105,9 @@ export const xpLedger = pgTable(
       .notNull()
       .references(() => user.id),
     taskId: uuid("task_id").references(() => tasks.id),
+    closingYearId: uuid("closing_year_id").references(
+      () => accountingClosingYears.id,
+    ),
     amount: integer("amount").notNull(), // positivo = crédito, negativo = estorno
     reason: varchar("reason", { length: 50 }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -117,12 +120,19 @@ export const xpLedger = pgTable(
     uniqueIndex("xp_ledger_task_reversal_uidx")
       .on(t.taskId)
       .where(sql`reason = 'reversal'`),
+    uniqueIndex("xp_ledger_closing_year_closed_uidx")
+      .on(t.closingYearId)
+      .where(sql`reason = 'closing_year_closed'`),
   ],
 );
 
 export const xpLedgerRelations = relations(xpLedger, ({ one }) => ({
   user: one(user, { fields: [xpLedger.userId], references: [user.id] }),
   task: one(tasks, { fields: [xpLedger.taskId], references: [tasks.id] }),
+  closingYear: one(accountingClosingYears, {
+    fields: [xpLedger.closingYearId],
+    references: [accountingClosingYears.id],
+  }),
 }));
 
 export type XpLedgerEntry = typeof xpLedger.$inferSelect;
