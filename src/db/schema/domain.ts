@@ -240,6 +240,64 @@ export const accountingClosingsRelations = relations(
 export type AccountingClosing = typeof accountingClosings.$inferSelect;
 
 /**
+ * Controle anual por empresa. O encerramento do ano é uma decisão explícita:
+ * não depende da quantidade de fechamentos, pois cada cliente pode ter uma
+ * rotina diferente. Para empresas do Simples, também registra a entrega da
+ * DEFIS, que só pode acontecer depois do encerramento anual.
+ */
+export const accountingClosingYears = pgTable(
+  "accounting_closing_years",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id),
+    year: smallint("year").notNull(),
+    notes: text("notes"),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closedBy: text("closed_by").references(() => user.id),
+    defisNotes: text("defis_notes"),
+    defisCompletedAt: timestamp("defis_completed_at", { withTimezone: true }),
+    defisCompletedBy: text("defis_completed_by").references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("accounting_closing_years_org_client_year_uidx").on(
+      t.orgId,
+      t.clientId,
+      t.year,
+    ),
+    index("accounting_closing_years_org_year_idx").on(t.orgId, t.year),
+  ],
+);
+
+export const accountingClosingYearsRelations = relations(
+  accountingClosingYears,
+  ({ one }) => ({
+    client: one(clients, {
+      fields: [accountingClosingYears.clientId],
+      references: [clients.id],
+    }),
+    closedByUser: one(user, {
+      fields: [accountingClosingYears.closedBy],
+      references: [user.id],
+      relationName: "closing_year_closed_by",
+    }),
+    defisCompletedByUser: one(user, {
+      fields: [accountingClosingYears.defisCompletedBy],
+      references: [user.id],
+      relationName: "closing_year_defis_completed_by",
+    }),
+  }),
+);
+
+export type AccountingClosingYear = typeof accountingClosingYears.$inferSelect;
+
+/**
  * Templates de campanha (Fase 5b): checklist reutilizável POR REGIME
  * (~3–5 no total, não 250). Vários templates por regime são permitidos —
  * a criação de campanha (5c) seleciona qual usar. A instanciação COPIA

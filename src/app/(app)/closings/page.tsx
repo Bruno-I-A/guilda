@@ -1,18 +1,9 @@
-import {
-  and,
-  asc,
-  eq,
-  gte,
-  inArray,
-  lte,
-  type SQL,
-} from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte, type SQL } from "drizzle-orm";
 import {
   Building2,
   CalendarRange,
   ChevronLeft,
   ChevronRight,
-  ClipboardList,
   Search,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -32,10 +23,8 @@ import { requireOrgSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 import {
-  ClosingBoard,
-  type ClosingClientOption,
-  type ClosingView,
-  NewClosingButton,
+  CompanyClosingBoard,
+  type CompanyClosingView,
 } from "./closing-board";
 
 export const metadata: Metadata = { title: "Fechamentos" };
@@ -102,78 +91,115 @@ export default async function ClosingsPage({
     clientConditions.push(eq(schema.clients.taxRegime, group));
   }
 
-  const { clients, closings } = await withOrgTx(session.orgId, async (tx) => {
-    const clients = await tx.query.clients.findMany({
-      where: and(...clientConditions),
-      orderBy: [asc(schema.clients.name)],
-    });
-    const closings = await tx.query.accountingClosings.findMany({
-      where: and(
-        eq(schema.accountingClosings.orgId, session.orgId),
-        gte(schema.accountingClosings.dueDate, `${year}-01-01`),
-        lte(schema.accountingClosings.dueDate, `${year}-12-31`),
-      ),
-      with: {
-        client: {
-          columns: { name: true, taxRegime: true },
+  const { clients, closings, annualControls } = await withOrgTx(
+    session.orgId,
+    async (tx) => {
+      const clients = await tx.query.clients.findMany({
+        where: and(...clientConditions),
+        orderBy: [asc(schema.clients.name)],
+      });
+      const closings = await tx.query.accountingClosings.findMany({
+        where: and(
+          eq(schema.accountingClosings.orgId, session.orgId),
+          gte(schema.accountingClosings.dueDate, `${year}-01-01`),
+          lte(schema.accountingClosings.dueDate, `${year}-12-31`),
+        ),
+        with: {
+          completedByUser: {
+            columns: { name: true },
+          },
         },
-        completedByUser: {
-          columns: { name: true },
-        },
-      },
-    });
-    return { clients, closings };
-  });
+      });
+      const annualControls = await tx.query.accountingClosingYears.findMany({
+        where: and(
+          eq(schema.accountingClosingYears.orgId, session.orgId),
+          eq(schema.accountingClosingYears.year, year),
+        ),
+      });
+      return { clients, closings, annualControls };
+    },
+  );
 
-  const clientOptions: ClosingClientOption[] = clients.map((client) => ({
-    id: client.id,
-    name: client.name,
-    taxRegime: client.taxRegime,
-  }));
-  const visibleClientIds = new Set(clientOptions.map((client) => client.id));
-
-  const allRows: ClosingView[] = closings
-    .filter((closing) => visibleClientIds.has(closing.clientId))
-    .map((closing) => ({
+  const closingsByClient = new Map<string, CompanyClosingView["closings"]>();
+  for (const closing of closings) {
+    const list = closingsByClient.get(closing.clientId) ?? [];
+    list.push({
       id: closing.id,
       clientId: closing.clientId,
-      clientName: closing.client.name,
-      taxRegime: closing.client.taxRegime,
       title: closing.title,
       dueDate: closing.dueDate,
       status: closing.status,
       notes: closing.notes,
       completedAt: closing.completedAt?.toISOString() ?? null,
       completedBy: closing.completedByUser?.name ?? null,
-    }))
-    .sort((a, b) => {
+    });
+    closingsByClient.set(closing.clientId, list);
+  }
+  for (const list of closingsByClient.values()) {
+    list.sort((a, b) => {
       if (a.status === "completed" && b.status !== "completed") return 1;
       if (a.status !== "completed" && b.status === "completed") return -1;
-      return a.dueDate.localeCompare(b.dueDate) || a.clientName.localeCompare(b.clientName);
+      return a.dueDate.localeCompare(b.dueDate);
     });
+  }
+
+  const annualByClient = new Map(
+    annualControls.map((control) => [control.clientId, control]),
+  );
+  const allCompanies: CompanyClosingView[] = clients.map((client) => {
+    const annual = annualByClient.get(client.id);
+    return {
+      id: client.id,
+      name: client.name,
+      taxRegime: client.taxRegime,
+      yearClosedAt: annual?.closedAt?.toISOString() ?? null,
+      yearNotes: annual?.notes ?? null,
+      defisCompletedAt: annual?.defisCompletedAt?.toISOString() ?? null,
+      defisNotes: annual?.defisNotes ?? null,
+      closings: closingsByClient.get(client.id) ?? [],
+    };
+  });
+
+  function hasPendingIssue(company: CompanyClosingView): boolean {
+    return company.closings.some(
+      (closing) =>
+        closing.status === "blocked" ||
+        isClosingOverdue(closing.dueDate, closing.status, today),
+    );
+  }
 
   const normalizedQuery = q.toLocaleLowerCase("pt-BR");
-  const rows = allRows.filter((row) => {
+  const companies = allCompanies.filter((company) => {
     const matchesQuery =
       !normalizedQuery ||
-      row.clientName.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
-      row.title.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
-      row.notes?.toLocaleLowerCase("pt-BR").includes(normalizedQuery);
+      company.name.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
+      company.yearNotes?.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
+      company.defisNotes?.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
+      company.closings.some(
+        (closing) =>
+          closing.title.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
+          closing.notes?.toLocaleLowerCase("pt-BR").includes(normalizedQuery),
+      );
     if (!matchesQuery) return false;
-    if (status === "open") return row.status !== "completed";
-    if (status === "blocked") return row.status === "blocked";
-    if (status === "completed") return row.status === "completed";
+    if (status === "open") return !company.yearClosedAt;
+    if (status === "blocked") return hasPendingIssue(company);
+    if (status === "completed") return Boolean(company.yearClosedAt);
     return true;
   });
 
-  const completedCount = allRows.filter((row) => row.status === "completed").length;
-  const blockedCount = allRows.filter((row) => row.status === "blocked").length;
-  const overdueCount = allRows.filter((row) =>
-    isClosingOverdue(row.dueDate, row.status, today),
-  ).length;
-  const openCount = allRows.length - completedCount;
+  const closedCount = allCompanies.filter((company) => company.yearClosedAt).length;
+  const openCount = allCompanies.length - closedCount;
+  const issueCount = allCompanies.filter(hasPendingIssue).length;
+  const defisPendingCount =
+    group === "simples"
+      ? allCompanies.filter(
+          (company) => company.yearClosedAt && !company.defisCompletedAt,
+        ).length
+      : 0;
   const progress =
-    allRows.length === 0 ? 0 : Math.round((completedCount / allRows.length) * 100);
+    allCompanies.length === 0
+      ? 0
+      : Math.round((closedCount / allCompanies.length) * 100);
 
   function href(
     overrides: Partial<{
@@ -199,31 +225,29 @@ export default async function ClosingsPage({
         <div>
           <h1 className="text-2xl font-semibold tracking-wide">Fechamentos</h1>
           <p className="text-muted-foreground">
-            Planeje cada fechamento conforme a necessidade e o prazo do cliente.
+            Abra uma empresa para registrar períodos, pendências e o encerramento
+            anual.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center rounded-lg border bg-muted/40 p-0.5">
-            <Link
-              href={href({ year: year - 1 })}
-              className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-              aria-label={`Ver ${year - 1}`}
-            >
-              <ChevronLeft className="size-4" aria-hidden />
-            </Link>
-            <span className="flex h-8 min-w-20 items-center justify-center gap-2 px-2 font-mono text-sm font-semibold">
-              <CalendarRange className="size-4 text-primary" aria-hidden />
-              {year}
-            </span>
-            <Link
-              href={href({ year: year + 1 })}
-              className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-              aria-label={`Ver ${year + 1}`}
-            >
-              <ChevronRight className="size-4" aria-hidden />
-            </Link>
-          </div>
-          <NewClosingButton clients={clientOptions} year={year} />
+        <div className="flex items-center rounded-lg border bg-muted/40 p-0.5">
+          <Link
+            href={href({ year: year - 1 })}
+            className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+            aria-label={`Ver ${year - 1}`}
+          >
+            <ChevronLeft className="size-4" aria-hidden />
+          </Link>
+          <span className="flex h-8 min-w-20 items-center justify-center gap-2 px-2 font-mono text-sm font-semibold">
+            <CalendarRange className="size-4 text-primary" aria-hidden />
+            {year}
+          </span>
+          <Link
+            href={href({ year: year + 1 })}
+            className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+            aria-label={`Ver ${year + 1}`}
+          >
+            <ChevronRight className="size-4" aria-hidden />
+          </Link>
         </div>
       </div>
 
@@ -252,9 +276,9 @@ export default async function ClosingsPage({
       <section className="panel-cut texture-iron grid gap-4 p-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="hud-label">Andamento de {year}</p>
+            <p className="hud-label">Encerramento anual de {year}</p>
             <p className="mt-1 text-xl font-semibold">
-              {completedCount} de {allRows.length} fechamentos concluídos
+              {closedCount} de {allCompanies.length} empresas fechadas
             </p>
           </div>
           <Badge className="border-primary/25 bg-primary/10 font-mono text-primary">
@@ -265,19 +289,26 @@ export default async function ClosingsPage({
         <div className="grid grid-cols-3 gap-2 text-center font-mono text-xs">
           <div>
             <p className="text-lg font-semibold text-foreground">{openCount}</p>
-            <p className="text-muted-foreground">abertos</p>
+            <p className="text-muted-foreground">anos em aberto</p>
           </div>
           <div>
-            <p className={cn("text-lg font-semibold", overdueCount && "text-destructive")}>
-              {overdueCount}
-            </p>
-            <p className="text-muted-foreground">atrasados</p>
-          </div>
-          <div>
-            <p className={cn("text-lg font-semibold", blockedCount && "text-destructive")}>
-              {blockedCount}
+            <p className={cn("text-lg font-semibold", issueCount && "text-destructive")}>
+              {issueCount}
             </p>
             <p className="text-muted-foreground">com pendência</p>
+          </div>
+          <div>
+            <p
+              className={cn(
+                "text-lg font-semibold",
+                defisPendingCount && "text-amber-300",
+              )}
+            >
+              {group === "simples" ? defisPendingCount : closedCount}
+            </p>
+            <p className="text-muted-foreground">
+              {group === "simples" ? "DEFIS pendentes" : "anos fechados"}
+            </p>
           </div>
         </div>
       </section>
@@ -289,10 +320,10 @@ export default async function ClosingsPage({
         >
           {(
             [
-              ["all", "Todos"],
-              ["open", "Abertos"],
+              ["all", "Todas"],
+              ["open", "Ano em aberto"],
               ["blocked", "Com pendência"],
-              ["completed", "Concluídos"],
+              ["completed", "Ano fechado"],
             ] as const
           ).map(([key, label]) => (
             <Link
@@ -324,42 +355,29 @@ export default async function ClosingsPage({
             type="search"
             name="q"
             defaultValue={q}
-            placeholder="Buscar empresa ou fechamento…"
+            placeholder="Buscar empresa ou período…"
             className="w-64 pl-8"
-            aria-label="Buscar empresa ou fechamento"
+            aria-label="Buscar empresa ou período"
           />
         </form>
       </div>
 
-      {rows.length > 0 ? (
-        <ClosingBoard
-          closings={rows}
-          clients={clientOptions}
-          year={year}
-          today={today}
-        />
+      {companies.length > 0 ? (
+        <CompanyClosingBoard companies={companies} year={year} today={today} />
       ) : (
         <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-10 text-center">
-          {clientOptions.length === 0 ? (
-            <Building2 className="size-8 text-muted-foreground" aria-hidden />
-          ) : (
-            <ClipboardList className="size-8 text-muted-foreground" aria-hidden />
-          )}
+          <Building2 className="size-8 text-muted-foreground" aria-hidden />
           <p className="font-medium">
-            {clientOptions.length === 0
+            {allCompanies.length === 0
               ? "Nenhuma empresa neste grupo"
-              : allRows.length === 0
-                ? `Nenhum fechamento planejado para ${year}`
-                : "Nenhum fechamento com estes filtros"}
+              : "Nenhuma empresa com estes filtros"}
           </p>
           <p className="max-w-md text-sm text-muted-foreground">
-            {clientOptions.length === 0
+            {allCompanies.length === 0
               ? "Cadastre uma empresa para começar."
-              : allRows.length === 0
-                ? "Use “Novo fechamento” sempre que surgir uma demanda ou prazo do cliente."
-                : "Ajuste a busca ou selecione outra situação."}
+              : "Ajuste a busca ou selecione outra situação."}
           </p>
-          {clientOptions.length === 0 ? (
+          {allCompanies.length === 0 ? (
             <Link
               href="/clients"
               className="font-mono text-xs text-primary hover:underline"

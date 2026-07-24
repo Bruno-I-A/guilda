@@ -3,8 +3,11 @@
 import {
   CalendarDays,
   Check,
+  ChevronDown,
   CircleAlert,
   CircleDot,
+  ClipboardCheck,
+  FileCheck2,
   LoaderCircle,
   MessageSquareText,
   Pencil,
@@ -54,26 +57,32 @@ import {
   createClosing,
   deleteClosing,
   setClosingStatus,
+  setDefisCompleted,
+  setYearClosed,
   updateClosing,
+  updateYearNotes,
 } from "./actions";
-
-export interface ClosingClientOption {
-  id: string;
-  name: string;
-  taxRegime: TaxRegime;
-}
 
 export interface ClosingView {
   id: string;
   clientId: string;
-  clientName: string;
-  taxRegime: TaxRegime;
   title: string;
   dueDate: string;
   status: ClosingStatus;
   notes: string | null;
   completedAt: string | null;
   completedBy: string | null;
+}
+
+export interface CompanyClosingView {
+  id: string;
+  name: string;
+  taxRegime: TaxRegime;
+  yearClosedAt: string | null;
+  yearNotes: string | null;
+  defisCompletedAt: string | null;
+  defisNotes: string | null;
+  closings: ClosingView[];
 }
 
 interface ClosingFields {
@@ -87,19 +96,18 @@ interface ClosingFields {
 function ClosingFormDialog({
   open,
   onOpenChange,
-  clients,
+  company,
   year,
   initial,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  clients: ClosingClientOption[];
+  company: Pick<CompanyClosingView, "id" | "name">;
   year: number;
   initial?: ClosingView;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [clientId, setClientId] = useState(initial?.clientId ?? clients[0]?.id ?? "");
   const [status, setStatus] = useState<ClosingStatus>(initial?.status ?? "pending");
 
   function submit(fields: ClosingFields) {
@@ -111,7 +119,7 @@ function ClosingFormDialog({
         toast.error(result.error);
         return;
       }
-      toast.success(initial ? "Fechamento atualizado." : "Fechamento planejado.");
+      toast.success(initial ? "Fechamento atualizado." : "Período adicionado.");
       onOpenChange(false);
       router.refresh();
     });
@@ -137,10 +145,10 @@ function ClosingFormDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            {initial ? "Editar fechamento" : "Novo fechamento"}
+            {initial ? "Editar período" : "Adicionar período fechado"}
           </DialogTitle>
           <DialogDescription>
-            Defina livremente o que precisa ser fechado e até quando.
+            {company.name} · registre o período, o prazo e tudo que falta resolver.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -149,7 +157,7 @@ function ClosingFormDialog({
             event.preventDefault();
             const form = new FormData(event.currentTarget);
             submit({
-              clientId,
+              clientId: company.id,
               title: String(form.get("title") ?? ""),
               dueDate: String(form.get("dueDate") ?? ""),
               status,
@@ -158,31 +166,12 @@ function ClosingFormDialog({
           }}
         >
           <div className="grid gap-2">
-            <Label htmlFor="closing-client">Empresa</Label>
-            <Select value={clientId} onValueChange={setClientId}>
-              <SelectTrigger id="closing-client" className="w-full">
-                <SelectValue>
-                  {clients.find((client) => client.id === clientId)?.name ??
-                    "Escolha uma empresa"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {clients.map((client) => (
-                  <SelectItem key={client.id} value={client.id}>
-                    {client.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="closing-title">Identificação do fechamento</Label>
+            <Label htmlFor="closing-title">Período ou identificação</Label>
             <Input
               id="closing-title"
               name="title"
               defaultValue={initial?.title ?? ""}
-              placeholder="Ex.: Fechamento solicitado pelo cliente"
+              placeholder="Ex.: Janeiro a abril ou Fechamento solicitado em maio"
               maxLength={160}
               required
             />
@@ -229,14 +218,11 @@ function ClosingFormDialog({
               id="closing-notes"
               name="notes"
               defaultValue={initial?.notes ?? ""}
-              placeholder="Ex.: aguardando extratos; documento com divergência; solicitar novamente ao cliente…"
+              placeholder="Documentos faltantes, divergências, erros e próximos passos…"
               maxLength={3000}
               rows={5}
               required={status === "blocked"}
             />
-            <p className="text-xs text-muted-foreground">
-              Registre documentos faltantes, erros encontrados e próximos passos.
-            </p>
           </div>
 
           <DialogFooter className="gap-2 sm:justify-between">
@@ -252,9 +238,9 @@ function ClosingFormDialog({
             ) : (
               <span />
             )}
-            <Button type="submit" disabled={pending || !clientId}>
+            <Button type="submit" disabled={pending}>
               {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : null}
-              {initial ? "Salvar alterações" : "Adicionar fechamento"}
+              {initial ? "Salvar alterações" : "Adicionar período"}
             </Button>
           </DialogFooter>
         </form>
@@ -263,37 +249,92 @@ function ClosingFormDialog({
   );
 }
 
-export function NewClosingButton({
-  clients,
+function AnnualNotesDialog({
+  open,
+  onOpenChange,
+  company,
   year,
 }: {
-  clients: ClosingClientOption[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  company: CompanyClosingView;
   year: number;
 }) {
-  const [open, setOpen] = useState(false);
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
 
   return (
-    <>
-      <Button disabled={clients.length === 0} onClick={() => setOpen(true)}>
-        <Plus aria-hidden /> Novo fechamento
-      </Button>
-      {open ? (
-        <ClosingFormDialog
-          open={open}
-          onOpenChange={setOpen}
-          clients={clients}
-          year={year}
-        />
-      ) : null}
-    </>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Observações de {year}</DialogTitle>
+          <DialogDescription>
+            {company.name} · anotações gerais separadas dos períodos.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            startTransition(async () => {
+              const result = await updateYearNotes({
+                clientId: company.id,
+                year,
+                notes: String(form.get("notes") ?? ""),
+                defisNotes: String(form.get("defisNotes") ?? ""),
+              });
+              if (!result.ok) {
+                toast.error(result.error);
+                return;
+              }
+              toast.success("Observações salvas.");
+              onOpenChange(false);
+              router.refresh();
+            });
+          }}
+        >
+          <div className="grid gap-2">
+            <Label htmlFor="year-notes">Observações do fechamento anual</Label>
+            <Textarea
+              id="year-notes"
+              name="notes"
+              defaultValue={company.yearNotes ?? ""}
+              placeholder="Pendências gerais, ajustes finais e informações importantes…"
+              maxLength={3000}
+              rows={4}
+            />
+          </div>
+          {company.taxRegime === "simples" ? (
+            <div className="grid gap-2">
+              <Label htmlFor="defis-notes">Observações da DEFIS</Label>
+              <Textarea
+                id="defis-notes"
+                name="defisNotes"
+                defaultValue={company.defisNotes ?? ""}
+                placeholder="Pendências da declaração, recibo, divergências…"
+                maxLength={3000}
+                rows={4}
+              />
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="submit" disabled={pending}>
+              {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : null}
+              Salvar observações
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function formatDueDate(value: string): string {
+function formatDate(value: string): string {
   return new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T12:00:00`));
 }
 
-function formatCompletedAt(value: string): string {
+function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
@@ -302,12 +343,12 @@ function formatCompletedAt(value: string): string {
 
 function ClosingRow({
   closing,
-  clients,
+  company,
   year,
   today,
 }: {
   closing: ClosingView;
-  clients: ClosingClientOption[];
+  company: CompanyClosingView;
   year: number;
   today: string;
 }) {
@@ -327,7 +368,7 @@ function ClosingRow({
         toast.error(result.error);
         return;
       }
-      toast.success(completed ? "Fechamento reaberto." : "Fechamento concluído.");
+      toast.success(completed ? "Período reaberto." : "Período concluído.");
       router.refresh();
     });
   }
@@ -335,14 +376,12 @@ function ClosingRow({
   return (
     <li
       className={cn(
-        "panel-cut panel-cut-sm grid gap-3 border-l-2 p-4",
+        "grid gap-3 rounded-lg border border-l-2 bg-background/45 p-3",
         completed
-          ? "border-l-emerald-400/60 opacity-75"
-          : overdue
+          ? "border-l-emerald-400/60 opacity-80"
+          : overdue || closing.status === "blocked"
             ? "border-l-destructive"
-            : closing.status === "blocked"
-              ? "border-l-destructive/70"
-              : "border-l-primary/60",
+            : "border-l-primary/60",
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -367,29 +406,17 @@ function ClosingRow({
               {CLOSING_STATUS_LABELS[closing.status]}
             </Badge>
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{closing.clientName}</span>
-            <Badge
-              className={cn(
-                "h-4 px-1.5",
-                TAX_REGIME_BADGE_CLASSES[closing.taxRegime],
-              )}
-            >
-              {TAX_REGIME_LABELS[closing.taxRegime]}
-            </Badge>
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 font-mono",
-                overdue && "font-semibold text-destructive",
-              )}
-            >
-              <CalendarDays className="size-3" aria-hidden />
-              {overdue ? "Atrasado · " : "Prazo "}
-              {formatDueDate(closing.dueDate)}
-            </span>
-          </div>
+          <span
+            className={cn(
+              "mt-1 inline-flex items-center gap-1 font-mono text-xs text-muted-foreground",
+              overdue && "font-semibold text-destructive",
+            )}
+          >
+            <CalendarDays className="size-3" aria-hidden />
+            {overdue ? "Atrasado · " : "Prazo "}
+            {formatDate(closing.dueDate)}
+          </span>
         </div>
-
         <div className="flex shrink-0 items-center gap-1">
           <Button
             type="button"
@@ -419,26 +446,23 @@ function ClosingRow({
           </Button>
         </div>
       </div>
-
       {closing.notes ? (
         <div className="flex gap-2 border-l-2 border-border pl-3 text-sm text-muted-foreground">
           <MessageSquareText className="mt-0.5 size-4 shrink-0" aria-hidden />
           <p className="whitespace-pre-wrap">{closing.notes}</p>
         </div>
       ) : null}
-
-      {completed && closing.completedAt && closing.completedBy ? (
+      {completed && closing.completedAt ? (
         <p className="font-mono text-[11px] text-muted-foreground">
-          Concluído por {closing.completedBy} em{" "}
-          {formatCompletedAt(closing.completedAt)}
+          Concluído{closing.completedBy ? ` por ${closing.completedBy}` : ""} em{" "}
+          {formatDateTime(closing.completedAt)}
         </p>
       ) : null}
-
       {editOpen ? (
         <ClosingFormDialog
           open={editOpen}
           onOpenChange={setEditOpen}
-          clients={clients}
+          company={company}
           year={year}
           initial={closing}
         />
@@ -447,28 +471,298 @@ function ClosingRow({
   );
 }
 
-export function ClosingBoard({
-  closings,
-  clients,
+function CompanyCard({
+  company,
   year,
   today,
 }: {
-  closings: ClosingView[];
-  clients: ClosingClientOption[];
+  company: CompanyClosingView;
+  year: number;
+  today: string;
+}) {
+  const router = useRouter();
+  const [expanded, setExpanded] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const yearClosed = Boolean(company.yearClosedAt);
+  const defisCompleted = Boolean(company.defisCompletedAt);
+  const openPeriods = company.closings.filter(
+    (closing) => closing.status !== "completed",
+  ).length;
+  const blocked = company.closings.some(
+    (closing) =>
+      closing.status === "blocked" ||
+      isClosingOverdue(closing.dueDate, closing.status, today),
+  );
+
+  function toggleYear() {
+    if (
+      yearClosed &&
+      !window.confirm(
+        `Reabrir ${year} para ${company.name}? A DEFIS também voltará a pendente.`,
+      )
+    ) {
+      return;
+    }
+    startTransition(async () => {
+      const result = await setYearClosed({
+        clientId: company.id,
+        year,
+        closed: !yearClosed,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(yearClosed ? "Ano reaberto." : `${year} marcado como fechado.`);
+      router.refresh();
+    });
+  }
+
+  function toggleDefis() {
+    startTransition(async () => {
+      const result = await setDefisCompleted({
+        clientId: company.id,
+        year,
+        completed: !defisCompleted,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(
+        defisCompleted ? "DEFIS reaberta." : "DEFIS marcada como entregue.",
+      );
+      router.refresh();
+    });
+  }
+
+  return (
+    <article className="panel-cut panel-cut-sm overflow-hidden">
+      <div className="flex items-center gap-2 p-3 sm:p-4">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <ChevronDown
+            className={cn(
+              "size-4 shrink-0 text-muted-foreground transition-transform",
+              expanded && "rotate-180",
+            )}
+            aria-hidden
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="truncate font-semibold">{company.name}</h2>
+              <Badge
+                className={cn(
+                  "h-5 px-1.5",
+                  TAX_REGIME_BADGE_CLASSES[company.taxRegime],
+                )}
+              >
+                {TAX_REGIME_LABELS[company.taxRegime]}
+              </Badge>
+              {yearClosed ? (
+                <Badge className="h-5 border-emerald-400/30 bg-emerald-400/10 px-1.5 text-emerald-300">
+                  <Check aria-hidden /> {year} fechado
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="h-5 px-1.5 text-muted-foreground">
+                  {year} em aberto
+                </Badge>
+              )}
+              {company.taxRegime === "simples" && yearClosed ? (
+                <Badge
+                  className={cn(
+                    "h-5 px-1.5",
+                    defisCompleted
+                      ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                      : "border-amber-400/30 bg-amber-400/10 text-amber-300",
+                  )}
+                >
+                  <FileCheck2 aria-hidden />
+                  {defisCompleted ? "DEFIS entregue" : "DEFIS pendente"}
+                </Badge>
+              ) : null}
+              {blocked ? (
+                <Badge className="h-5 border-destructive/30 bg-destructive/10 px-1.5 text-destructive">
+                  <CircleAlert aria-hidden /> pendência
+                </Badge>
+              ) : null}
+            </div>
+            <p className="mt-1 font-mono text-xs text-muted-foreground">
+              {company.closings.length === 0
+                ? "Nenhum período lançado"
+                : `${company.closings.length} período${company.closings.length === 1 ? "" : "s"} · ${openPeriods} em aberto`}
+            </p>
+          </div>
+        </button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setExpanded(true);
+            setCreateOpen(true);
+          }}
+        >
+          <Plus aria-hidden />
+          <span className="hidden sm:inline">Adicionar período</span>
+        </Button>
+      </div>
+
+      {expanded ? (
+        <div className="grid gap-4 border-t bg-background/20 p-3 sm:p-4">
+          <div className="grid gap-3 lg:grid-cols-2">
+            <section className="rounded-lg border bg-muted/20 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="hud-label">Encerramento de {year}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Confirme somente quando o ano estiver totalmente encerrado.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={yearClosed ? "outline" : "default"}
+                  disabled={pending}
+                  onClick={toggleYear}
+                >
+                  {pending ? (
+                    <LoaderCircle className="animate-spin" aria-hidden />
+                  ) : yearClosed ? (
+                    <Undo2 aria-hidden />
+                  ) : (
+                    <ClipboardCheck aria-hidden />
+                  )}
+                  {yearClosed ? "Reabrir ano" : `Fechar ${year}`}
+                </Button>
+              </div>
+              {company.yearNotes ? (
+                <p className="mt-3 whitespace-pre-wrap border-l-2 border-border pl-3 text-sm text-muted-foreground">
+                  {company.yearNotes}
+                </p>
+              ) : null}
+            </section>
+
+            {company.taxRegime === "simples" ? (
+              <section className="rounded-lg border bg-muted/20 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="hud-label">DEFIS {year}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {yearClosed
+                        ? "Controle a entrega feita após o fechamento."
+                        : `Disponível depois que ${year} for fechado.`}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={defisCompleted ? "outline" : "default"}
+                    disabled={pending || !yearClosed}
+                    onClick={toggleDefis}
+                  >
+                    {pending ? (
+                      <LoaderCircle className="animate-spin" aria-hidden />
+                    ) : defisCompleted ? (
+                      <Undo2 aria-hidden />
+                    ) : (
+                      <FileCheck2 aria-hidden />
+                    )}
+                    {defisCompleted ? "Reabrir DEFIS" : "Marcar entregue"}
+                  </Button>
+                </div>
+                {company.defisNotes ? (
+                  <p className="mt-3 whitespace-pre-wrap border-l-2 border-border pl-3 text-sm text-muted-foreground">
+                    {company.defisNotes}
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="hud-label">Períodos e demandas de {year}</p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setNotesOpen(true)}
+              >
+                <MessageSquareText aria-hidden /> Observações do ano
+              </Button>
+              <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+                <Plus aria-hidden /> Adicionar período
+              </Button>
+            </div>
+          </div>
+
+          {company.closings.length > 0 ? (
+            <ul className="grid gap-2">
+              {company.closings.map((closing) => (
+                <ClosingRow
+                  key={closing.id}
+                  closing={closing}
+                  company={company}
+                  year={year}
+                  today={today}
+                />
+              ))}
+            </ul>
+          ) : (
+            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              Nenhum período registrado em {year}. Adicione quando surgir uma
+              demanda ou quando um período for fechado.
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {createOpen ? (
+        <ClosingFormDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          company={company}
+          year={year}
+        />
+      ) : null}
+      {notesOpen ? (
+        <AnnualNotesDialog
+          open={notesOpen}
+          onOpenChange={setNotesOpen}
+          company={company}
+          year={year}
+        />
+      ) : null}
+    </article>
+  );
+}
+
+export function CompanyClosingBoard({
+  companies,
+  year,
+  today,
+}: {
+  companies: CompanyClosingView[];
   year: number;
   today: string;
 }) {
   return (
-    <ul className="grid gap-2">
-      {closings.map((closing) => (
-        <ClosingRow
-          key={closing.id}
-          closing={closing}
-          clients={clients}
+    <div className="grid gap-2">
+      {companies.map((company) => (
+        <CompanyCard
+          key={company.id}
+          company={company}
           year={year}
           today={today}
         />
       ))}
-    </ul>
+    </div>
   );
 }

@@ -246,3 +246,196 @@ export async function deleteClosing(
   revalidatePath("/closings");
   return { ok: true };
 }
+
+const closingYearSchema = z.object({
+  clientId: z.uuid(),
+  year: z.number().int().min(2000).max(2100),
+});
+
+const setYearClosedSchema = closingYearSchema.extend({
+  closed: z.boolean(),
+});
+
+export async function setYearClosed(
+  input: z.input<typeof setYearClosedSchema>,
+): Promise<ActionResult> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+
+  const parsed = setYearClosedSchema.safeParse(input);
+  if (!parsed.success) return err("Empresa ou ano inválido.");
+  const data = parsed.data;
+
+  const result = await withOrgTx(ctx.orgId, async (tx) => {
+    const client = await tx.query.clients.findFirst({
+      where: and(
+        eq(schema.clients.id, data.clientId),
+        eq(schema.clients.orgId, ctx.orgId),
+        eq(schema.clients.active, true),
+      ),
+      columns: { id: true },
+    });
+    if (!client) return err("Empresa não encontrada.");
+
+    const now = new Date();
+    await tx
+      .insert(schema.accountingClosingYears)
+      .values({
+        orgId: ctx.orgId,
+        clientId: client.id,
+        year: data.year,
+        closedAt: data.closed ? now : null,
+        closedBy: data.closed ? ctx.userId : null,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [
+          schema.accountingClosingYears.orgId,
+          schema.accountingClosingYears.clientId,
+          schema.accountingClosingYears.year,
+        ],
+        set: {
+          closedAt: data.closed ? now : null,
+          closedBy: data.closed ? ctx.userId : null,
+          // Uma DEFIS entregue para um ano reaberto precisa ser revisada.
+          ...(data.closed
+            ? {}
+            : { defisCompletedAt: null, defisCompletedBy: null }),
+          updatedAt: now,
+        },
+      });
+
+    return { ok: true } as const;
+  });
+
+  if (!result.ok) return result;
+  revalidatePath("/closings");
+  return { ok: true };
+}
+
+const setDefisCompletedSchema = closingYearSchema.extend({
+  completed: z.boolean(),
+});
+
+export async function setDefisCompleted(
+  input: z.input<typeof setDefisCompletedSchema>,
+): Promise<ActionResult> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+
+  const parsed = setDefisCompletedSchema.safeParse(input);
+  if (!parsed.success) return err("Empresa ou ano inválido.");
+  const data = parsed.data;
+
+  const result = await withOrgTx(ctx.orgId, async (tx) => {
+    const client = await tx.query.clients.findFirst({
+      where: and(
+        eq(schema.clients.id, data.clientId),
+        eq(schema.clients.orgId, ctx.orgId),
+        eq(schema.clients.active, true),
+      ),
+      columns: { id: true, taxRegime: true },
+    });
+    if (!client) return err("Empresa não encontrada.");
+    if (client.taxRegime !== "simples") {
+      return err("O controle da DEFIS é exclusivo do Simples Nacional.");
+    }
+
+    const annual = await tx.query.accountingClosingYears.findFirst({
+      where: and(
+        eq(schema.accountingClosingYears.orgId, ctx.orgId),
+        eq(schema.accountingClosingYears.clientId, client.id),
+        eq(schema.accountingClosingYears.year, data.year),
+      ),
+      columns: { id: true, closedAt: true },
+    });
+    if (!annual?.closedAt) {
+      return err("Feche o ano da empresa antes de registrar a DEFIS.");
+    }
+
+    const updated = await tx
+      .update(schema.accountingClosingYears)
+      .set({
+        defisCompletedAt: data.completed ? new Date() : null,
+        defisCompletedBy: data.completed ? ctx.userId : null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.accountingClosingYears.id, annual.id),
+          eq(schema.accountingClosingYears.orgId, ctx.orgId),
+        ),
+      )
+      .returning({ id: schema.accountingClosingYears.id });
+
+    return updated.length > 0
+      ? ({ ok: true } as const)
+      : err("Controle anual não encontrado.");
+  });
+
+  if (!result.ok) return result;
+  revalidatePath("/closings");
+  return { ok: true };
+}
+
+const updateYearNotesSchema = closingYearSchema.extend({
+  notes: z.string().trim().max(3000, "Observação do ano muito longa."),
+  defisNotes: z.string().trim().max(3000, "Observação da DEFIS muito longa."),
+});
+
+export async function updateYearNotes(
+  input: z.input<typeof updateYearNotesSchema>,
+): Promise<ActionResult> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+
+  const parsed = updateYearNotesSchema.safeParse(input);
+  if (!parsed.success) {
+    return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+  }
+  const data = parsed.data;
+
+  const result = await withOrgTx(ctx.orgId, async (tx) => {
+    const client = await tx.query.clients.findFirst({
+      where: and(
+        eq(schema.clients.id, data.clientId),
+        eq(schema.clients.orgId, ctx.orgId),
+        eq(schema.clients.active, true),
+      ),
+      columns: { id: true, taxRegime: true },
+    });
+    if (!client) return err("Empresa não encontrada.");
+
+    const now = new Date();
+    await tx
+      .insert(schema.accountingClosingYears)
+      .values({
+        orgId: ctx.orgId,
+        clientId: client.id,
+        year: data.year,
+        notes: data.notes || null,
+        defisNotes:
+          client.taxRegime === "simples" ? data.defisNotes || null : null,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [
+          schema.accountingClosingYears.orgId,
+          schema.accountingClosingYears.clientId,
+          schema.accountingClosingYears.year,
+        ],
+        set: {
+          notes: data.notes || null,
+          defisNotes:
+            client.taxRegime === "simples" ? data.defisNotes || null : null,
+          updatedAt: now,
+        },
+      });
+
+    return { ok: true } as const;
+  });
+
+  if (!result.ok) return result;
+  revalidatePath("/closings");
+  return { ok: true };
+}
