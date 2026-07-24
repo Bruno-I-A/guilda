@@ -54,6 +54,9 @@ export interface ClosingView {
   dueDate: string;
   status: ClosingStatus;
   notes: string | null;
+  cashBalance: string | null;
+  periodResult: string | null;
+  shareholderLoan: string | null;
   completedAt: string | null;
   completedBy: string | null;
 }
@@ -74,6 +77,9 @@ interface ClosingFields {
   year: number;
   title: string;
   notes: string;
+  cashBalance: string;
+  periodResult: string;
+  shareholderLoan: string;
 }
 
 function ClosingFormDialog({
@@ -143,6 +149,9 @@ function ClosingFormDialog({
               year,
               title: String(form.get("title") ?? ""),
               notes: String(form.get("notes") ?? ""),
+              cashBalance: String(form.get("cashBalance") ?? ""),
+              periodResult: String(form.get("periodResult") ?? ""),
+              shareholderLoan: String(form.get("shareholderLoan") ?? ""),
             });
           }}
         >
@@ -156,6 +165,49 @@ function ClosingFormDialog({
               maxLength={160}
               required
             />
+          </div>
+
+          <div className="grid gap-2">
+            <div>
+              <p className="text-sm font-medium">Valores do período (opcional)</p>
+              <p className="text-xs text-muted-foreground">
+                Use o sinal de menos para informar saldo ou resultado negativo.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="closing-cash-balance">Saldo de caixa</Label>
+                <Input
+                  id="closing-cash-balance"
+                  name="cashBalance"
+                  inputMode="decimal"
+                  defaultValue={initial?.cashBalance ?? ""}
+                  placeholder="Ex.: 15.000,00 ou -2.500,00"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="closing-period-result">Resultado</Label>
+                <Input
+                  id="closing-period-result"
+                  name="periodResult"
+                  inputMode="decimal"
+                  defaultValue={initial?.periodResult ?? ""}
+                  placeholder="Ex.: 8.500,00 ou -1.200,00"
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="closing-shareholder-loan">
+                Empréstimo de sócio
+              </Label>
+              <Input
+                id="closing-shareholder-loan"
+                name="shareholderLoan"
+                inputMode="decimal"
+                defaultValue={initial?.shareholderLoan ?? ""}
+                placeholder="Ex.: 20.000,00"
+              />
+            </div>
           </div>
 
           <div className="grid gap-2">
@@ -282,6 +334,13 @@ function formatDateTime(value: string): string {
   }).format(new Date(value));
 }
 
+function formatMoney(value: string): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(Number(value));
+}
+
 function ClosingRow({
   closing,
   company,
@@ -317,6 +376,52 @@ function ClosingRow({
           </Button>
         </div>
       </div>
+      {closing.cashBalance !== null ||
+      closing.periodResult !== null ||
+      closing.shareholderLoan !== null ? (
+        <dl className="grid gap-2 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-3">
+          {closing.cashBalance !== null ? (
+            <div>
+              <dt className="text-xs text-muted-foreground">Saldo de caixa</dt>
+              <dd
+                className={cn(
+                  "font-mono font-medium",
+                  Number(closing.cashBalance) < 0
+                    ? "text-red-300"
+                    : "text-emerald-300",
+                )}
+              >
+                {formatMoney(closing.cashBalance)}
+              </dd>
+            </div>
+          ) : null}
+          {closing.periodResult !== null ? (
+            <div>
+              <dt className="text-xs text-muted-foreground">Resultado</dt>
+              <dd
+                className={cn(
+                  "font-mono font-medium",
+                  Number(closing.periodResult) < 0
+                    ? "text-red-300"
+                    : "text-emerald-300",
+                )}
+              >
+                {formatMoney(closing.periodResult)}
+              </dd>
+            </div>
+          ) : null}
+          {closing.shareholderLoan !== null ? (
+            <div>
+              <dt className="text-xs text-muted-foreground">
+                Empréstimo de sócio
+              </dt>
+              <dd className="font-mono font-medium">
+                {formatMoney(closing.shareholderLoan)}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
       {closing.notes ? (
         <div className="flex gap-2 border-l-2 border-border pl-3 text-sm text-muted-foreground">
           <MessageSquareText className="mt-0.5 size-4 shrink-0" aria-hidden />

@@ -15,6 +15,51 @@ import {
 
 const yearSchema = z.number().int().min(2000).max(2100);
 
+function optionalMoneySchema(
+  label: string,
+  options: { nonnegative?: boolean } = {},
+) {
+  return z
+    .union([z.string(), z.number()])
+    .transform((value, ctx) => {
+      const raw = String(value).trim();
+      if (!raw) return null;
+
+      const normalized = raw.includes(",")
+        ? raw.replace(/\./g, "").replace(",", ".")
+        : raw;
+
+      if (!/^-?\d+(?:\.\d{1,2})?$/.test(normalized)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `${label} deve ser um valor válido com até 2 casas decimais.`,
+        });
+        return z.NEVER;
+      }
+
+      const numericValue = Number(normalized);
+      if (
+        !Number.isFinite(numericValue) ||
+        Math.abs(numericValue) > 9_999_999_999_999.99
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          message: `${label} está fora do limite permitido.`,
+        });
+        return z.NEVER;
+      }
+      if (options.nonnegative && numericValue < 0) {
+        ctx.addIssue({
+          code: "custom",
+          message: `${label} não pode ser negativo.`,
+        });
+        return z.NEVER;
+      }
+
+      return normalized;
+    });
+}
+
 const closingFields = {
   title: z
     .string()
@@ -22,6 +67,11 @@ const closingFields = {
     .min(2, "Descreva o fechamento.")
     .max(160, "Descrição muito longa."),
   notes: z.string().trim().max(3000, "Observação muito longa."),
+  cashBalance: optionalMoneySchema("Saldo de caixa"),
+  periodResult: optionalMoneySchema("Resultado"),
+  shareholderLoan: optionalMoneySchema("Empréstimo de sócio", {
+    nonnegative: true,
+  }),
 };
 
 const createClosingSchema = z.object({
@@ -63,6 +113,9 @@ export async function createClosing(
         dueDate: `${data.year}-12-31`,
         status: "completed",
         notes: data.notes || null,
+        cashBalance: data.cashBalance,
+        periodResult: data.periodResult,
+        shareholderLoan: data.shareholderLoan,
         createdBy: ctx.userId,
         completedBy: ctx.userId,
         completedAt: now,
@@ -125,6 +178,9 @@ export async function updateClosing(
         dueDate: `${data.year}-12-31`,
         status: "completed",
         notes: data.notes || null,
+        cashBalance: data.cashBalance,
+        periodResult: data.periodResult,
+        shareholderLoan: data.shareholderLoan,
         completedBy: closing.completedBy ?? ctx.userId,
         completedAt: closing.completedAt ?? now,
         updatedAt: now,

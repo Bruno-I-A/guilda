@@ -4,6 +4,7 @@ import {
   date,
   index,
   integer,
+  numeric,
   pgEnum,
   pgTable,
   smallint,
@@ -215,6 +216,9 @@ export const accountingClosings = pgTable(
     dueDate: date("due_date", { mode: "string" }).notNull(),
     status: closingStatus("status").notNull().default("pending"),
     notes: text("notes"),
+    cashBalance: numeric("cash_balance", { precision: 15, scale: 2 }),
+    periodResult: numeric("period_result", { precision: 15, scale: 2 }),
+    shareholderLoan: numeric("shareholder_loan", { precision: 15, scale: 2 }),
     createdBy: text("created_by")
       .notNull()
       .references(() => user.id),

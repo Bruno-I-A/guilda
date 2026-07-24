@@ -128,6 +128,9 @@ export default async function ClosingsPage({
       dueDate: closing.dueDate,
       status: closing.status,
       notes: closing.notes,
+      cashBalance: closing.cashBalance,
+      periodResult: closing.periodResult,
+      shareholderLoan: closing.shareholderLoan,
       completedAt: closing.completedAt?.toISOString() ?? null,
       completedBy: closing.completedByUser?.name ?? null,
     });
