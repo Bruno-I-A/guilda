@@ -166,33 +166,27 @@ container devem mostrar `Telegram worker iniciado em modo polling` e
 
 ### IA: mensagens empresariais → missões
 
-Com `ANTHROPIC_API_KEY` configurada, qualquer membro conectado pode encaminhar ao bot uma
-mensagem que contenha `INFORMATIVO NOVO CLIENTE` ou `INFORMATIVO ALTERAÇÃO
-CLIENTE`, além de `INFORMATIVO DE BAIXA DE CLIENTE`; não é necessário digitar
-um comando.
-
-Para solicitações curtas e frequentes de abertura, baixa ou alteração, use uma
-única mensagem neste formato:
+Com `ANTHROPIC_API_KEY` configurada, qualquer membro conectado pode escrever ao
+bot em linguagem natural. A mensagem precisa informar o que aconteceu ou foi
+alterado, o nome da empresa, as ações necessárias e os responsáveis, mas não há
+cabeçalho, ordem, rótulos ou formatação obrigatórios. Por exemplo:
 
 ```text
-MISSÃO EMPRESARIAL
-TIPO: ABRIU | FECHOU | ALTEROU
-EMPRESA: nome completo
-AÇÕES:
-- primeira ação
-- segunda ação
-RESPONSÁVEL: nome da pessoa
+Fiz a abertura da PICCOLI AGRO SERVIÇOS LTDA. O Bruno deve encaminhar na
+prefeitura e solicitar o certificado digital.
 ```
 
-Cada ação independente vira uma missão para o responsável informado. Campos
-ausentes e responsáveis ambíguos ou inexistentes bloqueiam a confirmação.
+Cada ação independente vira uma missão para o responsável informado. Se faltar
+uma informação essencial, o bot pede que a pessoa complemente a mensagem; nomes
+ambíguos ou inexistentes bloqueiam a confirmação.
 
-O bot usa Claude Sonnet com Structured Outputs para extrair empresa, ações e
-responsáveis, resolve os nomes contra os membros reais da Guilda e mostra uma prévia. A
+O bot usa Claude Sonnet com Structured Outputs para interpretar a intenção,
+extrair empresa, alteração, ações e responsáveis, resolver os nomes contra os
+membros reais da Guilda e mostrar uma prévia. A
 criação só acontece depois de tocar em **Criar missões**; nomes não reconhecidos
 bloqueiam a confirmação. Se o cliente já existe, as missões ficam vinculadas a
-ele; em novo cliente, o cadastro é feito automaticamente quando CNPJ e regime
-forem válidos. Caso contrário, a prévia avisa e permite criar as missões sem
+ele; nos informativos detalhados de novo cliente, o cadastro é feito
+automaticamente quando CNPJ e regime forem válidos. Caso contrário, a prévia avisa e permite criar as missões sem
 vínculo. Para responsáveis múltiplos (`Rafa/Bruno`), é criada uma missão para
 cada pessoa. Itens meramente informativos como “segue sem alterações” não viram
 missão.

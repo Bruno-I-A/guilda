@@ -24,10 +24,6 @@ import {
   getActiveTelegramConnectionByTelegramUserId,
   touchTelegramConnection,
 } from "./endpoint-repository";
-import {
-  isClientWorkMessage,
-  validateBusinessMissionFormat,
-} from "./informative-detection";
 
 type Connection = NonNullable<
   Awaited<ReturnType<typeof getActiveTelegramConnectionByTelegramUserId>>
@@ -42,15 +38,8 @@ const STATUS_LABEL: Record<(typeof schema.tasks.$inferSelect)["status"], string>
   cancelled: "Cancelada",
 };
 
-const BUSINESS_MISSION_TEMPLATE = `Use uma única mensagem neste formato:
-
-MISSÃO EMPRESARIAL
-TIPO: ABRIU | FECHOU | ALTEROU
-EMPRESA: nome completo
-AÇÕES:
-- primeira ação
-- segunda ação
-RESPONSÁVEL: nome da pessoa`;
+const NATURAL_MISSION_GUIDANCE =
+  "Envie a solicitação em uma única mensagem, do seu jeito. Inclua o que aconteceu com a empresa, o nome dela, o que precisa ser feito e quem será o responsável. A ordem e a formatação não importam.";
 
 function appUrl(path: string): string {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;
@@ -78,12 +67,6 @@ async function handleMessage(api: TelegramApi, message: TelegramMessage): Promis
   if (!message.from || message.from.is_bot || !message.text) return;
 
   if (message.chat.type !== "private") {
-    if (isClientWorkMessage(message.text)) {
-      await api.sendMessage(
-        message.chat.id,
-        "Por segurança, encaminhe o informativo em uma conversa privada comigo.",
-      );
-    }
     return;
   }
 
@@ -101,7 +84,7 @@ async function handleMessage(api: TelegramApi, message: TelegramMessage): Promis
     await api.sendMessage(
       message.chat.id,
       linked
-        ? `Telegram conectado à Guilda. Agora encaminhe um informativo ou envie uma missão empresarial.\n\n${BUSINESS_MISSION_TEMPLATE}`
+        ? `Telegram conectado à Guilda. Agora você pode criar missões escrevendo normalmente.\n\n${NATURAL_MISSION_GUIDANCE}`
         : "Este link é inválido, expirou ou já foi usado. Gere outro no seu perfil.",
     );
     return;
@@ -116,23 +99,6 @@ async function handleMessage(api: TelegramApi, message: TelegramMessage): Promis
     return;
   }
   await touchTelegramConnection(connection, String(message.chat.id));
-
-  if (!isClientWorkMessage(message.text)) {
-    await api.sendMessage(
-      message.chat.id,
-      BUSINESS_MISSION_TEMPLATE,
-    );
-    return;
-  }
-
-  const formatError = validateBusinessMissionFormat(message.text);
-  if (formatError) {
-    await api.sendMessage(
-      message.chat.id,
-      `${formatError}\n\n${BUSINESS_MISSION_TEMPLATE}`,
-    );
-    return;
-  }
 
   const actor = await activeActor(connection);
   if (!actor) {
@@ -151,14 +117,14 @@ async function handleMessage(api: TelegramApi, message: TelegramMessage): Promis
       message.text,
     );
   } catch (error) {
-    console.error("Falha ao classificar informativo encaminhado", {
+    console.error("Falha ao interpretar solicitação do Telegram", {
       orgId: actor.orgId,
       userId: actor.userId,
       error: error instanceof Error ? error.message : error,
     });
     await api.sendMessage(
       message.chat.id,
-      `Não consegui analisar o informativo: ${error instanceof Error ? error.message : "falha desconhecida"}`,
+      `Não consegui analisar a solicitação: ${error instanceof Error ? error.message : "falha desconhecida"}`,
     );
   }
 }

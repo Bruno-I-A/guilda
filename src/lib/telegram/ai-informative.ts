@@ -16,9 +16,16 @@ import { createTaskRecord } from "@/lib/tasks/create";
 
 import type { TelegramApi } from "./endpoint";
 import { encodeDraftCallback } from "./endpoint";
-import { isBusinessMissionMessage } from "./informative-detection";
+import { isDetailedInformativeMessage } from "./informative-detection";
 
 const DRAFT_TTL_MS = 30 * 60 * 1000;
+
+const MISSING_FIELD_LABELS = {
+  change: "o que aconteceu ou foi alterado",
+  company: "o nome da empresa",
+  actions: "o que precisa ser feito",
+  responsible: "quem será o responsável",
+} as const;
 
 type Actor = {
   orgId: string;
@@ -84,14 +91,42 @@ export async function createInformativeDraft(
   await api.sendMessage(chatId, "🤖 Analisando a solicitação e conferindo responsáveis…");
 
   const members = await listOrgMembers(actor.orgId);
-  const sourceFormat = isBusinessMissionMessage(sourceText)
-    ? "business_mission"
-    : "informative";
+  const sourceFormat = isDetailedInformativeMessage(sourceText)
+    ? "informative"
+    : "business_mission";
   const extracted = await extractInformative(
     sourceText,
     members.map(({ userId, name }) => ({ userId, name })),
     `${actor.orgId}:${actor.userId}`,
   );
+
+  if (!extracted.data.isMissionRequest) {
+    await api.sendMessage(
+      chatId,
+      "Não identifiquei uma solicitação de missão. Escreva em uma única mensagem o que aconteceu com a empresa, o nome dela, as ações necessárias e o responsável.",
+    );
+    return;
+  }
+
+  const missing = new Set(extracted.data.missingFields);
+  if (!extracted.data.kind) missing.add("change");
+  if (!extracted.data.company.legalName) missing.add("company");
+  if (extracted.data.tasks.length === 0) missing.add("actions");
+  if (extracted.data.tasks.some((task) => task.assignees.length === 0)) {
+    missing.add("responsible");
+  }
+  if (missing.size) {
+    const labels = [...missing].map((field) => MISSING_FIELD_LABELS[field]);
+    await api.sendMessage(
+      chatId,
+      `Entendi parte da solicitação, mas faltou informar: ${labels.join(", ")}. Reenvie tudo em uma única mensagem; a ordem e a formatação não importam.`,
+    );
+    return;
+  }
+
+  const kind = extracted.data.kind;
+  const legalName = extracted.data.company.legalName;
+  if (!kind || !legalName) return;
 
   const normalizedCnpj = extracted.data.company.cnpj
     ? normalizeCnpj(extracted.data.company.cnpj)
@@ -112,7 +147,7 @@ export async function createInformativeDraft(
     return tx.query.clients.findFirst({
       where: and(
         eq(schema.clients.orgId, actor.orgId),
-        eq(schema.clients.name, extracted.data.company.legalName),
+        eq(schema.clients.name, legalName),
       ),
     });
   });
@@ -178,9 +213,12 @@ export async function createInformativeDraft(
 
   const payload = informativeDraftPayloadSchema.parse({
     ...extracted.data,
+    kind,
     sourceFormat,
     company: {
       ...extracted.data.company,
+      legalName,
+      summary: extracted.data.company.summary ?? `Solicitação referente a ${legalName}.`,
       normalizedCnpj: validCnpj,
       clientId: existingClient?.id ?? null,
       createClient,

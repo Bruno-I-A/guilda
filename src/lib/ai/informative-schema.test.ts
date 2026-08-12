@@ -7,6 +7,7 @@ import {
 } from "./informative-schema";
 
 const extraction = {
+  isMissionRequest: true,
   kind: "new_client" as const,
   company: {
     systemCode: "1124",
@@ -30,6 +31,7 @@ const extraction = {
   ],
   ignoredNotes: [],
   warnings: [],
+  missingFields: [],
 };
 
 describe("informativeExtractionSchema", () => {
@@ -39,6 +41,37 @@ describe("informativeExtractionSchema", () => {
 
   it("é conversível para o formato estruturado da API", () => {
     expect(() => zodOutputFormat(informativeExtractionSchema)).not.toThrow();
+  });
+
+  it("representa conversa comum sem inventar uma missão", () => {
+    const result = informativeExtractionSchema.parse({
+      isMissionRequest: false,
+      kind: null,
+      company: {
+        systemCode: null,
+        legalName: null,
+        cnpj: null,
+        taxRegime: null,
+        city: null,
+        contact: null,
+        summary: null,
+      },
+      tasks: [],
+      ignoredNotes: [],
+      warnings: [],
+      missingFields: [],
+    });
+    expect(result.isMissionRequest).toBe(false);
+  });
+
+  it("permite à IA indicar os dados essenciais ausentes", () => {
+    const result = informativeExtractionSchema.parse({
+      ...extraction,
+      kind: null,
+      tasks: [],
+      missingFields: ["change", "actions", "responsible"],
+    });
+    expect(result.missingFields).toEqual(["change", "actions", "responsible"]);
   });
 
   it("recusa prioridade e prazo inventados fora do contrato", () => {
