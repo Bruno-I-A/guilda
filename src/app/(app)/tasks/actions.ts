@@ -14,6 +14,9 @@ import {
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
+import { encodeTaskCallback } from "@/lib/telegram/endpoint";
+import { notificationPayload, enqueueTelegramNotificationIfEnabled } from "@/lib/telegram/notifications";
+import { dueDateLabel, taskUrl } from "@/lib/telegram/notification-payload";
 
 /**
  * Server Actions de tarefas.
@@ -101,6 +104,23 @@ export async function createTask(
       actorId: ctx.userId,
       fromStatus: null,
       toStatus: "pending",
+    });
+
+    await enqueueTelegramNotificationIfEnabled(tx, {
+      orgId: ctx.orgId,
+      userId: data.assigneeId,
+      eventType: "task_assigned",
+      dedupeKey: `task:${task.id}:assigned`,
+      payload: notificationPayload(
+        "tasks",
+        `⚔️ Nova missão atribuída\n\n${data.title}\nPrazo: ${dueDateLabel(dueDateFromInput(data.dueDate))}\nRecompensa: ${xpValue} XP`,
+        [
+          [
+            { text: "Iniciar missão", callbackData: encodeTaskCallback("start", task.id) },
+            { text: "Abrir na Guilda", url: taskUrl(task.id, process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL) },
+          ],
+        ],
+      ),
     });
 
     return task.id;
@@ -232,17 +252,65 @@ async function transitionTask(options: {
       })
       .where(eq(schema.tasks.id, task.id));
 
-    await tx.insert(schema.taskEvents).values({
-      orgId: ctx.orgId,
-      taskId: task.id,
-      actorId: ctx.userId,
-      fromStatus: task.status,
-      toStatus: options.to,
-      note: options.note ?? null,
-    });
+    const [event] = await tx
+      .insert(schema.taskEvents)
+      .values({
+        orgId: ctx.orgId,
+        taskId: task.id,
+        actorId: ctx.userId,
+        fromStatus: task.status,
+        toStatus: options.to,
+        note: options.note ?? null,
+      })
+      .returning({ id: schema.taskEvents.id });
 
     if (options.sideEffect) {
       await options.sideEffect(tx, task);
+    }
+
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;
+    if (options.to === "awaiting_approval") {
+      await enqueueTelegramNotificationIfEnabled(tx, {
+        orgId: ctx.orgId,
+        userId: task.creatorId,
+        eventType: "task_awaiting_approval",
+        dedupeKey: `task-event:${event.id}:awaiting`,
+        payload: notificationPayload(
+          "approvals",
+          `🛡️ Missão aguardando aprovação\n\n${task.title}\nRecompensa: ${task.xpValue} XP`,
+          [[
+            { text: "Aprovar", callbackData: encodeTaskCallback("approve", task.id) },
+            { text: "Abrir", url: taskUrl(task.id, baseUrl) },
+          ]],
+        ),
+      });
+    } else if (options.to === "completed") {
+      await enqueueTelegramNotificationIfEnabled(tx, {
+        orgId: ctx.orgId,
+        userId: task.assigneeId,
+        eventType: "task_approved",
+        dedupeKey: `task:${task.id}:completed`,
+        payload: notificationPayload(
+          "xp",
+          `🏆 Missão concluída\n\n${task.title}\n+${task.xpValue} XP`,
+          [[{ text: "Ver missão", url: taskUrl(task.id, baseUrl) }]],
+        ),
+      });
+    } else if (options.to === "rejected") {
+      await enqueueTelegramNotificationIfEnabled(tx, {
+        orgId: ctx.orgId,
+        userId: task.assigneeId,
+        eventType: "task_rejected",
+        dedupeKey: `task-event:${event.id}:rejected`,
+        payload: notificationPayload(
+          "approvals",
+          `↩️ Missão devolvida para ajustes\n\n${task.title}\nMotivo: ${options.note ?? "Consulte a missão."}`,
+          [[
+            { text: "Retomar", callbackData: encodeTaskCallback("start", task.id) },
+            { text: "Abrir", url: taskUrl(task.id, baseUrl) },
+          ]],
+        ),
+      });
     }
 
     return { ok: true };

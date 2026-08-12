@@ -139,6 +139,23 @@ standalone e o Caddy publica `https://$DOMAIN` com certificado
 automático. Postgres já provisionado fora do Docker? Remova o serviço
 `db` e aponte as URLs — instruções no próprio `docker-compose.yml`.
 
+### Telegram (opcional, sem IA)
+
+1. Crie um bot pelo `@BotFather` e copie o token para
+   `TELEGRAM_BOT_TOKEN` no `.env`.
+2. Aplique as migrations e suba o Compose normalmente. O serviço
+   `telegram-worker` registra o webhook HTTPS, entrega a fila com retry e
+   agenda lembretes/resumos.
+3. Cada pessoa acessa **Perfil → Telegram** e abre o link temporário para
+   conectar sua conversa privada.
+
+O bot oferece `/minhas`, `/hoje`, `/atrasadas`, `/aprovar`, `/ranking`,
+`/perfil`, `/fechamentos`, `/bloqueados`, `/campanhas` e `/ajuda`, além de
+botões para movimentar missões. Sem `TELEGRAM_BOT_TOKEN`, aplicação e worker
+continuam operando normalmente, com a integração inativa. Em desenvolvimento,
+rode `npm run telegram:worker`; webhooks do Telegram exigem uma URL pública
+HTTPS (use um túnel se quiser testar localmente).
+
 ## Estrutura
 
 ```

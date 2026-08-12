@@ -1,14 +1,17 @@
 import { relations, sql } from "drizzle-orm";
 import {
   boolean,
+  bigint,
   date,
   index,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
   smallint,
   text,
+  time,
   timestamp,
   uniqueIndex,
   uuid,
@@ -365,3 +368,193 @@ export const missionTemplateItemsRelations = relations(
 
 export type MissionTemplate = typeof missionTemplates.$inferSelect;
 export type MissionTemplateItem = typeof missionTemplateItems.$inferSelect;
+
+/** Estado de entrega de uma mensagem na fila transacional do Telegram. */
+export const telegramOutboxStatus = pgEnum("telegram_outbox_status", [
+  "pending",
+  "processing",
+  "sent",
+  "failed",
+  "cancelled",
+]);
+
+/**
+ * Vínculo entre uma pessoa da Guilda e uma conversa privada do Telegram.
+ *
+ * O vínculo é sempre escopado por organização. Os índices parciais também
+ * impedem que uma conta/uma pessoa possua dois vínculos ativos, evitando que
+ * um comando recebido antes de conhecermos o tenant seja ambíguo.
+ */
+export const telegramConnections = pgTable(
+  "telegram_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    // IDs do Bot API têm até 52 bits significativos, portanto são seguros em
+    // number/JavaScript e preservados em bigint no Postgres.
+    telegramUserId: bigint("telegram_user_id", { mode: "number" }).notNull(),
+    chatId: bigint("chat_id", { mode: "number" }).notNull(),
+    username: varchar("username", { length: 64 }),
+    firstName: varchar("first_name", { length: 255 }),
+    lastName: varchar("last_name", { length: 255 }),
+    languageCode: varchar("language_code", { length: 16 }),
+    connectedAt: timestamp("connected_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("telegram_connections_org_user_active_uidx")
+      .on(t.orgId, t.userId)
+      .where(sql`revoked_at IS NULL`),
+    uniqueIndex("telegram_connections_telegram_user_active_uidx")
+      .on(t.telegramUserId)
+      .where(sql`revoked_at IS NULL`),
+    index("telegram_connections_org_idx").on(t.orgId),
+  ],
+);
+
+/** Token descartável de conexão. Somente o SHA-256 é persistido. */
+export const telegramLinkTokens = pgTable(
+  "telegram_link_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("telegram_link_tokens_hash_uidx").on(t.tokenHash),
+    index("telegram_link_tokens_org_user_idx").on(t.orgId, t.userId),
+    index("telegram_link_tokens_expires_idx").on(t.expiresAt),
+  ],
+);
+
+/** Preferências de notificação por pessoa e organização. */
+export const telegramPreferences = pgTable(
+  "telegram_preferences",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    taskNotifications: boolean("task_notifications").notNull().default(true),
+    approvalNotifications: boolean("approval_notifications")
+      .notNull()
+      .default(true),
+    deadlineReminders: boolean("deadline_reminders").notNull().default(true),
+    xpNotifications: boolean("xp_notifications").notNull().default(true),
+    closingNotifications: boolean("closing_notifications")
+      .notNull()
+      .default(true),
+    campaignNotifications: boolean("campaign_notifications")
+      .notNull()
+      .default(true),
+    dailySummary: boolean("daily_summary").notNull().default(false),
+    dailySummaryTime: time("daily_summary_time").notNull().default("08:00:00"),
+    timezone: varchar("timezone", { length: 64 })
+      .notNull()
+      .default("America/Sao_Paulo"),
+    quietHoursStart: time("quiet_hours_start"),
+    quietHoursEnd: time("quiet_hours_end"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("telegram_preferences_org_user_uidx").on(t.orgId, t.userId),
+    index("telegram_preferences_summary_idx").on(
+      t.orgId,
+      t.dailySummary,
+      t.dailySummaryTime,
+    ),
+  ],
+);
+
+/**
+ * Dedupe global de updates do Telegram. Não armazena payload nem dados do
+ * tenant: a organização ainda é desconhecida quando o update chega.
+ */
+export const telegramUpdates = pgTable(
+  "telegram_updates",
+  {
+    updateId: bigint("update_id", { mode: "number" }).primaryKey(),
+    receivedAt: timestamp("received_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lockedAt: timestamp("locked_at", { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    attemptCount: integer("attempt_count").notNull().default(1),
+    lastError: text("last_error"),
+  },
+  (t) => [index("telegram_updates_pending_idx").on(t.processedAt, t.lockedAt)],
+);
+
+/**
+ * Outbox transacional: produtores inserem eventos na mesma transação da
+ * mudança de domínio; um worker os envia depois, com retry e deduplicação.
+ */
+export const telegramOutbox = pgTable(
+  "telegram_outbox",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    connectionId: uuid("connection_id").references(() => telegramConnections.id),
+    eventType: varchar("event_type", { length: 80 }).notNull(),
+    dedupeKey: varchar("dedupe_key", { length: 255 }).notNull(),
+    // `unknown` força consumidores a validar a versão/formato antes do envio,
+    // sem exigir index signature nos payloads discriminados do domínio.
+    payload: jsonb("payload").$type<unknown>().notNull(),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    status: telegramOutboxStatus("status").notNull().default("pending"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    lastError: text("last_error"),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lockToken: uuid("lock_token"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("telegram_outbox_org_dedupe_uidx").on(t.orgId, t.dedupeKey),
+    index("telegram_outbox_pending_idx").on(t.status, t.scheduledFor),
+    index("telegram_outbox_org_user_idx").on(t.orgId, t.userId),
+  ],
+);
+
+export type TelegramConnection = typeof telegramConnections.$inferSelect;
+export type TelegramLinkToken = typeof telegramLinkTokens.$inferSelect;
+export type TelegramPreferences = typeof telegramPreferences.$inferSelect;
+export type TelegramUpdateRecord = typeof telegramUpdates.$inferSelect;
+export type TelegramOutboxEntry = typeof telegramOutbox.$inferSelect;

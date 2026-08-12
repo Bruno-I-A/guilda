@@ -120,6 +120,20 @@
       "when": 1784898288839,
       "tag": "0016_wooden_garia",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786532341597,
+      "tag": "0017_mute_red_wolf",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786532762421,
+      "tag": "0018_faithful_spot",
+      "breakpoints": true
     }
   ]
 }

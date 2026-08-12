@@ -43,6 +43,10 @@ function parseDue(value: string | undefined): "all" | "overdue" | "week" {
   return value === "overdue" || value === "week" ? value : "all";
 }
 
+function sevenDaysFromNow(): Date {
+  return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+}
+
 export default async function TasksPage({
   searchParams,
 }: {
@@ -69,7 +73,7 @@ export default async function TasksPage({
       notInArray(schema.tasks.status, ["completed", "cancelled"]),
     );
   } else if (due === "week") {
-    const inSevenDays = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const inSevenDays = sevenDaysFromNow();
     conditions.push(
       lte(schema.tasks.dueDate, inSevenDays),
       notInArray(schema.tasks.status, ["completed", "cancelled"]),

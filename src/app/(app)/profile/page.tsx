@@ -1,3 +1,4 @@
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { TrendingDown, TrendingUp } from "lucide-react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
@@ -13,15 +14,22 @@ import {
 } from "@/components/ui/card";
 import { Constellation } from "@/components/constellation";
 import { XpBar } from "@/components/xp-bar";
+import { withOrgTx } from "@/db/org-tx";
+import * as schema from "@/db/schema";
 import { levelProgress } from "@/domain/xp";
 import { initials, ROLE_LABELS } from "@/lib/people";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 import { formatDateTime } from "@/lib/task-ui";
+import { getTelegramConfig } from "@/lib/telegram/config";
+import { getTelegramBotUsername } from "@/lib/telegram/client";
 import {
   countCompletedTasks,
   getUserXpTotal,
   getXpHistory,
 } from "@/lib/xp-queries";
+
+import { TelegramSettings } from "./telegram-settings";
+import type { TelegramPreferencesView } from "./telegram-types";
 
 export const metadata: Metadata = { title: "Perfil" };
 
@@ -32,6 +40,20 @@ const REASON_LABELS: Record<string, string> = {
   bonus: "Bônus",
 };
 
+const DEFAULT_TELEGRAM_PREFERENCES: TelegramPreferencesView = {
+  taskNotifications: true,
+  approvalNotifications: true,
+  deadlineReminders: true,
+  xpNotifications: true,
+  closingNotifications: true,
+  campaignNotifications: true,
+  dailySummary: false,
+  dailySummaryTime: "08:00",
+  timezone: "America/Sao_Paulo",
+  quietHoursStart: null,
+  quietHoursEnd: null,
+};
+
 export default async function ProfilePage() {
   const session = await requireOrgSession();
   const member = await getActiveMember();
@@ -39,14 +61,35 @@ export default async function ProfilePage() {
     redirect("/onboarding");
   }
 
-  const [totalXp, completedCount, history] = await Promise.all([
+  const [totalXp, completedCount, history, telegramData, botUsername] = await Promise.all([
     getUserXpTotal(session.orgId, session.user.id),
     countCompletedTasks(session.orgId, session.user.id),
     getXpHistory(session.orgId, session.user.id),
+    withOrgTx(session.orgId, async (tx) => {
+      const [connection, preferences] = await Promise.all([
+        tx.query.telegramConnections.findFirst({
+          where: and(
+            eq(schema.telegramConnections.orgId, session.orgId),
+            eq(schema.telegramConnections.userId, session.user.id),
+            isNull(schema.telegramConnections.revokedAt),
+          ),
+          orderBy: [desc(schema.telegramConnections.connectedAt)],
+        }),
+        tx.query.telegramPreferences.findFirst({
+          where: and(
+            eq(schema.telegramPreferences.orgId, session.orgId),
+            eq(schema.telegramPreferences.userId, session.user.id),
+          ),
+        }),
+      ]);
+      return { connection, preferences };
+    }),
+    getTelegramBotUsername(),
   ]);
   const progress = levelProgress(totalXp);
   const xpIntoLevel = progress.totalXp - progress.currentLevelXp;
   const xpLevelSpan = progress.nextLevelXp - progress.currentLevelXp;
+  const telegramConfig = getTelegramConfig();
 
   return (
     <div className="grid gap-6">
@@ -86,6 +129,47 @@ export default async function ProfilePage() {
           {completedCount === 1 ? "entrega aprovada" : "entregas aprovadas"}
         </p>
       </section>
+
+      <TelegramSettings
+        key={telegramData.connection?.id ?? "telegram-disconnected"}
+        connection={
+          telegramData.connection
+            ? {
+                id: telegramData.connection.id,
+                username: telegramData.connection.username,
+                displayName:
+                  [
+                    telegramData.connection.firstName,
+                    telegramData.connection.lastName,
+                  ]
+                    .filter(Boolean)
+                    .join(" ") || null,
+                connectedAt: formatDateTime(telegramData.connection.connectedAt),
+              }
+            : null
+        }
+        preferences={
+          telegramData.preferences
+            ? {
+                taskNotifications: telegramData.preferences.taskNotifications,
+                approvalNotifications:
+                  telegramData.preferences.approvalNotifications,
+                deadlineReminders: telegramData.preferences.deadlineReminders,
+                xpNotifications: telegramData.preferences.xpNotifications,
+                closingNotifications: telegramData.preferences.closingNotifications,
+                campaignNotifications:
+                  telegramData.preferences.campaignNotifications,
+                dailySummary: telegramData.preferences.dailySummary,
+                dailySummaryTime: telegramData.preferences.dailySummaryTime,
+                timezone: telegramData.preferences.timezone,
+                quietHoursStart: telegramData.preferences.quietHoursStart,
+                quietHoursEnd: telegramData.preferences.quietHoursEnd,
+              }
+            : DEFAULT_TELEGRAM_PREFERENCES
+        }
+        botUsername={botUsername}
+        configured={Boolean(telegramConfig.botToken && botUsername)}
+      />
 
       <Card className="panel-cut">
         <CardHeader>

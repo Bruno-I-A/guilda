@@ -12,6 +12,11 @@ import {
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
+import {
+  enqueueTelegramNotificationIfEnabled,
+  enqueueTelegramOrgBroadcast,
+  notificationPayload,
+} from "@/lib/telegram/notifications";
 
 const yearSchema = z.number().int().min(2000).max(2100);
 
@@ -202,7 +207,7 @@ export async function updateClosing(
 
 const setStatusSchema = z.object({
   closingId: z.uuid(),
-  status: z.enum(["pending", "completed"]),
+  status: z.enum(["pending", "blocked", "completed"]),
 });
 
 export async function setClosingStatus(
@@ -215,8 +220,8 @@ export async function setClosingStatus(
   if (!parsed.success) return err("Situação inválida.");
 
   const completed = parsed.data.status === "completed";
-  const updated = await withOrgTx(ctx.orgId, (tx) =>
-    tx
+  const updated = await withOrgTx(ctx.orgId, async (tx) => {
+    const [row] = await tx
       .update(schema.accountingClosings)
       .set({
         status: parsed.data.status,
@@ -230,8 +235,39 @@ export async function setClosingStatus(
           eq(schema.accountingClosings.orgId, ctx.orgId),
         ),
       )
-      .returning({ id: schema.accountingClosings.id }),
-  );
+      .returning({
+        id: schema.accountingClosings.id,
+        title: schema.accountingClosings.title,
+        clientId: schema.accountingClosings.clientId,
+      });
+    if (!row) return [];
+    const client = await tx.query.clients.findFirst({
+      where: and(
+        eq(schema.clients.id, row.clientId),
+        eq(schema.clients.orgId, ctx.orgId),
+      ),
+      columns: { name: true },
+    });
+    await enqueueTelegramOrgBroadcast(tx, {
+      orgId: ctx.orgId,
+      eventType: `closing_${parsed.data.status}`,
+      dedupeKey: `closing:${row.id}:status:${parsed.data.status}:${Date.now()}`,
+      payload: notificationPayload(
+        "closings",
+        `📚 Fechamento ${parsed.data.status === "completed" ? "concluído" : parsed.data.status === "blocked" ? "com pendência" : "reaberto"}\n\n${client?.name ?? "Empresa"} — ${row.title}`,
+        process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL
+          ? [[{
+              text: "Abrir fechamentos",
+              url: new URL(
+                "/closings",
+                process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL,
+              ).toString(),
+            }]]
+          : undefined,
+      ),
+    });
+    return [row];
+  });
 
   if (updated.length === 0) return err("Fechamento não encontrado.");
   revalidatePath("/closings");
@@ -355,6 +391,28 @@ export async function setYearClosed(
         .onConflictDoNothing()
         .returning({ id: schema.xpLedger.id });
       xpAwarded = credited.length > 0;
+    }
+
+    if (xpAwarded) {
+      await enqueueTelegramNotificationIfEnabled(tx, {
+        orgId: ctx.orgId,
+        userId: ctx.userId,
+        eventType: "closing_year_xp",
+        dedupeKey: `closing-year:${annual.id}:xp`,
+        payload: notificationPayload(
+          "xp",
+          `🏆 Fechamento anual concluído\n\n+${CLOSING_YEAR_XP} XP`,
+          process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL
+            ? [[{
+                text: "Ver perfil",
+                url: new URL(
+                  "/profile",
+                  process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL,
+                ).toString(),
+              }]]
+            : undefined,
+        ),
+      });
     }
 
     return {

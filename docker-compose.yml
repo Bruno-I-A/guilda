@@ -43,6 +43,10 @@ services:
       DATABASE_URL: postgresql://guilda_app:${APP_DB_PASSWORD}@db:5432/guilda
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?defina BETTER_AUTH_SECRET no .env}
       BETTER_AUTH_URL: https://${DOMAIN:?defina DOMAIN no .env}
+      NEXT_PUBLIC_APP_URL: https://${DOMAIN:?defina DOMAIN no .env}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
     depends_on:
       db:
         condition: service_healthy
@@ -50,6 +54,27 @@ services:
         condition: service_completed_successfully
     expose:
       - "4000"
+
+  telegram-worker:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    command:
+      ["node", "--conditions=react-server", "--import=tsx", "scripts/telegram-worker.ts"]
+    environment:
+      DATABASE_URL: postgresql://guilda_app:${APP_DB_PASSWORD}@db:5432/guilda
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?defina BETTER_AUTH_SECRET no .env}
+      BETTER_AUTH_URL: https://${DOMAIN:?defina DOMAIN no .env}
+      NEXT_PUBLIC_APP_URL: https://${DOMAIN:?defina DOMAIN no .env}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   caddy:
     image: caddy:2-alpine
