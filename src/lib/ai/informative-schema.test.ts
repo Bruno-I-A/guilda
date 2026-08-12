@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { zodTextFormat } from "openai/helpers/zod";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 
 import {
   informativeDraftPayloadSchema,
@@ -38,7 +38,7 @@ describe("informativeExtractionSchema", () => {
   });
 
   it("é conversível para o formato estruturado da API", () => {
-    expect(() => zodTextFormat(informativeExtractionSchema, "informative_test")).not.toThrow();
+    expect(() => zodOutputFormat(informativeExtractionSchema)).not.toThrow();
   });
 
   it("recusa prioridade e prazo inventados fora do contrato", () => {

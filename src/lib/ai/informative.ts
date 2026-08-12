@@ -2,8 +2,8 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import OpenAI from "openai";
-import { zodTextFormat } from "openai/helpers/zod";
+import Anthropic from "@anthropic-ai/sdk";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 
 import { getAiConfig } from "./config";
 import {
@@ -47,24 +47,29 @@ export async function extractInformative(
   }
 
   const config = getAiConfig();
-  if (!config.apiKey) throw new Error("OPENAI_API_KEY não definida no servidor.");
-  const client = new OpenAI({ apiKey: config.apiKey, timeout: 60_000, maxRetries: 2 });
-  const response = await client.responses.parse({
+  if (!config.apiKey) throw new Error("ANTHROPIC_API_KEY não definida no servidor.");
+  const client = new Anthropic({
+    apiKey: config.apiKey,
+    timeout: 60_000,
+    maxRetries: 2,
+  });
+  const response = await client.messages.parse({
     model: config.model,
-    store: false,
-    safety_identifier: createHash("sha256")
-      .update(`guilda:informative:${actorKey}`)
-      .digest("hex"),
-    input: [
-      { role: "system", content: instructions(members) },
-      { role: "user", content: text },
-    ],
-    text: {
-      format: zodTextFormat(informativeExtractionSchema, "guilda_informative"),
+    max_tokens: 8_192,
+    thinking: { type: "disabled" },
+    system: instructions(members),
+    messages: [{ role: "user", content: text }],
+    metadata: {
+      user_id: createHash("sha256")
+        .update(`guilda:informative:${actorKey}`)
+        .digest("hex"),
+    },
+    output_config: {
+      format: zodOutputFormat(informativeExtractionSchema),
     },
   });
-  if (!response.output_parsed) {
+  if (!response.parsed_output) {
     throw new Error("A IA não conseguiu produzir uma classificação válida.");
   }
-  return { model: config.model, data: response.output_parsed };
+  return { model: config.model, data: response.parsed_output };
 }

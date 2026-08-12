@@ -165,12 +165,12 @@ container devem mostrar `Telegram worker iniciado em modo polling` e
 
 ### IA: informativos → missões
 
-Com `OPENAI_API_KEY` configurada, admin/owner pode encaminhar ao bot uma
+Com `ANTHROPIC_API_KEY` configurada, admin/owner pode encaminhar ao bot uma
 mensagem que contenha `INFORMATIVO NOVO CLIENTE` ou `INFORMATIVO ALTERAÇÃO
 CLIENTE`. Também é possível usar `/informativo <texto>`.
 
-O bot usa Structured Outputs para extrair empresa, ações e responsáveis,
-resolve os nomes contra os membros reais da Guilda e mostra uma prévia. A
+O bot usa Claude Sonnet com Structured Outputs para extrair empresa, ações e
+responsáveis, resolve os nomes contra os membros reais da Guilda e mostra uma prévia. A
 criação só acontece depois de tocar em **Criar missões**; nomes não reconhecidos
 bloqueiam a confirmação. Se o cliente já existe, as missões ficam vinculadas a
 ele; em novo cliente, o cadastro é feito automaticamente quando CNPJ e regime

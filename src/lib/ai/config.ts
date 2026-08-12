@@ -12,8 +12,8 @@ function optionalEnv(value: string | undefined): string | undefined {
 
 export function getAiConfig(): AiConfig {
   return {
-    apiKey: optionalEnv(process.env.OPENAI_API_KEY),
-    model: optionalEnv(process.env.OPENAI_MODEL) ?? "gpt-5.6-luna",
+    apiKey: optionalEnv(process.env.ANTHROPIC_API_KEY),
+    model: optionalEnv(process.env.ANTHROPIC_MODEL) ?? "claude-sonnet-5",
   };
 }
 
