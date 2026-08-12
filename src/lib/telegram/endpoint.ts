@@ -135,6 +135,7 @@ export type BotCommand =
   | "fechamentos"
   | "bloqueados"
   | "campanhas"
+  | "informativo"
   | "rejeitar"
   | "cancelar"
   | "ajuda";
@@ -150,6 +151,7 @@ const KNOWN_COMMANDS = new Set<BotCommand>([
   "fechamentos",
   "bloqueados",
   "campanhas",
+  "informativo",
   "rejeitar",
   "cancelar",
   "ajuda",
@@ -159,7 +161,7 @@ const KNOWN_COMMANDS = new Set<BotCommand>([
 export function parseBotCommand(
   text: string,
 ): { command: BotCommand; argument?: string } | null {
-  const match = text.trim().match(/^\/([a-z_]+)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/i);
+  const match = text.trim().match(/^\/([a-z_]+)(?:@[a-z0-9_]+)?(?:\s+([\s\S]+))?$/i);
   if (!match) return null;
   const command = match[1].toLocaleLowerCase("en-US") as BotCommand;
   if (!KNOWN_COMMANDS.has(command)) return null;
@@ -215,4 +217,23 @@ export function parseTaskCallback(
   const action = CALLBACK_ACTIONS.get(match[1]);
   const taskId = base64UrlToUuid(match[2]);
   return action && taskId ? { action, taskId } : null;
+}
+
+export type DraftCallbackAction = "confirm" | "cancel";
+
+export function encodeDraftCallback(
+  action: DraftCallbackAction,
+  draftId: string,
+): string {
+  return `i:${action === "confirm" ? "c" : "x"}:${uuidToBase64Url(draftId)}`;
+}
+
+export function parseDraftCallback(
+  data: string,
+): { action: DraftCallbackAction; draftId: string } | null {
+  const match = data.match(/^i:([cx]):([A-Za-z0-9_-]{22})$/);
+  if (!match) return null;
+  const draftId = base64UrlToUuid(match[2]);
+  if (!draftId) return null;
+  return { action: match[1] === "c" ? "confirm" : "cancel", draftId };
 }

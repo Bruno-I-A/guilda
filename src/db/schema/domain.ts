@@ -49,6 +49,7 @@ export const tasks = pgTable(
     assigneeId: text("assignee_id")
       .notNull()
       .references(() => user.id),
+    clientId: uuid("client_id").references(() => clients.id),
     title: varchar("title", { length: 200 }).notNull(),
     description: text("description"),
     priority: smallint("priority").notNull().default(2), // 1 baixa, 2 média, 3 alta
@@ -63,6 +64,7 @@ export const tasks = pgTable(
   (t) => [
     index("tasks_org_assignee_status_idx").on(t.orgId, t.assigneeId, t.status),
     index("tasks_org_due_date_idx").on(t.orgId, t.dueDate),
+    index("tasks_org_client_idx").on(t.orgId, t.clientId),
   ],
 );
 
@@ -141,12 +143,6 @@ export const xpLedgerRelations = relations(xpLedger, ({ one }) => ({
 
 export type XpLedgerEntry = typeof xpLedger.$inferSelect;
 
-export const tasksRelations = relations(tasks, ({ one, many }) => ({
-  creator: one(user, { fields: [tasks.creatorId], references: [user.id] }),
-  assignee: one(user, { fields: [tasks.assigneeId], references: [user.id] }),
-  events: many(taskEvents),
-}));
-
 export const taskEventsRelations = relations(taskEvents, ({ one }) => ({
   task: one(tasks, { fields: [taskEvents.taskId], references: [tasks.id] }),
   actor: one(user, { fields: [taskEvents.actorId], references: [user.id] }),
@@ -199,6 +195,13 @@ export const clients = pgTable(
 );
 
 export type Client = typeof clients.$inferSelect;
+
+export const tasksRelations = relations(tasks, ({ one, many }) => ({
+  creator: one(user, { fields: [tasks.creatorId], references: [user.id] }),
+  assignee: one(user, { fields: [tasks.assigneeId], references: [user.id] }),
+  client: one(clients, { fields: [tasks.clientId], references: [clients.id] }),
+  events: many(taskEvents),
+}));
 
 /**
  * Fechamentos contábeis livres: cada linha é uma necessidade real com prazo,
@@ -378,6 +381,12 @@ export const telegramOutboxStatus = pgEnum("telegram_outbox_status", [
   "cancelled",
 ]);
 
+export const telegramAiDraftStatus = pgEnum("telegram_ai_draft_status", [
+  "pending",
+  "confirmed",
+  "cancelled",
+]);
+
 /**
  * Vínculo entre uma pessoa da Guilda e uma conversa privada do Telegram.
  *
@@ -514,6 +523,44 @@ export const telegramUpdates = pgTable(
 );
 
 /**
+ * Prévia gerada pela IA. Nenhuma missão é criada até um admin/owner confirmar
+ * explicitamente o rascunho pelo Telegram.
+ */
+export const telegramAiDrafts = pgTable(
+  "telegram_ai_drafts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    requestedBy: text("requested_by")
+      .notNull()
+      .references(() => user.id),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => telegramConnections.id),
+    sourceText: text("source_text").notNull(),
+    model: varchar("model", { length: 80 }).notNull(),
+    payload: jsonb("payload").$type<unknown>().notNull(),
+    status: telegramAiDraftStatus("status").notNull().default("pending"),
+    createdTaskIds: jsonb("created_task_ids").$type<unknown>(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("telegram_ai_drafts_org_user_status_idx").on(
+      t.orgId,
+      t.requestedBy,
+      t.status,
+    ),
+    index("telegram_ai_drafts_expires_idx").on(t.expiresAt),
+  ],
+);
+
+/**
  * Outbox transacional: produtores inserem eventos na mesma transação da
  * mudança de domínio; um worker os envia depois, com retry e deduplicação.
  */
@@ -558,3 +605,4 @@ export type TelegramLinkToken = typeof telegramLinkTokens.$inferSelect;
 export type TelegramPreferences = typeof telegramPreferences.$inferSelect;
 export type TelegramUpdateRecord = typeof telegramUpdates.$inferSelect;
 export type TelegramOutboxEntry = typeof telegramOutbox.$inferSelect;
+export type TelegramAiDraft = typeof telegramAiDrafts.$inferSelect;

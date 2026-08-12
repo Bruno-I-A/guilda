@@ -9,10 +9,15 @@ import { authorizeTransition, type OrgRole } from "@/domain/task-state";
 import { levelProgress } from "@/domain/xp";
 import { getLeaderboard, getUserXpTotal } from "@/lib/xp-queries";
 
+import {
+  createInformativeDraft,
+  decideInformativeDraft,
+} from "./ai-informative";
 import { runTelegramTaskAction } from "./actions";
 import {
   encodeTaskCallback,
   parseBotCommand,
+  parseDraftCallback,
   parseTaskCallback,
   type InlineKeyboardButton,
   type TelegramApi,
@@ -261,6 +266,35 @@ async function handleConnectedCommand(
   if (command === "hoje") return sendTaskList(api, chatId, actor, "Missões de hoje", "today");
   if (command === "atrasadas") return sendTaskList(api, chatId, actor, "Missões atrasadas", "overdue");
   if (command === "aprovar") return sendTaskList(api, chatId, actor, "Fila de aprovação", "approval");
+  if (command === "informativo") {
+    if (!parsed.argument) {
+      await api.sendMessage(
+        chatId,
+        "Envie /informativo seguido do texto ou encaminhe uma mensagem que comece com INFORMATIVO NOVO CLIENTE/ALTERAÇÃO CLIENTE.",
+      );
+      return;
+    }
+    try {
+      await createInformativeDraft(
+        api,
+        chatId,
+        connection.id,
+        actor,
+        parsed.argument,
+      );
+    } catch (error) {
+      console.error("Falha ao classificar informativo", {
+        orgId: actor.orgId,
+        userId: actor.userId,
+        error: error instanceof Error ? error.message : error,
+      });
+      await api.sendMessage(
+        chatId,
+        `Não consegui analisar o informativo: ${error instanceof Error ? error.message : "falha desconhecida"}`,
+      );
+    }
+    return;
+  }
 
   if (command === "ranking") {
     const rows = await getLeaderboard(actor.orgId, "week");
@@ -357,6 +391,7 @@ async function sendHelp(api: TelegramApi, chatId: number): Promise<void> {
       "/fechamentos — pendências operacionais",
       "/bloqueados — fechamentos bloqueados",
       "/campanhas — campanhas da guilda",
+      "/informativo — classifica um informativo e prepara missões (admin)",
       "/rejeitar — devolve uma missão com motivo",
       "/cancelar — cancela uma missão autorizada",
       "/ajuda — esta mensagem",
@@ -399,6 +434,33 @@ async function handleMessage(api: TelegramApi, message: TelegramMessage): Promis
     return;
   }
   await touchTelegramConnection(connection, String(message.chat.id));
+  if (!parsed && /\bINFORMATIVO\s+(NOVO\s+CLIENTE|ALTERA[CÇ][AÃ]O\s+CLIENTE)/i.test(message.text)) {
+    const actor = await activeActor(connection);
+    if (!actor) {
+      await api.sendMessage(message.chat.id, "Seu vínculo não tem mais acesso à guilda. Reconecte pelo seu perfil.");
+      return;
+    }
+    try {
+      await createInformativeDraft(
+        api,
+        message.chat.id,
+        connection.id,
+        actor,
+        message.text,
+      );
+    } catch (error) {
+      console.error("Falha ao classificar informativo encaminhado", {
+        orgId: actor.orgId,
+        userId: actor.userId,
+        error: error instanceof Error ? error.message : error,
+      });
+      await api.sendMessage(
+        message.chat.id,
+        `Não consegui analisar o informativo: ${error instanceof Error ? error.message : "falha desconhecida"}`,
+      );
+    }
+    return;
+  }
   if (!parsed || parsed.command === "start") {
     await sendHelp(api, message.chat.id);
     return;
@@ -410,8 +472,9 @@ async function handleCallback(
   api: TelegramApi,
   callback: NonNullable<TelegramUpdate["callback_query"]>,
 ): Promise<void> {
-  const parsed = callback.data && parseTaskCallback(callback.data);
-  if (!parsed || !callback.message || callback.message.chat.type !== "private") {
+  const taskCallback = callback.data && parseTaskCallback(callback.data);
+  const draftCallback = callback.data && parseDraftCallback(callback.data);
+  if ((!taskCallback && !draftCallback) || !callback.message || callback.message.chat.type !== "private") {
     await api.answerCallbackQuery(callback.id, { text: "Ação inválida.", showAlert: true });
     return;
   }
@@ -420,25 +483,45 @@ async function handleCallback(
     await api.answerCallbackQuery(callback.id, { text: "Reconecte seu Telegram pelo perfil.", showAlert: true });
     return;
   }
-  if (parsed.action === "reject" || parsed.action === "cancel") {
-    const command = parsed.action === "reject" ? "rejeitar" : "cancelar";
+  if (draftCallback) {
+    const actor = await activeActor(connection);
+    if (!actor) {
+      await api.answerCallbackQuery(callback.id, { text: "Seu acesso à Guilda não está ativo.", showAlert: true });
+      return;
+    }
+    const result = await decideInformativeDraft(
+      actor,
+      connection.id,
+      draftCallback.draftId,
+      draftCallback.action,
+    );
+    await api.answerCallbackQuery(callback.id, {
+      text: result.message.slice(0, 200),
+      showAlert: !result.ok,
+    });
+    await api.sendMessage(callback.message.chat.id, result.message);
+    return;
+  }
+  if (!taskCallback) return;
+  if (taskCallback.action === "reject" || taskCallback.action === "cancel") {
+    const command = taskCallback.action === "reject" ? "rejeitar" : "cancelar";
     await api.answerCallbackQuery(callback.id, {
       text:
-        parsed.action === "reject"
+        taskCallback.action === "reject"
           ? "Envie o motivo na mensagem preparada."
           : "Confirme enviando o comando preparado.",
     });
     await api.sendMessage(
       callback.message.chat.id,
-      `Copie, complete e envie:\n/${command} ${parsed.taskId}${parsed.action === "reject" ? " motivo da rejeição" : " motivo opcional"}`,
+      `Copie, complete e envie:\n/${command} ${taskCallback.taskId}${taskCallback.action === "reject" ? " motivo da rejeição" : " motivo opcional"}`,
     );
     return;
   }
   const result = await runTelegramTaskAction({
     orgId: connection.orgId,
     userId: connection.userId,
-    taskId: parsed.taskId,
-    action: parsed.action,
+    taskId: taskCallback.taskId,
+    action: taskCallback.action,
   });
   await api.answerCallbackQuery(callback.id, {
     text: result.ok ? "Missão atualizada." : result.error,

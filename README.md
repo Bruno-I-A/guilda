@@ -163,6 +163,22 @@ Em produção, mantenha uma única réplica do serviço com polling. Os logs do
 container devem mostrar `Telegram worker iniciado em modo polling` e
 `Recepção do Telegram configurada por long polling` logo após a inicialização.
 
+### IA: informativos → missões
+
+Com `OPENAI_API_KEY` configurada, admin/owner pode encaminhar ao bot uma
+mensagem que contenha `INFORMATIVO NOVO CLIENTE` ou `INFORMATIVO ALTERAÇÃO
+CLIENTE`. Também é possível usar `/informativo <texto>`.
+
+O bot usa Structured Outputs para extrair empresa, ações e responsáveis,
+resolve os nomes contra os membros reais da Guilda e mostra uma prévia. A
+criação só acontece depois de tocar em **Criar missões**; nomes não reconhecidos
+bloqueiam a confirmação. Se o cliente já existe, as missões ficam vinculadas a
+ele; em novo cliente, o cadastro é feito automaticamente quando CNPJ e regime
+forem válidos. Caso contrário, a prévia avisa e permite criar as missões sem
+vínculo. Para responsáveis múltiplos (`Rafa/Bruno`), é criada uma missão para
+cada pessoa. Itens meramente informativos como “segue sem alterações” não viram
+missão.
+
 ## Estrutura
 
 ```

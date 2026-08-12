@@ -8,15 +8,18 @@ import { db } from "@/db";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { authorizeTransition, type TaskStatus } from "@/domain/task-state";
-import { calculateTaskXp } from "@/domain/xp";
 import {
   err,
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
+import { createTaskRecord } from "@/lib/tasks/create";
 import { encodeTaskCallback } from "@/lib/telegram/endpoint";
-import { notificationPayload, enqueueTelegramNotificationIfEnabled } from "@/lib/telegram/notifications";
-import { dueDateLabel, taskUrl } from "@/lib/telegram/notification-payload";
+import {
+  enqueueTelegramNotificationIfEnabled,
+  notificationPayload,
+} from "@/lib/telegram/notifications";
+import { taskUrl } from "@/lib/telegram/notification-payload";
 
 /**
  * Server Actions de tarefas.
@@ -78,51 +81,17 @@ export async function createTask(
     return err("A pessoa responsável precisa ser membro da organização.");
   }
 
-  // XP calculado NO SERVIDOR e congelado na criação — nunca vem do cliente
-  const xpValue = calculateTaskXp(data.difficulty, data.priority);
-
   const taskId = await withOrgTx(ctx.orgId, async (tx) => {
-    const [task] = await tx
-      .insert(schema.tasks)
-      .values({
-        orgId: ctx.orgId,
-        creatorId: ctx.userId,
-        assigneeId: data.assigneeId,
-        title: data.title,
-        description: data.description ?? null,
-        priority: data.priority,
-        difficulty: data.difficulty,
-        xpValue,
-        status: "pending",
-        dueDate: dueDateFromInput(data.dueDate),
-      })
-      .returning({ id: schema.tasks.id });
-
-    await tx.insert(schema.taskEvents).values({
+    const task = await createTaskRecord(tx, {
       orgId: ctx.orgId,
-      taskId: task.id,
-      actorId: ctx.userId,
-      fromStatus: null,
-      toStatus: "pending",
+      creatorId: ctx.userId,
+      assigneeId: data.assigneeId,
+      title: data.title,
+      description: data.description,
+      priority: data.priority,
+      difficulty: data.difficulty,
+      dueDate: dueDateFromInput(data.dueDate),
     });
-
-    await enqueueTelegramNotificationIfEnabled(tx, {
-      orgId: ctx.orgId,
-      userId: data.assigneeId,
-      eventType: "task_assigned",
-      dedupeKey: `task:${task.id}:assigned`,
-      payload: notificationPayload(
-        "tasks",
-        `⚔️ Nova missão atribuída\n\n${data.title}\nPrazo: ${dueDateLabel(dueDateFromInput(data.dueDate))}\nRecompensa: ${xpValue} XP`,
-        [
-          [
-            { text: "Iniciar missão", callbackData: encodeTaskCallback("start", task.id) },
-            { text: "Abrir na Guilda", url: taskUrl(task.id, process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL) },
-          ],
-        ],
-      ),
-    });
-
     return task.id;
   });
 

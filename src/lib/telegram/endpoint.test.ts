@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   encodeTaskCallback,
+  encodeDraftCallback,
   isTelegramUpdate,
   parseBotCommand,
   parseTaskCallback,
+  parseDraftCallback,
 } from "./endpoint";
 
 describe("parseBotCommand", () => {
@@ -39,6 +41,25 @@ describe("isTelegramUpdate", () => {
     expect(isTelegramUpdate({ update_id: -1 })).toBe(false);
     expect(isTelegramUpdate({ update_id: 1.5 })).toBe(false);
     expect(isTelegramUpdate({ update_id: "123" })).toBe(false);
+  });
+
+  it("preserva informativo multilinha", () => {
+    expect(parseBotCommand("/informativo INFORMATIVO NOVO CLIENTE\nRAZÃO SOCIAL – ACME")).toEqual({
+      command: "informativo",
+      argument: "INFORMATIVO NOVO CLIENTE\nRAZÃO SOCIAL – ACME",
+    });
+  });
+});
+
+describe("callbacks de rascunho da IA", () => {
+  const draftId = "123e4567-e89b-12d3-a456-426614174000";
+
+  it("faz round-trip compacto de confirmação e cancelamento", () => {
+    const confirm = encodeDraftCallback("confirm", draftId);
+    const cancel = encodeDraftCallback("cancel", draftId);
+    expect(Buffer.byteLength(confirm)).toBeLessThanOrEqual(64);
+    expect(parseDraftCallback(confirm)).toEqual({ action: "confirm", draftId });
+    expect(parseDraftCallback(cancel)).toEqual({ action: "cancel", draftId });
   });
 });
 
