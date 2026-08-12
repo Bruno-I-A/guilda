@@ -131,7 +131,7 @@ npm run e2e:phase3   # gamificação: crédito, níveis, ranking, reversão
 
 ```bash
 cp .env.production.example .env   # DOMAIN, senhas e BETTER_AUTH_SECRET
-docker compose up -d --build
+docker compose up -d --build --remove-orphans
 ```
 
 Sobe Postgres (com role dedicado), roda as migrations, inicia o app
@@ -143,10 +143,11 @@ automático. Postgres já provisionado fora do Docker? Remova o serviço
 
 1. Crie um bot pelo `@BotFather` e copie o token para
    `TELEGRAM_BOT_TOKEN` no `.env`.
-2. Aplique as migrations e suba o Compose normalmente. O serviço
-   `telegram-worker` recebe os comandos por long polling, entrega a fila com
-   retry e agenda lembretes/resumos. Assim o vínculo não depende de o Telegram
-   alcançar um webhook público.
+2. Aplique as migrations e suba o serviço normalmente. A imagem da Guilda
+   inicia a aplicação e o `telegram-worker` juntos; o worker recebe comandos
+   por long polling, entrega a fila com retry e agenda lembretes/resumos. Assim
+   o vínculo funciona também em painéis que constroem apenas o `Dockerfile` e
+   não executam o `docker-compose.yml`.
 3. Cada pessoa acessa **Perfil → Telegram** e abre o link temporário para
    conectar sua conversa privada.
 
@@ -157,6 +158,10 @@ continuam operando normalmente, com a integração inativa. Em desenvolvimento,
 rode `npm run telegram:worker` junto do app. Para usar webhook em vez de long
 polling, defina `TELEGRAM_UPDATE_MODE=webhook`; esse modo exige uma URL pública
 HTTPS (use um túnel ao testar localmente).
+
+Em produção, mantenha uma única réplica do serviço com polling. Os logs do
+container devem mostrar `Telegram worker iniciado em modo polling` e
+`Recepção do Telegram configurada por long polling` logo após a inicialização.
 
 ## Estrutura
 
