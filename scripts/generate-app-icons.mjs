@@ -1,9 +1,10 @@
 /**
  * Gera os ícones rasterizados do app a partir do brasão (Yggdrasil em escudo).
  *
- * O favicon é src/app/icon.svg (vetorial, servido direto). Este script só existe
- * para os alvos que exigem PNG opaco — hoje o apple-icon, porque o iOS compõe o
- * ícone da tela de início sobre fundo próprio e ignora transparência.
+ * O favicon é src/app/icon.svg (vetorial, servido direto). Este script cobre os
+ * alvos que precisam de raster: o apple-icon (o iOS compõe o ícone da tela de
+ * início sobre fundo próprio e ignora transparência), o brasão solto para
+ * README/portfólio e os avatares para perfis externos (Telegram, GitHub etc.).
  *
  * Rodar depois de mexer em <GuildCrest /> (src/components/guild-crest.tsx):
  *   node scripts/generate-app-icons.mjs
@@ -26,6 +27,8 @@ const EDGE = "#B1B9BE"; // --crest-edge   oklch(0.78 0.012 240)
 const BEVEL = "#4E5B69"; // --crest-bevel  oklch(0.75 0.03 240 / 30%) sobre a placa
 const MARK = "#7FB3D1"; // --crest-mark   oklch(0.74 0.07 235)
 
+const SHIELD = "M17 7H47L57 17V30C57 43.5 46.6 53.6 32 59C17.4 53.6 7 43.5 7 30V17Z";
+
 const RIVETS = [
   [24, 9.2], [32, 9.2], [40, 9.2],
   [50.4, 13.6], [13.6, 13.6],
@@ -37,7 +40,7 @@ const RIVETS = [
 /** Brasão completo, na mesma geometria de <GuildCrest />, em 64x64. */
 function crest() {
   return `
-    <path d="M17 7H47L57 17V30C57 43.5 46.6 53.6 32 59C17.4 53.6 7 43.5 7 30V17Z"
+    <path d="${SHIELD}"
           fill="${PLATE}" stroke="${EDGE}" stroke-width="2.4" stroke-linejoin="miter"/>
     <path d="M20 11.5H45.2L52.8 19.1V30C52.8 41.2 44.3 49.7 32 54.6C19.7 49.7 11.2 41.2 11.2 30V19.1Z"
           fill="none" stroke="${BEVEL}" stroke-width="1"/>
@@ -57,18 +60,42 @@ function crest() {
     </g>`;
 }
 
+/** Selo reduzido, mesma geometria de <GuildSeal />. Monocromático em gelo. */
+function seal() {
+  return `
+    <path d="${SHIELD}" fill="${PLATE}" stroke="${MARK}" stroke-width="4.5" stroke-linejoin="miter"/>
+    <g stroke="${MARK}" stroke-width="4.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M32 44V15"/>
+      <path d="M32 31L19.5 21M32 31L44.5 21"/>
+      <path d="M32 22L24 14M32 22L40 14"/>
+      <path d="M32 44L22.5 49M32 44L41.5 49"/>
+    </g>`;
+}
+
 /**
- * Brasão centrado no quadrado. `background: null` deixa o PNG com alfa —
- * a placa escura do escudo já dá contraste em fundo claro ou escuro.
+ * Marca centrada no quadrado.
+ * - `background: null` deixa o PNG com alfa; a placa escura do escudo já dá
+ *   contraste tanto em fundo claro quanto escuro.
+ * - `glow` troca o fundo chapado pela mesma luz fria de cima do body do app.
+ * - `inset` importa em avatar: Telegram e afins recortam em CÍRCULO, e o
+ *   escudo preenchendo o quadrado perde os ombros no corte. 0.78 mantém tudo
+ *   dentro do círculo inscrito com folga.
  */
-function tile(size, { background = null, inset = 1 } = {}) {
+function tile(size, { art = crest, background = null, inset = 1, glow = false } = {}) {
   const drawn = size * inset;
   const scale = drawn / 64;
   const offset = (size - drawn) / 2;
-  const ground = background ? `<rect width="${size}" height="${size}" fill="${background}"/>` : "";
+  let ground = "";
+  if (glow) {
+    ground = `<defs><radialGradient id="sky" cx="50%" cy="-8%" r="72%">
+      <stop offset="0%" stop-color="#1D2735"/><stop offset="100%" stop-color="${GROUND}"/>
+    </radialGradient></defs><rect width="${size}" height="${size}" fill="url(#sky)"/>`;
+  } else if (background) {
+    ground = `<rect width="${size}" height="${size}" fill="${background}"/>`;
+  }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
   ${ground}
-  <g transform="translate(${offset} ${offset}) scale(${scale})">${crest()}
+  <g transform="translate(${offset} ${offset}) scale(${scale})">${art()}
   </g>
 </svg>`;
 }
@@ -81,6 +108,11 @@ const targets = [
   { out: "src/app/apple-icon.png", size: 180, background: GROUND, inset: 0.76 },
   // Asset solto para README, portfólio e apresentação: fundo transparente.
   { out: "docs/brasao-guilda.png", size: 1024 },
+  // Avatares de perfil externo: opacos e dimensionados para recorte circular.
+  // O selo é o recomendado — na lista de conversas o avatar aparece a ~48px,
+  // e nesse tamanho o aro prata do brasão completo empasta contra a placa.
+  { out: "docs/avatar-selo.png", size: 512, art: seal, glow: true, inset: 0.78 },
+  { out: "docs/avatar-brasao.png", size: 512, art: crest, glow: true, inset: 0.78 },
 ];
 
 for (const { out, size, ...opts } of targets) {
