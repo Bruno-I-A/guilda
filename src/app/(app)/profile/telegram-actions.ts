@@ -78,8 +78,9 @@ export async function createTelegramLink(
   const ctx = await requireMemberContext();
   if (!ctx.ok) return { status: "error", message: ctx.error };
 
+  const telegramConfig = getTelegramConfig();
   const username = await getTelegramBotUsername();
-  if (!getTelegramConfig().botToken || !username) {
+  if (!telegramConfig.botToken || !username) {
     return {
       status: "error",
       message:
@@ -87,19 +88,21 @@ export async function createTelegramLink(
     };
   }
 
-  const webhookReady = await ensureTelegramWebhook().catch((error) => {
-    console.error(
-      "Falha ao configurar webhook do Telegram ao gerar vínculo",
-      error instanceof Error ? error.message : "erro desconhecido",
-    );
-    return false;
-  });
-  if (!webhookReady) {
-    return {
-      status: "error",
-      message:
-        "O bot está correto, mas o webhook não pôde ser ativado. Verifique se a URL pública da Guilda usa HTTPS e tente novamente.",
-    };
+  if (telegramConfig.updateMode === "webhook") {
+    const webhookReady = await ensureTelegramWebhook().catch((error) => {
+      console.error(
+        "Falha ao configurar webhook do Telegram ao gerar vínculo",
+        error instanceof Error ? error.message : "erro desconhecido",
+      );
+      return false;
+    });
+    if (!webhookReady) {
+      return {
+        status: "error",
+        message:
+          "O bot está correto, mas o webhook não pôde ser ativado. Verifique se a URL pública da Guilda usa HTTPS e tente novamente.",
+      };
+    }
   }
 
   const rawToken = generateTelegramLinkToken();

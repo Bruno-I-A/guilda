@@ -144,8 +144,9 @@ automático. Postgres já provisionado fora do Docker? Remova o serviço
 1. Crie um bot pelo `@BotFather` e copie o token para
    `TELEGRAM_BOT_TOKEN` no `.env`.
 2. Aplique as migrations e suba o Compose normalmente. O serviço
-   `telegram-worker` registra o webhook HTTPS, entrega a fila com retry e
-   agenda lembretes/resumos.
+   `telegram-worker` recebe os comandos por long polling, entrega a fila com
+   retry e agenda lembretes/resumos. Assim o vínculo não depende de o Telegram
+   alcançar um webhook público.
 3. Cada pessoa acessa **Perfil → Telegram** e abre o link temporário para
    conectar sua conversa privada.
 
@@ -153,8 +154,9 @@ O bot oferece `/minhas`, `/hoje`, `/atrasadas`, `/aprovar`, `/ranking`,
 `/perfil`, `/fechamentos`, `/bloqueados`, `/campanhas` e `/ajuda`, além de
 botões para movimentar missões. Sem `TELEGRAM_BOT_TOKEN`, aplicação e worker
 continuam operando normalmente, com a integração inativa. Em desenvolvimento,
-rode `npm run telegram:worker`; webhooks do Telegram exigem uma URL pública
-HTTPS (use um túnel se quiser testar localmente).
+rode `npm run telegram:worker` junto do app. Para usar webhook em vez de long
+polling, defina `TELEGRAM_UPDATE_MODE=webhook`; esse modo exige uma URL pública
+HTTPS (use um túnel ao testar localmente).
 
 ## Estrutura
 

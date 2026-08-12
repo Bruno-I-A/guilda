@@ -18,31 +18,49 @@ export function requireTelegramClient(): TelegramApi {
   return client;
 }
 
-let resolvedUsername: Promise<string | null> | undefined;
+let cachedUsername:
+  | { botToken: string; username: string }
+  | undefined;
+let usernameRequest:
+  | { botToken: string; promise: Promise<string | null> }
+  | undefined;
 
 /** Resolve o @username via getMe quando ele não foi informado no ambiente. */
-export function getTelegramBotUsername(): Promise<string | null> {
+export async function getTelegramBotUsername(): Promise<string | null> {
   const config = getTelegramConfig();
   if (config.botUsername && /^[A-Za-z0-9_]{5,32}$/.test(config.botUsername)) {
-    return Promise.resolve(config.botUsername);
+    return config.botUsername;
   }
-  if (!config.botToken) return Promise.resolve(null);
-  resolvedUsername ??= fetch(
-    `https://api.telegram.org/bot${encodeURIComponent(config.botToken)}/getMe`,
-    { cache: "no-store", signal: AbortSignal.timeout(5_000) },
-  )
-    .then(async (response) => {
-      const body = (await response.json()) as {
-        ok?: boolean;
-        result?: { username?: unknown };
-      };
-      const username = body.ok ? body.result?.username : null;
-      return typeof username === "string" && /^[A-Za-z0-9_]{5,32}$/.test(username)
-        ? username
-        : null;
-    })
-    .catch(() => null);
-  return resolvedUsername;
+  if (!config.botToken) return null;
+  if (cachedUsername?.botToken === config.botToken) return cachedUsername.username;
+
+  if (usernameRequest?.botToken !== config.botToken) {
+    usernameRequest = {
+      botToken: config.botToken,
+      promise: fetch(
+        `https://api.telegram.org/bot${encodeURIComponent(config.botToken)}/getMe`,
+        { cache: "no-store", signal: AbortSignal.timeout(5_000) },
+      )
+        .then(async (response) => {
+          const body = (await response.json()) as {
+            ok?: boolean;
+            result?: { username?: unknown };
+          };
+          const username = body.ok ? body.result?.username : null;
+          return typeof username === "string" && /^[A-Za-z0-9_]{5,32}$/.test(username)
+            ? username
+            : null;
+        })
+        .catch(() => null),
+    };
+  }
+
+  const request = usernameRequest;
+  const username = await request.promise;
+  if (username) cachedUsername = { botToken: config.botToken, username };
+  // Uma falha transitória não deve desativar o botão até o processo reiniciar.
+  if (usernameRequest === request) usernameRequest = undefined;
+  return username;
 }
 
 /** Registra idempotentemente o webhook usando o domínio público da Guilda. */

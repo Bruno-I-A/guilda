@@ -1,16 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 
 import {
+  isTelegramUpdate,
   type TelegramUpdate,
 } from "@/lib/telegram/endpoint";
 import { getTelegramConfig } from "@/lib/telegram/config";
-import { createTelegramClient } from "@/lib/telegram/client";
-import { processTelegramUpdate } from "@/lib/telegram/handlers";
-import {
-  claimTelegramUpdate,
-  markTelegramUpdateFailed,
-  markTelegramUpdateProcessed,
-} from "@/lib/telegram/endpoint-repository";
+import { dispatchTelegramUpdate } from "@/lib/telegram/update-processor";
 
 export const runtime = "nodejs";
 
@@ -24,19 +19,6 @@ function sameSecret(received: string | null, expected: string): boolean {
     receivedBytes.length === expectedBytes.length &&
     timingSafeEqual(receivedBytes, expectedBytes)
   );
-}
-
-function parseUpdate(value: unknown): TelegramUpdate | null {
-  if (!value || typeof value !== "object") return null;
-  const candidate = value as Record<string, unknown>;
-  if (
-    typeof candidate.update_id !== "number" ||
-    !Number.isSafeInteger(candidate.update_id) ||
-    candidate.update_id < 0
-  ) {
-    return null;
-  }
-  return value as TelegramUpdate;
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -70,26 +52,22 @@ export async function POST(request: Request): Promise<Response> {
 
   let update: TelegramUpdate | null = null;
   try {
-    update = parseUpdate(JSON.parse(text));
+    const parsed: unknown = JSON.parse(text);
+    update = isTelegramUpdate(parsed) ? parsed : null;
   } catch {
     // resposta abaixo
   }
   if (!update) return Response.json({ ok: false }, { status: 400 });
 
   const updateId = String(update.update_id);
-  const claimed = await claimTelegramUpdate(updateId);
-  if (!claimed) return Response.json({ ok: true, duplicate: true });
-
   try {
-    await processTelegramUpdate(createTelegramClient(botToken), update);
-    await markTelegramUpdateProcessed(updateId);
-    return Response.json({ ok: true });
+    const result = await dispatchTelegramUpdate(botToken, update);
+    return Response.json({ ok: true, ...(result === "duplicate" ? { duplicate: true } : {}) });
   } catch (error) {
     console.error("Falha ao processar update do Telegram", {
       updateId,
       error: error instanceof Error ? error.message : "erro desconhecido",
     });
-    await markTelegramUpdateFailed(updateId, error).catch(() => undefined);
     return Response.json({ ok: false }, { status: 500 });
   }
 }

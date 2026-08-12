@@ -7,6 +7,7 @@ const previous = {
   botToken: process.env.TELEGRAM_BOT_TOKEN,
   webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET,
   appSecret: process.env.BETTER_AUTH_SECRET,
+  updateMode: process.env.TELEGRAM_UPDATE_MODE,
 };
 
 afterEach(() => {
@@ -14,6 +15,7 @@ afterEach(() => {
     TELEGRAM_BOT_TOKEN: previous.botToken,
     TELEGRAM_WEBHOOK_SECRET: previous.webhookSecret,
     BETTER_AUTH_SECRET: previous.appSecret,
+    TELEGRAM_UPDATE_MODE: previous.updateMode,
   })) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
@@ -38,5 +40,14 @@ describe("configuração Telegram", () => {
     process.env.TELEGRAM_WEBHOOK_SECRET = "override";
     const { getTelegramConfig } = await import("./config");
     expect(getTelegramConfig().webhookSecret).toBe("override");
+  });
+
+  it("usa polling por padrão e só ativa webhook explicitamente", async () => {
+    const { telegramUpdateMode } = await import("./config");
+    delete process.env.TELEGRAM_UPDATE_MODE;
+    expect(telegramUpdateMode(undefined)).toBe("polling");
+    expect(telegramUpdateMode("polling")).toBe("polling");
+    expect(telegramUpdateMode("WEBHOOK")).toBe("webhook");
+    expect(telegramUpdateMode("valor-inválido")).toBe("polling");
   });
 });

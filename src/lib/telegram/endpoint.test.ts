@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   encodeTaskCallback,
+  isTelegramUpdate,
   parseBotCommand,
   parseTaskCallback,
 } from "./endpoint";
@@ -29,6 +30,15 @@ describe("parseBotCommand", () => {
   it("recusa comandos desconhecidos e texto livre", () => {
     expect(parseBotCommand("/excluir_tudo")).toBeNull();
     expect(parseBotCommand("olá")).toBeNull();
+  });
+});
+
+describe("isTelegramUpdate", () => {
+  it("aceita somente update_id inteiro, seguro e não negativo", () => {
+    expect(isTelegramUpdate({ update_id: 123, message: {} })).toBe(true);
+    expect(isTelegramUpdate({ update_id: -1 })).toBe(false);
+    expect(isTelegramUpdate({ update_id: 1.5 })).toBe(false);
+    expect(isTelegramUpdate({ update_id: "123" })).toBe(false);
   });
 });
 

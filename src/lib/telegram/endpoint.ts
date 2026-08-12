@@ -32,6 +32,16 @@ export interface TelegramUpdate {
   callback_query?: TelegramCallbackQuery;
 }
 
+export function isTelegramUpdate(value: unknown): value is TelegramUpdate {
+  if (!value || typeof value !== "object") return false;
+  const updateId = (value as Record<string, unknown>).update_id;
+  return (
+    typeof updateId === "number" &&
+    Number.isSafeInteger(updateId) &&
+    updateId >= 0
+  );
+}
+
 export interface InlineKeyboardButton {
   text: string;
   callback_data?: string;

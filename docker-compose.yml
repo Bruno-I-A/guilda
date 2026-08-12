@@ -47,6 +47,7 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+      TELEGRAM_UPDATE_MODE: ${TELEGRAM_UPDATE_MODE:-polling}
     depends_on:
       db:
         condition: service_healthy
@@ -70,6 +71,7 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+      TELEGRAM_UPDATE_MODE: ${TELEGRAM_UPDATE_MODE:-polling}
     depends_on:
       db:
         condition: service_healthy

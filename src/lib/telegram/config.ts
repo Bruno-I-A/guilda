@@ -6,11 +6,18 @@ export type TelegramConfig = Readonly<{
   botToken?: string;
   botUsername?: string;
   webhookSecret?: string;
+  updateMode: "polling" | "webhook";
 }>;
 
 function optionalEnv(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized || undefined;
+}
+
+export function telegramUpdateMode(
+  value: string | undefined,
+): "polling" | "webhook" {
+  return optionalEnv(value)?.toLowerCase() === "webhook" ? "webhook" : "polling";
 }
 
 /**
@@ -24,6 +31,9 @@ export function getTelegramConfig(): TelegramConfig {
   return {
     botToken,
     botUsername: optionalEnv(process.env.TELEGRAM_BOT_USERNAME)?.replace(/^@/, ""),
+    // O worker já é um processo contínuo; polling é o padrão mais robusto
+    // porque não depende de DNS, TLS ou acesso externo ao webhook.
+    updateMode: telegramUpdateMode(process.env.TELEGRAM_UPDATE_MODE),
     webhookSecret:
       explicitWebhookSecret ??
       (botToken && appSecret
