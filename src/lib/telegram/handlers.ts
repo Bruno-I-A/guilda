@@ -266,36 +266,6 @@ async function handleConnectedCommand(
   if (command === "hoje") return sendTaskList(api, chatId, actor, "Missões de hoje", "today");
   if (command === "atrasadas") return sendTaskList(api, chatId, actor, "Missões atrasadas", "overdue");
   if (command === "aprovar") return sendTaskList(api, chatId, actor, "Fila de aprovação", "approval");
-  if (command === "informativo") {
-    if (!parsed.argument) {
-      await api.sendMessage(
-        chatId,
-        "Envie /informativo seguido do texto ou encaminhe uma mensagem que comece com INFORMATIVO NOVO CLIENTE/ALTERAÇÃO CLIENTE.",
-      );
-      return;
-    }
-    try {
-      await createInformativeDraft(
-        api,
-        chatId,
-        connection.id,
-        actor,
-        parsed.argument,
-      );
-    } catch (error) {
-      console.error("Falha ao classificar informativo", {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        error: error instanceof Error ? error.message : error,
-      });
-      await api.sendMessage(
-        chatId,
-        `Não consegui analisar o informativo: ${error instanceof Error ? error.message : "falha desconhecida"}`,
-      );
-    }
-    return;
-  }
-
   if (command === "ranking") {
     const rows = await getLeaderboard(actor.orgId, "week");
     const text = rows.length
@@ -391,7 +361,6 @@ async function sendHelp(api: TelegramApi, chatId: number): Promise<void> {
       "/fechamentos — pendências operacionais",
       "/bloqueados — fechamentos bloqueados",
       "/campanhas — campanhas da guilda",
-      "/informativo — classifica um informativo e prepara missões (admin)",
       "/rejeitar — devolve uma missão com motivo",
       "/cancelar — cancela uma missão autorizada",
       "/ajuda — esta mensagem",

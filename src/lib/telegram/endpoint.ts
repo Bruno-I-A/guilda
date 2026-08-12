@@ -135,7 +135,6 @@ export type BotCommand =
   | "fechamentos"
   | "bloqueados"
   | "campanhas"
-  | "informativo"
   | "rejeitar"
   | "cancelar"
   | "ajuda";
@@ -151,7 +150,6 @@ const KNOWN_COMMANDS = new Set<BotCommand>([
   "fechamentos",
   "bloqueados",
   "campanhas",
-  "informativo",
   "rejeitar",
   "cancelar",
   "ajuda",

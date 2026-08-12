@@ -167,7 +167,7 @@ container devem mostrar `Telegram worker iniciado em modo polling` e
 
 Com `ANTHROPIC_API_KEY` configurada, admin/owner pode encaminhar ao bot uma
 mensagem que contenha `INFORMATIVO NOVO CLIENTE` ou `INFORMATIVO ALTERAÇÃO
-CLIENTE`. Também é possível usar `/informativo <texto>`.
+CLIENTE`; não é necessário digitar um comando.
 
 O bot usa Claude Sonnet com Structured Outputs para extrair empresa, ações e
 responsáveis, resolve os nomes contra os membros reais da Guilda e mostra uma prévia. A

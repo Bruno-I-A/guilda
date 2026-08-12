@@ -43,12 +43,6 @@ describe("isTelegramUpdate", () => {
     expect(isTelegramUpdate({ update_id: "123" })).toBe(false);
   });
 
-  it("preserva informativo multilinha", () => {
-    expect(parseBotCommand("/informativo INFORMATIVO NOVO CLIENTE\nRAZÃO SOCIAL – ACME")).toEqual({
-      command: "informativo",
-      argument: "INFORMATIVO NOVO CLIENTE\nRAZÃO SOCIAL – ACME",
-    });
-  });
 });
 
 describe("callbacks de rascunho da IA", () => {
