@@ -124,47 +124,10 @@ export function createTelegramApi(botToken: string): TelegramApi {
   };
 }
 
-export type BotCommand =
-  | "start"
-  | "minhas"
-  | "hoje"
-  | "atrasadas"
-  | "aprovar"
-  | "ranking"
-  | "perfil"
-  | "fechamentos"
-  | "bloqueados"
-  | "campanhas"
-  | "rejeitar"
-  | "cancelar"
-  | "ajuda";
-
-const KNOWN_COMMANDS = new Set<BotCommand>([
-  "start",
-  "minhas",
-  "hoje",
-  "atrasadas",
-  "aprovar",
-  "ranking",
-  "perfil",
-  "fechamentos",
-  "bloqueados",
-  "campanhas",
-  "rejeitar",
-  "cancelar",
-  "ajuda",
-]);
-
-/** Aceita `/comando`, `/comando@MeuBot` e um argumento opcional. */
-export function parseBotCommand(
-  text: string,
-): { command: BotCommand; argument?: string } | null {
-  const match = text.trim().match(/^\/([a-z_]+)(?:@[a-z0-9_]+)?(?:\s+([\s\S]+))?$/i);
-  if (!match) return null;
-  const command = match[1].toLocaleLowerCase("en-US") as BotCommand;
-  if (!KNOWN_COMMANDS.has(command)) return null;
-  const argument = match[2]?.trim();
-  return { command, ...(argument ? { argument } : {}) };
+/** O único comando aceito é o deep link técnico usado para conectar a conta. */
+export function parseTelegramStartToken(text: string): string | null {
+  const match = text.trim().match(/^\/start(?:@[a-z0-9_]+)?\s+(\S+)$/i);
+  return match?.[1] ?? null;
 }
 
 export const TASK_CALLBACK_ACTIONS = [

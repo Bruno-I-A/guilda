@@ -4,34 +4,22 @@ import {
   encodeTaskCallback,
   encodeDraftCallback,
   isTelegramUpdate,
-  parseBotCommand,
+  parseTelegramStartToken,
   parseTaskCallback,
   parseDraftCallback,
 } from "./endpoint";
 
-describe("parseBotCommand", () => {
-  it("aceita menção ao bot e argumento", () => {
-    expect(parseBotCommand(" /start@GuildaBot token-opaco ")).toEqual({
-      command: "start",
-      argument: "token-opaco",
-    });
+describe("parseTelegramStartToken", () => {
+  it("aceita apenas o deep link técnico de conexão", () => {
+    expect(parseTelegramStartToken(" /start@GuildaBot token-opaco ")).toBe(
+      "token-opaco",
+    );
   });
 
-  it("preserva o motivo nos comandos guiados", () => {
-    expect(
-      parseBotCommand(
-        "/rejeitar 123e4567-e89b-12d3-a456-426614174000 documentos incompletos",
-      ),
-    ).toEqual({
-      command: "rejeitar",
-      argument:
-        "123e4567-e89b-12d3-a456-426614174000 documentos incompletos",
-    });
-  });
-
-  it("recusa comandos desconhecidos e texto livre", () => {
-    expect(parseBotCommand("/excluir_tudo")).toBeNull();
-    expect(parseBotCommand("olá")).toBeNull();
+  it("recusa todos os comandos operacionais e texto livre", () => {
+    expect(parseTelegramStartToken("/ajuda")).toBeNull();
+    expect(parseTelegramStartToken("/minhas")).toBeNull();
+    expect(parseTelegramStartToken("olá")).toBeNull();
   });
 });
 

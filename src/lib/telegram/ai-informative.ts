@@ -36,10 +36,15 @@ function dueDate(value: string | null): Date | null {
 }
 
 function draftPreview(payload: InformativeDraftPayload): string {
+  const kindLabel = {
+    new_client: "Novo cliente",
+    client_change: "Alteração",
+    client_closure: "Baixa de cliente",
+  }[payload.kind];
   const lines = [
     "🤖 Prévia do informativo",
     "",
-    `${payload.kind === "new_client" ? "Novo cliente" : "Alteração"}: ${payload.company.legalName}`,
+    `${kindLabel}: ${payload.company.legalName}`,
     `CNPJ: ${payload.company.normalizedCnpj ?? "não informado"}`,
     `Regime: ${taxRegimeLabel(payload.company.taxRegime)}`,
     `Empresa no painel: ${payload.company.clientId ? "localizada" : payload.company.createClient ? "será criada" : "não localizada"}`,
@@ -53,7 +58,10 @@ function draftPreview(payload: InformativeDraftPayload): string {
     lines.push(`… e mais ${payload.tasks.length - 20}.`);
   }
   if (payload.unresolvedAssignees.length) {
-    lines.push("", `⚠️ Não reconhecidos: ${payload.unresolvedAssignees.join(", ")}`);
+    lines.push(
+      "",
+      `⚠️ Responsáveis pendentes ou não reconhecidos: ${payload.unresolvedAssignees.join(", ")}`,
+    );
   }
   if (payload.warnings.length) {
     lines.push("", ...payload.warnings.slice(0, 5).map((warning) => `⚠️ ${warning}`));
@@ -109,6 +117,10 @@ export async function createInformativeDraft(
   const unresolved = new Set<string>();
   const tasks: InformativeDraftPayload["tasks"] = [];
   for (const task of extracted.data.tasks) {
+    if (task.assignees.length === 0) {
+      unresolved.add(`Sem responsável: ${task.title}`.slice(0, 200));
+      continue;
+    }
     const resolvedForTask = new Set<string>();
     for (const requested of task.assignees) {
       const resolved = resolveMemberName(requested, members);
@@ -135,12 +147,23 @@ export async function createInformativeDraft(
   }
 
   const warnings = [...extracted.data.warnings];
-  const createClient = !existingClient && Boolean(validCnpj && extracted.data.company.taxRegime);
-  if (!validCnpj) warnings.push("CNPJ ausente ou inválido; a empresa não poderá ser criada automaticamente.");
-  if (!existingClient && !extracted.data.company.taxRegime) {
+  const createClient =
+    extracted.data.kind === "new_client" &&
+    !existingClient &&
+    Boolean(validCnpj && extracted.data.company.taxRegime);
+  if (extracted.data.kind === "new_client" && !validCnpj) {
+    warnings.push("CNPJ ausente ou inválido; a empresa não poderá ser criada automaticamente.");
+  }
+  if (
+    extracted.data.kind === "new_client" &&
+    !existingClient &&
+    !extracted.data.company.taxRegime
+  ) {
     warnings.push("Regime tributário não identificado; a empresa não poderá ser criada automaticamente.");
   }
-  if (!existingClient && !createClient) {
+  if (!existingClient && extracted.data.kind === "client_closure") {
+    warnings.push("Cliente baixado não localizado no painel; as missões serão criadas sem vínculo.");
+  } else if (!existingClient && !createClient) {
     warnings.push("As missões serão criadas sem vínculo com uma empresa do painel.");
   }
 

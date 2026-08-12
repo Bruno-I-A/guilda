@@ -5,7 +5,7 @@ import { TAX_REGIMES } from "@/lib/clients-ui";
 const nullableText = (max: number) => z.string().trim().max(max).nullable();
 
 export const informativeExtractionSchema = z.object({
-  kind: z.enum(["new_client", "client_change"]),
+  kind: z.enum(["new_client", "client_change", "client_closure"]),
   company: z.object({
     systemCode: nullableText(30),
     legalName: z.string().trim().min(2).max(200),
@@ -20,7 +20,7 @@ export const informativeExtractionSchema = z.object({
       z.object({
         title: z.string().trim().min(3).max(200),
         description: z.string().trim().min(1).max(5000),
-        assignees: z.array(z.string().trim().min(1).max(200)).min(1).max(8),
+        assignees: z.array(z.string().trim().min(1).max(200)).max(8),
         priority: z.number().int().min(1).max(3),
         difficulty: z.number().int().min(1).max(5),
         dueDate: z

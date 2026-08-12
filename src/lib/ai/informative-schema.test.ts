@@ -49,6 +49,22 @@ describe("informativeExtractionSchema", () => {
       }),
     ).toThrow();
   });
+
+  it("aceita baixa de cliente e sinaliza ação ainda sem responsável", () => {
+    const closure = informativeExtractionSchema.parse({
+      ...extraction,
+      kind: "client_closure",
+      tasks: [
+        {
+          ...extraction.tasks[0],
+          title: "Coletar assinatura no protocolo",
+          assignees: [],
+        },
+      ],
+    });
+    expect(closure.kind).toBe("client_closure");
+    expect(closure.tasks[0]?.assignees).toEqual([]);
+  });
 });
 
 describe("informativeDraftPayloadSchema", () => {

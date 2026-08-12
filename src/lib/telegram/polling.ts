@@ -43,6 +43,11 @@ export async function disableTelegramWebhook(botToken: string): Promise<void> {
   );
 }
 
+/** Remove do cliente Telegram o menu legado de comandos operacionais. */
+export async function deleteTelegramCommands(botToken: string): Promise<void> {
+  await callTelegram<boolean>(botToken, "deleteMyCommands", {}, 10_000);
+}
+
 /** Busca o próximo lote de updates com long polling da Bot API. */
 export async function getTelegramUpdates(
   botToken: string,

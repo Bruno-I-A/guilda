@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { ensureTelegramWebhook } from "../src/lib/telegram/client";
 import { getTelegramConfig } from "../src/lib/telegram/config";
 import {
+  deleteTelegramCommands,
   disableTelegramWebhook,
   getTelegramUpdates,
 } from "../src/lib/telegram/polling";
@@ -85,6 +86,15 @@ async function main() {
   }
 
   console.log(`Telegram worker iniciado em modo ${config.updateMode}.`);
+  try {
+    await deleteTelegramCommands(config.botToken);
+    console.log("Menu de comandos do Telegram removido; bot operando somente com IA.");
+  } catch (error) {
+    console.error(
+      "Não foi possível remover o menu de comandos do Telegram:",
+      error instanceof Error ? error.message : error,
+    );
+  }
   if (config.updateMode === "webhook") {
     await runDeliveryLoop(true);
     return;

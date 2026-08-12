@@ -3,7 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { disableTelegramWebhook, getTelegramUpdates } from "./polling";
+import {
+  deleteTelegramCommands,
+  disableTelegramWebhook,
+  getTelegramUpdates,
+} from "./polling";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -22,6 +26,19 @@ describe("recepção Telegram por long polling", () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain("/deleteWebhook");
     expect(JSON.parse(String(init.body))).toEqual({ drop_pending_updates: false });
+  });
+
+  it("remove o menu legado de comandos", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, result: true }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await deleteTelegramCommands("123:token");
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/deleteMyCommands");
+    expect(JSON.parse(String(init.body))).toEqual({});
   });
 
   it("busca apenas mensagens e callbacks a partir do offset", async () => {

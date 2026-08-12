@@ -151,10 +151,11 @@ automático. Postgres já provisionado fora do Docker? Remova o serviço
 3. Cada pessoa acessa **Perfil → Telegram** e abre o link temporário para
    conectar sua conversa privada.
 
-O bot oferece `/minhas`, `/hoje`, `/atrasadas`, `/aprovar`, `/ranking`,
-`/perfil`, `/fechamentos`, `/bloqueados`, `/campanhas` e `/ajuda`, além de
-botões para movimentar missões. Sem `TELEGRAM_BOT_TOKEN`, aplicação e worker
-continuam operando normalmente, com a integração inativa. Em desenvolvimento,
+O bot opera somente com informativos classificados por IA. O `/start` existe
+apenas no deep link técnico que conecta a conta; não há menu nem comandos
+operacionais. Os botões enviados em notificações continuam movimentando
+missões. Sem `TELEGRAM_BOT_TOKEN`, aplicação e worker continuam operando
+normalmente, com a integração inativa. Em desenvolvimento,
 rode `npm run telegram:worker` junto do app. Para usar webhook em vez de long
 polling, defina `TELEGRAM_UPDATE_MODE=webhook`; esse modo exige uma URL pública
 HTTPS (use um túnel ao testar localmente).
@@ -167,7 +168,8 @@ container devem mostrar `Telegram worker iniciado em modo polling` e
 
 Com `ANTHROPIC_API_KEY` configurada, admin/owner pode encaminhar ao bot uma
 mensagem que contenha `INFORMATIVO NOVO CLIENTE` ou `INFORMATIVO ALTERAÇÃO
-CLIENTE`; não é necessário digitar um comando.
+CLIENTE`, além de `INFORMATIVO DE BAIXA DE CLIENTE`; não é necessário digitar
+um comando.
 
 O bot usa Claude Sonnet com Structured Outputs para extrair empresa, ações e
 responsáveis, resolve os nomes contra os membros reais da Guilda e mostra uma prévia. A
