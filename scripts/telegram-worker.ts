@@ -13,16 +13,19 @@ async function main() {
     console.log("Telegram worker inativo: TELEGRAM_BOT_TOKEN não definido.");
     while (true) await delay(60 * 60 * 1000);
   }
-  const webhookReady = await ensureTelegramWebhook().catch(() => false);
-  console.log(
-    webhookReady
-      ? "Webhook do Telegram configurado."
-      : "Webhook não configurado automaticamente; verifique a URL pública HTTPS.",
-  );
+  let webhookReady = false;
   console.log("Telegram worker iniciado.");
   while (true) {
     const started = Date.now();
     try {
+      if (!webhookReady) {
+        webhookReady = await ensureTelegramWebhook();
+        console.log(
+          webhookReady
+            ? "Webhook do Telegram configurado."
+            : "Webhook do Telegram indisponível; nova tentativa em até 1 minuto.",
+        );
+      }
       await runTelegramWorkerCycle();
     } catch (error) {
       console.error(

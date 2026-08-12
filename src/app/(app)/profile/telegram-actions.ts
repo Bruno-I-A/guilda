@@ -7,7 +7,10 @@ import { z } from "zod";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { requireMemberContext } from "@/lib/action-context";
-import { getTelegramBotUsername } from "@/lib/telegram/client";
+import {
+  ensureTelegramWebhook,
+  getTelegramBotUsername,
+} from "@/lib/telegram/client";
 import { getTelegramConfig } from "@/lib/telegram/config";
 import {
   generateTelegramLinkToken,
@@ -81,6 +84,21 @@ export async function createTelegramLink(
       status: "error",
       message:
         "O bot ainda não está configurado ou não foi possível consultar seu @username. Verifique TELEGRAM_BOT_TOKEN.",
+    };
+  }
+
+  const webhookReady = await ensureTelegramWebhook().catch((error) => {
+    console.error(
+      "Falha ao configurar webhook do Telegram ao gerar vínculo",
+      error instanceof Error ? error.message : "erro desconhecido",
+    );
+    return false;
+  });
+  if (!webhookReady) {
+    return {
+      status: "error",
+      message:
+        "O bot está correto, mas o webhook não pôde ser ativado. Verifique se a URL pública da Guilda usa HTTPS e tente novamente.",
     };
   }
 

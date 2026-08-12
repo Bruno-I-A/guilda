@@ -68,6 +68,17 @@ export async function ensureTelegramWebhook(): Promise<boolean> {
       signal: AbortSignal.timeout(10_000),
     },
   );
-  const body = (await response.json().catch(() => null)) as { ok?: boolean } | null;
-  return response.ok && body?.ok === true;
+  const body = (await response.json().catch(() => null)) as {
+    ok?: boolean;
+    description?: string;
+  } | null;
+  const registered = response.ok && body?.ok === true;
+  if (!registered) {
+    console.error("Telegram rejeitou o registro do webhook", {
+      status: response.status,
+      description: body?.description ?? "resposta inválida",
+      webhookUrl,
+    });
+  }
+  return registered;
 }
