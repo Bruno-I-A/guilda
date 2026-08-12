@@ -71,6 +71,7 @@ describe("informativeDraftPayloadSchema", () => {
   it("exige IDs e CNPJ normalizado no rascunho confirmado pelo servidor", () => {
     const payload = informativeDraftPayloadSchema.parse({
       ...extraction,
+      sourceFormat: "informative",
       company: {
         ...extraction.company,
         normalizedCnpj: "68100490000131",

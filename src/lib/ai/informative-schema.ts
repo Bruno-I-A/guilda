@@ -38,6 +38,7 @@ export const informativeExtractionSchema = z.object({
 export type InformativeExtraction = z.infer<typeof informativeExtractionSchema>;
 
 export const informativeDraftPayloadSchema = informativeExtractionSchema.extend({
+  sourceFormat: z.enum(["informative", "business_mission"]),
   company: informativeExtractionSchema.shape.company.extend({
     normalizedCnpj: z.string().regex(/^\d{14}$/).nullable(),
     clientId: z.string().uuid().nullable(),

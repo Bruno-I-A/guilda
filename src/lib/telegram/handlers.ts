@@ -24,7 +24,10 @@ import {
   getActiveTelegramConnectionByTelegramUserId,
   touchTelegramConnection,
 } from "./endpoint-repository";
-import { isClientInformative } from "./informative-detection";
+import {
+  isClientWorkMessage,
+  validateBusinessMissionFormat,
+} from "./informative-detection";
 
 type Connection = NonNullable<
   Awaited<ReturnType<typeof getActiveTelegramConnectionByTelegramUserId>>
@@ -38,6 +41,16 @@ const STATUS_LABEL: Record<(typeof schema.tasks.$inferSelect)["status"], string>
   rejected: "Devolvida",
   cancelled: "Cancelada",
 };
+
+const BUSINESS_MISSION_TEMPLATE = `Use uma única mensagem neste formato:
+
+MISSÃO EMPRESARIAL
+TIPO: ABRIU | FECHOU | ALTEROU
+EMPRESA: nome completo
+AÇÕES:
+- primeira ação
+- segunda ação
+RESPONSÁVEL: nome da pessoa`;
 
 function appUrl(path: string): string {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;
@@ -65,7 +78,7 @@ async function handleMessage(api: TelegramApi, message: TelegramMessage): Promis
   if (!message.from || message.from.is_bot || !message.text) return;
 
   if (message.chat.type !== "private") {
-    if (isClientInformative(message.text)) {
+    if (isClientWorkMessage(message.text)) {
       await api.sendMessage(
         message.chat.id,
         "Por segurança, encaminhe o informativo em uma conversa privada comigo.",
@@ -88,7 +101,7 @@ async function handleMessage(api: TelegramApi, message: TelegramMessage): Promis
     await api.sendMessage(
       message.chat.id,
       linked
-        ? "Telegram conectado à Guilda. Agora encaminhe um informativo de novo cliente, alteração ou baixa."
+        ? `Telegram conectado à Guilda. Agora encaminhe um informativo ou envie uma missão empresarial.\n\n${BUSINESS_MISSION_TEMPLATE}`
         : "Este link é inválido, expirou ou já foi usado. Gere outro no seu perfil.",
     );
     return;
@@ -98,16 +111,25 @@ async function handleMessage(api: TelegramApi, message: TelegramMessage): Promis
   if (!connection) {
     await api.sendMessage(
       message.chat.id,
-      "Conecte o Telegram pelo seu perfil na Guilda antes de enviar informativos.",
+      "Conecte o Telegram pelo seu perfil na Guilda antes de criar missões.",
     );
     return;
   }
   await touchTelegramConnection(connection, String(message.chat.id));
 
-  if (!isClientInformative(message.text)) {
+  if (!isClientWorkMessage(message.text)) {
     await api.sendMessage(
       message.chat.id,
-      "Encaminhe um INFORMATIVO NOVO CLIENTE, INFORMATIVO ALTERAÇÃO CLIENTE ou INFORMATIVO DE BAIXA DE CLIENTE.",
+      BUSINESS_MISSION_TEMPLATE,
+    );
+    return;
+  }
+
+  const formatError = validateBusinessMissionFormat(message.text);
+  if (formatError) {
+    await api.sendMessage(
+      message.chat.id,
+      `${formatError}\n\n${BUSINESS_MISSION_TEMPLATE}`,
     );
     return;
   }

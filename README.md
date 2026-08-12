@@ -164,12 +164,28 @@ Em produção, mantenha uma única réplica do serviço com polling. Os logs do
 container devem mostrar `Telegram worker iniciado em modo polling` e
 `Recepção do Telegram configurada por long polling` logo após a inicialização.
 
-### IA: informativos → missões
+### IA: mensagens empresariais → missões
 
-Com `ANTHROPIC_API_KEY` configurada, admin/owner pode encaminhar ao bot uma
+Com `ANTHROPIC_API_KEY` configurada, qualquer membro conectado pode encaminhar ao bot uma
 mensagem que contenha `INFORMATIVO NOVO CLIENTE` ou `INFORMATIVO ALTERAÇÃO
 CLIENTE`, além de `INFORMATIVO DE BAIXA DE CLIENTE`; não é necessário digitar
 um comando.
+
+Para solicitações curtas e frequentes de abertura, baixa ou alteração, use uma
+única mensagem neste formato:
+
+```text
+MISSÃO EMPRESARIAL
+TIPO: ABRIU | FECHOU | ALTEROU
+EMPRESA: nome completo
+AÇÕES:
+- primeira ação
+- segunda ação
+RESPONSÁVEL: nome da pessoa
+```
+
+Cada ação independente vira uma missão para o responsável informado. Campos
+ausentes e responsáveis ambíguos ou inexistentes bloqueiam a confirmação.
 
 O bot usa Claude Sonnet com Structured Outputs para extrair empresa, ações e
 responsáveis, resolve os nomes contra os membros reais da Guilda e mostra uma prévia. A

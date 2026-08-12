@@ -16,6 +16,7 @@ import { createTaskRecord } from "@/lib/tasks/create";
 
 import type { TelegramApi } from "./endpoint";
 import { encodeDraftCallback } from "./endpoint";
+import { isBusinessMissionMessage } from "./informative-detection";
 
 const DRAFT_TTL_MS = 30 * 60 * 1000;
 
@@ -42,15 +43,18 @@ function draftPreview(payload: InformativeDraftPayload): string {
     client_closure: "Baixa de cliente",
   }[payload.kind];
   const lines = [
-    "🤖 Prévia do informativo",
+    "🤖 Prévia das missões",
     "",
     `${kindLabel}: ${payload.company.legalName}`,
-    `CNPJ: ${payload.company.normalizedCnpj ?? "não informado"}`,
-    `Regime: ${taxRegimeLabel(payload.company.taxRegime)}`,
-    `Empresa no painel: ${payload.company.clientId ? "localizada" : payload.company.createClient ? "será criada" : "não localizada"}`,
-    "",
-    `${payload.tasks.length} missão(ões) proposta(s):`,
   ];
+  if (payload.sourceFormat === "informative") {
+    lines.push(
+      `CNPJ: ${payload.company.normalizedCnpj ?? "não informado"}`,
+      `Regime: ${taxRegimeLabel(payload.company.taxRegime)}`,
+      `Empresa no painel: ${payload.company.clientId ? "localizada" : payload.company.createClient ? "será criada" : "não localizada"}`,
+    );
+  }
+  lines.push("", `${payload.tasks.length} missão(ões) proposta(s):`);
   payload.tasks.slice(0, 20).forEach((task, index) => {
     lines.push(`${index + 1}. ${task.assigneeName} — ${task.title}`);
   });
@@ -77,13 +81,12 @@ export async function createInformativeDraft(
   actor: Actor,
   sourceText: string,
 ): Promise<void> {
-  if (actor.role === "member") {
-    await api.sendMessage(chatId, "Somente admin ou owner pode criar missões por informativo.");
-    return;
-  }
-  await api.sendMessage(chatId, "🤖 Analisando o informativo e conferindo responsáveis…");
+  await api.sendMessage(chatId, "🤖 Analisando a solicitação e conferindo responsáveis…");
 
   const members = await listOrgMembers(actor.orgId);
+  const sourceFormat = isBusinessMissionMessage(sourceText)
+    ? "business_mission"
+    : "informative";
   const extracted = await extractInformative(
     sourceText,
     members.map(({ userId, name }) => ({ userId, name })),
@@ -132,7 +135,7 @@ export async function createInformativeDraft(
       resolvedForTask.add(resolved.userId);
       tasks.push({
         title: task.title,
-        description: `${task.description}\n\nTrecho do informativo:\n${task.sourceSection}`.slice(
+        description: `${task.description}\n\nTrecho da solicitação:\n${task.sourceSection}`.slice(
           0,
           5000,
         ),
@@ -148,27 +151,34 @@ export async function createInformativeDraft(
 
   const warnings = [...extracted.data.warnings];
   const createClient =
+    sourceFormat === "informative" &&
     extracted.data.kind === "new_client" &&
     !existingClient &&
     Boolean(validCnpj && extracted.data.company.taxRegime);
-  if (extracted.data.kind === "new_client" && !validCnpj) {
+  if (sourceFormat === "informative" && extracted.data.kind === "new_client" && !validCnpj) {
     warnings.push("CNPJ ausente ou inválido; a empresa não poderá ser criada automaticamente.");
   }
   if (
+    sourceFormat === "informative" &&
     extracted.data.kind === "new_client" &&
     !existingClient &&
     !extracted.data.company.taxRegime
   ) {
     warnings.push("Regime tributário não identificado; a empresa não poderá ser criada automaticamente.");
   }
-  if (!existingClient && extracted.data.kind === "client_closure") {
+  if (
+    sourceFormat === "informative" &&
+    !existingClient &&
+    extracted.data.kind === "client_closure"
+  ) {
     warnings.push("Cliente baixado não localizado no painel; as missões serão criadas sem vínculo.");
-  } else if (!existingClient && !createClient) {
+  } else if (sourceFormat === "informative" && !existingClient && !createClient) {
     warnings.push("As missões serão criadas sem vínculo com uma empresa do painel.");
   }
 
   const payload = informativeDraftPayloadSchema.parse({
     ...extracted.data,
+    sourceFormat,
     company: {
       ...extracted.data.company,
       normalizedCnpj: validCnpj,
@@ -227,8 +237,6 @@ export async function decideInformativeDraft(
   draftId: string,
   decision: "confirm" | "cancel",
 ): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
-  if (actor.role === "member") return { ok: false, message: "Apenas admin ou owner pode confirmar." };
-
   return withOrgTx(actor.orgId, async (tx) => {
     const [draft] = await tx
       .select()
@@ -245,7 +253,7 @@ export async function decideInformativeDraft(
     if (!draft) return { ok: false, message: "Rascunho não encontrado." };
     if (draft.status === "confirmed") return { ok: true, message: "Este rascunho já foi criado." };
     if (draft.status !== "pending") return { ok: false, message: "Este rascunho já foi cancelado." };
-    if (draft.expiresAt <= new Date()) return { ok: false, message: "O rascunho expirou. Envie o informativo novamente." };
+    if (draft.expiresAt <= new Date()) return { ok: false, message: "O rascunho expirou. Envie a solicitação novamente." };
 
     if (decision === "cancel") {
       await tx
