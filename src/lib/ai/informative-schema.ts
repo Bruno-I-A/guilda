@@ -21,7 +21,7 @@ export const informativeExtractionSchema = z.object({
   tasks: z
     .array(
       z.object({
-        category: z.enum(["general", "annual_closing"]),
+        category: z.enum(["general", "closing_period", "annual_closing"]),
         title: z.string().trim().min(3).max(200),
         description: z.string().trim().min(1).max(5000),
         assignees: z.array(z.string().trim().min(1).max(200)).max(8),
@@ -39,8 +39,8 @@ export const informativeExtractionSchema = z.object({
   ignoredNotes: z.array(z.string().trim().min(1).max(500)).max(30),
   warnings: z.array(z.string().trim().min(1).max(500)).max(20),
   missingFields: z
-    .array(z.enum(["company", "actions", "responsible"]))
-    .max(3),
+    .array(z.enum(["company", "actions", "responsible", "due_date"]))
+    .max(4),
 });
 
 export type InformativeExtraction = z.infer<typeof informativeExtractionSchema>;

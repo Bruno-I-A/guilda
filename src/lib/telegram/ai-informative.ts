@@ -25,6 +25,7 @@ const MISSING_FIELD_LABELS = {
   company: "o nome da empresa",
   actions: "o que precisa ser feito",
   responsible: "quem será o responsável",
+  due_date: "a data final do período de fechamento",
 } as const;
 
 type Actor = {
@@ -50,6 +51,11 @@ function currentYearInSaoPaulo(): number {
       year: "numeric",
     }).format(new Date()),
   );
+}
+
+function closingPeriodTitle(value: string): string {
+  const [, month, day] = value.split("-");
+  return `${day}/${month}`;
 }
 
 async function ensureClosingYear(
@@ -114,7 +120,11 @@ function draftPreview(payload: InformativeDraftPayload): string {
   lines.push("", `${payload.tasks.length} missão(ões) proposta(s):`);
   payload.tasks.slice(0, 20).forEach((task, index) => {
     lines.push(`${index + 1}. ${task.assigneeName} — ${task.title}`);
-    if (task.category === "annual_closing" && task.closingYear) {
+    if (task.category === "closing_period" && task.dueDate) {
+      lines.push(
+        `   ↳ criará o período ${closingPeriodTitle(task.dueDate)}; ao concluir, fechará somente esse período`,
+      );
+    } else if (task.category === "annual_closing" && task.closingYear) {
       lines.push(`   ↳ ao concluir, fechará a campanha de ${task.closingYear}`);
     }
   });
@@ -173,12 +183,15 @@ export async function createInformativeDraft(
   }
 
   const kind = extracted.data.kind ?? "general_task";
+  const hasClosingPeriod = extracted.data.tasks.some(
+    (task) => task.category === "closing_period",
+  );
   const hasAnnualClosing = extracted.data.tasks.some(
     (task) => task.category === "annual_closing",
   );
   const missing = new Set(extracted.data.missingFields);
   if (
-    (kind !== "general_task" || hasAnnualClosing) &&
+    (kind !== "general_task" || hasClosingPeriod || hasAnnualClosing) &&
     !extracted.data.company.legalName
   ) {
     missing.add("company");
@@ -186,6 +199,13 @@ export async function createInformativeDraft(
   if (extracted.data.tasks.length === 0) missing.add("actions");
   if (extracted.data.tasks.some((task) => task.assignees.length === 0)) {
     missing.add("responsible");
+  }
+  if (
+    extracted.data.tasks.some(
+      (task) => task.category === "closing_period" && !task.dueDate,
+    )
+  ) {
+    missing.add("due_date");
   }
   if (missing.size) {
     const labels = [...missing].map((field) => MISSING_FIELD_LABELS[field]);
@@ -210,12 +230,12 @@ export async function createInformativeDraft(
       : null) ??
     (legalName ? resolveClientName(legalName, clients) : null);
 
-  if (hasAnnualClosing && !existingClient) {
+  if ((hasClosingPeriod || hasAnnualClosing) && !existingClient) {
     await api.sendMessage(
       chatId,
       legalName
         ? `Não consegui localizar “${legalName}” de forma única na carteira de clientes. Reenvie a missão usando o nome cadastrado da empresa.`
-        : "Para vincular o fechamento à campanha anual, informe o nome da empresa.",
+        : "Para vincular o fechamento ao controle da empresa, informe o nome dela.",
     );
     return;
   }
@@ -466,20 +486,44 @@ export async function decideInformativeDraft(
     if (
       payload.data.tasks.some(
         (task) =>
-          task.category === "annual_closing" &&
-          (!clientId || !task.closingYear),
+          (task.category === "closing_period" &&
+            (!clientId || !task.dueDate)) ||
+          (task.category === "annual_closing" &&
+            (!clientId || !task.closingYear)),
       )
     ) {
       return {
         ok: false,
-        message: "O fechamento anual perdeu o vínculo com a empresa ou o ano. Gere outra prévia.",
+        message: "O fechamento perdeu o vínculo com a empresa, o período ou o ano. Gere outra prévia.",
       };
     }
 
     const taskIds: string[] = [];
+    const periodClosingIds = new Map<string, string>();
     for (const task of payload.data.tasks) {
+      let closingId: string | null = null;
       let closingYearId: string | null = null;
-      if (task.category === "annual_closing") {
+      if (task.category === "closing_period") {
+        if (!clientId || !task.dueDate) throw new Error("Período de fechamento inválido.");
+        const closingKey = `${clientId}:${task.dueDate}:${task.title}`;
+        closingId = periodClosingIds.get(closingKey) ?? null;
+        if (!closingId) {
+          const [createdClosing] = await tx
+            .insert(schema.accountingClosings)
+            .values({
+              orgId: actor.orgId,
+              clientId,
+              title: closingPeriodTitle(task.dueDate),
+              dueDate: task.dueDate,
+              status: "pending",
+              notes: task.description,
+              createdBy: actor.userId,
+            })
+            .returning({ id: schema.accountingClosings.id });
+          closingId = createdClosing.id;
+          periodClosingIds.set(closingKey, closingId);
+        }
+      } else if (task.category === "annual_closing") {
         if (!clientId || !task.closingYear) throw new Error("Fechamento anual inválido.");
         closingYearId = await ensureClosingYear(tx, {
           orgId: actor.orgId,
@@ -495,6 +539,7 @@ export async function decideInformativeDraft(
         creatorId: actor.userId,
         assigneeId: task.assigneeId,
         clientId: clientId ?? null,
+        closingId,
         closingYearId,
         title: `${task.title}${companySuffix}`.slice(0, 200),
         description: task.description,
@@ -513,11 +558,15 @@ export async function decideInformativeDraft(
         createdTaskIds: taskIds,
       })
       .where(eq(schema.telegramAiDrafts.id, draft.id));
+    const missionMessage = payload.data.company.legalName
+      ? `${taskIds.length} missão(ões) criada(s) para ${payload.data.company.legalName}.`
+      : `${taskIds.length} missão(ões) criada(s).`;
+    const closingMessage = periodClosingIds.size
+      ? ` ${periodClosingIds.size} período(s) pendente(s) adicionado(s) aos fechamentos.`
+      : "";
     return {
       ok: true,
-      message: payload.data.company.legalName
-        ? `${taskIds.length} missão(ões) criada(s) para ${payload.data.company.legalName}.`
-        : `${taskIds.length} missão(ões) criada(s).`,
+      message: `${missionMessage}${closingMessage}`,
     };
   });
 }

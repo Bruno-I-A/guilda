@@ -50,6 +50,9 @@ export const tasks = pgTable(
       .notNull()
       .references(() => user.id),
     clientId: uuid("client_id").references(() => clients.id),
+    closingId: uuid("closing_id").references(() => accountingClosings.id, {
+      onDelete: "set null",
+    }),
     closingYearId: uuid("closing_year_id").references(
       () => accountingClosingYears.id,
     ),
@@ -68,6 +71,7 @@ export const tasks = pgTable(
     index("tasks_org_assignee_status_idx").on(t.orgId, t.assigneeId, t.status),
     index("tasks_org_due_date_idx").on(t.orgId, t.dueDate),
     index("tasks_org_client_idx").on(t.orgId, t.clientId),
+    index("tasks_org_closing_idx").on(t.orgId, t.closingId),
     index("tasks_org_closing_year_idx").on(t.orgId, t.closingYearId),
   ],
 );
@@ -204,6 +208,10 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
   creator: one(user, { fields: [tasks.creatorId], references: [user.id] }),
   assignee: one(user, { fields: [tasks.assigneeId], references: [user.id] }),
   client: one(clients, { fields: [tasks.clientId], references: [clients.id] }),
+  closing: one(accountingClosings, {
+    fields: [tasks.closingId],
+    references: [accountingClosings.id],
+  }),
   closingYear: one(accountingClosingYears, {
     fields: [tasks.closingYearId],
     references: [accountingClosingYears.id],
@@ -238,6 +246,8 @@ export const accountingClosings = pgTable(
       .references(() => user.id),
     completedBy: text("completed_by").references(() => user.id),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    // Proveniência da automação. Sem FK para evitar um ciclo físico.
+    completedByTaskId: uuid("completed_by_task_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

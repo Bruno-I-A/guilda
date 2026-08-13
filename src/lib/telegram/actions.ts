@@ -10,7 +10,7 @@ import {
   type OrgRole,
   type TaskStatus,
 } from "@/domain/task-state";
-import { syncAnnualClosingFromTask } from "@/lib/closings/task-sync";
+import { syncClosingFromTask } from "@/lib/closings/task-sync";
 
 import type { TaskCallbackAction } from "./endpoint";
 import { encodeTaskCallback } from "./endpoint";
@@ -134,7 +134,7 @@ export async function runTelegramTaskAction(input: {
         })
         .onConflictDoNothing();
     }
-    await syncAnnualClosingFromTask(tx, {
+    await syncClosingFromTask(tx, {
       task,
       fromStatus: task.status,
       toStatus: intent.to,

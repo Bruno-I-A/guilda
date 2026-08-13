@@ -188,6 +188,7 @@ export async function updateClosing(
         shareholderLoan: data.shareholderLoan,
         completedBy: closing.completedBy ?? ctx.userId,
         completedAt: closing.completedAt ?? now,
+        completedByTaskId: null,
         updatedAt: now,
       })
       .where(
@@ -227,6 +228,7 @@ export async function setClosingStatus(
         status: parsed.data.status,
         completedBy: completed ? ctx.userId : null,
         completedAt: completed ? new Date() : null,
+        completedByTaskId: null,
         updatedAt: new Date(),
       })
       .where(

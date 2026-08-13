@@ -181,12 +181,12 @@ uma informação essencial, o bot pede que a pessoa complemente a mensagem; nome
 ambíguos ou inexistentes bloqueiam a confirmação.
 
 Solicitações gerais também são aceitas, como `Bruno, organize os documentos
-internos até sexta`. Quando a IA reconhecer um fechamento anual, como `Bruno,
-fecha o balanço da Scharff até 31/07`, ela resolve a empresa na carteira e mostra
-na prévia qual ano da campanha será vinculado. Ao concluir ou aprovar a missão,
-o fechamento anual da empresa é marcado automaticamente; uma reversão da missão
-reabre o controle que ela própria fechou. Se o ano não for informado, é usado o
-ano corrente, sempre visível na prévia.
+internos até sexta`. Uma solicitação como `Bruno, fecha o balanço da Scharff até
+31/07` cria um item pendente em **Períodos e demandas**; ao concluir ou aprovar a
+missão, somente esse período é marcado como fechado. O encerramento do ano
+inteiro só é vinculado quando a mensagem disser explicitamente `encerramento
+anual`, `exercício inteiro` ou um intervalo anual completo. A prévia sempre
+mostra qual dos dois controles será afetado antes da confirmação.
 
 O bot usa Claude Sonnet com Structured Outputs para interpretar a intenção,
 extrair empresa, alteração, ações e responsáveis, resolver os nomes contra os

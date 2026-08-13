@@ -13,7 +13,7 @@ import {
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
-import { syncAnnualClosingFromTask } from "@/lib/closings/task-sync";
+import { syncClosingFromTask } from "@/lib/closings/task-sync";
 import { createTaskRecord } from "@/lib/tasks/create";
 import { encodeTaskCallback } from "@/lib/telegram/endpoint";
 import {
@@ -243,7 +243,7 @@ async function transitionTask(options: {
     if (options.sideEffect) {
       await options.sideEffect(tx, task);
     }
-    await syncAnnualClosingFromTask(tx, {
+    await syncClosingFromTask(tx, {
       task,
       fromStatus: task.status,
       toStatus: options.to,

@@ -101,7 +101,7 @@ describe("informativeExtractionSchema", () => {
     expect(closure.tasks[0]?.assignees).toEqual([]);
   });
 
-  it("aceita uma missão geral vinculada ao fechamento anual", () => {
+  it("classifica uma data parcial como período, sem fechar o ano", () => {
     const closing = informativeExtractionSchema.parse({
       ...extraction,
       kind: "general_task",
@@ -112,7 +112,7 @@ describe("informativeExtractionSchema", () => {
       tasks: [
         {
           ...extraction.tasks[0],
-          category: "annual_closing",
+          category: "closing_period",
           title: "Fechar o balanço",
           dueDate: "2026-07-31",
           closingYear: null,
@@ -122,9 +122,40 @@ describe("informativeExtractionSchema", () => {
     });
     expect(closing.kind).toBe("general_task");
     expect(closing.tasks[0]).toMatchObject({
-      category: "annual_closing",
+      category: "closing_period",
       dueDate: "2026-07-31",
+      closingYear: null,
     });
+  });
+
+  it("reserva o fechamento anual para o exercício inteiro explícito", () => {
+    const annual = informativeExtractionSchema.parse({
+      ...extraction,
+      kind: "general_task",
+      tasks: [
+        {
+          ...extraction.tasks[0],
+          category: "annual_closing",
+          title: "Encerrar o exercício inteiro",
+          closingYear: 2025,
+          assignees: ["Bruno"],
+        },
+      ],
+    });
+    expect(annual.tasks[0]).toMatchObject({
+      category: "annual_closing",
+      closingYear: 2025,
+    });
+  });
+
+  it("permite solicitar a data ausente de um período", () => {
+    const incomplete = informativeExtractionSchema.parse({
+      ...extraction,
+      kind: "general_task",
+      tasks: [],
+      missingFields: ["due_date"],
+    });
+    expect(incomplete.missingFields).toEqual(["due_date"]);
   });
 });
 
