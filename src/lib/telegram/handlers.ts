@@ -39,7 +39,7 @@ const STATUS_LABEL: Record<(typeof schema.tasks.$inferSelect)["status"], string>
 };
 
 const NATURAL_MISSION_GUIDANCE =
-  "Envie a solicitação em uma única mensagem, do seu jeito. Inclua o que aconteceu com a empresa, o nome dela, o que precisa ser feito e quem será o responsável. A ordem e a formatação não importam.";
+  "Envie a nova missão em uma única mensagem, do seu jeito. Diga o que precisa ser feito, quem será o responsável e, quando houver, a empresa e o prazo. A ordem e a formatação não importam.";
 
 function appUrl(path: string): string {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;

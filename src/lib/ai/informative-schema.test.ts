@@ -20,12 +20,14 @@ const extraction = {
   },
   tasks: [
     {
+      category: "general" as const,
       title: "Controlar Fator R",
       description: "Acompanhar faturamento e folha.",
       assignees: ["Camila Schütz"],
       priority: 3,
       difficulty: 3,
       dueDate: null,
+      closingYear: null,
       sourceSection: "FISCAL – Att. CAMILA – CONTROLAR O FATOR R",
     },
   ],
@@ -69,9 +71,9 @@ describe("informativeExtractionSchema", () => {
       ...extraction,
       kind: null,
       tasks: [],
-      missingFields: ["change", "actions", "responsible"],
+      missingFields: ["actions", "responsible"],
     });
-    expect(result.missingFields).toEqual(["change", "actions", "responsible"]);
+    expect(result.missingFields).toEqual(["actions", "responsible"]);
   });
 
   it("recusa prioridade e prazo inventados fora do contrato", () => {
@@ -98,6 +100,32 @@ describe("informativeExtractionSchema", () => {
     expect(closure.kind).toBe("client_closure");
     expect(closure.tasks[0]?.assignees).toEqual([]);
   });
+
+  it("aceita uma missão geral vinculada ao fechamento anual", () => {
+    const closing = informativeExtractionSchema.parse({
+      ...extraction,
+      kind: "general_task",
+      company: {
+        ...extraction.company,
+        legalName: "SCHARFF CONTABILIDADE LTDA",
+      },
+      tasks: [
+        {
+          ...extraction.tasks[0],
+          category: "annual_closing",
+          title: "Fechar o balanço",
+          dueDate: "2026-07-31",
+          closingYear: null,
+          assignees: ["Bruno"],
+        },
+      ],
+    });
+    expect(closing.kind).toBe("general_task");
+    expect(closing.tasks[0]).toMatchObject({
+      category: "annual_closing",
+      dueDate: "2026-07-31",
+    });
+  });
 });
 
 describe("informativeDraftPayloadSchema", () => {
@@ -117,6 +145,8 @@ describe("informativeDraftPayloadSchema", () => {
         priority: task.priority,
         difficulty: task.difficulty,
         dueDate: task.dueDate,
+        category: task.category,
+        closingYear: task.closingYear,
         sourceSection: task.sourceSection,
         assigneeId: "user-1",
         assigneeName: "Camila Schütz",

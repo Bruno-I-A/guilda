@@ -6,7 +6,9 @@ const nullableText = (max: number) => z.string().trim().max(max).nullable();
 
 export const informativeExtractionSchema = z.object({
   isMissionRequest: z.boolean(),
-  kind: z.enum(["new_client", "client_change", "client_closure"]).nullable(),
+  kind: z
+    .enum(["new_client", "client_change", "client_closure", "general_task"])
+    .nullable(),
   company: z.object({
     systemCode: nullableText(30),
     legalName: nullableText(200),
@@ -19,6 +21,7 @@ export const informativeExtractionSchema = z.object({
   tasks: z
     .array(
       z.object({
+        category: z.enum(["general", "annual_closing"]),
         title: z.string().trim().min(3).max(200),
         description: z.string().trim().min(1).max(5000),
         assignees: z.array(z.string().trim().min(1).max(200)).max(8),
@@ -28,6 +31,7 @@ export const informativeExtractionSchema = z.object({
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}$/)
           .nullable(),
+        closingYear: z.number().int().min(2000).max(2100).nullable(),
         sourceSection: z.string().trim().min(1).max(1000),
       }),
     )
@@ -35,8 +39,8 @@ export const informativeExtractionSchema = z.object({
   ignoredNotes: z.array(z.string().trim().min(1).max(500)).max(30),
   warnings: z.array(z.string().trim().min(1).max(500)).max(20),
   missingFields: z
-    .array(z.enum(["change", "company", "actions", "responsible"]))
-    .max(4),
+    .array(z.enum(["company", "actions", "responsible"]))
+    .max(3),
 });
 
 export type InformativeExtraction = z.infer<typeof informativeExtractionSchema>;
@@ -44,11 +48,9 @@ export type InformativeExtraction = z.infer<typeof informativeExtractionSchema>;
 export const informativeDraftPayloadSchema = informativeExtractionSchema
   .omit({ isMissionRequest: true, missingFields: true })
   .extend({
-    kind: z.enum(["new_client", "client_change", "client_closure"]),
+    kind: z.enum(["new_client", "client_change", "client_closure", "general_task"]),
     sourceFormat: z.enum(["informative", "business_mission"]),
     company: informativeExtractionSchema.shape.company.extend({
-      legalName: z.string().trim().min(2).max(200),
-      summary: z.string().trim().min(1).max(1200),
       normalizedCnpj: z.string().regex(/^\d{14}$/).nullable(),
       clientId: z.string().uuid().nullable(),
       createClient: z.boolean(),

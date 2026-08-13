@@ -15,6 +15,7 @@ export type CreateTaskRecordInput = {
   creatorId: string;
   assigneeId: string;
   clientId?: string | null;
+  closingYearId?: string | null;
   title: string;
   description?: string | null;
   priority: number;
@@ -35,6 +36,7 @@ export async function createTaskRecord(
       creatorId: input.creatorId,
       assigneeId: input.assigneeId,
       clientId: input.clientId ?? null,
+      closingYearId: input.closingYearId ?? null,
       title: input.title,
       description: input.description ?? null,
       priority: input.priority,

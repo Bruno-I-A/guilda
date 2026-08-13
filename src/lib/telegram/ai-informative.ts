@@ -1,10 +1,11 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
-import { withOrgTx } from "@/db/org-tx";
+import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
+import { resolveClientName } from "@/lib/ai/client-resolution";
 import { extractInformative } from "@/lib/ai/informative";
 import {
   informativeDraftPayloadSchema,
@@ -21,7 +22,6 @@ import { isDetailedInformativeMessage } from "./informative-detection";
 const DRAFT_TTL_MS = 30 * 60 * 1000;
 
 const MISSING_FIELD_LABELS = {
-  change: "o que aconteceu ou foi alterado",
   company: "o nome da empresa",
   actions: "o que precisa ser feito",
   responsible: "quem será o responsável",
@@ -43,16 +43,66 @@ function dueDate(value: string | null): Date | null {
   return value ? new Date(`${value}T12:00:00Z`) : null;
 }
 
+function currentYearInSaoPaulo(): number {
+  return Number(
+    new Intl.DateTimeFormat("en", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+    }).format(new Date()),
+  );
+}
+
+async function ensureClosingYear(
+  tx: OrgTx,
+  input: { orgId: string; clientId: string; year: number },
+): Promise<string> {
+  const existing = await tx.query.accountingClosingYears.findFirst({
+    where: and(
+      eq(schema.accountingClosingYears.orgId, input.orgId),
+      eq(schema.accountingClosingYears.clientId, input.clientId),
+      eq(schema.accountingClosingYears.year, input.year),
+    ),
+    columns: { id: true },
+  });
+  if (existing) return existing.id;
+
+  const [created] = await tx
+    .insert(schema.accountingClosingYears)
+    .values({
+      orgId: input.orgId,
+      clientId: input.clientId,
+      year: input.year,
+    })
+    .onConflictDoNothing()
+    .returning({ id: schema.accountingClosingYears.id });
+  if (created) return created.id;
+
+  const raced = await tx.query.accountingClosingYears.findFirst({
+    where: and(
+      eq(schema.accountingClosingYears.orgId, input.orgId),
+      eq(schema.accountingClosingYears.clientId, input.clientId),
+      eq(schema.accountingClosingYears.year, input.year),
+    ),
+    columns: { id: true },
+  });
+  if (!raced) throw new Error("Não foi possível preparar a campanha de fechamentos.");
+  return raced.id;
+}
+
 function draftPreview(payload: InformativeDraftPayload): string {
   const kindLabel = {
     new_client: "Novo cliente",
     client_change: "Alteração",
     client_closure: "Baixa de cliente",
+    general_task: "Nova solicitação",
   }[payload.kind];
+  const companyLabel = payload.company.legalName
+    ? `${kindLabel}: ${payload.company.legalName}`
+    : kindLabel;
   const lines = [
     "🤖 Prévia das missões",
     "",
-    `${kindLabel}: ${payload.company.legalName}`,
+    companyLabel,
   ];
   if (payload.sourceFormat === "informative") {
     lines.push(
@@ -64,6 +114,9 @@ function draftPreview(payload: InformativeDraftPayload): string {
   lines.push("", `${payload.tasks.length} missão(ões) proposta(s):`);
   payload.tasks.slice(0, 20).forEach((task, index) => {
     lines.push(`${index + 1}. ${task.assigneeName} — ${task.title}`);
+    if (task.category === "annual_closing" && task.closingYear) {
+      lines.push(`   ↳ ao concluir, fechará a campanha de ${task.closingYear}`);
+    }
   });
   if (payload.tasks.length > 20) {
     lines.push(`… e mais ${payload.tasks.length - 20}.`);
@@ -90,27 +143,46 @@ export async function createInformativeDraft(
 ): Promise<void> {
   await api.sendMessage(chatId, "🤖 Analisando a solicitação e conferindo responsáveis…");
 
-  const members = await listOrgMembers(actor.orgId);
+  const [members, clients] = await Promise.all([
+    listOrgMembers(actor.orgId),
+    withOrgTx(actor.orgId, (tx) =>
+      tx.query.clients.findMany({
+        where: and(
+          eq(schema.clients.orgId, actor.orgId),
+          eq(schema.clients.active, true),
+        ),
+      }),
+    ),
+  ]);
   const sourceFormat = isDetailedInformativeMessage(sourceText)
     ? "informative"
     : "business_mission";
   const extracted = await extractInformative(
     sourceText,
     members.map(({ userId, name }) => ({ userId, name })),
+    clients.map(({ name }) => ({ name })),
     `${actor.orgId}:${actor.userId}`,
   );
 
   if (!extracted.data.isMissionRequest) {
     await api.sendMessage(
       chatId,
-      "Não identifiquei uma solicitação de missão. Escreva em uma única mensagem o que aconteceu com a empresa, o nome dela, as ações necessárias e o responsável.",
+      "Não identifiquei uma solicitação de nova missão. Diga o que precisa ser feito, quem será o responsável e, quando houver, a empresa e o prazo.",
     );
     return;
   }
 
+  const kind = extracted.data.kind ?? "general_task";
+  const hasAnnualClosing = extracted.data.tasks.some(
+    (task) => task.category === "annual_closing",
+  );
   const missing = new Set(extracted.data.missingFields);
-  if (!extracted.data.kind) missing.add("change");
-  if (!extracted.data.company.legalName) missing.add("company");
+  if (
+    (kind !== "general_task" || hasAnnualClosing) &&
+    !extracted.data.company.legalName
+  ) {
+    missing.add("company");
+  }
   if (extracted.data.tasks.length === 0) missing.add("actions");
   if (extracted.data.tasks.some((task) => task.assignees.length === 0)) {
     missing.add("responsible");
@@ -124,9 +196,7 @@ export async function createInformativeDraft(
     return;
   }
 
-  const kind = extracted.data.kind;
   const legalName = extracted.data.company.legalName;
-  if (!kind || !legalName) return;
 
   const normalizedCnpj = extracted.data.company.cnpj
     ? normalizeCnpj(extracted.data.company.cnpj)
@@ -134,23 +204,23 @@ export async function createInformativeDraft(
   const validCnpj = normalizedCnpj && validateCnpj(normalizedCnpj)
     ? normalizedCnpj
     : null;
-  const existingClient = await withOrgTx(actor.orgId, async (tx) => {
-    if (validCnpj) {
-      const byCnpj = await tx.query.clients.findFirst({
-        where: and(
-          eq(schema.clients.orgId, actor.orgId),
-          eq(schema.clients.cnpj, validCnpj),
-        ),
-      });
-      if (byCnpj) return byCnpj;
-    }
-    return tx.query.clients.findFirst({
-      where: and(
-        eq(schema.clients.orgId, actor.orgId),
-        eq(schema.clients.name, legalName),
-      ),
-    });
-  });
+  const existingClient =
+    (validCnpj
+      ? clients.find((client) => client.cnpj === validCnpj) ?? null
+      : null) ??
+    (legalName ? resolveClientName(legalName, clients) : null);
+
+  if (hasAnnualClosing && !existingClient) {
+    await api.sendMessage(
+      chatId,
+      legalName
+        ? `Não consegui localizar “${legalName}” de forma única na carteira de clientes. Reenvie a missão usando o nome cadastrado da empresa.`
+        : "Para vincular o fechamento à campanha anual, informe o nome da empresa.",
+    );
+    return;
+  }
+
+  const finalLegalName = existingClient?.name ?? legalName;
 
   const unresolved = new Set<string>();
   const tasks: InformativeDraftPayload["tasks"] = [];
@@ -179,15 +249,48 @@ export async function createInformativeDraft(
         priority: task.priority,
         difficulty: task.difficulty,
         dueDate: task.dueDate,
+        category: task.category,
+        closingYear:
+          task.category === "annual_closing"
+            ? task.closingYear ?? currentYearInSaoPaulo()
+            : null,
         sourceSection: task.sourceSection,
       });
     }
   }
 
   const warnings = [...extracted.data.warnings];
+  const closingYears = [
+    ...new Set(
+      tasks
+        .filter((task) => task.category === "annual_closing")
+        .map((task) => task.closingYear)
+        .filter((year): year is number => year !== null),
+    ),
+  ];
+  if (existingClient && closingYears.length > 0) {
+    const alreadyClosed = await withOrgTx(actor.orgId, (tx) =>
+      tx.query.accountingClosingYears.findMany({
+        where: and(
+          eq(schema.accountingClosingYears.orgId, actor.orgId),
+          eq(schema.accountingClosingYears.clientId, existingClient.id),
+          inArray(schema.accountingClosingYears.year, closingYears),
+        ),
+        columns: { year: true, closedAt: true },
+      }),
+    );
+    for (const annual of alreadyClosed) {
+      if (annual.closedAt) {
+        warnings.push(
+          `A campanha de ${annual.year} desta empresa já está marcada como fechada.`,
+        );
+      }
+    }
+  }
   const createClient =
     sourceFormat === "informative" &&
     extracted.data.kind === "new_client" &&
+    Boolean(finalLegalName) &&
     !existingClient &&
     Boolean(validCnpj && extracted.data.company.taxRegime);
   if (sourceFormat === "informative" && extracted.data.kind === "new_client" && !validCnpj) {
@@ -217,8 +320,12 @@ export async function createInformativeDraft(
     sourceFormat,
     company: {
       ...extracted.data.company,
-      legalName,
-      summary: extracted.data.company.summary ?? `Solicitação referente a ${legalName}.`,
+      legalName: finalLegalName,
+      summary:
+        extracted.data.company.summary ??
+        (finalLegalName
+          ? `Solicitação referente a ${finalLegalName}.`
+          : "Solicitação de missão geral."),
       normalizedCnpj: validCnpj,
       clientId: existingClient?.id ?? null,
       createClient,
@@ -313,6 +420,7 @@ export async function decideInformativeDraft(
         where: and(
           eq(schema.clients.id, payload.data.company.clientId),
           eq(schema.clients.orgId, actor.orgId),
+          eq(schema.clients.active, true),
         ),
         columns: { id: true },
       });
@@ -321,6 +429,7 @@ export async function decideInformativeDraft(
     if (
       !clientId &&
       payload.data.company.createClient &&
+      payload.data.company.legalName &&
       payload.data.company.taxRegime &&
       payload.data.company.normalizedCnpj
     ) {
@@ -354,15 +463,40 @@ export async function decideInformativeDraft(
     if (payload.data.tasks.some((task) => !memberIds.has(task.assigneeId))) {
       return { ok: false, message: "Um responsável não pertence mais à Guilda. Gere outra prévia." };
     }
+    if (
+      payload.data.tasks.some(
+        (task) =>
+          task.category === "annual_closing" &&
+          (!clientId || !task.closingYear),
+      )
+    ) {
+      return {
+        ok: false,
+        message: "O fechamento anual perdeu o vínculo com a empresa ou o ano. Gere outra prévia.",
+      };
+    }
 
     const taskIds: string[] = [];
     for (const task of payload.data.tasks) {
+      let closingYearId: string | null = null;
+      if (task.category === "annual_closing") {
+        if (!clientId || !task.closingYear) throw new Error("Fechamento anual inválido.");
+        closingYearId = await ensureClosingYear(tx, {
+          orgId: actor.orgId,
+          clientId,
+          year: task.closingYear,
+        });
+      }
+      const companySuffix = payload.data.company.legalName
+        ? ` — ${payload.data.company.legalName}`
+        : "";
       const created = await createTaskRecord(tx, {
         orgId: actor.orgId,
         creatorId: actor.userId,
         assigneeId: task.assigneeId,
         clientId: clientId ?? null,
-        title: `${task.title} — ${payload.data.company.legalName}`.slice(0, 200),
+        closingYearId,
+        title: `${task.title}${companySuffix}`.slice(0, 200),
         description: task.description,
         priority: task.priority,
         difficulty: task.difficulty,
@@ -381,7 +515,9 @@ export async function decideInformativeDraft(
       .where(eq(schema.telegramAiDrafts.id, draft.id));
     return {
       ok: true,
-      message: `${taskIds.length} missão(ões) criada(s) para ${payload.data.company.legalName}.`,
+      message: payload.data.company.legalName
+        ? `${taskIds.length} missão(ões) criada(s) para ${payload.data.company.legalName}.`
+        : `${taskIds.length} missão(ões) criada(s).`,
     };
   });
 }

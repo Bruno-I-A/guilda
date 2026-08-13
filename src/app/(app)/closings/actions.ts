@@ -349,6 +349,7 @@ export async function setYearClosed(
             .set({
               closedAt: data.closed ? now : null,
               closedBy: data.closed ? ctx.userId : null,
+              closedByTaskId: null,
               // Uma DEFIS entregue para um ano reaberto precisa ser revisada.
               ...(data.closed
                 ? {}

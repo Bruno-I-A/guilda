@@ -167,9 +167,9 @@ container devem mostrar `Telegram worker iniciado em modo polling` e
 ### IA: mensagens empresariais → missões
 
 Com `ANTHROPIC_API_KEY` configurada, qualquer membro conectado pode escrever ao
-bot em linguagem natural. A mensagem precisa informar o que aconteceu ou foi
-alterado, o nome da empresa, as ações necessárias e os responsáveis, mas não há
-cabeçalho, ordem, rótulos ou formatação obrigatórios. Por exemplo:
+bot em linguagem natural. A mensagem precisa informar a ação e os responsáveis;
+quando o trabalho estiver ligado a um cliente, também deve trazer o nome da
+empresa. Não há cabeçalho, ordem, rótulos ou formatação obrigatórios. Por exemplo:
 
 ```text
 Fiz a abertura da PICCOLI AGRO SERVIÇOS LTDA. O Bruno deve encaminhar na
@@ -179,6 +179,14 @@ prefeitura e solicitar o certificado digital.
 Cada ação independente vira uma missão para o responsável informado. Se faltar
 uma informação essencial, o bot pede que a pessoa complemente a mensagem; nomes
 ambíguos ou inexistentes bloqueiam a confirmação.
+
+Solicitações gerais também são aceitas, como `Bruno, organize os documentos
+internos até sexta`. Quando a IA reconhecer um fechamento anual, como `Bruno,
+fecha o balanço da Scharff até 31/07`, ela resolve a empresa na carteira e mostra
+na prévia qual ano da campanha será vinculado. Ao concluir ou aprovar a missão,
+o fechamento anual da empresa é marcado automaticamente; uma reversão da missão
+reabre o controle que ela própria fechou. Se o ano não for informado, é usado o
+ano corrente, sempre visível na prévia.
 
 O bot usa Claude Sonnet com Structured Outputs para interpretar a intenção,
 extrair empresa, alteração, ações e responsáveis, resolver os nomes contra os

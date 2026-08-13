@@ -141,6 +141,13 @@
       "when": 1786557430612,
       "tag": "0019_tough_titania",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1786650720905,
+      "tag": "0020_gifted_luminals",
+      "breakpoints": true
     }
   ]
 }

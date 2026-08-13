@@ -13,6 +13,7 @@ import {
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
+import { syncAnnualClosingFromTask } from "@/lib/closings/task-sync";
 import { createTaskRecord } from "@/lib/tasks/create";
 import { encodeTaskCallback } from "@/lib/telegram/endpoint";
 import {
@@ -212,12 +213,18 @@ async function transitionTask(options: {
       return err(decision.reason);
     }
 
+    const now = new Date();
     await tx
       .update(schema.tasks)
       .set({
         status: options.to,
-        updatedAt: new Date(),
-        completedAt: options.to === "completed" ? new Date() : task.completedAt,
+        updatedAt: now,
+        completedAt:
+          options.to === "completed"
+            ? now
+            : task.status === "completed"
+              ? null
+              : task.completedAt,
       })
       .where(eq(schema.tasks.id, task.id));
 
@@ -236,6 +243,12 @@ async function transitionTask(options: {
     if (options.sideEffect) {
       await options.sideEffect(tx, task);
     }
+    await syncAnnualClosingFromTask(tx, {
+      task,
+      fromStatus: task.status,
+      toStatus: options.to,
+      changedAt: now,
+    });
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;
     if (options.to === "awaiting_approval") {
@@ -289,6 +302,9 @@ async function transitionTask(options: {
     revalidatePath("/tasks");
     revalidatePath(`/tasks/${options.taskId}`);
     revalidatePath("/dashboard");
+    revalidatePath("/closings");
+    revalidatePath("/profile");
+    revalidatePath("/leaderboard");
   }
   return result;
 }
