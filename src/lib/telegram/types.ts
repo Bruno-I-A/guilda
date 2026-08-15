@@ -12,10 +12,17 @@ export type {
 
 export type TelegramNotificationEventType =
   | "task_assigned"
+  | "task_clan_created"
   | "task_deadline"
+  | "task_overdue"
   | "task_awaiting_approval"
+  | "task_completed"
   | "task_approved"
   | "task_rejected"
+  | "task_cancelled"
+  | "task_transferred"
+  | "task_transferred_in"
+  | "task_transferred_out"
   | "xp_earned"
   | "closing_deadline"
   | "closing_blocked"

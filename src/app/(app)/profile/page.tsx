@@ -34,7 +34,7 @@ import type { TelegramPreferencesView } from "./telegram-types";
 export const metadata: Metadata = { title: "Perfil" };
 
 const REASON_LABELS: Record<string, string> = {
-  task_completed: "Missão aprovada",
+  task_completed: "Missão concluída",
   closing_year_closed: "Fechamento anual",
   reversal: "Conclusão revertida",
   bonus: "Bônus",
@@ -126,7 +126,7 @@ export default async function ProfilePage() {
           nível {progress.level} · faltam{" "}
           {(progress.nextLevelXp - progress.totalXp).toLocaleString("pt-BR")} XP
           para o nível {progress.level + 1} · {completedCount}{" "}
-          {completedCount === 1 ? "entrega aprovada" : "entregas aprovadas"}
+          {completedCount === 1 ? "missão concluída" : "missões concluídas"}
         </p>
       </section>
 

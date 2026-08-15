@@ -1,12 +1,13 @@
 "use client";
 
 import {
+  ArrowRightLeft,
   Ban,
   Check,
+  Hand,
   Pencil,
   Play,
   RotateCcw,
-  Send,
   Undo2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -24,18 +25,25 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-
 import type { ActionResult } from "@/lib/action-context";
 
 import {
   approveTask,
   cancelTask,
-  completeOwnTask,
+  claimTask,
+  completeTask,
   rejectTask,
   revertCompletion,
   startTask,
-  submitTask,
+  transferTask,
   updateTask,
 } from "../actions";
 
@@ -43,27 +51,40 @@ interface TaskView {
   id: string;
   title: string;
   description: string;
-  dueDate: string; // YYYY-MM-DD ou ""
+  dueDate: string;
   xpValue: number;
-  assigneeName: string;
+  assigneeName: string | null;
+  clanId: string | null;
+  clanName: string | null;
+}
+
+interface TransferCandidate {
+  userId: string;
+  name: string;
+  clanName: string;
 }
 
 export function TaskActionBar({
   task,
   can,
+  transferCandidates,
+  restrictTransferToTaskClan,
 }: {
   task: TaskView;
   can: {
+    claim: boolean;
     start: boolean;
     resume: boolean;
-    submit: boolean;
-    completeSelf: boolean;
+    complete: boolean;
     approve: boolean;
     reject: boolean;
     cancel: boolean;
     edit: boolean;
     revert: boolean;
+    transfer: boolean;
   };
+  transferCandidates: TransferCandidate[];
+  restrictTransferToTaskClan: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -71,8 +92,19 @@ export function TaskActionBar({
   const [cancelOpen, setCancelOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
   const [revertNote, setRevertNote] = useState("");
+  const [transferNote, setTransferNote] = useState("");
+  const [transferAssigneeId, setTransferAssigneeId] = useState(
+    transferCandidates[0]?.userId ?? "",
+  );
+
+  const effectiveTransferAssigneeId = transferCandidates.some(
+    (candidate) => candidate.userId === transferAssigneeId,
+  )
+    ? transferAssigneeId
+    : transferCandidates[0]?.userId ?? "";
 
   function run(action: () => Promise<ActionResult>, successMessage: string) {
     startTransition(async () => {
@@ -87,18 +119,24 @@ export function TaskActionBar({
   }
 
   const hasPrimary =
-    can.start ||
-    can.resume ||
-    can.submit ||
-    can.completeSelf ||
-    can.approve ||
-    can.reject;
-  if (!hasPrimary && !can.edit && !can.cancel && !can.revert) {
+    can.claim || can.start || can.resume || can.complete || can.approve || can.reject;
+  if (!hasPrimary && !can.edit && !can.cancel && !can.revert && !can.transfer) {
     return null;
   }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {can.claim ? (
+        <Button
+          disabled={pending}
+          onClick={() =>
+            run(() => claimTask({ taskId: task.id }), "Missão assumida por você!")
+          }
+        >
+          <Hand aria-hidden /> Assumir
+        </Button>
+      ) : null}
+
       {can.start ? (
         <Button
           disabled={pending}
@@ -117,23 +155,12 @@ export function TaskActionBar({
         </Button>
       ) : null}
 
-      {can.submit ? (
-        <Button
-          disabled={pending}
-          onClick={() =>
-            run(() => submitTask({ taskId: task.id }), "Enviada para aprovação!")
-          }
-        >
-          <Send aria-hidden /> Marcar como feita
-        </Button>
-      ) : null}
-
-      {can.completeSelf ? (
+      {can.complete ? (
         <Button
           disabled={pending}
           onClick={() =>
             run(
-              () => completeOwnTask({ taskId: task.id }),
+              () => completeTask({ taskId: task.id }),
               `Concluída! Você ganhou ${task.xpValue} XP.`,
             )
           }
@@ -148,17 +175,27 @@ export function TaskActionBar({
           onClick={() =>
             run(
               () => approveTask({ taskId: task.id }),
-              `Aprovada! ${task.assigneeName} ganhou ${task.xpValue} XP.`,
+              `Entrega legada aprovada. ${task.assigneeName ?? "A pessoa responsável"} recebeu ${task.xpValue} XP.`,
             )
           }
         >
-          <Check aria-hidden /> Aprovar
+          <Check aria-hidden /> Aprovar entrega legada
         </Button>
       ) : null}
 
       {can.reject ? (
         <Button variant="outline" disabled={pending} onClick={() => setRejectOpen(true)}>
-          <Undo2 aria-hidden /> Rejeitar
+          <Undo2 aria-hidden /> Rejeitar entrega legada
+        </Button>
+      ) : null}
+
+      {can.transfer ? (
+        <Button
+          variant="outline"
+          disabled={pending || transferCandidates.length === 0}
+          onClick={() => setTransferOpen(true)}
+        >
+          <ArrowRightLeft aria-hidden /> Transferir
         </Button>
       ) : null}
 
@@ -185,14 +222,80 @@ export function TaskActionBar({
         </Button>
       ) : null}
 
-      {/* Rejeitar — nota obrigatória */}
+      <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Transferir missão</DialogTitle>
+            <DialogDescription>
+              Escolha a nova pessoa responsável. A nota é opcional e ficará no
+              histórico da missão.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <Label htmlFor="transfer-assignee">Nova pessoa responsável</Label>
+            <Select
+              value={effectiveTransferAssigneeId}
+              onValueChange={setTransferAssigneeId}
+            >
+              <SelectTrigger id="transfer-assignee" className="w-full">
+                <SelectValue placeholder="Escolha uma pessoa" />
+              </SelectTrigger>
+              <SelectContent>
+                {transferCandidates.map((candidate) => (
+                  <SelectItem key={candidate.userId} value={candidate.userId}>
+                    {candidate.name} · {candidate.clanName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="transfer-note">Nota (opcional)</Label>
+            <Textarea
+              id="transfer-note"
+              value={transferNote}
+              onChange={(event) => setTransferNote(event.target.value)}
+              maxLength={2000}
+              rows={3}
+              placeholder="Contexto útil para quem vai assumir…"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setTransferOpen(false)}>
+              Voltar
+            </Button>
+            <Button
+              disabled={pending || !effectiveTransferAssigneeId}
+              onClick={() => {
+                setTransferOpen(false);
+                run(
+                  () =>
+                    transferTask({
+                      taskId: task.id,
+                      assigneeId: effectiveTransferAssigneeId,
+                      clanId: restrictTransferToTaskClan
+                        ? task.clanId ?? undefined
+                        : undefined,
+                      note: transferNote.trim() || undefined,
+                    }),
+                  "Missão transferida.",
+                );
+                setTransferNote("");
+              }}
+            >
+              Transferir missão
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Rejeitar entrega</DialogTitle>
+            <DialogTitle>Rejeitar entrega legada</DialogTitle>
             <DialogDescription>
-              Explique o que precisa de ajuste — a nota é obrigatória e fica
-              registrada na linha do tempo.
+              Explique o que precisa de ajuste. Esta ação existe apenas para
+              missões que já estavam no fluxo antigo de aprovação.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
@@ -200,7 +303,7 @@ export function TaskActionBar({
             <Textarea
               id="reject-note"
               value={rejectNote}
-              onChange={(e) => setRejectNote(e.target.value)}
+              onChange={(event) => setRejectNote(event.target.value)}
               placeholder="Ex.: Falta atualizar a planilha de custos…"
               rows={4}
             />
@@ -227,7 +330,6 @@ export function TaskActionBar({
         </DialogContent>
       </Dialog>
 
-      {/* Cancelar — confirmação */}
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -254,15 +356,13 @@ export function TaskActionBar({
         </DialogContent>
       </Dialog>
 
-      {/* Reverter conclusão — estorna o XP com lançamento negativo */}
       <Dialog open={revertOpen} onOpenChange={setRevertOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Reverter conclusão?</DialogTitle>
             <DialogDescription>
-              A missão volta para “Em andamento” e {task.assigneeName} tem{" "}
-              {task.xpValue} XP estornados (lançamento negativo no ledger — o
-              crédito original não é apagado).
+              A missão volta para “Em andamento” e {task.assigneeName ?? "a pessoa responsável"}
+              tem {task.xpValue} XP estornados por um novo lançamento no ledger.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
@@ -270,8 +370,8 @@ export function TaskActionBar({
             <Textarea
               id="revert-note"
               value={revertNote}
-              onChange={(e) => setRevertNote(e.target.value)}
-              placeholder="Ex.: Aprovada por engano, entrega incompleta…"
+              onChange={(event) => setRevertNote(event.target.value)}
+              placeholder="Ex.: Concluída por engano, entrega incompleta…"
               rows={3}
             />
           </div>
@@ -290,7 +390,7 @@ export function TaskActionBar({
                       taskId: task.id,
                       note: revertNote.trim() || undefined,
                     }),
-                  "Conclusão revertida — XP estornado.",
+                  "Conclusão revertida e XP estornado.",
                 );
                 setRevertNote("");
               }}
@@ -301,13 +401,12 @@ export function TaskActionBar({
         </DialogContent>
       </Dialog>
 
-      {/* Editar — título/descrição/prazo (dificuldade e prioridade são imutáveis) */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Editar missão</DialogTitle>
             <DialogDescription>
-              Dificuldade e prioridade não mudam após a criação — o XP é
+              Dificuldade e prioridade não mudam após a criação, pois o XP é
               congelado.
             </DialogDescription>
           </DialogHeader>

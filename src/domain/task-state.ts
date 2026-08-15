@@ -18,7 +18,7 @@ export type OrgRole = "owner" | "admin" | "member";
 
 export interface TransitionContext {
   actor: { id: string; role: OrgRole };
-  task: { creatorId: string; assigneeId: string; status: TaskStatus };
+  task: { creatorId: string; assigneeId: string | null; status: TaskStatus };
 }
 
 export type TransitionDecision =
@@ -27,8 +27,8 @@ export type TransitionDecision =
 
 /**
  * Grafo de transições válidas. `completed → in_progress` é a reversão
- * administrativa; `in_progress → completed` é a conclusão direta de
- * auto-tarefa (criador == responsável — autorização restringe).
+ * administrativa; `in_progress → completed` é a conclusão direta pela
+ * pessoa responsável, sem aprovação de terceiros.
  */
 const TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
   pending: ["in_progress", "cancelled"],
@@ -58,9 +58,8 @@ const ALLOW: TransitionDecision = { allowed: true };
  * estados com as regras de papel/propriedade:
  *
  * - iniciar / enviar para aprovação / retomar: só o responsável;
- * - auto-tarefa (criador == responsável): o próprio responsável conclui
- *   direto, sem aprovação — decisão de produto (2026-07-06), o risco de
- *   farm de XP foi aceito conscientemente;
+ * - toda pessoa responsável pode concluir diretamente uma missão em
+ *   andamento, ainda que outra pessoa a tenha criado;
  * - aprovar / rejeitar tarefa de terceiros: criador ou admin/owner;
  * - cancelar: criador ou admin/owner;
  * - reverter conclusão: apenas admin/owner.
@@ -101,12 +100,11 @@ export function authorizeTransition(
       : deny("Apenas a pessoa responsável pode enviar para aprovação.");
   }
 
-  // in_progress → completed (conclusão direta — exclusiva de auto-tarefa)
+  // in_progress → completed (conclusão direta pelo responsável)
   if (to === "completed" && from === "in_progress") {
-    const selfAssigned = task.creatorId === task.assigneeId;
-    return selfAssigned && isAssignee
+    return isAssignee
       ? ALLOW
-      : deny("Missões criadas para outra pessoa passam pela aprovação de quem criou.");
+      : deny("Apenas a pessoa responsável pode concluir a missão.");
   }
 
   // awaiting_approval → completed | rejected (decisão de aprovação)

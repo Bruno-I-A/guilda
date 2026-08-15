@@ -15,6 +15,29 @@ const MAX_INFORMATIVE_LENGTH = 12_000;
 
 export type InformativeMember = Readonly<{ userId: string; name: string }>;
 export type InformativeClient = Readonly<{ name: string }>;
+export type InformativeClan = Readonly<{ id: string; name: string }>;
+
+function normalizeDirectoryName(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/** Resolve somente o nome completo e inequívoco de um clã ativo. */
+export function resolveInformativeClan(
+  requestedName: string,
+  clans: readonly InformativeClan[],
+): InformativeClan | null {
+  const requested = normalizeDirectoryName(requestedName);
+  if (!requested) return null;
+  const exact = clans.filter(
+    (clan) => normalizeDirectoryName(clan.name) === requested,
+  );
+  return exact.length === 1 ? exact[0] : null;
+}
 
 function todayInSaoPaulo(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -28,9 +51,11 @@ function todayInSaoPaulo(): string {
 function instructions(
   members: InformativeMember[],
   clients: InformativeClient[],
+  clans: InformativeClan[],
 ): string {
   const memberDirectory = members.map((member) => `- ${member.name}`).join("\n");
   const clientDirectory = clients.map((client) => `- ${client.name}`).join("\n");
+  const clanDirectory = clans.map((clan) => `- ${clan.name}`).join("\n");
   return `Você extrai missões operacionais de mensagens enviadas a um escritório contábil brasileiro.
 
 Data de referência no fuso America/Sao_Paulo: ${todayInSaoPaulo()}.
@@ -50,7 +75,7 @@ Regras:
 - Por padrão, "fechar o balanço", "fazer o fechamento", "fechar até 31/07" ou uma solicitação com data/período parcial é general_task com category closing_period. Essa categoria cria somente um item em Períodos e demandas e NÃO fecha o ano inteiro.
 - Use category annual_closing SOMENTE quando o texto disser explicitamente que é o encerramento anual, o ano/exercício inteiro ou um intervalo anual completo (por exemplo, 01/01 a 31/12). Uma mera data-limite, inclusive 31/12, não basta sozinha para fechar o ano inteiro.
 - A ordem das informações, quebras de linha, rótulos, pontuação e uso de lista não importam.
-- Preencha missingFields somente com informações realmente ausentes: company quando faltar o nome em uma abertura, alteração, baixa ou qualquer fechamento contábil; actions quando não houver trabalho pedido; responsible quando faltar quem executará; due_date quando um closing_period não trouxer a data final do período. Missões gerais podem não ter empresa. Não invente esses dados.
+- Preencha missingFields somente com informações realmente ausentes: company quando faltar o nome em uma abertura, alteração, baixa ou qualquer fechamento contábil; actions quando não houver trabalho pedido; responsible quando não houver uma pessoa nem um clã destinatário; due_date quando um closing_period não trouxer a data final do período. Missões gerais podem não ter empresa. Não invente esses dados.
 - Extraia somente ações ainda necessárias. Não crie missão para "segue sem alterações", "ativo", "cadastrada", informação histórica ou item já concluído. Termos como "efetuado", "feito", "finalizado" e "empresa baixada" indicam conclusão e devem ser ignorados.
 - Em baixas, linhas como "COBRANÇA – RECIBO" e "ATENDIMENTO – Jessica" apenas registram contexto e não são ações. Já verbos no infinitivo como finalizar, retirar, separar, confeccionar, coletar, escanear, salvar, recortar e mover indicam ações pendentes, salvo quando marcadas como efetuadas/concluídas.
 - Uma linha pode gerar várias ações. Preserve detalhes importantes na descrição.
@@ -64,9 +89,10 @@ Regras:
   - baixa + prefeitura/alvará: "Solicitar baixa municipal/alvará".
   Não invente providências além das ações pedidas.
 - Para solicitações curtas, campos CNPJ, regime, cidade e contato podem ficar null sem gerar warning. Use prioridade 2 e dificuldade 2 para prefeitura, alvará e certificado, salvo urgência ou complexidade explicitamente informada.
-- Para assignees, use SOMENTE nomes exatos do diretório abaixo. Quando o texto mencionar duas pessoas (ex.: Rafa/Bruno), retorne as duas. Se não houver correspondência segura, preserve o nome mencionado; o servidor o marcará como não reconhecido.
+- Use assignmentType individual quando a missão for destinada a uma ou mais pessoas. Nesse caso, clanName deve ser null e assignees deve conter SOMENTE nomes exatos do diretório de membros. Quando o texto mencionar duas pessoas (ex.: Rafa/Bruno), retorne as duas. Se não houver correspondência segura, preserve o nome mencionado; o servidor o marcará como não reconhecido.
+- Use assignmentType clan somente quando o texto destinar a missão a um clã/setor sem indicar qual pessoa fará o trabalho. Nesse caso, assignees deve ser vazio e clanName deve usar SOMENTE o nome exato do diretório de clãs ativos. Não transforme uma missão individual em missão de clã. Se o clã mencionado não estiver no diretório, preserve o nome pedido para o servidor recusá-lo com segurança.
 - Na solicitação curta, aplique o responsável informado a todas as ações, salvo quando uma ação indicar explicitamente outra pessoa. Reconheça construções naturais como "para o Bruno", "responsável Bruno", "o Bruno faz" e o nome usado como vocativo em "Oi Bruno, fiz a abertura... pode encaminhar".
-- Se uma ação necessária não tiver nenhum responsável indicado, retorne assignees vazio. Nunca deduza o responsável por proximidade com outra linha.
+- Se uma ação necessária não tiver pessoa nem clã indicado, use assignmentType individual, assignees vazio e clanName null. Nunca deduza o destinatário por proximidade com outra linha.
 - Não invente prazo. dueDate deve ser null se o texto não trouxer uma data clara para concluir a ação. Quando houver dia e mês sem ano, use o ano da data de referência, mesmo que a data já tenha passado.
 - Prioridade: 1 baixa, 2 normal, 3 urgente/importante. Dificuldade: 1 simples a 5 complexa.
 - Títulos devem começar pelo assunto da ação, sem repetir o nome da empresa.
@@ -81,9 +107,13 @@ Exemplos de interpretação:
 - "Bruno, fecha o balanço da Scharff até 31/07" é general_task, gera uma ação closing_period para Bruno, com dueDate em 31/07 do ano de referência, e usa a empresa inequívoca do diretório cujo nome contenha Scharff. Não fecha o ano inteiro.
 - "Bruno, encerre o exercício inteiro de 2025 da Scharff" é general_task com category annual_closing e closingYear 2025.
 - "Bruno, organize os documentos internos até sexta" é general_task com category general e não exige empresa.
+- "Clã Fiscal, confiram as obrigações do mês" é general_task com assignmentType clan, clanName Fiscal e assignees vazio.
 
 Diretório de membros da Guilda:
 ${memberDirectory || "(vazio)"}
+
+Diretório de clãs ativos da Guilda:
+${clanDirectory || "(vazio)"}
 
 Diretório de clientes ativos:
 ${clientDirectory || "(vazio)"}`;
@@ -93,6 +123,7 @@ export async function extractInformative(
   sourceText: string,
   members: InformativeMember[],
   clients: InformativeClient[],
+  clans: InformativeClan[],
   actorKey: string,
 ): Promise<{ model: string; data: InformativeExtraction }> {
   const text = sourceText.trim();
@@ -112,7 +143,7 @@ export async function extractInformative(
     model: config.model,
     max_tokens: 8_192,
     thinking: { type: "disabled" },
-    system: instructions(members, clients),
+    system: instructions(members, clients, clans),
     messages: [{ role: "user", content: text }],
     metadata: {
       user_id: createHash("sha256")

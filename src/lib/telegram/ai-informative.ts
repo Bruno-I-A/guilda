@@ -4,15 +4,19 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { resolveAssigneeClan } from "@/domain/clans";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
 import { resolveClientName } from "@/lib/ai/client-resolution";
-import { extractInformative } from "@/lib/ai/informative";
+import {
+  extractInformative,
+  resolveInformativeClan,
+} from "@/lib/ai/informative";
 import {
   informativeDraftPayloadSchema,
   type InformativeDraftPayload,
 } from "@/lib/ai/informative-schema";
 import { resolveMemberName } from "@/lib/ai/member-resolution";
-import { listOrgMembers } from "@/lib/org";
+import { listActiveClans, listOrgMembers } from "@/lib/org";
 import { createTaskRecord } from "@/lib/tasks/create";
 
 import type { TelegramApi } from "./endpoint";
@@ -24,7 +28,7 @@ const DRAFT_TTL_MS = 30 * 60 * 1000;
 const MISSING_FIELD_LABELS = {
   company: "o nome da empresa",
   actions: "o que precisa ser feito",
-  responsible: "quem será o responsável",
+  responsible: "quem será a pessoa responsável ou qual clã receberá a missão",
   due_date: "a data final do período de fechamento",
 } as const;
 
@@ -95,7 +99,7 @@ async function ensureClosingYear(
   return raced.id;
 }
 
-function draftPreview(payload: InformativeDraftPayload): string {
+export function draftPreview(payload: InformativeDraftPayload): string {
   const kindLabel = {
     new_client: "Novo cliente",
     client_change: "Alteração",
@@ -119,7 +123,13 @@ function draftPreview(payload: InformativeDraftPayload): string {
   }
   lines.push("", `${payload.tasks.length} missão(ões) proposta(s):`);
   payload.tasks.slice(0, 20).forEach((task, index) => {
-    lines.push(`${index + 1}. ${task.assigneeName} — ${task.title}`);
+    const assignmentLabel =
+      task.assignmentType === "clan"
+        ? `Clã ${task.clanName} · sem responsável`
+        : `${task.assigneeName} · ${task.clanName}`;
+    lines.push(
+      `${index + 1}. ${assignmentLabel} — ${task.title}`,
+    );
     if (task.category === "closing_period" && task.dueDate) {
       lines.push(
         `   ↳ criará o período ${closingPeriodTitle(task.dueDate)}; ao concluir, fechará somente esse período`,
@@ -134,7 +144,7 @@ function draftPreview(payload: InformativeDraftPayload): string {
   if (payload.unresolvedAssignees.length) {
     lines.push(
       "",
-      `⚠️ Responsáveis pendentes ou não reconhecidos: ${payload.unresolvedAssignees.join(", ")}`,
+      `⚠️ Pendências de responsável ou clã: ${payload.unresolvedAssignees.join(", ")}`,
     );
   }
   if (payload.warnings.length) {
@@ -153,7 +163,7 @@ export async function createInformativeDraft(
 ): Promise<void> {
   await api.sendMessage(chatId, "🤖 Analisando a solicitação e conferindo responsáveis…");
 
-  const [members, clients] = await Promise.all([
+  const [members, clients, activeClanMemberships, activeClans] = await Promise.all([
     listOrgMembers(actor.orgId),
     withOrgTx(actor.orgId, (tx) =>
       tx.query.clients.findMany({
@@ -163,7 +173,45 @@ export async function createInformativeDraft(
         ),
       }),
     ),
+    withOrgTx(actor.orgId, (tx) =>
+      tx
+        .select({
+          userId: schema.clanMemberships.userId,
+          clanId: schema.clanMemberships.clanId,
+          clanName: schema.clans.name,
+          isPrimary: schema.clanMemberships.isPrimary,
+        })
+        .from(schema.clanMemberships)
+        .innerJoin(
+          schema.clans,
+          and(
+            eq(schema.clans.id, schema.clanMemberships.clanId),
+            eq(schema.clans.orgId, schema.clanMemberships.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(schema.clanMemberships.orgId, actor.orgId),
+            eq(schema.clans.orgId, actor.orgId),
+            eq(schema.clans.active, true),
+          ),
+        ),
+    ),
+    listActiveClans(actor.orgId),
   ]);
+  const clansByUser = new Map<
+    string,
+    Array<{ clanId: string; clanName: string; isPrimary: boolean }>
+  >();
+  for (const membership of activeClanMemberships) {
+    const current = clansByUser.get(membership.userId) ?? [];
+    current.push({
+      clanId: membership.clanId,
+      clanName: membership.clanName,
+      isPrimary: membership.isPrimary,
+    });
+    clansByUser.set(membership.userId, current);
+  }
   const sourceFormat = isDetailedInformativeMessage(sourceText)
     ? "informative"
     : "business_mission";
@@ -171,13 +219,14 @@ export async function createInformativeDraft(
     sourceText,
     members.map(({ userId, name }) => ({ userId, name })),
     clients.map(({ name }) => ({ name })),
+    activeClans,
     `${actor.orgId}:${actor.userId}`,
   );
 
   if (!extracted.data.isMissionRequest) {
     await api.sendMessage(
       chatId,
-      "Não identifiquei uma solicitação de nova missão. Diga o que precisa ser feito, quem será o responsável e, quando houver, a empresa e o prazo.",
+      "Não identifiquei uma solicitação de nova missão. Diga o que precisa ser feito, a pessoa responsável ou o clã e, quando houver, a empresa e o prazo.",
     );
     return;
   }
@@ -197,8 +246,15 @@ export async function createInformativeDraft(
     missing.add("company");
   }
   if (extracted.data.tasks.length === 0) missing.add("actions");
-  if (extracted.data.tasks.some((task) => task.assignees.length === 0)) {
+  const hasTaskWithoutDestination = extracted.data.tasks.some(
+    (task) =>
+      task.assignmentType === "individual" && task.assignees.length === 0,
+  );
+  if (hasTaskWithoutDestination) {
     missing.add("responsible");
+  } else {
+    // O servidor corrige uma marcação inconsistente do modelo para missões de clã.
+    missing.delete("responsible");
   }
   if (
     extracted.data.tasks.some(
@@ -245,6 +301,35 @@ export async function createInformativeDraft(
   const unresolved = new Set<string>();
   const tasks: InformativeDraftPayload["tasks"] = [];
   for (const task of extracted.data.tasks) {
+    if (task.assignmentType === "clan") {
+      const clan = resolveInformativeClan(task.clanName, activeClans);
+      if (!clan) {
+        unresolved.add(`Clã não reconhecido: ${task.clanName}`.slice(0, 200));
+        continue;
+      }
+      tasks.push({
+        assignmentType: "clan",
+        title: task.title,
+        description: `${task.description}\n\nTrecho da solicitação:\n${task.sourceSection}`.slice(
+          0,
+          5000,
+        ),
+        assigneeId: null,
+        assigneeName: null,
+        clanId: clan.id,
+        clanName: clan.name,
+        priority: task.priority,
+        difficulty: task.difficulty,
+        dueDate: task.dueDate,
+        category: task.category,
+        closingYear:
+          task.category === "annual_closing"
+            ? task.closingYear ?? currentYearInSaoPaulo()
+            : null,
+        sourceSection: task.sourceSection,
+      });
+      continue;
+    }
     if (task.assignees.length === 0) {
       unresolved.add(`Sem responsável: ${task.title}`.slice(0, 200));
       continue;
@@ -258,7 +343,23 @@ export async function createInformativeDraft(
       }
       if (resolvedForTask.has(resolved.userId)) continue;
       resolvedForTask.add(resolved.userId);
+      const clanMemberships = clansByUser.get(resolved.userId) ?? [];
+      const clanResolution = resolveAssigneeClan(clanMemberships);
+      if (!clanResolution.ok) {
+        unresolved.add(
+          `${resolved.name}: ${clanResolution.reason}`.slice(0, 200),
+        );
+        continue;
+      }
+      const clan = clanMemberships.find(
+        (membership) => membership.clanId === clanResolution.clanId,
+      );
+      if (!clan) {
+        unresolved.add(`${resolved.name}: clã não localizado`.slice(0, 200));
+        continue;
+      }
       tasks.push({
+        assignmentType: "individual",
         title: task.title,
         description: `${task.description}\n\nTrecho da solicitação:\n${task.sourceSection}`.slice(
           0,
@@ -266,6 +367,8 @@ export async function createInformativeDraft(
         ),
         assigneeId: resolved.userId,
         assigneeName: resolved.name,
+        clanId: clan.clanId,
+        clanName: clan.clanName,
         priority: task.priority,
         difficulty: task.difficulty,
         dueDate: task.dueDate,
@@ -429,9 +532,75 @@ export async function decideInformativeDraft(
     }
 
     const payload = informativeDraftPayloadSchema.safeParse(draft.payload);
-    if (!payload.success) return { ok: false, message: "O rascunho está inválido. Gere outro." };
+    if (!payload.success) {
+      return {
+        ok: false,
+        message:
+          "Este rascunho usa um formato anterior ou está inválido. Envie a solicitação novamente para gerar outra prévia.",
+      };
+    }
     if (payload.data.unresolvedAssignees.length || payload.data.tasks.length === 0) {
-      return { ok: false, message: "Existem responsáveis não reconhecidos ou nenhuma missão válida." };
+      return {
+        ok: false,
+        message:
+          "Existem responsáveis ou clãs não resolvidos, ou nenhuma missão válida.",
+      };
+    }
+
+    const activeMembershipRows = await tx
+      .select({
+        userId: schema.clanMemberships.userId,
+        clanId: schema.clanMemberships.clanId,
+      })
+      .from(schema.clanMemberships)
+      .innerJoin(
+        schema.clans,
+        and(
+          eq(schema.clans.id, schema.clanMemberships.clanId),
+          eq(schema.clans.orgId, schema.clanMemberships.orgId),
+        ),
+      )
+      .innerJoin(
+        schema.member,
+        and(
+          eq(schema.member.userId, schema.clanMemberships.userId),
+          eq(schema.member.organizationId, schema.clanMemberships.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(schema.clanMemberships.orgId, actor.orgId),
+          eq(schema.clans.orgId, actor.orgId),
+          eq(schema.clans.active, true),
+          eq(schema.member.organizationId, actor.orgId),
+        ),
+      );
+    const activeClanRows = await tx
+      .select({ clanId: schema.clans.id })
+      .from(schema.clans)
+      .where(
+        and(
+          eq(schema.clans.orgId, actor.orgId),
+          eq(schema.clans.active, true),
+        ),
+      );
+    const activeMembershipKeys = new Set(
+      activeMembershipRows.map((row) => `${row.userId}:${row.clanId}`),
+    );
+    const activeClanIds = new Set(activeClanRows.map((row) => row.clanId));
+    if (
+      payload.data.tasks.some(
+        (task) =>
+          !activeClanIds.has(task.clanId) ||
+          (task.assignmentType === "individual" &&
+            !activeMembershipKeys.has(`${task.assigneeId}:${task.clanId}`)),
+      )
+    ) {
+      return {
+        ok: false,
+        message:
+          "Um clã deixou de estar ativo ou um responsável não pertence mais ao clã selecionado. Gere outra prévia.",
+      };
     }
 
     let clientId: string | null = null;
@@ -474,14 +643,6 @@ export async function decideInformativeDraft(
         });
         clientId = existing?.id ?? null;
       }
-    }
-    const membershipRows = await tx
-      .select({ userId: schema.member.userId })
-      .from(schema.member)
-      .where(eq(schema.member.organizationId, actor.orgId));
-    const memberIds = new Set(membershipRows.map((row) => row.userId));
-    if (payload.data.tasks.some((task) => !memberIds.has(task.assigneeId))) {
-      return { ok: false, message: "Um responsável não pertence mais à Guilda. Gere outra prévia." };
     }
     if (
       payload.data.tasks.some(
@@ -538,6 +699,7 @@ export async function decideInformativeDraft(
         orgId: actor.orgId,
         creatorId: actor.userId,
         assigneeId: task.assigneeId,
+        clanId: task.clanId,
         clientId: clientId ?? null,
         closingId,
         closingYearId,

@@ -1,7 +1,7 @@
 # Guilda — Gestão de Tarefas Gamificada
 
 Plataforma **multi-tenant** de gestão de tarefas com sistema de recompensa:
-cada entrega aprovada vale **XP**, XP acumulado vira **nível**, e o
+cada missão concluída vale **XP**, XP acumulado vira **nível**, e o
 **leaderboard** mostra quem está carregando a guilda. Cada empresa
 (organização) tem usuários, tarefas e ranking totalmente isolados.
 
@@ -26,7 +26,7 @@ cada entrega aprovada vale **XP**, XP acumulado vira **nível**, e o
 - **better-auth** com plugin de organizations — sessões, membros, convites por link, papéis
 - **Tailwind CSS 4 + shadcn/ui** — mobile-first
 - **Zod** validando todo input externo nas Server Actions
-- **Vitest** (70 testes de domínio) + **Playwright** (E2E com 2 usuários)
+- **Vitest** + **Playwright** (E2E com 2 usuários)
 - **Docker** (output standalone) + **Caddy** com HTTPS automático
 
 ## Decisões de arquitetura
@@ -55,11 +55,11 @@ owner. Um `INSERT` cruzando organizações morre no banco com
 Saldo de XP **nunca sofre UPDATE**. Crédito e estorno são lançamentos
 novos em `xp_ledger`:
 
-- Aprovou → `+xp` (`reason = 'task_completed'`), **na mesma transação**
+- Concluiu → `+xp` (`reason = 'task_completed'`), **na mesma transação**
   da transição de status;
 - Admin reverteu → `-xp` (`reason = 'reversal'`), sem apagar o crédito;
-- Índice único parcial `(task_id) WHERE reason = 'task_completed'`
-  torna o crédito **idempotente** (impossível creditar duas vezes);
+- Índice único parcial por `task_event_id` torna cada transição
+  **idempotente**, permitindo um novo crédito após reversão e reconclusão;
 - O role da aplicação tem `UPDATE/DELETE` **revogados** na tabela —
   imutabilidade garantida pelo banco, não por disciplina.
 
@@ -69,17 +69,18 @@ O nível deriva do total: `levelFromXp` puro, com thresholds
 ### 3. Máquina de estados no servidor
 
 ```
-pending → in_progress → awaiting_approval → completed
-   ↘          ↘              ↙        ↘         ↓ (reversão, admin)
-    cancelled  cancelled   rejected    cancelled → in_progress
-                              ↺ in_progress (retomar)
+pending → in_progress → completed
+   ↘          ↘          ↓ (reversão, admin)
+    cancelled  cancelled → in_progress
+
+Legado: in_progress → awaiting_approval → completed | rejected
+                                                   ↳ in_progress (retomar)
 ```
 
-- Só o **responsável** inicia/envia/retoma; só **criador ou admin/owner**
-  aprova, rejeita ou cancela; rejeição **exige nota**.
-- **Auto-aprovação controlada**: se criador == responsável, outro
-  admin/owner precisa aprovar — a menos que não exista outro (org de uma
-  pessoa não trava).
+- Só o **responsável** inicia, retoma e conclui diretamente sua missão.
+- Estados antigos em `awaiting_approval` continuam operáveis: somente o
+  criador ou admin/owner aprova/rejeita; rejeição exige nota.
+- O criador ou admin/owner pode cancelar; admin/owner pode reverter conclusão.
 - Transições concorrentes serializam com `SELECT … FOR UPDATE`; a
   segunda falha na validação de estado.
 - Cada Server Action revalida **sessão + papel + input (Zod)** — a UI
@@ -121,7 +122,7 @@ Logins da demo (senha `demo123456`):
 ### Testes
 
 ```bash
-npm test             # 70 testes de domínio (máquina de estados, XP, níveis)
+npm test             # domínio, clãs, IA, Telegram e integrações puras
 npm run build && npm start
 npm run e2e:phase2   # fluxo completo de aprovação com 2 usuários (Playwright)
 npm run e2e:phase3   # gamificação: crédito, níveis, ranking, reversão
@@ -138,6 +139,8 @@ Sobe Postgres (com role dedicado), roda as migrations, inicia o app
 standalone e o Caddy publica `https://$DOMAIN` com certificado
 automático. Postgres já provisionado fora do Docker? Remova o serviço
 `db` e aponte as URLs — instruções no próprio `docker-compose.yml`.
+A migration `0022` deve entrar antes da nova imagem do app, pois o hook de
+criação de organização já inicializa os cinco clãs.
 
 ### Telegram (opcional, sem IA)
 
@@ -182,7 +185,8 @@ ambíguos ou inexistentes bloqueiam a confirmação.
 
 Solicitações gerais também são aceitas, como `Bruno, organize os documentos
 internos até sexta`. Uma solicitação como `Bruno, fecha o balanço da Scharff até
-31/07` cria um item pendente em **Períodos e demandas**; ao concluir ou aprovar a
+31/07` cria um item pendente em **Períodos e demandas**; ao concluir (ou aprovar
+uma entrega legada), a
 missão, somente esse período é marcado como fechado. O encerramento do ano
 inteiro só é vinculado quando a mensagem disser explicitamente `encerramento
 anual`, `exercício inteiro` ou um intervalo anual completo. A prévia sempre

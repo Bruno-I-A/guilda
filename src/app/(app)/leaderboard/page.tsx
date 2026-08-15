@@ -45,7 +45,7 @@ export default async function LeaderboardPage({
       <div>
         <h1 className="text-2xl font-semibold tracking-wide">Ranking</h1>
         <p className="text-muted-foreground">
-          Soma de XP da guilda por período — missões aprovadas e fechamentos pontuam.
+          Soma de XP da guilda por período — missões concluídas e fechamentos pontuam.
         </p>
       </div>
 
@@ -72,7 +72,7 @@ export default async function LeaderboardPage({
           <Trophy className="size-8 text-muted-foreground" aria-hidden />
           <p className="font-medium">Ninguém pontuou neste período</p>
           <p className="max-w-sm text-sm text-muted-foreground">
-            Conclua missões e tenha as entregas aprovadas para aparecer aqui.
+            Conclua missões para aparecer aqui.
           </p>
         </div>
       ) : (

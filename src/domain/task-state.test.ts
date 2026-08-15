@@ -13,14 +13,15 @@ function ctx(overrides: {
   actorId: string;
   actorRole?: OrgRole;
   creatorId?: string;
-  assigneeId?: string;
+  assigneeId?: string | null;
   status: TaskStatus;
 }): TransitionContext {
   return {
     actor: { id: overrides.actorId, role: overrides.actorRole ?? "member" },
     task: {
       creatorId: overrides.creatorId ?? "creator-1",
-      assigneeId: overrides.assigneeId ?? "assignee-1",
+      assigneeId:
+        overrides.assigneeId === undefined ? "assignee-1" : overrides.assigneeId,
       status: overrides.status,
     },
   };
@@ -31,7 +32,7 @@ describe("canTransition — grafo de transições", () => {
     ["pending", "in_progress"],
     ["pending", "cancelled"],
     ["in_progress", "awaiting_approval"],
-    ["in_progress", "completed"], // conclusão direta de auto-tarefa
+    ["in_progress", "completed"], // conclusão direta pelo responsável
     ["in_progress", "cancelled"],
     ["awaiting_approval", "completed"],
     ["awaiting_approval", "rejected"],
@@ -163,13 +164,13 @@ describe("aprovação (awaiting_approval → completed) — criador ≠ respons�
   });
 });
 
-describe("auto-tarefa (criador == responsável) — sem aprovação de terceiros", () => {
+describe("conclusão direta pelo responsável", () => {
   const selfTask = {
     creatorId: "self-1",
     assigneeId: "self-1",
   };
 
-  test("responsável conclui direto de in_progress (member, sem aprovação)", () => {
+  test("responsável conclui auto-tarefa direto de in_progress", () => {
     const decision = authorizeTransition(
       "completed",
       ctx({ actorId: "self-1", status: "in_progress", ...selfTask }),
@@ -177,18 +178,26 @@ describe("auto-tarefa (criador == responsável) — sem aprovação de terceiros
     expect(decision.allowed).toBe(true);
   });
 
-  test("conclusão direta é EXCLUSIVA de auto-tarefa (tarefa de terceiros nega)", () => {
+  test("responsável conclui tarefa criada por outra pessoa", () => {
     const decision = authorizeTransition(
       "completed",
       ctx({ actorId: "assignee-1", status: "in_progress" }),
     );
-    expect(decision.allowed).toBe(false);
+    expect(decision.allowed).toBe(true);
   });
 
   test("nem admin conclui direto tarefa que não é auto-atribuída a ele", () => {
     const decision = authorizeTransition(
       "completed",
       ctx({ actorId: "admin-1", actorRole: "admin", status: "in_progress" }),
+    );
+    expect(decision.allowed).toBe(false);
+  });
+
+  test("missão de clã sem responsável precisa ser assumida antes", () => {
+    const decision = authorizeTransition(
+      "completed",
+      ctx({ actorId: "member-1", assigneeId: null, status: "in_progress" }),
     );
     expect(decision.allowed).toBe(false);
   });

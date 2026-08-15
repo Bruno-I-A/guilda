@@ -23,7 +23,9 @@ const extraction = {
       category: "general" as const,
       title: "Controlar Fator R",
       description: "Acompanhar faturamento e folha.",
+      assignmentType: "individual" as const,
       assignees: ["Camila Schütz"],
+      clanName: null,
       priority: 3,
       difficulty: 3,
       dueDate: null,
@@ -99,6 +101,42 @@ describe("informativeExtractionSchema", () => {
     });
     expect(closure.kind).toBe("client_closure");
     expect(closure.tasks[0]?.assignees).toEqual([]);
+  });
+
+  it("representa uma missão destinada somente a um clã", () => {
+    const clanTask = informativeExtractionSchema.parse({
+      ...extraction,
+      kind: "general_task",
+      tasks: [
+        {
+          ...extraction.tasks[0],
+          assignmentType: "clan",
+          assignees: [],
+          clanName: "Fiscal",
+        },
+      ],
+    });
+
+    expect(clanTask.tasks[0]).toMatchObject({
+      assignmentType: "clan",
+      assignees: [],
+      clanName: "Fiscal",
+    });
+  });
+
+  it("recusa combinações incoerentes de pessoa e clã", () => {
+    expect(() =>
+      informativeExtractionSchema.parse({
+        ...extraction,
+        tasks: [
+          {
+            ...extraction.tasks[0],
+            assignmentType: "clan",
+            clanName: "Fiscal",
+          },
+        ],
+      }),
+    ).toThrow();
   });
 
   it("classifica uma data parcial como período, sem fechar o ano", () => {
@@ -179,12 +217,49 @@ describe("informativeDraftPayloadSchema", () => {
         category: task.category,
         closingYear: task.closingYear,
         sourceSection: task.sourceSection,
+        // Sem discriminador para provar compatibilidade com rascunhos individuais.
         assigneeId: "user-1",
         assigneeName: "Camila Schütz",
+        clanId: "123e4567-e89b-12d3-a456-426614174000",
+        clanName: "Fiscal",
       })),
       unresolvedAssignees: [],
     });
     expect(payload.company.createClient).toBe(true);
     expect(payload.tasks[0]?.assigneeId).toBe("user-1");
+    expect(payload.tasks[0]?.assignmentType).toBe("individual");
+    expect(payload.tasks[0]?.clanName).toBe("Fiscal");
+  });
+
+  it("aceita rascunho de missão sem pessoa responsável", () => {
+    const payload = informativeDraftPayloadSchema.parse({
+      ...extraction,
+      sourceFormat: "business_mission",
+      kind: "general_task",
+      company: {
+        ...extraction.company,
+        normalizedCnpj: null,
+        clientId: null,
+        createClient: false,
+      },
+      tasks: [
+        {
+          ...extraction.tasks[0],
+          assignmentType: "clan",
+          assigneeId: null,
+          assigneeName: null,
+          clanId: "123e4567-e89b-12d3-a456-426614174000",
+          clanName: "Fiscal",
+          assignees: undefined,
+        },
+      ],
+      unresolvedAssignees: [],
+    });
+
+    expect(payload.tasks[0]).toMatchObject({
+      assignmentType: "clan",
+      assigneeId: null,
+      clanName: "Fiscal",
+    });
   });
 });

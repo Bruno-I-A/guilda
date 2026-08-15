@@ -70,6 +70,17 @@ export function isOverdue(dueDate: Date | null, status: TaskStatus): boolean {
   return dueDate.getTime() < Date.now();
 }
 
+/** Janela futura usada pelo filtro "Próximos 7 dias" (não inclui atrasadas). */
+export function upcomingWeekBounds(now = new Date()): {
+  from: Date;
+  to: Date;
+} {
+  return {
+    from: now,
+    to: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+  };
+}
+
 /** Descrição humana de cada transição para a linha do tempo. */
 export function eventLabel(
   fromStatus: TaskStatus | null,
@@ -81,6 +92,8 @@ export function eventLabel(
   if (toStatus === "in_progress" && fromStatus === "completed")
     return "reverteu a conclusão";
   if (toStatus === "awaiting_approval") return "enviou para aprovação";
+  if (toStatus === "completed" && fromStatus === "in_progress")
+    return "concluiu a missão";
   if (toStatus === "completed") return "aprovou a entrega";
   if (toStatus === "rejected") return "devolveu para ajustes";
   if (toStatus === "cancelled") return "cancelou a missão";

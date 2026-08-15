@@ -16,25 +16,11 @@ import type { TaskCallbackAction } from "./endpoint";
 import { encodeTaskCallback } from "./endpoint";
 import { notificationPayload, enqueueTelegramNotificationIfEnabled } from "./notifications";
 import { taskUrl } from "./notification-payload";
+import { TASK_ACTION_TRANSITIONS } from "./task-action-intent";
 
 export type TelegramTaskActionResult =
   | { ok: true; title: string; status: TaskStatus }
   | { ok: false; error: string };
-
-const ACTION_TRANSITIONS: Record<
-  TaskCallbackAction,
-  { to: TaskStatus; allowedFrom: readonly TaskStatus[] }
-> = {
-  start: { to: "in_progress", allowedFrom: ["pending", "rejected"] },
-  submit: { to: "awaiting_approval", allowedFrom: ["in_progress"] },
-  complete: { to: "completed", allowedFrom: ["in_progress"] },
-  approve: { to: "completed", allowedFrom: ["awaiting_approval"] },
-  reject: { to: "rejected", allowedFrom: ["awaiting_approval"] },
-  cancel: {
-    to: "cancelled",
-    allowedFrom: ["pending", "in_progress", "awaiting_approval", "rejected"],
-  },
-};
 
 function isOrgRole(value: string): value is OrgRole {
   return value === "owner" || value === "admin" || value === "member";
@@ -64,7 +50,7 @@ export async function runTelegramTaskAction(input: {
   }
   const role = membership.role;
 
-  const intent = ACTION_TRANSITIONS[input.action];
+  const intent = TASK_ACTION_TRANSITIONS[input.action];
   return withOrgTx(input.orgId, async (tx): Promise<TelegramTaskActionResult> => {
     const [task] = await tx
       .select()
@@ -82,6 +68,12 @@ export async function runTelegramTaskAction(input: {
       return {
         ok: false,
         error: "A missão mudou de estado. Consulte a lista novamente.",
+      };
+    }
+    if (intent.to === "completed" && !task.assigneeId) {
+      return {
+        ok: false,
+        error: "Atribua a missão a uma pessoa antes de concluí-la.",
       };
     }
 
@@ -122,13 +114,14 @@ export async function runTelegramTaskAction(input: {
       })
       .returning({ id: schema.taskEvents.id });
 
-    if (intent.to === "completed") {
+    if (intent.to === "completed" && task.assigneeId) {
       await tx
         .insert(schema.xpLedger)
         .values({
           orgId: input.orgId,
           userId: task.assigneeId,
           taskId: task.id,
+          taskEventId: event.id,
           amount: task.xpValue,
           reason: "task_completed",
         })
@@ -157,19 +150,21 @@ export async function runTelegramTaskAction(input: {
           ]],
         ),
       });
-    } else if (intent.to === "completed") {
+    } else if (intent.to === "completed" && task.assigneeId) {
+      const completionEventType =
+        task.status === "awaiting_approval" ? "task_approved" : "task_completed";
       await enqueueTelegramNotificationIfEnabled(tx, {
         orgId: input.orgId,
         userId: task.assigneeId,
-        eventType: "task_approved",
-        dedupeKey: `task:${task.id}:completed`,
+        eventType: completionEventType,
+        dedupeKey: `task-event:${event.id}:completed`,
         payload: notificationPayload(
           "xp",
           `🏆 Missão concluída\n\n${task.title}\n+${task.xpValue} XP`,
           [[{ text: "Ver missão", url: taskUrl(task.id, baseUrl) }]],
         ),
       });
-    } else if (intent.to === "rejected") {
+    } else if (intent.to === "rejected" && task.assigneeId) {
       await enqueueTelegramNotificationIfEnabled(tx, {
         orgId: input.orgId,
         userId: task.assigneeId,
@@ -184,7 +179,11 @@ export async function runTelegramTaskAction(input: {
           ]],
         ),
       });
-    } else if (intent.to === "cancelled" && task.assigneeId !== input.userId) {
+    } else if (
+      intent.to === "cancelled" &&
+      task.assigneeId &&
+      task.assigneeId !== input.userId
+    ) {
       await enqueueTelegramNotificationIfEnabled(tx, {
         orgId: input.orgId,
         userId: task.assigneeId,

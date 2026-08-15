@@ -30,6 +30,42 @@ const PEOPLE = [
 
 type PersonKey = (typeof PEOPLE)[number]["key"];
 
+const CLANS = [
+  { name: "Fiscal", slug: "fiscal" },
+  { name: "Contabilidade", slug: "contabilidade" },
+  { name: "RH", slug: "rh" },
+  { name: "Societário", slug: "societario" },
+  { name: "Financeiro", slug: "financeiro" },
+] as const;
+
+type ClanSlug = (typeof CLANS)[number]["slug"];
+
+interface PersonClan {
+  slug: ClanSlug;
+  isLeader: boolean;
+  isPrimary: boolean;
+}
+
+const PERSON_CLANS: Record<PersonKey, readonly PersonClan[]> = {
+  helena: CLANS.map(({ slug }) => ({
+    slug,
+    isLeader: true,
+    isPrimary: slug === "contabilidade",
+  })),
+  rafael: [
+    { slug: "fiscal", isLeader: true, isPrimary: true },
+    { slug: "financeiro", isLeader: false, isPrimary: false },
+  ],
+  juliana: [
+    { slug: "rh", isLeader: true, isPrimary: true },
+    { slug: "financeiro", isLeader: false, isPrimary: false },
+  ],
+  tiago: [
+    { slug: "societario", isLeader: true, isPrimary: true },
+    { slug: "fiscal", isLeader: false, isPrimary: false },
+  ],
+};
+
 function daysAgo(days: number, hours = 0): Date {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000 - hours * 60 * 60 * 1000);
 }
@@ -119,12 +155,47 @@ async function main() {
     { title: "Auditar acessos antigos do sistema", creator: "rafael", assignee: "rafael", priority: 1, difficulty: 2, status: "cancelled", createdDaysAgo: 12 },
   ];
 
-  console.log("Criando tarefas, eventos e ledger…");
+  console.log("Criando clãs, vínculos, tarefas, eventos e ledger…");
   await withOrgTx(orgId, async (tx) => {
+    const clanIds = {} as Record<ClanSlug, string>;
+    for (const clan of CLANS) {
+      const clanId = randomUUID();
+      clanIds[clan.slug] = clanId;
+      await tx.insert(schema.clans).values({
+        id: clanId,
+        orgId,
+        name: clan.name,
+        slug: clan.slug,
+        createdAt: daysAgo(43),
+        updatedAt: daysAgo(43),
+      });
+    }
+
+    for (const person of PEOPLE) {
+      for (const membership of PERSON_CLANS[person.key]) {
+        await tx.insert(schema.clanMemberships).values({
+          id: randomUUID(),
+          orgId,
+          clanId: clanIds[membership.slug],
+          userId: ids[person.key],
+          isLeader: membership.isLeader,
+          isPrimary: membership.isPrimary,
+          createdAt: daysAgo(42),
+          updatedAt: daysAgo(42),
+        });
+      }
+    }
+
     for (const seed of TASKS) {
       const taskId = randomUUID();
       const creatorId = ids[seed.creator];
       const assigneeId = ids[seed.assignee];
+      const primaryClan = PERSON_CLANS[seed.assignee].find(
+        (membership) => membership.isPrimary,
+      );
+      if (!primaryClan) {
+        throw new Error(`pessoa ${seed.assignee} sem clã principal no seed`);
+      }
       const xpValue = calculateTaskXp(seed.difficulty, seed.priority);
       const createdAt = daysAgo(seed.createdDaysAgo, 6);
       const completedAt =
@@ -135,6 +206,7 @@ async function main() {
         orgId,
         creatorId,
         assigneeId,
+        clanId: clanIds[primaryClan.slug],
         title: seed.title,
         description: seed.description ?? null,
         priority: seed.priority,
@@ -212,9 +284,16 @@ async function main() {
         });
       }
 
+      let completionEventId: string | null = null;
+      let reversalEventId: string | null = null;
       for (const event of events) {
+        const eventId = randomUUID();
+        if (event.to === "completed") completionEventId = eventId;
+        if (event.from === "completed" && event.to === "in_progress") {
+          reversalEventId = eventId;
+        }
         await tx.insert(schema.taskEvents).values({
-          id: randomUUID(),
+          id: eventId,
           orgId,
           taskId,
           actorId: event.actor,
@@ -226,28 +305,65 @@ async function main() {
       }
 
       if ((seed.status === "completed" || seed.reverted) && completedAt) {
+        if (!completionEventId) {
+          throw new Error(`evento de conclusão ausente para ${seed.title}`);
+        }
         await tx.insert(schema.xpLedger).values({
           id: randomUUID(),
           orgId,
           userId: assigneeId,
           taskId,
+          taskEventId: completionEventId,
           amount: xpValue,
           reason: "task_completed",
           createdAt: completedAt,
         });
       }
       if (seed.reverted && completedAt) {
+        if (!reversalEventId) {
+          throw new Error(`evento de reversão ausente para ${seed.title}`);
+        }
         await tx.insert(schema.xpLedger).values({
           id: randomUUID(),
           orgId,
           userId: assigneeId,
           taskId,
+          taskEventId: reversalEventId,
           amount: -xpValue,
           reason: "reversal",
           createdAt: new Date(completedAt.getTime() + 12 * 60 * 60 * 1000),
         });
       }
     }
+
+    // Missão coletiva para exercitar o fluxo de adoção por alguém do clã.
+    const clanOnlyTaskId = randomUUID();
+    const clanOnlyCreatedAt = daysAgo(1, 4);
+    await tx.insert(schema.tasks).values({
+      id: clanOnlyTaskId,
+      orgId,
+      creatorId: ids.helena,
+      assigneeId: null,
+      clanId: clanIds.financeiro,
+      title: "Conferir pendências financeiras da semana",
+      description: "Missão aberta para qualquer integrante do clã Financeiro assumir.",
+      priority: 2,
+      difficulty: 2,
+      xpValue: calculateTaskXp(2, 2),
+      status: "pending",
+      dueDate: daysAgo(-4),
+      createdAt: clanOnlyCreatedAt,
+      updatedAt: clanOnlyCreatedAt,
+    });
+    await tx.insert(schema.taskEvents).values({
+      id: randomUUID(),
+      orgId,
+      taskId: clanOnlyTaskId,
+      actorId: ids.helena,
+      fromStatus: null,
+      toStatus: "pending",
+      createdAt: clanOnlyCreatedAt,
+    });
   });
 
   console.log("\nSeed concluído! Organização: Guilda Demo");

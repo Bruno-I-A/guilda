@@ -48,8 +48,8 @@ const NOTIFICATION_OPTIONS = [
   },
   {
     name: "approvalNotifications",
-    label: "Aprovações",
-    description: "Fila para aprovar, devoluções e decisões.",
+    label: "Decisões legadas",
+    description: "Devoluções e decisões de missões antigas ainda em aprovação.",
   },
   {
     name: "deadlineReminders",
@@ -316,7 +316,7 @@ export function TelegramSettings({
               <PreferenceToggle
                 name="dailySummary"
                 label="Resumo diário"
-                description="Visão compacta das missões, aprovações e fechamentos do dia."
+                description="Visão compacta das missões e fechamentos do dia."
                 defaultChecked={preferences.dailySummary}
               />
               <div className="grid gap-4 sm:grid-cols-2">

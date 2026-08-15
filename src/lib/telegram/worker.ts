@@ -1,6 +1,16 @@
 import "server-only";
 
-import { and, asc, count, eq, isNull, lte, notInArray, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  inArray,
+  isNull,
+  lte,
+  notInArray,
+  sql,
+} from "drizzle-orm";
 
 import { db } from "@/db";
 import { withOrgTx } from "@/db/org-tx";
@@ -221,6 +231,24 @@ async function queueMemberSchedule(
     }
 
     if (member.dailySummary && scheduledNow) {
+      const clanMemberships = await tx
+        .select({ clanId: schema.clanMemberships.clanId })
+        .from(schema.clanMemberships)
+        .innerJoin(
+          schema.clans,
+          and(
+            eq(schema.clans.id, schema.clanMemberships.clanId),
+            eq(schema.clans.orgId, schema.clanMemberships.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(schema.clanMemberships.orgId, orgId),
+            eq(schema.clanMemberships.userId, member.userId),
+            eq(schema.clans.orgId, orgId),
+            eq(schema.clans.active, true),
+          ),
+        );
       const [openTasks] = await tx
         .select({ total: count() })
         .from(schema.tasks)
@@ -231,16 +259,22 @@ async function queueMemberSchedule(
             notInArray(schema.tasks.status, ["completed", "cancelled"]),
           ),
         );
-      const [approvals] = await tx
-        .select({ total: count() })
-        .from(schema.tasks)
-        .where(
-          and(
-            eq(schema.tasks.orgId, orgId),
-            eq(schema.tasks.status, "awaiting_approval"),
-            eq(schema.tasks.creatorId, member.userId),
-          ),
-        );
+      const [availableClanTasks] = clanMemberships.length
+        ? await tx
+            .select({ total: count() })
+            .from(schema.tasks)
+            .where(
+              and(
+                eq(schema.tasks.orgId, orgId),
+                inArray(
+                  schema.tasks.clanId,
+                  clanMemberships.map((membership) => membership.clanId),
+                ),
+                isNull(schema.tasks.assigneeId),
+                notInArray(schema.tasks.status, ["completed", "cancelled"]),
+              ),
+            )
+        : [{ total: 0 }];
       const [xp] = await tx
         .select({ total: sql<number>`coalesce(sum(${schema.xpLedger.amount}), 0)::int` })
         .from(schema.xpLedger)
@@ -257,7 +291,7 @@ async function queueMemberSchedule(
         dedupeKey: `daily-summary:${member.userId}:${local.date}`,
         payload: notificationPayload(
           "daily_summary",
-          `🛡️ Resumo da Guilda\n\n${openTasks?.total ?? 0} missão(ões) em aberto\n${approvals?.total ?? 0} aguardando sua aprovação\n${xp?.total ?? 0} XP no total`,
+          `🛡️ Resumo da Guilda\n\n${openTasks?.total ?? 0} missão(ões) em aberto com você\n${availableClanTasks?.total ?? 0} missão(ões) disponível(is) nos seus clãs\n${xp?.total ?? 0} XP no total`,
           baseUrl ? [[{ text: "Abrir Guilda", url: new URL("/dashboard", baseUrl).toString() }]] : undefined,
         ),
       });

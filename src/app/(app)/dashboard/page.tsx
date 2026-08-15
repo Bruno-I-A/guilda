@@ -1,4 +1,14 @@
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  ne,
+  notInArray,
+  or,
+} from "drizzle-orm";
 import { CalendarClock, ChevronRight, ShieldCheck, Star } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -6,7 +16,6 @@ import { redirect } from "next/navigation";
 
 import { LevelEmblem } from "@/components/level-emblem";
 import { XpBar } from "@/components/xp-bar";
-import { db } from "@/db";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { levelProgress } from "@/domain/xp";
@@ -28,41 +37,103 @@ export default async function DashboardPage() {
   if (!member) {
     redirect("/onboarding");
   }
-  const isAdmin = member.role === "owner" || member.role === "admin";
+  const { memberCount, myTasks, clanTasks, hasClanLeadership } = await withOrgTx(
+    session.orgId,
+    async (tx) => {
+      const memberships = await tx
+        .select({
+          clanId: schema.clanMemberships.clanId,
+          isLeader: schema.clanMemberships.isLeader,
+        })
+        .from(schema.clanMemberships)
+        .innerJoin(
+          schema.clans,
+          and(
+            eq(schema.clans.id, schema.clanMemberships.clanId),
+            eq(schema.clans.orgId, schema.clanMemberships.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(schema.clanMemberships.orgId, session.orgId),
+            eq(schema.clanMemberships.userId, session.user.id),
+            eq(schema.clans.orgId, session.orgId),
+            eq(schema.clans.active, true),
+          ),
+        );
+      const clanIds = memberships.map((membership) => membership.clanId);
 
-  const [{ memberCount }] = await db
-    .select({ memberCount: count() })
-    .from(schema.member)
-    .where(eq(schema.member.organizationId, session.orgId));
+      const [[guildStats], mine, clans] = await Promise.all([
+        tx
+          .select({ memberCount: count() })
+          .from(schema.member)
+          .where(eq(schema.member.organizationId, session.orgId)),
+        tx.query.tasks.findMany({
+          where: and(
+            eq(schema.tasks.orgId, session.orgId),
+            eq(schema.tasks.assigneeId, session.user.id),
+            notInArray(schema.tasks.status, ["completed", "cancelled"]),
+          ),
+          columns: {
+            id: true,
+            title: true,
+            status: true,
+            dueDate: true,
+            xpValue: true,
+          },
+          orderBy: [desc(schema.tasks.createdAt)],
+          limit: 50,
+        }),
+        clanIds.length
+          ? tx.query.tasks.findMany({
+              where: and(
+                eq(schema.tasks.orgId, session.orgId),
+                inArray(schema.tasks.clanId, clanIds),
+                notInArray(schema.tasks.status, ["completed", "cancelled"]),
+                or(
+                  isNull(schema.tasks.assigneeId),
+                  ne(schema.tasks.assigneeId, session.user.id),
+                ),
+              ),
+              columns: {
+                id: true,
+                title: true,
+                status: true,
+                dueDate: true,
+                xpValue: true,
+                assigneeId: true,
+              },
+              with: {
+                assignee: { columns: { name: true } },
+                clan: { columns: { name: true } },
+              },
+              orderBy: [desc(schema.tasks.createdAt)],
+              limit: 50,
+            })
+          : Promise.resolve([]),
+      ]);
 
-  const { myTasks, awaitingMine } = await withOrgTx(session.orgId, async (tx) => {
-    const mine = await tx.query.tasks.findMany({
-      where: and(
-        eq(schema.tasks.orgId, session.orgId),
-        eq(schema.tasks.assigneeId, session.user.id),
-        inArray(schema.tasks.status, ["pending", "in_progress", "rejected"]),
-      ),
-      columns: { id: true, title: true, status: true, dueDate: true, xpValue: true },
-      orderBy: [desc(schema.tasks.createdAt)],
-      limit: 50,
-    });
-    const awaiting = await tx.query.tasks.findMany({
-      where: and(
-        eq(schema.tasks.orgId, session.orgId),
-        eq(schema.tasks.status, "awaiting_approval"),
-        ...(isAdmin ? [] : [eq(schema.tasks.creatorId, session.user.id)]),
-      ),
-      columns: { id: true, title: true, xpValue: true },
-      with: { assignee: { columns: { name: true } } },
-      orderBy: [desc(schema.tasks.updatedAt)],
-      limit: 5,
-    });
-    return { myTasks: mine, awaitingMine: awaiting };
-  });
+      return {
+        memberCount: guildStats?.memberCount ?? 0,
+        myTasks: mine,
+        clanTasks: clans,
+        hasClanLeadership: memberships.some((membership) => membership.isLeader),
+      };
+    },
+  );
 
   // Atrasadas primeiro, depois prazo mais próximo; sem prazo por último.
   const sortedMine = myTasks
     .sort((a, b) => {
+      const aDue = a.dueDate?.getTime() ?? Infinity;
+      const bDue = b.dueDate?.getTime() ?? Infinity;
+      return aDue - bDue;
+    })
+    .slice(0, 6);
+  const sortedClanTasks = clanTasks
+    .sort((a, b) => {
+      if (a.assigneeId === null && b.assigneeId !== null) return -1;
+      if (a.assigneeId !== null && b.assigneeId === null) return 1;
       const aDue = a.dueDate?.getTime() ?? Infinity;
       const bDue = b.dueDate?.getTime() ?? Infinity;
       return aDue - bDue;
@@ -115,37 +186,6 @@ export default async function DashboardPage() {
           </div>
         </div>
       </section>
-
-      {awaitingMine.length > 0 ? (
-        <section className="grid gap-3">
-          <div className="flex items-center gap-3">
-            <ShieldCheck className="size-4 text-amber-300" aria-hidden />
-            <h2 className="hud-label !text-amber-300">Aguardando sua aprovação</h2>
-            <div className="divider-rune flex-1" />
-          </div>
-          <ul className="grid gap-1.5">
-            {awaitingMine.map((task) => (
-              <li key={task.id}>
-                <Link
-                  href={`/tasks/${task.id}`}
-                  className="panel-cut panel-cut-sm flex items-center gap-3 border-l-2 border-l-amber-400/70 px-4 py-2.5 transition-colors hover:bg-accent/40"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{task.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      entregue por {task.assignee.name}
-                    </p>
-                  </div>
-                  <span className="chip-loot">
-                    <Star className="size-3" aria-hidden /> {task.xpValue} XP
-                  </span>
-                  <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
 
       <section className="grid gap-3">
         <div className="flex items-center gap-3">
@@ -206,6 +246,74 @@ export default async function DashboardPage() {
                     <span className="chip-loot">
                       <Star className="size-3" aria-hidden /> {task.xpValue} XP
                     </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section className="grid gap-3">
+        <div className="flex items-center gap-3">
+          <ShieldCheck className="size-4 text-primary" aria-hidden />
+          <h2 className="hud-label">Missões dos seus clãs</h2>
+          <div className="divider-rune flex-1" />
+          <Link
+            href="/tasks?scope=my_clans"
+            className="font-mono text-xs text-muted-foreground hover:text-foreground"
+          >
+            {hasClanLeadership ? "ver carga do clã →" : "ver todas →"}
+          </Link>
+        </div>
+        {sortedClanTasks.length === 0 ? (
+          <div className="panel-cut flex flex-col items-center gap-2 p-8 text-center">
+            <p className="font-medium">Nenhuma missão aberta nos seus clãs</p>
+            <p className="text-sm text-muted-foreground">
+              As missões disponíveis para o clã aparecerão aqui.
+            </p>
+          </div>
+        ) : (
+          <ul className="grid gap-1.5">
+            {sortedClanTasks.map((task) => {
+              const overdue = isOverdue(task.dueDate, task.status);
+              return (
+                <li key={task.id}>
+                  <Link
+                    href={`/tasks/${task.id}`}
+                    className={cn(
+                      "panel-cut panel-cut-sm flex items-center gap-3 border-l-2 px-4 py-2.5 transition-colors hover:bg-accent/40",
+                      overdue
+                        ? "border-l-destructive"
+                        : STATUS_RAIL_CLASSES[task.status],
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{task.title}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {task.clan?.name ?? "Clã"} · {task.assignee?.name ?? "Disponível no clã"}
+                        {task.dueDate ? (
+                          <span className={cn(overdue && "font-medium text-destructive")}>
+                            {" · "}
+                            <CalendarClock
+                              className="inline size-3 align-[-1.5px]"
+                              aria-hidden
+                            />{" "}
+                            {overdue ? "atrasada · " : ""}
+                            {formatDueDate(task.dueDate)}
+                          </span>
+                        ) : null}
+                      </p>
+                    </div>
+                    {task.assigneeId === null ? (
+                      <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-primary">
+                        disponível
+                      </span>
+                    ) : null}
+                    <span className="chip-loot">
+                      <Star className="size-3" aria-hidden /> {task.xpValue} XP
+                    </span>
+                    <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
                   </Link>
                 </li>
               );

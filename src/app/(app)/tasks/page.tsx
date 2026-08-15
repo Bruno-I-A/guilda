@@ -1,11 +1,23 @@
-import { and, desc, eq, lt, lte, notInArray, type SQL } from "drizzle-orm";
-import { CalendarClock, ListTodo, Plus, Star } from "lucide-react";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  lt,
+  lte,
+  notInArray,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { CalendarClock, ListTodo, Plus, Star, UsersRound } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { Pips } from "@/components/pips";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Pips } from "@/components/pips";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { TASK_STATUSES, type TaskStatus } from "@/domain/task-state";
@@ -16,23 +28,22 @@ import {
   STATUS_BADGE_CLASSES,
   STATUS_LABELS,
   STATUS_RAIL_CLASSES,
+  upcomingWeekBounds,
 } from "@/lib/task-ui";
 import { cn } from "@/lib/utils";
 
-import { TaskFilters } from "./task-filters";
+import { TaskFilters, type TaskScope } from "./task-filters";
 
 export const metadata: Metadata = { title: "Missões" };
 
-const TABS = [
-  { key: "mine", label: "Minhas" },
-  { key: "created", label: "Criadas por mim" },
-  { key: "all", label: "Todas" },
-] as const;
+const SCOPES = ["mine", "my_clans", "clan", "person", "created", "all"] as const;
 
-type TabKey = (typeof TABS)[number]["key"];
+function single(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
 
-function parseTab(value: string | undefined): TabKey {
-  return TABS.some((t) => t.key === value) ? (value as TabKey) : "mine";
+function parseScope(value: string | undefined): TaskScope {
+  return SCOPES.includes(value as TaskScope) ? (value as TaskScope) : "mine";
 }
 
 function parseStatus(value: string | undefined): TaskStatus | "all" {
@@ -43,39 +54,103 @@ function parseDue(value: string | undefined): "all" | "overdue" | "week" {
   return value === "overdue" || value === "week" ? value : "all";
 }
 
-function sevenDaysFromNow(): Date {
-  return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-}
-
 export default async function TasksPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; status?: string; due?: string }>;
+  searchParams: Promise<{
+    scope?: string | string[];
+    clan?: string | string[];
+    person?: string | string[];
+    status?: string | string[];
+    due?: string | string[];
+  }>;
 }) {
   const session = await requireOrgSession();
   const params = await searchParams;
-  const tab = parseTab(params.tab);
-  const status = parseStatus(params.status);
-  const due = parseDue(params.due);
+  const scope = parseScope(single(params.scope));
+  const status = parseStatus(single(params.status));
+  const due = parseDue(single(params.due));
+
+  const { clans, members, myClanIds } = await withOrgTx(
+    session.orgId,
+    async (tx) => {
+      const [clanRows, memberRows, myMemberships] = await Promise.all([
+        tx
+          .select({ id: schema.clans.id, name: schema.clans.name })
+          .from(schema.clans)
+          .where(and(eq(schema.clans.orgId, session.orgId), eq(schema.clans.active, true)))
+          .orderBy(asc(schema.clans.name)),
+        tx
+          .select({ userId: schema.member.userId, name: schema.user.name })
+          .from(schema.member)
+          .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+          .where(eq(schema.member.organizationId, session.orgId))
+          .orderBy(asc(schema.user.name)),
+        tx
+          .select({ clanId: schema.clanMemberships.clanId })
+          .from(schema.clanMemberships)
+          .innerJoin(
+            schema.clans,
+            and(
+              eq(schema.clans.id, schema.clanMemberships.clanId),
+              eq(schema.clans.orgId, schema.clanMemberships.orgId),
+            ),
+          )
+          .where(
+            and(
+              eq(schema.clanMemberships.orgId, session.orgId),
+              eq(schema.clanMemberships.userId, session.user.id),
+              eq(schema.clans.orgId, session.orgId),
+              eq(schema.clans.active, true),
+            ),
+          ),
+      ]);
+      return {
+        clans: clanRows,
+        members: memberRows,
+        myClanIds: myMemberships.map((membership) => membership.clanId),
+      };
+    },
+  );
+
+  const requestedClanId = single(params.clan);
+  const clanId = clans.some((clan) => clan.id === requestedClanId)
+    ? requestedClanId
+    : undefined;
+  const requestedPersonId = single(params.person);
+  const personId = members.some((member) => member.userId === requestedPersonId)
+    ? requestedPersonId
+    : undefined;
 
   const conditions: SQL[] = [eq(schema.tasks.orgId, session.orgId)];
-  if (tab === "mine") {
+  if (scope === "mine") {
     conditions.push(eq(schema.tasks.assigneeId, session.user.id));
-  } else if (tab === "created") {
+  } else if (scope === "my_clans") {
+    conditions.push(
+      myClanIds.length > 0
+        ? inArray(schema.tasks.clanId, myClanIds)
+        : sql<boolean>`false`,
+    );
+  } else if (scope === "clan") {
+    conditions.push(clanId ? eq(schema.tasks.clanId, clanId) : sql<boolean>`false`);
+  } else if (scope === "person") {
+    conditions.push(
+      personId ? eq(schema.tasks.assigneeId, personId) : sql<boolean>`false`,
+    );
+  } else if (scope === "created") {
     conditions.push(eq(schema.tasks.creatorId, session.user.id));
   }
-  if (status !== "all") {
-    conditions.push(eq(schema.tasks.status, status));
-  }
+  if (status !== "all") conditions.push(eq(schema.tasks.status, status));
   if (due === "overdue") {
     conditions.push(
       lt(schema.tasks.dueDate, new Date()),
       notInArray(schema.tasks.status, ["completed", "cancelled"]),
     );
   } else if (due === "week") {
-    const inSevenDays = sevenDaysFromNow();
+    const week = upcomingWeekBounds();
     conditions.push(
-      lte(schema.tasks.dueDate, inSevenDays),
+      gte(schema.tasks.dueDate, week.from),
+      lte(schema.tasks.dueDate, week.to),
       notInArray(schema.tasks.status, ["completed", "cancelled"]),
     );
   }
@@ -86,25 +161,22 @@ export default async function TasksPage({
       with: {
         assignee: { columns: { name: true } },
         creator: { columns: { name: true } },
+        clan: { columns: { name: true } },
       },
       orderBy: [desc(schema.tasks.createdAt)],
       limit: 200,
     }),
   );
 
-  function tabHref(key: TabKey): string {
-    const qs = new URLSearchParams();
-    if (key !== "mine") qs.set("tab", key);
-    if (status !== "all") qs.set("status", status);
-    if (due !== "all") qs.set("due", due);
-    const suffix = qs.toString();
-    return suffix ? `/tasks?${suffix}` : "/tasks";
-  }
-
   return (
     <div className="grid gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-wide">Missões</h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-wide">Missões</h1>
+          <p className="text-sm text-muted-foreground">
+            Acompanhe o trabalho individual, dos seus clãs ou de toda a Guilda.
+          </p>
+        </div>
         <Button asChild>
           <Link href="/tasks/new">
             <Plus aria-hidden /> Nova missão
@@ -112,38 +184,22 @@ export default async function TasksPage({
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <nav
-          aria-label="Filtrar por relação"
-          className="flex rounded-lg border bg-muted/40 p-0.5"
-        >
-          {TABS.map(({ key, label }) => (
-            <Link
-              key={key}
-              href={tabHref(key)}
-              aria-current={tab === key ? "page" : undefined}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                tab === key
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {label}
-            </Link>
-          ))}
-        </nav>
-        <TaskFilters status={status} due={due} />
-      </div>
+      <TaskFilters
+        scope={scope}
+        status={status}
+        due={due}
+        clans={clans}
+        members={members}
+        clanId={clanId}
+        personId={personId}
+      />
 
       {taskList.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-12 text-center">
           <ListTodo className="size-8 text-muted-foreground" aria-hidden />
           <p className="font-medium">Nenhuma missão por aqui</p>
           <p className="max-w-sm text-sm text-muted-foreground">
-            {tab === "mine"
-              ? "Você não tem missões com estes filtros. Crie uma ou ajuste os filtros."
-              : "Nada encontrado com estes filtros."}
+            Não há missões com esta combinação de escopo, status e prazo.
           </p>
           <Button asChild variant="outline" size="sm">
             <Link href="/tasks/new">
@@ -161,9 +217,7 @@ export default async function TasksPage({
                   href={`/tasks/${task.id}`}
                   className={cn(
                     "panel-cut panel-cut-sm flex flex-col gap-1.5 border-l-2 px-4 py-3 transition-colors hover:bg-accent/40",
-                    overdue
-                      ? "border-l-destructive"
-                      : STATUS_RAIL_CLASSES[task.status],
+                    overdue ? "border-l-destructive" : STATUS_RAIL_CLASSES[task.status],
                   )}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -180,10 +234,12 @@ export default async function TasksPage({
                     </Badge>
                     <Pips value={task.priority} max={3} label="Prioridade" />
                     <Pips value={task.difficulty} max={5} label="Dificuldade" />
+                    <span className="inline-flex items-center gap-1">
+                      <UsersRound className="size-3.5" aria-hidden />
+                      {task.clan?.name ?? "Sem clã"}
+                    </span>
                     <span>
-                      {tab === "mine"
-                        ? `criada por ${task.creator.name}`
-                        : `responsável: ${task.assignee.name}`}
+                      responsável: {task.assignee?.name ?? "Sem responsável"}
                     </span>
                     {task.dueDate ? (
                       <span

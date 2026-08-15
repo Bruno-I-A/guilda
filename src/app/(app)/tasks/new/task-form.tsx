@@ -1,11 +1,12 @@
 "use client";
 
-import { Star } from "lucide-react";
+import { Info, Star, UserRound, UsersRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,13 +63,29 @@ function PrioritySegments({
 
 export function TaskForm({
   members,
+  clans,
   currentUserId,
 }: {
-  members: { userId: string; name: string }[];
+  members: {
+    userId: string;
+    name: string;
+    clanName: string | null;
+    resolutionError: string | null;
+  }[];
+  clans: { id: string; name: string }[];
   currentUserId: string;
 }) {
   const router = useRouter();
-  const [assigneeId, setAssigneeId] = useState(currentUserId);
+  const eligibleMembers = members.filter((member) => !member.resolutionError);
+  const initialAssignee =
+    eligibleMembers.find((member) => member.userId === currentUserId)?.userId ??
+    eligibleMembers[0]?.userId ??
+    "";
+  const [assignmentType, setAssignmentType] = useState<"individual" | "clan">(
+    initialAssignee ? "individual" : "clan",
+  );
+  const [assigneeId, setAssigneeId] = useState(initialAssignee);
+  const [clanId, setClanId] = useState(clans[0]?.id ?? "");
   const [priority, setPriority] = useState(2);
   const [difficulty, setDifficulty] = useState(2);
   const [submitting, setSubmitting] = useState(false);
@@ -80,14 +97,16 @@ export function TaskForm({
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setSubmitting(true);
-    const result = await createTask({
+    const common = {
       title: String(form.get("title") ?? ""),
       description: String(form.get("description") ?? ""),
-      assigneeId,
       priority,
       difficulty,
       dueDate: String(form.get("dueDate") ?? ""),
-    });
+    };
+    const result = assignmentType === "individual"
+      ? await createTask({ ...common, assignmentType, assigneeId })
+      : await createTask({ ...common, assignmentType, clanId });
     if (!result.ok) {
       setSubmitting(false);
       toast.error(result.error);
@@ -102,6 +121,42 @@ export function TaskForm({
     <Card className="panel-cut texture-iron">
       <CardContent>
         <form onSubmit={onSubmit} className="grid gap-5" noValidate>
+          <fieldset className="grid gap-2">
+            <legend className="hud-label mb-2">Destino da missão</legend>
+            <div className="grid grid-cols-2 rounded-lg border p-1" role="radiogroup">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={assignmentType === "individual"}
+                onClick={() => setAssignmentType("individual")}
+                disabled={eligibleMembers.length === 0}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                  assignmentType === "individual"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                )}
+              >
+                <UserRound aria-hidden className="size-4" /> Para uma pessoa
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={assignmentType === "clan"}
+                onClick={() => setAssignmentType("clan")}
+                disabled={clans.length === 0}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                  assignmentType === "clan"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                )}
+              >
+                <UsersRound aria-hidden className="size-4" /> Para um clã
+              </button>
+            </div>
+          </fieldset>
+
           <div className="grid gap-2">
             <Label htmlFor="title" className="hud-label">
               Título
@@ -126,26 +181,64 @@ export function TaskForm({
               rows={4}
               maxLength={5000}
             />
+            <p className="text-xs text-muted-foreground">
+              Acrescente o contexto, os documentos necessários e o que define a
+              missão como concluída.
+            </p>
           </div>
 
           <div className="grid gap-5 sm:grid-cols-2">
             <div className="grid content-start gap-2">
-              <Label htmlFor="assignee" className="hud-label">
-                Responsável
-              </Label>
-              <Select value={assigneeId} onValueChange={setAssigneeId}>
-                <SelectTrigger id="assignee" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {members.map((m) => (
-                    <SelectItem key={m.userId} value={m.userId}>
-                      {m.name}
-                      {m.userId === currentUserId ? " (você)" : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {assignmentType === "individual" ? (
+                <>
+                  <Label htmlFor="assignee" className="hud-label">
+                    Pessoa responsável
+                  </Label>
+                  <Select value={assigneeId} onValueChange={setAssigneeId}>
+                    <SelectTrigger id="assignee" className="w-full">
+                      <SelectValue placeholder="Escolha uma pessoa" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {members.map((member) => (
+                        <SelectItem
+                          key={member.userId}
+                          value={member.userId}
+                          disabled={Boolean(member.resolutionError)}
+                        >
+                          {member.name}
+                          {member.userId === currentUserId ? " (você)" : ""}
+                          {member.clanName ? ` · ${member.clanName}` : ""}
+                          {member.resolutionError ? ` · ${member.resolutionError}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    O clã será definido automaticamente pelo cadastro da pessoa.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Label htmlFor="clan" className="hud-label">
+                    Clã responsável
+                  </Label>
+                  <Select value={clanId} onValueChange={setClanId}>
+                    <SelectTrigger id="clan" className="w-full">
+                      <SelectValue placeholder="Escolha um clã" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clans.map((clan) => (
+                        <SelectItem key={clan.id} value={clan.id}>
+                          {clan.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    A missão fica sem responsável até alguém do clã assumir.
+                  </p>
+                </>
+              )}
             </div>
             <div className="grid content-start gap-2">
               <Label htmlFor="dueDate" className="hud-label">
@@ -154,6 +247,16 @@ export function TaskForm({
               <Input id="dueDate" name="dueDate" type="date" />
             </div>
           </div>
+
+          {eligibleMembers.length === 0 ? (
+            <Alert>
+              <Info aria-hidden />
+              <AlertDescription>
+                Nenhuma pessoa possui um clã determinável. Crie a missão para
+                um clã ou peça a um admin para configurar os vínculos.
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
           <div className="grid gap-5 sm:grid-cols-2">
             <div className="grid content-start gap-2">
@@ -175,7 +278,14 @@ export function TaskForm({
             </span>
           </div>
 
-          <Button type="submit" disabled={submitting} size="lg">
+          <Button
+            type="submit"
+            disabled={
+              submitting ||
+              (assignmentType === "individual" ? !assigneeId : !clanId)
+            }
+            size="lg"
+          >
             {submitting ? "Criando…" : "Criar missão"}
           </Button>
         </form>

@@ -2,7 +2,9 @@ import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   bigint,
+  check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -36,6 +38,70 @@ export const taskStatus = pgEnum("task_status", [
   "cancelled",
 ]);
 
+/**
+ * Clãs operacionais da Guilda. O slug é a categoria estável usada nas regras
+ * de negócio; o nome pode ser apresentado na interface.
+ */
+export const clans = pgTable(
+  "clans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 100 }).notNull(),
+    slug: varchar("slug", { length: 60 }).notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("clans_org_slug_uidx").on(t.orgId, t.slug),
+    uniqueIndex("clans_org_id_uidx").on(t.orgId, t.id),
+    index("clans_org_active_idx").on(t.orgId, t.active),
+  ],
+);
+
+/** Uma pessoa pode participar de vários clãs, mas só ter um clã principal. */
+export const clanMemberships = pgTable(
+  "clan_memberships",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    clanId: uuid("clan_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    isLeader: boolean("is_leader").notNull().default(false),
+    isPrimary: boolean("is_primary").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "clan_memberships_org_clan_fk",
+      columns: [t.orgId, t.clanId],
+      foreignColumns: [clans.orgId, clans.id],
+    }).onDelete("cascade"),
+    uniqueIndex("clan_memberships_org_clan_user_uidx").on(
+      t.orgId,
+      t.clanId,
+      t.userId,
+    ),
+    uniqueIndex("clan_memberships_org_user_primary_uidx")
+      .on(t.orgId, t.userId)
+      .where(sql`is_primary = true`),
+    index("clan_memberships_org_user_idx").on(t.orgId, t.userId),
+    index("clan_memberships_org_clan_leader_idx").on(
+      t.orgId,
+      t.clanId,
+      t.isLeader,
+    ),
+  ],
+);
+
 export const tasks = pgTable(
   "tasks",
   {
@@ -46,9 +112,8 @@ export const tasks = pgTable(
     creatorId: text("creator_id")
       .notNull()
       .references(() => user.id),
-    assigneeId: text("assignee_id")
-      .notNull()
-      .references(() => user.id),
+    assigneeId: text("assignee_id").references(() => user.id),
+    clanId: uuid("clan_id"),
     clientId: uuid("client_id").references(() => clients.id),
     closingId: uuid("closing_id").references(() => accountingClosings.id, {
       onDelete: "set null",
@@ -68,11 +133,70 @@ export const tasks = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (t) => [
+    foreignKey({
+      name: "tasks_org_clan_fk",
+      columns: [t.orgId, t.clanId],
+      foreignColumns: [clans.orgId, clans.id],
+    }),
+    check(
+      "tasks_assignee_or_clan_check",
+      sql`${t.assigneeId} IS NOT NULL OR ${t.clanId} IS NOT NULL`,
+    ),
+    uniqueIndex("tasks_org_id_uidx").on(t.orgId, t.id),
     index("tasks_org_assignee_status_idx").on(t.orgId, t.assigneeId, t.status),
+    index("tasks_org_clan_status_idx").on(t.orgId, t.clanId, t.status),
     index("tasks_org_due_date_idx").on(t.orgId, t.dueDate),
     index("tasks_org_client_idx").on(t.orgId, t.clientId),
     index("tasks_org_closing_idx").on(t.orgId, t.closingId),
     index("tasks_org_closing_year_idx").on(t.orgId, t.closingYearId),
+  ],
+);
+
+/** Histórico imutável de mudanças de responsável e/ou clã de uma missão. */
+export const taskTransfers = pgTable(
+  "task_transfers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    taskId: uuid("task_id").notNull(),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => user.id),
+    fromAssigneeId: text("from_assignee_id").references(() => user.id),
+    toAssigneeId: text("to_assignee_id").references(() => user.id),
+    fromClanId: uuid("from_clan_id"),
+    toClanId: uuid("to_clan_id").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "task_transfers_org_task_fk",
+      columns: [t.orgId, t.taskId],
+      foreignColumns: [tasks.orgId, tasks.id],
+    }),
+    foreignKey({
+      name: "task_transfers_org_from_clan_fk",
+      columns: [t.orgId, t.fromClanId],
+      foreignColumns: [clans.orgId, clans.id],
+    }),
+    foreignKey({
+      name: "task_transfers_org_to_clan_fk",
+      columns: [t.orgId, t.toClanId],
+      foreignColumns: [clans.orgId, clans.id],
+    }),
+    index("task_transfers_org_task_created_idx").on(
+      t.orgId,
+      t.taskId,
+      t.createdAt,
+    ),
+    index("task_transfers_org_to_clan_created_idx").on(
+      t.orgId,
+      t.toClanId,
+      t.createdAt,
+    ),
   ],
 );
 
@@ -95,17 +219,20 @@ export const taskEvents = pgTable(
     note: text("note"), // ex.: motivo da rejeição
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("task_events_org_task_idx").on(t.orgId, t.taskId)],
+  (t) => [
+    uniqueIndex("task_events_org_id_uidx").on(t.orgId, t.id),
+    index("task_events_org_task_idx").on(t.orgId, t.taskId),
+  ],
 );
 
 /**
  * Ledger IMUTÁVEL de XP — NUNCA sofre UPDATE/DELETE (o role da aplicação
  * tem esses privilégios revogados via migration). Crédito e estorno são
  * sempre NOVOS lançamentos:
- *   - reason 'task_completed': crédito na aprovação (único por tarefa —
- *     índice parcial impede crédito duplo);
- *   - reason 'reversal': lançamento negativo quando admin reverte
- *     (também único por tarefa);
+ *   - reason 'task_completed': crédito na conclusão;
+ *   - reason 'reversal': lançamento negativo quando admin reverte;
+ *   - task_event_id torna cada lançamento de transição idempotente, sem
+ *     impedir novos ciclos conclusão → reversão → reconclusão;
  *   - reason 'bonus': reservado para usos futuros.
  */
 export const xpLedger = pgTable(
@@ -119,6 +246,7 @@ export const xpLedger = pgTable(
       .notNull()
       .references(() => user.id),
     taskId: uuid("task_id").references(() => tasks.id),
+    taskEventId: uuid("task_event_id"),
     closingYearId: uuid("closing_year_id").references(
       () => accountingClosingYears.id,
     ),
@@ -127,13 +255,17 @@ export const xpLedger = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    foreignKey({
+      name: "xp_ledger_org_task_event_fk",
+      columns: [t.orgId, t.taskEventId],
+      foreignColumns: [taskEvents.orgId, taskEvents.id],
+    }),
     index("xp_ledger_org_user_idx").on(t.orgId, t.userId),
-    uniqueIndex("xp_ledger_task_completed_uidx")
-      .on(t.taskId)
-      .where(sql`reason = 'task_completed'`),
-    uniqueIndex("xp_ledger_task_reversal_uidx")
-      .on(t.taskId)
-      .where(sql`reason = 'reversal'`),
+    uniqueIndex("xp_ledger_task_event_uidx")
+      .on(t.taskEventId)
+      .where(
+        sql`task_event_id IS NOT NULL AND reason IN ('task_completed', 'reversal')`,
+      ),
     uniqueIndex("xp_ledger_closing_year_closed_uidx")
       .on(t.closingYearId)
       .where(sql`reason = 'closing_year_closed'`),
@@ -143,6 +275,10 @@ export const xpLedger = pgTable(
 export const xpLedgerRelations = relations(xpLedger, ({ one }) => ({
   user: one(user, { fields: [xpLedger.userId], references: [user.id] }),
   task: one(tasks, { fields: [xpLedger.taskId], references: [tasks.id] }),
+  taskEvent: one(taskEvents, {
+    fields: [xpLedger.taskEventId],
+    references: [taskEvents.id],
+  }),
   closingYear: one(accountingClosingYears, {
     fields: [xpLedger.closingYearId],
     references: [accountingClosingYears.id],
@@ -151,13 +287,82 @@ export const xpLedgerRelations = relations(xpLedger, ({ one }) => ({
 
 export type XpLedgerEntry = typeof xpLedger.$inferSelect;
 
-export const taskEventsRelations = relations(taskEvents, ({ one }) => ({
+export const taskEventsRelations = relations(taskEvents, ({ one, many }) => ({
   task: one(tasks, { fields: [taskEvents.taskId], references: [tasks.id] }),
   actor: one(user, { fields: [taskEvents.actorId], references: [user.id] }),
+  xpEntries: many(xpLedger),
 }));
 
+export const clansRelations = relations(clans, ({ one, many }) => ({
+  organization: one(organization, {
+    fields: [clans.orgId],
+    references: [organization.id],
+  }),
+  memberships: many(clanMemberships),
+  tasks: many(tasks),
+  incomingTransfers: many(taskTransfers, { relationName: "transfer_to_clan" }),
+  outgoingTransfers: many(taskTransfers, { relationName: "transfer_from_clan" }),
+}));
+
+export const clanMembershipsRelations = relations(
+  clanMemberships,
+  ({ one }) => ({
+    organization: one(organization, {
+      fields: [clanMemberships.orgId],
+      references: [organization.id],
+    }),
+    clan: one(clans, {
+      fields: [clanMemberships.clanId],
+      references: [clans.id],
+    }),
+    user: one(user, {
+      fields: [clanMemberships.userId],
+      references: [user.id],
+    }),
+  }),
+);
+
+export const taskTransfersRelations = relations(taskTransfers, ({ one }) => ({
+  organization: one(organization, {
+    fields: [taskTransfers.orgId],
+    references: [organization.id],
+  }),
+  task: one(tasks, {
+    fields: [taskTransfers.taskId],
+    references: [tasks.id],
+  }),
+  actor: one(user, {
+    fields: [taskTransfers.actorId],
+    references: [user.id],
+    relationName: "transfer_actor",
+  }),
+  fromAssignee: one(user, {
+    fields: [taskTransfers.fromAssigneeId],
+    references: [user.id],
+    relationName: "transfer_from_assignee",
+  }),
+  toAssignee: one(user, {
+    fields: [taskTransfers.toAssigneeId],
+    references: [user.id],
+    relationName: "transfer_to_assignee",
+  }),
+  fromClan: one(clans, {
+    fields: [taskTransfers.fromClanId],
+    references: [clans.id],
+    relationName: "transfer_from_clan",
+  }),
+  toClan: one(clans, {
+    fields: [taskTransfers.toClanId],
+    references: [clans.id],
+    relationName: "transfer_to_clan",
+  }),
+}));
+
+export type Clan = typeof clans.$inferSelect;
+export type ClanMembership = typeof clanMemberships.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
 export type TaskEvent = typeof taskEvents.$inferSelect;
+export type TaskTransfer = typeof taskTransfers.$inferSelect;
 
 /** Regime tributário — chave que casa template→cliente nas Campanhas (Fase 5). */
 export const taxRegime = pgEnum("tax_regime", [
@@ -207,6 +412,7 @@ export type Client = typeof clients.$inferSelect;
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
   creator: one(user, { fields: [tasks.creatorId], references: [user.id] }),
   assignee: one(user, { fields: [tasks.assigneeId], references: [user.id] }),
+  clan: one(clans, { fields: [tasks.clanId], references: [clans.id] }),
   client: one(clients, { fields: [tasks.clientId], references: [clients.id] }),
   closing: one(accountingClosings, {
     fields: [tasks.closingId],
@@ -217,6 +423,7 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
     references: [accountingClosingYears.id],
   }),
   events: many(taskEvents),
+  transfers: many(taskTransfers),
 }));
 
 /**

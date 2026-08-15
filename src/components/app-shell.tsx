@@ -4,6 +4,7 @@ import {
   Building2,
   CalendarCheck2,
   CircleUser,
+  Flag,
   Home,
   KeyRound,
   ListTodo,
@@ -32,6 +33,7 @@ import { cn } from "@/lib/utils";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Início", icon: Home },
   { href: "/tasks", label: "Missões", icon: ListTodo },
+  { href: "/clans", label: "Clãs", icon: Flag },
   { href: "/closings", label: "Fechamentos", icon: CalendarCheck2 },
   { href: "/clients", label: "Clientes", icon: Building2 },
   { href: "/leaderboard", label: "Ranking", icon: Trophy },
@@ -171,7 +173,7 @@ export function AppShell({
         {/* Tab bar — mobile */}
         <nav
           aria-label="Navegação inferior"
-          className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-7 border-t bg-background/95 backdrop-blur md:hidden"
+          className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-8 border-t bg-background/95 backdrop-blur md:hidden"
         >
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href);

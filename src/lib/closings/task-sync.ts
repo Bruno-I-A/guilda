@@ -1,11 +1,12 @@
 import "server-only";
 
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, ne } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import type { TaskStatus } from "@/domain/task-state";
 import { CLOSING_YEAR_XP } from "@/domain/xp";
+import { completedTaskAssigneeId } from "./task-sync-guards";
 
 /** Mantém períodos e encerramentos anuais consistentes com a missão vinculada. */
 export async function syncClosingFromTask(
@@ -18,14 +19,18 @@ export async function syncClosingFromTask(
   },
 ): Promise<void> {
   const { task } = input;
+  if (input.toStatus === "completed") {
+    completedTaskAssigneeId(task, "completed");
+  }
 
   if (task.closingId) {
     if (input.toStatus === "completed") {
+      const completedBy = completedTaskAssigneeId(task, "completed");
       await tx
         .update(schema.accountingClosings)
         .set({
           status: "completed",
-          completedBy: task.assigneeId,
+          completedBy,
           completedAt: input.changedAt,
           completedByTaskId: task.id,
           updatedAt: input.changedAt,
@@ -43,18 +48,20 @@ export async function syncClosingFromTask(
           eq(schema.tasks.orgId, task.orgId),
           eq(schema.tasks.closingId, task.closingId),
           eq(schema.tasks.status, "completed"),
+          isNotNull(schema.tasks.assigneeId),
           ne(schema.tasks.id, task.id),
         ),
         columns: { id: true, assigneeId: true, completedAt: true },
       });
+      const replacement = otherCompleted?.assigneeId ? otherCompleted : null;
       await tx
         .update(schema.accountingClosings)
         .set(
-          otherCompleted
+          replacement
             ? {
-                completedBy: otherCompleted.assigneeId,
-                completedAt: otherCompleted.completedAt ?? input.changedAt,
-                completedByTaskId: otherCompleted.id,
+                completedBy: replacement.assigneeId,
+                completedAt: replacement.completedAt ?? input.changedAt,
+                completedByTaskId: replacement.id,
                 updatedAt: input.changedAt,
               }
             : {
@@ -78,11 +85,12 @@ export async function syncClosingFromTask(
   if (!task.closingYearId) return;
 
   if (input.toStatus === "completed") {
+    const closedBy = completedTaskAssigneeId(task, "completed");
     const closed = await tx
       .update(schema.accountingClosingYears)
       .set({
         closedAt: input.changedAt,
-        closedBy: task.assigneeId,
+        closedBy,
         closedByTaskId: task.id,
         updatedAt: input.changedAt,
       })
@@ -100,7 +108,7 @@ export async function syncClosingFromTask(
         .insert(schema.xpLedger)
         .values({
           orgId: task.orgId,
-          userId: task.assigneeId,
+          userId: closedBy,
           closingYearId: task.closingYearId,
           amount: CLOSING_YEAR_XP,
           reason: "closing_year_closed",
@@ -116,18 +124,20 @@ export async function syncClosingFromTask(
         eq(schema.tasks.orgId, task.orgId),
         eq(schema.tasks.closingYearId, task.closingYearId),
         eq(schema.tasks.status, "completed"),
+        isNotNull(schema.tasks.assigneeId),
         ne(schema.tasks.id, task.id),
       ),
       columns: { id: true, assigneeId: true, completedAt: true },
     });
+    const replacement = otherCompleted?.assigneeId ? otherCompleted : null;
     await tx
       .update(schema.accountingClosingYears)
       .set(
-        otherCompleted
+        replacement
           ? {
-              closedAt: otherCompleted.completedAt ?? input.changedAt,
-              closedBy: otherCompleted.assigneeId,
-              closedByTaskId: otherCompleted.id,
+              closedAt: replacement.completedAt ?? input.changedAt,
+              closedBy: replacement.assigneeId,
+              closedByTaskId: replacement.id,
               updatedAt: input.changedAt,
             }
           : {
