@@ -1,0 +1,300 @@
+"use client";
+
+import { AlertTriangle, Flag, ScanText, Trash2, UserRound } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+
+import {
+  analyzeInformative,
+  cancelInformativeDraft,
+  confirmInformativeDraft,
+} from "./actions";
+
+export interface DraftTaskView {
+  index: number;
+  title: string;
+  description: string;
+  assignmentType: "individual" | "clan" | "pending";
+  clanId: string | null;
+  clanName: string | null;
+  assigneeId: string | null;
+  assigneeName: string | null;
+  reason: string | null;
+}
+
+export interface DraftView {
+  informativeId: string;
+  expiresAt: string;
+  company: {
+    legalName: string | null;
+    cnpj: string | null;
+    taxRegime: string | null;
+    createClient: boolean;
+  };
+  tasks: DraftTaskView[];
+  observations: string[];
+  unresolvedAssignees: string[];
+  warnings: string[];
+}
+
+/** Destino escolhido na tela para uma linha que veio pendente. */
+type Decision = { kind: "clan"; clanId: string } | { kind: "person"; assigneeId: string };
+
+export function InformativePanel({
+  draft,
+  clans,
+  members,
+}: {
+  draft: DraftView | null;
+  clans: { id: string; name: string }[];
+  members: { userId: string; name: string }[];
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [sourceText, setSourceText] = useState("");
+  const [decisions, setDecisions] = useState<Record<number, Decision>>({});
+
+  const pendingTasks = draft?.tasks.filter((t) => t.assignmentType === "pending") ?? [];
+  const undecided = pendingTasks.filter((task) => !decisions[task.index]);
+  const blocked =
+    !draft ||
+    draft.tasks.length === 0 ||
+    draft.unresolvedAssignees.length > 0 ||
+    undecided.length > 0;
+
+  function handleAnalyze() {
+    startTransition(async () => {
+      const result = await analyzeInformative({ sourceText });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Prévia gerada. Confira antes de confirmar.");
+      setDecisions({});
+      router.refresh();
+    });
+  }
+
+  function handleConfirm() {
+    if (!draft) return;
+    startTransition(async () => {
+      const result = await confirmInformativeDraft({
+        informativeId: draft.informativeId,
+        decisions: Object.entries(decisions).map(([index, decision]) => ({
+          index: Number(index),
+          clanId: decision.kind === "clan" ? decision.clanId : null,
+          assigneeId: decision.kind === "person" ? decision.assigneeId : null,
+        })),
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(result.data?.message ?? "Missões criadas.");
+      setSourceText("");
+      setDecisions({});
+      router.refresh();
+    });
+  }
+
+  function handleCancel() {
+    if (!draft) return;
+    startTransition(async () => {
+      const result = await cancelInformativeDraft({
+        informativeId: draft.informativeId,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.info(result.data?.message ?? "Prévia cancelada.");
+      setDecisions({});
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-2">
+        <Textarea
+          value={sourceText}
+          onChange={(event) => setSourceText(event.target.value)}
+          rows={10}
+          maxLength={12_000}
+          placeholder={
+            "INFORMATIVO — NOVO CLIENTE\n\nRazão social: ...\nCNPJ: ...\nEnquadramento: ...\n\nAÇÕES\nFiscal - Camila - parametrizar ...\nRH - cadastrar o pró-labore ..."
+          }
+          className="font-mono text-xs"
+        />
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-muted-foreground">
+            {sourceText.length}/12.000
+          </span>
+          <Button
+            onClick={handleAnalyze}
+            disabled={pending || sourceText.trim().length < 10}
+          >
+            <ScanText className="size-4" aria-hidden /> Analisar
+          </Button>
+        </div>
+      </div>
+
+      {!draft ? null : (
+        <div className="panel-cut grid gap-4 rounded-lg border bg-card/50 p-4">
+          <div>
+            <h2 className="font-medium">
+              {draft.company.legalName ?? "Missões sem empresa"}
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {draft.company.cnpj ? `${draft.company.cnpj} · ` : ""}
+              {draft.company.taxRegime ?? "regime não informado"}
+              {draft.company.createClient ? " · empresa nova, será cadastrada" : ""}
+            </p>
+          </div>
+
+          {draft.unresolvedAssignees.length > 0 ? (
+            <p className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
+              <span>
+                Nomes não reconhecidos: {draft.unresolvedAssignees.join(", ")}.
+                Corrija o cadastro dessas pessoas antes de confirmar.
+              </span>
+            </p>
+          ) : null}
+
+          {draft.warnings.map((warning) => (
+            <p key={warning} className="text-xs text-muted-foreground">
+              {warning}
+            </p>
+          ))}
+
+          <ul className="grid gap-2">
+            {draft.tasks.map((task) => {
+              const decision = decisions[task.index];
+              return (
+                <li key={task.index} className="rounded-md border p-3">
+                  <p className="font-medium">{task.title}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {task.description}
+                  </p>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {task.assignmentType === "clan" ? (
+                      <Badge variant="secondary" className="gap-1">
+                        <Flag className="size-3" aria-hidden /> Clã {task.clanName}
+                      </Badge>
+                    ) : null}
+                    {task.assignmentType === "individual" ? (
+                      <Badge variant="outline" className="gap-1">
+                        <UserRound className="size-3" aria-hidden /> {task.assigneeName}
+                      </Badge>
+                    ) : null}
+                    {task.assignmentType === "pending" ? (
+                      <>
+                        <Badge variant="outline" className="gap-1 text-destructive">
+                          <AlertTriangle className="size-3" aria-hidden /> Sem destino
+                        </Badge>
+                        {task.reason ? (
+                          <span className="text-xs text-muted-foreground">
+                            {task.reason}
+                          </span>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+
+                  {task.assignmentType === "pending" ? (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Select
+                        value={decision?.kind === "clan" ? decision.clanId : ""}
+                        onValueChange={(clanId) =>
+                          setDecisions((current) => ({
+                            ...current,
+                            [task.index]: { kind: "clan", clanId },
+                          }))
+                        }
+                      >
+                        <SelectTrigger size="sm" className="w-40">
+                          <SelectValue placeholder="Mandar para o clã…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {clans.map((clan) => (
+                            <SelectItem key={clan.id} value={clan.id}>
+                              {clan.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      <Select
+                        value={decision?.kind === "person" ? decision.assigneeId : ""}
+                        onValueChange={(assigneeId) =>
+                          setDecisions((current) => ({
+                            ...current,
+                            [task.index]: { kind: "person", assigneeId },
+                          }))
+                        }
+                      >
+                        <SelectTrigger size="sm" className="w-44">
+                          <SelectValue placeholder="Ou direto para…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {members.map((member) => (
+                            <SelectItem key={member.userId} value={member.userId}>
+                              {member.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+
+          {draft.observations.length > 0 ? (
+            <div className="rounded-md border border-dashed p-3">
+              <p className="hud-label">Não vira missão — vai para o mural</p>
+              <ul className="mt-1.5 grid gap-1 text-sm text-muted-foreground">
+                {draft.observations.map((observation) => (
+                  <li key={observation}>• {observation}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+            <Button variant="ghost" onClick={handleCancel} disabled={pending}>
+              <Trash2 className="size-4" aria-hidden /> Descartar prévia
+            </Button>
+            <Button onClick={handleConfirm} disabled={pending || blocked}>
+              Criar {draft.tasks.length}{" "}
+              {draft.tasks.length === 1 ? "missão" : "missões"}
+            </Button>
+          </div>
+
+          {undecided.length > 0 ? (
+            <p className="text-right text-xs text-muted-foreground">
+              {undecided.length}{" "}
+              {undecided.length === 1 ? "linha precisa" : "linhas precisam"} de
+              destino antes de confirmar.
+            </p>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,139 @@
+import { and, asc, desc, eq } from "drizzle-orm";
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+
+import { withOrgTx } from "@/db/org-tx";
+import * as schema from "@/db/schema";
+import { canHandleInformatives } from "@/domain/guild-permissions";
+import type { OrgRole } from "@/domain/task-state";
+import { informativeDraftPayloadSchema } from "@/lib/ai/informative-schema";
+import { getActiveMember, requireOrgSession } from "@/lib/session";
+
+import { InformativePanel, type DraftView } from "./informative-panel";
+
+export const metadata: Metadata = { title: "Informativos" };
+
+export default async function InformativosPage() {
+  const session = await requireOrgSession();
+  const viewer = await getActiveMember();
+  if (!viewer) redirect("/onboarding");
+  const role = viewer.role as OrgRole;
+
+  const { pendingDraft, clans, members, leadsAnyClan } = await withOrgTx(
+    session.orgId,
+    async (tx) => {
+      const [draftRow, clanRows, memberRows, leadership] = await Promise.all([
+        tx
+          .select()
+          .from(schema.informatives)
+          .where(
+            and(
+              eq(schema.informatives.orgId, session.orgId),
+              eq(schema.informatives.requestedBy, session.user.id),
+              eq(schema.informatives.status, "pending"),
+            ),
+          )
+          .orderBy(desc(schema.informatives.createdAt))
+          .limit(1),
+        tx
+          .select({ id: schema.clans.id, name: schema.clans.name })
+          .from(schema.clans)
+          .where(
+            and(
+              eq(schema.clans.orgId, session.orgId),
+              eq(schema.clans.active, true),
+            ),
+          )
+          .orderBy(asc(schema.clans.name)),
+        tx
+          .select({ userId: schema.member.userId, name: schema.user.name })
+          .from(schema.member)
+          .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+          .where(eq(schema.member.organizationId, session.orgId))
+          .orderBy(asc(schema.user.name)),
+        tx
+          .select({ id: schema.clanMemberships.id })
+          .from(schema.clanMemberships)
+          .innerJoin(
+            schema.clans,
+            and(
+              eq(schema.clans.id, schema.clanMemberships.clanId),
+              eq(schema.clans.orgId, schema.clanMemberships.orgId),
+            ),
+          )
+          .where(
+            and(
+              eq(schema.clanMemberships.orgId, session.orgId),
+              eq(schema.clanMemberships.userId, session.user.id),
+              eq(schema.clanMemberships.isLeader, true),
+              eq(schema.clans.active, true),
+            ),
+          )
+          .limit(1),
+      ]);
+
+      return {
+        pendingDraft: draftRow[0] ?? null,
+        clans: clanRows,
+        members: memberRows,
+        leadsAnyClan: leadership.length > 0,
+      };
+    },
+  );
+
+  const canHandle = canHandleInformatives({ role, leadsAnyClan });
+
+  // O payload é JSONB: validar antes de renderizar, nunca confiar na forma.
+  let draft: DraftView | null = null;
+  if (pendingDraft) {
+    const parsed = informativeDraftPayloadSchema.safeParse(pendingDraft.payload);
+    if (parsed.success && pendingDraft.expiresAt > new Date()) {
+      draft = {
+        informativeId: pendingDraft.id,
+        expiresAt: pendingDraft.expiresAt.toISOString(),
+        company: {
+          legalName: parsed.data.company.legalName,
+          cnpj: parsed.data.company.cnpj,
+          taxRegime: parsed.data.company.taxRegime,
+          createClient: parsed.data.company.createClient,
+        },
+        tasks: parsed.data.tasks.map((task, index) => ({
+          index,
+          title: task.title,
+          description: task.description,
+          assignmentType: task.assignmentType,
+          clanId: task.clanId,
+          clanName: task.clanName,
+          assigneeId: task.assigneeId,
+          assigneeName: task.assigneeName,
+          reason: "reason" in task ? task.reason : null,
+        })),
+        observations: parsed.data.observations,
+        unresolvedAssignees: parsed.data.unresolvedAssignees,
+        warnings: parsed.data.warnings,
+      };
+    }
+  }
+
+  return (
+    <div className="grid gap-5">
+      <div>
+        <h1 className="font-heading text-2xl font-semibold tracking-wide">
+          Informativos
+        </h1>
+        <p className="text-muted-foreground">
+          Cole o informativo, confira o destino de cada linha e confirme. Nada é
+          criado antes da sua confirmação.
+        </p>
+      </div>
+
+      {canHandle ? (
+        <InformativePanel draft={draft} clans={clans} members={members} />
+      ) : (
+        <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
+          Processar informativo é função de líder de clã, admin ou owner.
+        </p>
+      )}
+    </div>
+  );
+}
