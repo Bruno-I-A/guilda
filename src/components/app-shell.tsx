@@ -9,13 +9,13 @@ import {
   KeyRound,
   ListTodo,
   LogOut,
-  Swords,
   Trophy,
   Users,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
+import { GuildSeal } from "@/components/guild-crest";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -113,9 +113,7 @@ export function AppShell({
       {/* Sidebar — desktop */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 flex-col border-r bg-sidebar md:flex">
         <div className="flex h-14 items-center gap-2 border-b px-4 font-heading text-lg font-semibold tracking-wider">
-          <span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Swords className="size-4" aria-hidden />
-          </span>
+          <GuildSeal className="size-7" />
           Guilda
         </div>
         <div className="px-4 py-3">
@@ -158,9 +156,7 @@ export function AppShell({
         {/* Header — mobile */}
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background/95 px-4 backdrop-blur md:hidden">
           <div className="flex min-w-0 items-center gap-2 font-semibold">
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Swords className="size-4" aria-hidden />
-            </span>
+            <GuildSeal className="size-7" />
             <span className="truncate">{orgName}</span>
           </div>
           <UserMenu user={user} role={role} />

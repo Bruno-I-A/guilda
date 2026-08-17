@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>Guilda</title>
+  <!--
+    Favicon: Yggdrasil vazada num escudo sólido.
+
+    Diferente do <GuildSeal /> do app de propósito. A 16px numa aba de navegador
+    não sobra pixel para aro + placa + entalhe: quem carrega a forma é a MASSA.
+    Então o escudo vira sólido e a árvore é cortada fora dele — contraste máximo,
+    e funciona tanto em aba clara quanto escura. A geometria é a mesma do selo.
+
+    Cores literais (um arquivo estático não resolve os tokens --crest-*):
+    #7FB3D1 = --crest-mark · #151F2A = --crest-plate. Ver globals.css.
+  -->
+  <path d="M17 7H47L57 17V30C57 43.5 46.6 53.6 32 59C17.4 53.6 7 43.5 7 30V17Z" fill="#7FB3D1"/>
+  <g stroke="#151F2A" stroke-width="4.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 44V15"/>
+    <path d="M32 31L19.5 21M32 31L44.5 21"/>
+    <path d="M32 22L24 14M32 22L40 14"/>
+    <path d="M32 44L22.5 49M32 44L41.5 49"/>
+  </g>
+</svg>

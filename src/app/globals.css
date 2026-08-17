@@ -79,6 +79,11 @@
   --gold: oklch(0.74 0.08 85);
   --silver: oklch(0.78 0.012 240);
   --bronze: oklch(0.62 0.08 55);
+  /* Brasão: ferro do escudo, aresta polida, bisel interno e o entalhe de Yggdrasil. */
+  --crest-plate: oklch(0.235 0.025 252);
+  --crest-edge: oklch(0.78 0.012 240);
+  --crest-bevel: oklch(0.75 0.03 240 / 30%);
+  --crest-mark: oklch(0.74 0.07 235);
   --chart-1: oklch(0.74 0.07 235);
   --chart-2: oklch(0.78 0.012 240);
   --chart-3: oklch(0.74 0.08 85);
