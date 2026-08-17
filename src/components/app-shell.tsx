@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { GuildSeal } from "@/components/guild-crest";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -157,9 +157,6 @@ export function AppShell({
   const pathname = usePathname();
   const [overflowOpen, setOverflowOpen] = useState(false);
 
-  // Navegar a partir da folha precisa fechá-la; o pathname é o sinal.
-  useEffect(() => setOverflowOpen(false), [pathname]);
-
   const overflowActive = MOBILE_OVERFLOW.some((item) =>
     pathname.startsWith(item.href),
   );
@@ -279,6 +276,8 @@ export function AppShell({
                       key={href}
                       href={href}
                       aria-current={active ? "page" : undefined}
+                      // Fechar é consequência do clique, não sincronia de efeito.
+                      onClick={() => setOverflowOpen(false)}
                       className={cn(
                         "flex items-center gap-3 rounded-md border-l-2 px-3 py-3 text-sm font-medium",
                         active
