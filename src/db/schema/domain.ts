@@ -115,6 +115,9 @@ export const tasks = pgTable(
     assigneeId: text("assignee_id").references(() => user.id),
     clanId: uuid("clan_id"),
     clientId: uuid("client_id").references(() => clients.id),
+    // Agrupa o "pacote" de missões nascidas do mesmo informativo — é o que a
+    // Mesa do Líder usa para atribuir tudo de uma empresa de uma vez.
+    informativeId: uuid("informative_id").references(() => informatives.id),
     closingId: uuid("closing_id").references(() => accountingClosings.id, {
       onDelete: "set null",
     }),
@@ -147,6 +150,7 @@ export const tasks = pgTable(
     index("tasks_org_clan_status_idx").on(t.orgId, t.clanId, t.status),
     index("tasks_org_due_date_idx").on(t.orgId, t.dueDate),
     index("tasks_org_client_idx").on(t.orgId, t.clientId),
+    index("tasks_org_informative_idx").on(t.orgId, t.informativeId),
     index("tasks_org_closing_idx").on(t.orgId, t.closingId),
     index("tasks_org_closing_year_idx").on(t.orgId, t.closingYearId),
   ],
@@ -197,6 +201,35 @@ export const taskTransfers = pgTable(
       t.toClanId,
       t.createdAt,
     ),
+  ],
+);
+
+/**
+ * Sugestões de responsável extraídas do informativo ("Att. FULANO").
+ * São SUGESTÃO, nunca atribuição: a missão de clã nasce sem responsável e o
+ * líder decide. Uma linha pode citar duas pessoas ("Rafa/Bruno"), por isso é
+ * tabela e não coluna. `user_id` fica nulo quando o nome não casa com ninguém
+ * do diretório — o registro do nome cru é a trilha para o líder entender.
+ */
+export const taskAssigneeSuggestions = pgTable(
+  "task_assignee_suggestions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    taskId: uuid("task_id").notNull(),
+    userId: text("user_id").references(() => user.id),
+    rawName: varchar("raw_name", { length: 200 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "task_assignee_suggestions_org_task_fk",
+      columns: [t.orgId, t.taskId],
+      foreignColumns: [tasks.orgId, tasks.id],
+    }).onDelete("cascade"),
+    index("task_assignee_suggestions_org_task_idx").on(t.orgId, t.taskId),
   ],
 );
 
@@ -414,6 +447,11 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
   assignee: one(user, { fields: [tasks.assigneeId], references: [user.id] }),
   clan: one(clans, { fields: [tasks.clanId], references: [clans.id] }),
   client: one(clients, { fields: [tasks.clientId], references: [clients.id] }),
+  informative: one(informatives, {
+    fields: [tasks.informativeId],
+    references: [informatives.id],
+  }),
+  suggestions: many(taskAssigneeSuggestions),
   closing: one(accountingClosings, {
     fields: [tasks.closingId],
     references: [accountingClosings.id],
@@ -608,11 +646,24 @@ export const telegramOutboxStatus = pgEnum("telegram_outbox_status", [
   "cancelled",
 ]);
 
-export const telegramAiDraftStatus = pgEnum("telegram_ai_draft_status", [
+/**
+ * Estado de confirmação de um informativo recebido.
+ * O tipo no Postgres preserva o nome antigo (`telegram_ai_draft_status`)
+ * porque renomear o tipo não traz ganho e custaria mais uma migration.
+ */
+export const informativeStatus = pgEnum("telegram_ai_draft_status", [
   "pending",
   "confirmed",
   "cancelled",
 ]);
+
+/** Porta de entrada do informativo: bot do Telegram ou painel da Guilda. */
+export const informativeSource = pgEnum("informative_source", [
+  "telegram",
+  "panel",
+]);
+
+
 
 /**
  * Vínculo entre uma pessoa da Guilda e uma conversa privada do Telegram.
@@ -750,11 +801,15 @@ export const telegramUpdates = pgTable(
 );
 
 /**
- * Prévia gerada pela IA. Nenhuma missão é criada até um admin/owner confirmar
- * explicitamente o rascunho pelo Telegram.
+ * O informativo recebido: texto original, extração da IA e estado de
+ * confirmação. Nenhuma missão é criada até alguém com permissão confirmar
+ * a prévia — pelo Telegram ou pelo painel (`source`).
+ *
+ * `connection_id` é nulo quando o informativo entra pelo painel: nesse caso
+ * não existe conversa do Telegram por trás da solicitação.
  */
-export const telegramAiDrafts = pgTable(
-  "telegram_ai_drafts",
+export const informatives = pgTable(
+  "informatives",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     orgId: text("org_id")
@@ -763,13 +818,12 @@ export const telegramAiDrafts = pgTable(
     requestedBy: text("requested_by")
       .notNull()
       .references(() => user.id),
-    connectionId: uuid("connection_id")
-      .notNull()
-      .references(() => telegramConnections.id),
+    connectionId: uuid("connection_id").references(() => telegramConnections.id),
+    source: informativeSource("source").notNull().default("telegram"),
     sourceText: text("source_text").notNull(),
     model: varchar("model", { length: 80 }).notNull(),
     payload: jsonb("payload").$type<unknown>().notNull(),
-    status: telegramAiDraftStatus("status").notNull().default("pending"),
+    status: informativeStatus("status").notNull().default("pending"),
     createdTaskIds: jsonb("created_task_ids").$type<unknown>(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
@@ -778,12 +832,13 @@ export const telegramAiDrafts = pgTable(
       .defaultNow(),
   },
   (t) => [
-    index("telegram_ai_drafts_org_user_status_idx").on(
+    uniqueIndex("informatives_org_id_uidx").on(t.orgId, t.id),
+    index("informatives_org_user_status_idx").on(
       t.orgId,
       t.requestedBy,
       t.status,
     ),
-    index("telegram_ai_drafts_expires_idx").on(t.expiresAt),
+    index("informatives_expires_idx").on(t.expiresAt),
   ],
 );
 
@@ -832,4 +887,134 @@ export type TelegramLinkToken = typeof telegramLinkTokens.$inferSelect;
 export type TelegramPreferences = typeof telegramPreferences.$inferSelect;
 export type TelegramUpdateRecord = typeof telegramUpdates.$inferSelect;
 export type TelegramOutboxEntry = typeof telegramOutbox.$inferSelect;
-export type TelegramAiDraft = typeof telegramAiDrafts.$inferSelect;
+export type Informative = typeof informatives.$inferSelect;
+export type TaskAssigneeSuggestion = typeof taskAssigneeSuggestions.$inferSelect;
+
+/** Tipo de aviso do mural: relato livre ou empresa nova entrando na carteira. */
+export const guildNoticeKind = pgEnum("guild_notice_kind", [
+  "notice",
+  "new_client",
+]);
+
+/**
+ * Mural da Guilda: quadro de avisos da organização inteira.
+ * `requires_ack` e `pinned` são restritos a líder/admin/owner na action —
+ * qualquer um pode avisar, mas nem todo mundo pode obrigar a Guilda a dar
+ * ciência. O aviso de empresa nova nasce na mesma transação que confirma o
+ * informativo, e o índice único parcial garante um aviso por informativo.
+ */
+export const guildNotices = pgTable(
+  "guild_notices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    authorId: text("author_id")
+      .notNull()
+      .references(() => user.id),
+    kind: guildNoticeKind("kind").notNull().default("notice"),
+    title: varchar("title", { length: 160 }).notNull(),
+    body: text("body").notNull(),
+    clientId: uuid("client_id").references(() => clients.id),
+    informativeId: uuid("informative_id").references(() => informatives.id),
+    requiresAck: boolean("requires_ack").notNull().default(false),
+    pinned: boolean("pinned").notNull().default(false),
+    publishedAt: timestamp("published_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("guild_notices_org_id_uidx").on(t.orgId, t.id),
+    index("guild_notices_org_pinned_published_idx").on(
+      t.orgId,
+      t.pinned,
+      t.publishedAt.desc(),
+    ),
+    uniqueIndex("guild_notices_new_client_uidx")
+      .on(t.informativeId)
+      .where(sql`kind = 'new_client'`),
+  ],
+);
+
+/**
+ * Confirmação de leitura: FATO REGISTRADO, não alternável.
+ * Não existe "desconfirmar" — o insert é idempotente pela unicidade abaixo e
+ * a action sempre usa o userId da SESSÃO, nunca um vindo do cliente.
+ */
+export const guildNoticeReads = pgTable(
+  "guild_notice_reads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    noticeId: uuid("notice_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "guild_notice_reads_org_notice_fk",
+      columns: [t.orgId, t.noticeId],
+      foreignColumns: [guildNotices.orgId, guildNotices.id],
+    }).onDelete("cascade"),
+    uniqueIndex("guild_notice_reads_org_notice_user_uidx").on(
+      t.orgId,
+      t.noticeId,
+      t.userId,
+    ),
+    index("guild_notice_reads_org_user_idx").on(t.orgId, t.userId),
+  ],
+);
+
+export const guildNoticesRelations = relations(guildNotices, ({ one, many }) => ({
+  author: one(user, {
+    fields: [guildNotices.authorId],
+    references: [user.id],
+  }),
+  client: one(clients, {
+    fields: [guildNotices.clientId],
+    references: [clients.id],
+  }),
+  informative: one(informatives, {
+    fields: [guildNotices.informativeId],
+    references: [informatives.id],
+  }),
+  reads: many(guildNoticeReads),
+}));
+
+export const guildNoticeReadsRelations = relations(guildNoticeReads, ({ one }) => ({
+  notice: one(guildNotices, {
+    fields: [guildNoticeReads.noticeId],
+    references: [guildNotices.id],
+  }),
+  user: one(user, {
+    fields: [guildNoticeReads.userId],
+    references: [user.id],
+  }),
+}));
+
+export const taskAssigneeSuggestionsRelations = relations(
+  taskAssigneeSuggestions,
+  ({ one }) => ({
+    task: one(tasks, {
+      fields: [taskAssigneeSuggestions.taskId],
+      references: [tasks.id],
+    }),
+    user: one(user, {
+      fields: [taskAssigneeSuggestions.userId],
+      references: [user.id],
+    }),
+  }),
+);
+
+export type GuildNotice = typeof guildNotices.$inferSelect;
+export type GuildNoticeRead = typeof guildNoticeReads.$inferSelect;

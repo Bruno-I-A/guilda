@@ -460,17 +460,17 @@ export async function createInformativeDraft(
 
   const draft = await withOrgTx(actor.orgId, async (tx) => {
     await tx
-      .update(schema.telegramAiDrafts)
+      .update(schema.informatives)
       .set({ status: "cancelled", decidedAt: new Date() })
       .where(
         and(
-          eq(schema.telegramAiDrafts.orgId, actor.orgId),
-          eq(schema.telegramAiDrafts.requestedBy, actor.userId),
-          eq(schema.telegramAiDrafts.status, "pending"),
+          eq(schema.informatives.orgId, actor.orgId),
+          eq(schema.informatives.requestedBy, actor.userId),
+          eq(schema.informatives.status, "pending"),
         ),
       );
     const [created] = await tx
-      .insert(schema.telegramAiDrafts)
+      .insert(schema.informatives)
       .values({
         orgId: actor.orgId,
         requestedBy: actor.userId,
@@ -480,7 +480,7 @@ export async function createInformativeDraft(
         payload,
         expiresAt: new Date(Date.now() + DRAFT_TTL_MS),
       })
-      .returning({ id: schema.telegramAiDrafts.id });
+      .returning({ id: schema.informatives.id });
     return created;
   });
 
@@ -508,13 +508,13 @@ export async function decideInformativeDraft(
   return withOrgTx(actor.orgId, async (tx) => {
     const [draft] = await tx
       .select()
-      .from(schema.telegramAiDrafts)
+      .from(schema.informatives)
       .where(
         and(
-          eq(schema.telegramAiDrafts.id, draftId),
-          eq(schema.telegramAiDrafts.orgId, actor.orgId),
-          eq(schema.telegramAiDrafts.requestedBy, actor.userId),
-          eq(schema.telegramAiDrafts.connectionId, connectionId),
+          eq(schema.informatives.id, draftId),
+          eq(schema.informatives.orgId, actor.orgId),
+          eq(schema.informatives.requestedBy, actor.userId),
+          eq(schema.informatives.connectionId, connectionId),
         ),
       )
       .for("update");
@@ -525,9 +525,9 @@ export async function decideInformativeDraft(
 
     if (decision === "cancel") {
       await tx
-        .update(schema.telegramAiDrafts)
+        .update(schema.informatives)
         .set({ status: "cancelled", decidedAt: new Date() })
-        .where(eq(schema.telegramAiDrafts.id, draft.id));
+        .where(eq(schema.informatives.id, draft.id));
       return { ok: true, message: "Rascunho cancelado. Nenhuma missão foi criada." };
     }
 
@@ -713,13 +713,13 @@ export async function decideInformativeDraft(
     }
 
     await tx
-      .update(schema.telegramAiDrafts)
+      .update(schema.informatives)
       .set({
         status: "confirmed",
         decidedAt: new Date(),
         createdTaskIds: taskIds,
       })
-      .where(eq(schema.telegramAiDrafts.id, draft.id));
+      .where(eq(schema.informatives.id, draft.id));
     const missionMessage = payload.data.company.legalName
       ? `${taskIds.length} missão(ões) criada(s) para ${payload.data.company.legalName}.`
       : `${taskIds.length} missão(ões) criada(s).`;
