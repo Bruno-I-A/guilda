@@ -6,14 +6,18 @@ import {
   CircleUser,
   Flag,
   Home,
+  Inbox,
   KeyRound,
   ListTodo,
   LogOut,
+  MoreHorizontal,
+  ScrollText,
   Trophy,
   Users,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { GuildSeal } from "@/components/guild-crest";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -26,20 +30,48 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { authClient } from "@/lib/auth-client";
 import { initials, ROLE_LABELS } from "@/lib/people";
 import { cn } from "@/lib/utils";
 
+/**
+ * A sidebar do desktop lista tudo. A tab bar do celular mostra apenas CINCO
+ * alvos — em 360px, dez colunas dariam ~36px por item, o que não é tocável —
+ * e o restante vive na folha "Mais".
+ */
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Início", icon: Home },
   { href: "/tasks", label: "Missões", icon: ListTodo },
-  { href: "/clans", label: "Clãs", icon: Flag },
+  { href: "/mural", label: "Mural", icon: ScrollText },
   { href: "/closings", label: "Fechamentos", icon: CalendarCheck2 },
+  { href: "/clans", label: "Clãs", icon: Flag },
+  { href: "/informativos", label: "Informativos", icon: Inbox },
   { href: "/clients", label: "Clientes", icon: Building2 },
   { href: "/leaderboard", label: "Ranking", icon: Trophy },
   { href: "/members", label: "Membros", icon: Users },
   { href: "/profile", label: "Perfil", icon: CircleUser },
 ] as const;
+
+const MOBILE_PRIMARY_HREFS = [
+  "/dashboard",
+  "/tasks",
+  "/mural",
+  "/closings",
+] as const;
+
+const MOBILE_PRIMARY = NAV_ITEMS.filter((item) =>
+  (MOBILE_PRIMARY_HREFS as readonly string[]).includes(item.href),
+);
+const MOBILE_OVERFLOW = NAV_ITEMS.filter(
+  (item) => !(MOBILE_PRIMARY_HREFS as readonly string[]).includes(item.href),
+);
 
 function UserMenu({
   user,
@@ -95,18 +127,42 @@ function UserMenu({
   );
 }
 
+/** Contador de avisos do mural aguardando a confirmação desta pessoa. */
+function PendingBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      aria-label={`${count} aviso(s) aguardando confirmação`}
+      className="inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 font-mono text-[10px] leading-4 text-destructive-foreground"
+    >
+      {count > 9 ? "9+" : count}
+    </span>
+  );
+}
+
 export function AppShell({
   orgName,
   user,
   role,
+  pendingNotices = 0,
   children,
 }: {
   orgName: string;
   user: { name: string; email: string };
   role: string;
+  /** Avisos do mural que exigem ciência e ainda não foram confirmados. */
+  pendingNotices?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const [overflowOpen, setOverflowOpen] = useState(false);
+
+  // Navegar a partir da folha precisa fechá-la; o pathname é o sinal.
+  useEffect(() => setOverflowOpen(false), [pathname]);
+
+  const overflowActive = MOBILE_OVERFLOW.some((item) =>
+    pathname.startsWith(item.href),
+  );
 
   return (
     <div className="flex min-h-svh w-full">
@@ -137,7 +193,8 @@ export function AppShell({
                 )}
               >
                 <Icon className="size-4" aria-hidden />
-                {label}
+                <span className="flex-1">{label}</span>
+                {href === "/mural" ? <PendingBadge count={pendingNotices} /> : null}
               </Link>
             );
           })}
@@ -166,12 +223,12 @@ export function AppShell({
           <div className="mx-auto w-full max-w-5xl">{children}</div>
         </main>
 
-        {/* Tab bar — mobile */}
+        {/* Tab bar — mobile: 4 rotas fixas + a folha "Mais" */}
         <nav
           aria-label="Navegação inferior"
-          className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-8 border-t bg-background/95 backdrop-blur md:hidden"
+          className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-background/95 backdrop-blur md:hidden"
         >
-          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+          {MOBILE_PRIMARY.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href);
             return (
               <Link
@@ -180,14 +237,63 @@ export function AppShell({
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "flex flex-col items-center gap-1 border-t-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-[11px] font-medium",
-                  active ? "border-primary text-primary" : "border-transparent text-muted-foreground",
+                  active
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground",
                 )}
               >
-                <Icon className="size-5" aria-hidden />
+                <span className="relative">
+                  <Icon className="size-5" aria-hidden />
+                  {href === "/mural" && pendingNotices > 0 ? (
+                    <span className="absolute -top-1 -right-2">
+                      <PendingBadge count={pendingNotices} />
+                    </span>
+                  ) : null}
+                </span>
                 <span className="max-w-full truncate px-0.5">{label}</span>
               </Link>
             );
           })}
+
+          <Sheet open={overflowOpen} onOpenChange={setOverflowOpen}>
+            <SheetTrigger
+              className={cn(
+                "flex flex-col items-center gap-1 border-t-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-[11px] font-medium",
+                overflowActive
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground",
+              )}
+            >
+              <MoreHorizontal className="size-5" aria-hidden />
+              <span className="max-w-full truncate px-0.5">Mais</span>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="pb-[env(safe-area-inset-bottom)]">
+              <SheetHeader>
+                <SheetTitle>Mais da Guilda</SheetTitle>
+              </SheetHeader>
+              <nav className="grid gap-1 px-4 pb-6" aria-label="Rotas adicionais">
+                {MOBILE_OVERFLOW.map(({ href, label, icon: Icon }) => {
+                  const active = pathname.startsWith(href);
+                  return (
+                    <Link
+                      key={href}
+                      href={href}
+                      aria-current={active ? "page" : undefined}
+                      className={cn(
+                        "flex items-center gap-3 rounded-md border-l-2 px-3 py-3 text-sm font-medium",
+                        active
+                          ? "border-primary bg-accent/60 text-foreground"
+                          : "border-transparent text-muted-foreground",
+                      )}
+                    >
+                      <Icon className="size-4" aria-hidden />
+                      {label}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </SheetContent>
+          </Sheet>
         </nav>
       </div>
     </div>
