@@ -6,6 +6,8 @@ import { z } from "zod";
 
 import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { canManageClanMembership } from "@/domain/guild-permissions";
+import type { OrgRole } from "@/domain/task-state";
 import {
   err,
   requireMemberContext,
@@ -35,6 +37,40 @@ async function requireClanManager() {
     return err("Apenas admin ou owner pode gerenciar os clãs.");
   }
   return ctx;
+}
+
+/**
+ * Decisão 7: o líder gerencia os integrantes do PRÓPRIO clã.
+ * A checagem mora dentro da transação porque depende do clã alvo — só aqui
+ * sabemos qual é. Nomear líder continua exclusivo de admin/owner
+ * (`setClanLeader` segue com `requireClanManager`).
+ *
+ * Devolve `null` quando a operação está liberada.
+ */
+async function denyUnlessClanManager(
+  tx: OrgTx,
+  orgId: string,
+  clanId: string,
+  userId: string,
+  role: OrgRole,
+): Promise<ActionResult | null> {
+  const [leadership] = await tx
+    .select({ id: schema.clanMemberships.id })
+    .from(schema.clanMemberships)
+    .where(
+      and(
+        eq(schema.clanMemberships.orgId, orgId),
+        eq(schema.clanMemberships.clanId, clanId),
+        eq(schema.clanMemberships.userId, userId),
+        eq(schema.clanMemberships.isLeader, true),
+      ),
+    )
+    .limit(1);
+
+  if (canManageClanMembership({ role, leadsThisClan: Boolean(leadership) })) {
+    return null;
+  }
+  return err("Apenas o líder deste clã ou um admin pode alterar os integrantes.");
 }
 
 /**
@@ -95,7 +131,7 @@ async function leaderCount(tx: OrgTx, orgId: string, clanId: string) {
 export async function addClanMembership(
   input: z.input<typeof membershipTargetSchema>,
 ): Promise<ActionResult> {
-  const ctx = await requireClanManager();
+  const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
   const parsed = membershipTargetSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
@@ -105,6 +141,15 @@ export async function addClanMembership(
     if (!orgMember) return err("A pessoa não pertence a esta organização.");
     const clan = await lockClan(tx, ctx.orgId, parsed.data.clanId);
     if (!clan || !clan.active) return err("Clã ativo não encontrado.");
+
+    const denied = await denyUnlessClanManager(
+      tx,
+      ctx.orgId,
+      clan.id,
+      ctx.userId,
+      ctx.role,
+    );
+    if (denied) return denied;
 
     const [existing] = await tx
       .select({ id: schema.clanMemberships.id })
@@ -146,7 +191,7 @@ export async function addClanMembership(
 export async function removeClanMembership(
   input: z.input<typeof membershipTargetSchema>,
 ): Promise<ActionResult> {
-  const ctx = await requireClanManager();
+  const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
   const parsed = membershipTargetSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
@@ -156,6 +201,15 @@ export async function removeClanMembership(
     if (!orgMember) return err("A pessoa não pertence a esta organização.");
     const clan = await lockClan(tx, ctx.orgId, parsed.data.clanId);
     if (!clan) return err("Clã não encontrado.");
+
+    const denied = await denyUnlessClanManager(
+      tx,
+      ctx.orgId,
+      clan.id,
+      ctx.userId,
+      ctx.role,
+    );
+    if (denied) return denied;
 
     const [membership] = await tx
       .select()

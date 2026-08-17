@@ -364,6 +364,150 @@ async function main() {
       toStatus: "pending",
       createdAt: clanOnlyCreatedAt,
     });
+
+    // ── Mesa do Líder: um informativo confirmado com o pacote de uma empresa.
+    // As missões nascem DO CLÃ, sem responsável, e o "Att." fica registrado
+    // como sugestão — é exatamente a fila que o líder distribui.
+    const clientId = randomUUID();
+    const informativeCreatedAt = daysAgo(1, 9);
+    await tx.insert(schema.clients).values({
+      id: clientId,
+      orgId,
+      name: "PICCOLI AGRO SERVIÇOS LTDA",
+      cnpj: "68100490000131",
+      taxRegime: "simples",
+      createdAt: informativeCreatedAt,
+    });
+
+    const informativeId = randomUUID();
+    await tx.insert(schema.informatives).values({
+      id: informativeId,
+      orgId,
+      requestedBy: ids.helena,
+      connectionId: null,
+      source: "panel",
+      sourceText:
+        "INFORMATIVO — NOVO CLIENTE\n\nRazão social: PICCOLI AGRO SERVIÇOS LTDA\nCNPJ: 68.100.490/0001-31\nEnquadramento: Simples Nacional\n\nAÇÕES\nFiscal - Camila - parametrizar o faturamento médio e controlar o Fator R\nRH - cadastrar o pró-labore a partir da competência 07/2026\nContabilidade - abrir a contabilidade da empresa\n\nOBSERVAÇÕES\nCamila responde por todos os informativos da empresa.",
+      model: "seed",
+      payload: { seeded: true },
+      status: "confirmed",
+      createdTaskIds: [],
+      expiresAt: new Date(informativeCreatedAt.getTime() + 30 * 60 * 1000),
+      decidedAt: informativeCreatedAt,
+      createdAt: informativeCreatedAt,
+    });
+
+    const INFORMATIVE_TASKS = [
+      {
+        title: "Parametrizar o faturamento médio e controlar o Fator R",
+        clan: "fiscal" as ClanSlug,
+        difficulty: 3,
+        priority: 3,
+        suggestions: [{ rawName: "Camila", userId: null }],
+      },
+      {
+        title: "Cadastrar o pró-labore a partir da competência 07/2026",
+        clan: "rh" as ClanSlug,
+        difficulty: 2,
+        priority: 2,
+        suggestions: [{ rawName: "Juliana Melo", userId: ids.juliana }],
+      },
+      {
+        title: "Abrir a contabilidade da empresa",
+        clan: "contabilidade" as ClanSlug,
+        difficulty: 4,
+        priority: 2,
+        suggestions: [],
+      },
+    ];
+
+    const informativeTaskIds: string[] = [];
+    for (const seed of INFORMATIVE_TASKS) {
+      const taskId = randomUUID();
+      informativeTaskIds.push(taskId);
+      await tx.insert(schema.tasks).values({
+        id: taskId,
+        orgId,
+        creatorId: ids.helena,
+        assigneeId: null,
+        clanId: clanIds[seed.clan],
+        clientId,
+        informativeId,
+        title: `${seed.title} — PICCOLI AGRO SERVIÇOS LTDA`,
+        description: "Missão gerada pelo informativo de novo cliente.",
+        priority: seed.priority,
+        difficulty: seed.difficulty,
+        xpValue: calculateTaskXp(seed.difficulty, seed.priority),
+        // Sem prazo: o informativo não trouxe data e o sistema nunca inventa.
+        status: "pending",
+        dueDate: null,
+        createdAt: informativeCreatedAt,
+        updatedAt: informativeCreatedAt,
+      });
+      await tx.insert(schema.taskEvents).values({
+        id: randomUUID(),
+        orgId,
+        taskId,
+        actorId: ids.helena,
+        fromStatus: null,
+        toStatus: "pending",
+        createdAt: informativeCreatedAt,
+      });
+      for (const suggestion of seed.suggestions) {
+        await tx.insert(schema.taskAssigneeSuggestions).values({
+          id: randomUUID(),
+          orgId,
+          taskId,
+          userId: suggestion.userId,
+          rawName: suggestion.rawName,
+          createdAt: informativeCreatedAt,
+        });
+      }
+    }
+    await tx
+      .update(schema.informatives)
+      .set({ createdTaskIds: informativeTaskIds })
+      .where(eq(schema.informatives.id, informativeId));
+
+    // ── Mural: o aviso automático da empresa nova e um recado da equipe.
+    const newClientNoticeId = randomUUID();
+    await tx.insert(schema.guildNotices).values({
+      id: newClientNoticeId,
+      orgId,
+      authorId: ids.helena,
+      kind: "new_client",
+      title: "Nova empresa: PICCOLI AGRO SERVIÇOS LTDA",
+      body: "Dados cadastrais\nRazão social: PICCOLI AGRO SERVIÇOS LTDA\nCNPJ: 68100490000131\nEnquadramento: Simples Nacional\n\nObservações e combinados\n• Camila responde por todos os informativos da empresa.\n\n3 missões foram criadas a partir deste informativo.",
+      clientId,
+      informativeId,
+      requiresAck: true,
+      pinned: true,
+      publishedAt: informativeCreatedAt,
+      createdAt: informativeCreatedAt,
+      updatedAt: informativeCreatedAt,
+    });
+    // Uma confirmação já registrada, para a tela mostrar "1 de 4 confirmaram".
+    await tx.insert(schema.guildNoticeReads).values({
+      id: randomUUID(),
+      orgId,
+      noticeId: newClientNoticeId,
+      userId: ids.rafael,
+      acknowledgedAt: daysAgo(1, 2),
+    });
+
+    await tx.insert(schema.guildNotices).values({
+      id: randomUUID(),
+      orgId,
+      authorId: ids.tiago,
+      kind: "notice",
+      title: "Servidor de arquivos fora do ar na sexta à noite",
+      body: "A manutenção começa às 19h e deve durar duas horas. Salvem os documentos antes disso.",
+      requiresAck: false,
+      pinned: false,
+      publishedAt: daysAgo(2, 3),
+      createdAt: daysAgo(2, 3),
+      updatedAt: daysAgo(2, 3),
+    });
   });
 
   console.log("\nSeed concluído! Organização: Guilda Demo");

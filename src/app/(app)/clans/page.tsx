@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { AlertTriangle, Crown, Flag, ListTodo, UserRoundX, Users } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -32,7 +33,7 @@ export default async function ClansPage() {
   const session = await requireOrgSession();
   const viewer = await getActiveMember();
   if (!viewer) redirect("/onboarding");
-  const canManage = isAdminRole(viewer.role);
+  const viewerIsAdmin = isAdminRole(viewer.role);
 
   const { clans, orgMembers } = await withOrgTx(session.orgId, async (tx) => {
     const [clanRows, memberRows] = await Promise.all([
@@ -98,7 +99,14 @@ export default async function ClansPage() {
                 <CardHeader>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <CardTitle className="text-lg">{clan.name}</CardTitle>
+                      <CardTitle className="text-lg">
+                        <Link
+                          href={`/clans/${clan.id}`}
+                          className="underline-offset-4 hover:underline"
+                        >
+                          {clan.name}
+                        </Link>
+                      </CardTitle>
                       <CardDescription>
                         {memberships.length} {memberships.length === 1 ? "integrante" : "integrantes"}
                       </CardDescription>
@@ -172,7 +180,24 @@ export default async function ClansPage() {
                     )}
                   </div>
 
-                  {canManage ? (
+                  <Link
+                    href={`/clans/${clan.id}`}
+                    className="flex items-center justify-between gap-2 rounded-md border bg-background/40 px-3 py-2 text-sm font-medium hover:bg-accent/40"
+                  >
+                    Abrir a Mesa do Líder
+                    {unassigned > 0 ? (
+                      <span className="font-mono text-xs text-primary">
+                        {unassigned} sem dono
+                      </span>
+                    ) : null}
+                  </Link>
+
+                  {/* Decisão 7: o líder gerencia os integrantes do próprio clã. */}
+                  {viewerIsAdmin ||
+                  memberships.some(
+                    (membership) =>
+                      membership.userId === session.user.id && membership.isLeader,
+                  ) ? (
                     <ClanMembershipManager
                       clanId={clan.id}
                       clanName={clan.name}
