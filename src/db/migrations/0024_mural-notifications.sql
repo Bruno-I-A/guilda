@@ -1,0 +1,1 @@
+ALTER TABLE "telegram_preferences" ADD COLUMN "mural_notifications" boolean DEFAULT true NOT NULL;

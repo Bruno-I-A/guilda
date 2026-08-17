@@ -1,0 +1,440 @@
+import "server-only";
+
+import { and, eq, inArray } from "drizzle-orm";
+
+import { withOrgTx } from "@/db/org-tx";
+import * as schema from "@/db/schema";
+import { routeInformativeTask, type RoutingClan } from "@/domain/clan-routing";
+import { resolveAssigneeClan } from "@/domain/clans";
+import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
+import { extractObservationLines } from "@/domain/informative-text";
+import type { OrgRole } from "@/domain/task-state";
+import { resolveClientName } from "@/lib/ai/client-resolution";
+import { extractInformative } from "@/lib/ai/informative";
+import {
+  informativeDraftPayloadSchema,
+  type AssigneeSuggestionPayload,
+  type InformativeDraftPayload,
+} from "@/lib/ai/informative-schema";
+import { resolveMemberName } from "@/lib/ai/member-resolution";
+import { listActiveClans, listOrgMembers } from "@/lib/org";
+import { isDetailedInformativeMessage } from "@/lib/telegram/informative-detection";
+
+/**
+ * Construção da prévia de um informativo — compartilhada pelas DUAS portas de
+ * entrada (bot do Telegram e painel). O que muda entre elas é apenas quem
+ * apresenta o resultado; a extração, o roteamento e a persistência são os
+ * mesmos.
+ */
+
+const DRAFT_TTL_MS = 30 * 60 * 1000;
+
+const MISSING_FIELD_LABELS = {
+  company: "o nome da empresa",
+  actions: "o que precisa ser feito",
+  responsible: "quem será a pessoa responsável ou qual clã receberá a missão",
+  due_date: "a data final do período de fechamento",
+} as const;
+
+export interface InformativeActor {
+  orgId: string;
+  userId: string;
+  role: OrgRole;
+}
+
+export type BuildInformativeDraftResult =
+  | { ok: true; payload: InformativeDraftPayload; model: string }
+  | { ok: false; message: string };
+
+function currentYearInSaoPaulo(): number {
+  return Number(
+    new Intl.DateTimeFormat("en", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+    }).format(new Date()),
+  );
+}
+
+/**
+ * Extrai o informativo, resolve nomes e ROTEIA cada ação pelo setor.
+ * Nenhuma missão é criada aqui: o resultado é só a prévia.
+ */
+export async function buildInformativeDraft(
+  actor: InformativeActor,
+  sourceText: string,
+): Promise<BuildInformativeDraftResult> {
+  const [members, clients, activeClanMemberships, activeClans] =
+    await Promise.all([
+      listOrgMembers(actor.orgId),
+      withOrgTx(actor.orgId, (tx) =>
+        tx.query.clients.findMany({
+          where: and(
+            eq(schema.clients.orgId, actor.orgId),
+            eq(schema.clients.active, true),
+          ),
+        }),
+      ),
+      withOrgTx(actor.orgId, (tx) =>
+        tx
+          .select({
+            userId: schema.clanMemberships.userId,
+            clanId: schema.clanMemberships.clanId,
+            clanName: schema.clans.name,
+            isPrimary: schema.clanMemberships.isPrimary,
+          })
+          .from(schema.clanMemberships)
+          .innerJoin(
+            schema.clans,
+            and(
+              eq(schema.clans.id, schema.clanMemberships.clanId),
+              eq(schema.clans.orgId, schema.clanMemberships.orgId),
+            ),
+          )
+          .where(
+            and(
+              eq(schema.clanMemberships.orgId, actor.orgId),
+              eq(schema.clans.orgId, actor.orgId),
+              eq(schema.clans.active, true),
+            ),
+          ),
+      ),
+      listActiveClans(actor.orgId),
+    ]);
+
+  const clansByUser = new Map<
+    string,
+    Array<{ clanId: string; clanName: string; isPrimary: boolean }>
+  >();
+  for (const membership of activeClanMemberships) {
+    const current = clansByUser.get(membership.userId) ?? [];
+    current.push({
+      clanId: membership.clanId,
+      clanName: membership.clanName,
+      isPrimary: membership.isPrimary,
+    });
+    clansByUser.set(membership.userId, current);
+  }
+  const routingClans: RoutingClan[] = activeClans.map((clan) => ({
+    id: clan.id,
+    name: clan.name,
+    slug: clan.slug,
+  }));
+
+  const sourceFormat = isDetailedInformativeMessage(sourceText)
+    ? "informative"
+    : "business_mission";
+  const extracted = await extractInformative(
+    sourceText,
+    members.map(({ userId, name }) => ({ userId, name })),
+    clients.map(({ name }) => ({ name })),
+    activeClans,
+    `${actor.orgId}:${actor.userId}`,
+  );
+
+  if (!extracted.data.isMissionRequest) {
+    return {
+      ok: false,
+      message:
+        "Não identifiquei uma solicitação de nova missão. Diga o que precisa ser feito, a pessoa responsável ou o clã e, quando houver, a empresa e o prazo.",
+    };
+  }
+
+  const kind = extracted.data.kind ?? "general_task";
+  const hasClosingPeriod = extracted.data.tasks.some(
+    (task) => task.category === "closing_period",
+  );
+  const hasAnnualClosing = extracted.data.tasks.some(
+    (task) => task.category === "annual_closing",
+  );
+  const missing = new Set(extracted.data.missingFields);
+  if (
+    (kind !== "general_task" || hasClosingPeriod || hasAnnualClosing) &&
+    !extracted.data.company.legalName
+  ) {
+    missing.add("company");
+  }
+  if (extracted.data.tasks.length === 0) missing.add("actions");
+  // O destino deixou de ser bloqueio de extração: quem não tem clã nem pessoa
+  // vira missão pendente e a decisão acontece na prévia.
+  missing.delete("responsible");
+  if (
+    extracted.data.tasks.some(
+      (task) => task.category === "closing_period" && !task.dueDate,
+    )
+  ) {
+    missing.add("due_date");
+  }
+  if (missing.size) {
+    const labels = [...missing].map((field) => MISSING_FIELD_LABELS[field]);
+    return {
+      ok: false,
+      message: `Entendi parte da solicitação, mas faltou informar: ${labels.join(", ")}. Reenvie tudo em uma única mensagem; a ordem e a formatação não importam.`,
+    };
+  }
+
+  const legalName = extracted.data.company.legalName;
+  const normalizedCnpj = extracted.data.company.cnpj
+    ? normalizeCnpj(extracted.data.company.cnpj)
+    : null;
+  const validCnpj =
+    normalizedCnpj && validateCnpj(normalizedCnpj) ? normalizedCnpj : null;
+  const existingClient =
+    (validCnpj
+      ? clients.find((client) => client.cnpj === validCnpj) ?? null
+      : null) ?? (legalName ? resolveClientName(legalName, clients) : null);
+
+  if ((hasClosingPeriod || hasAnnualClosing) && !existingClient) {
+    return {
+      ok: false,
+      message: legalName
+        ? `Não consegui localizar “${legalName}” de forma única na carteira de clientes. Reenvie a missão usando o nome cadastrado da empresa.`
+        : "Para vincular o fechamento ao controle da empresa, informe o nome dela.",
+    };
+  }
+
+  const finalLegalName = existingClient?.name ?? legalName;
+  const unresolved = new Set<string>();
+  const tasks: InformativeDraftPayload["tasks"] = [];
+
+  for (const task of extracted.data.tasks) {
+    const core = {
+      title: task.title,
+      description:
+        `${task.description}\n\nTrecho da solicitação:\n${task.sourceSection}`.slice(
+          0,
+          5000,
+        ),
+      priority: task.priority,
+      difficulty: task.difficulty,
+      dueDate: task.dueDate,
+      category: task.category,
+      closingYear:
+        task.category === "annual_closing"
+          ? task.closingYear ?? currentYearInSaoPaulo()
+          : null,
+      sourceSection: task.sourceSection,
+      sector: task.sector,
+    };
+
+    const suggestions: AssigneeSuggestionPayload[] = [];
+    for (const requested of task.assignees) {
+      const resolved = resolveMemberName(requested, members);
+      if (suggestions.some((entry) => entry.rawName === requested)) continue;
+      suggestions.push({
+        rawName: requested,
+        userId: resolved?.userId ?? null,
+        name: resolved?.name ?? null,
+      });
+    }
+
+    const route = routeInformativeTask({
+      sector: task.sector,
+      suggestions,
+      clans: routingClans,
+    });
+
+    if (route.outcome === "clan") {
+      // Clã ganha da pessoa: nasce sem responsável e o líder distribui.
+      tasks.push({
+        ...core,
+        assignmentType: "clan",
+        assigneeId: null,
+        assigneeName: null,
+        clanId: route.clan.id,
+        clanName: route.clan.name,
+        suggestions,
+      });
+      continue;
+    }
+
+    if (route.outcome === "individual") {
+      for (const person of route.assignees) {
+        const memberships = clansByUser.get(person.userId) ?? [];
+        const clanResolution = resolveAssigneeClan(memberships);
+        if (!clanResolution.ok) {
+          unresolved.add(`${person.name}: ${clanResolution.reason}`.slice(0, 200));
+          continue;
+        }
+        const clan = memberships.find(
+          (membership) => membership.clanId === clanResolution.clanId,
+        );
+        if (!clan) {
+          unresolved.add(`${person.name}: clã não localizado`.slice(0, 200));
+          continue;
+        }
+        tasks.push({
+          ...core,
+          assignmentType: "individual",
+          assigneeId: person.userId,
+          assigneeName: person.name,
+          clanId: clan.clanId,
+          clanName: clan.clanName,
+          suggestions,
+        });
+      }
+      continue;
+    }
+
+    tasks.push({
+      ...core,
+      assignmentType: "pending",
+      assigneeId: null,
+      assigneeName: null,
+      clanId: null,
+      clanName: null,
+      reason: route.reason,
+      suggestions,
+    });
+  }
+
+  const warnings = [...extracted.data.warnings];
+  const closingYears = [
+    ...new Set(
+      tasks
+        .filter((task) => task.category === "annual_closing")
+        .map((task) => task.closingYear)
+        .filter((year): year is number => year !== null),
+    ),
+  ];
+  if (existingClient && closingYears.length > 0) {
+    const alreadyClosed = await withOrgTx(actor.orgId, (tx) =>
+      tx.query.accountingClosingYears.findMany({
+        where: and(
+          eq(schema.accountingClosingYears.orgId, actor.orgId),
+          eq(schema.accountingClosingYears.clientId, existingClient.id),
+          inArray(schema.accountingClosingYears.year, closingYears),
+        ),
+        columns: { year: true, closedAt: true },
+      }),
+    );
+    for (const annual of alreadyClosed) {
+      if (annual.closedAt) {
+        warnings.push(
+          `A campanha de ${annual.year} desta empresa já está marcada como fechada.`,
+        );
+      }
+    }
+  }
+
+  const createClient =
+    sourceFormat === "informative" &&
+    extracted.data.kind === "new_client" &&
+    Boolean(finalLegalName) &&
+    !existingClient &&
+    Boolean(validCnpj && extracted.data.company.taxRegime);
+  if (
+    sourceFormat === "informative" &&
+    extracted.data.kind === "new_client" &&
+    !validCnpj
+  ) {
+    warnings.push(
+      "CNPJ ausente ou inválido; a empresa não poderá ser criada automaticamente.",
+    );
+  }
+  if (
+    sourceFormat === "informative" &&
+    extracted.data.kind === "new_client" &&
+    !existingClient &&
+    !extracted.data.company.taxRegime
+  ) {
+    warnings.push(
+      "Regime tributário não identificado; a empresa não poderá ser criada automaticamente.",
+    );
+  }
+  if (
+    sourceFormat === "informative" &&
+    !existingClient &&
+    extracted.data.kind === "client_closure"
+  ) {
+    warnings.push(
+      "Cliente baixado não localizado no painel; as missões serão criadas sem vínculo.",
+    );
+  } else if (sourceFormat === "informative" && !existingClient && !createClient) {
+    warnings.push("As missões serão criadas sem vínculo com uma empresa do painel.");
+  }
+
+  // Decisão 11: o que não é ação vira corpo do aviso no mural, não missão.
+  const observations = [
+    ...new Set([
+      ...extractObservationLines(sourceText),
+      ...extracted.data.ignoredNotes,
+    ]),
+  ].slice(0, 30);
+
+  const payload = informativeDraftPayloadSchema.parse({
+    ...extracted.data,
+    kind,
+    sourceFormat,
+    company: {
+      ...extracted.data.company,
+      legalName: finalLegalName,
+      summary:
+        extracted.data.company.summary ??
+        (finalLegalName
+          ? `Solicitação referente a ${finalLegalName}.`
+          : "Solicitação de missão geral."),
+      normalizedCnpj: validCnpj,
+      clientId: existingClient?.id ?? null,
+      createClient,
+    },
+    tasks,
+    observations,
+    unresolvedAssignees: [...unresolved],
+    warnings,
+  });
+
+  return { ok: true, payload, model: extracted.model };
+}
+
+/**
+ * Persiste a prévia, cancelando a anterior ainda pendente da mesma pessoa —
+ * uma prévia aberta por vez evita confirmar o rascunho errado.
+ */
+export async function saveInformativeDraft(input: {
+  actor: InformativeActor;
+  payload: InformativeDraftPayload;
+  model: string;
+  sourceText: string;
+  source: "telegram" | "panel";
+  connectionId: string | null;
+}): Promise<{ id: string }> {
+  return withOrgTx(input.actor.orgId, async (tx) => {
+    await tx
+      .update(schema.informatives)
+      .set({ status: "cancelled", decidedAt: new Date() })
+      .where(
+        and(
+          eq(schema.informatives.orgId, input.actor.orgId),
+          eq(schema.informatives.requestedBy, input.actor.userId),
+          eq(schema.informatives.status, "pending"),
+        ),
+      );
+    const [created] = await tx
+      .insert(schema.informatives)
+      .values({
+        orgId: input.actor.orgId,
+        requestedBy: input.actor.userId,
+        connectionId: input.connectionId,
+        source: input.source,
+        sourceText: input.sourceText,
+        model: input.model,
+        payload: input.payload,
+        expiresAt: new Date(Date.now() + DRAFT_TTL_MS),
+      })
+      .returning({ id: schema.informatives.id });
+    return created;
+  });
+}
+
+/**
+ * A prévia pode ser confirmada como está? Missão pendente e responsável sem
+ * clã travam o pacote inteiro. No painel a pendência é resolvível na tela;
+ * `unresolvedAssignees` exige corrigir o cadastro antes.
+ */
+export function draftIsBlocked(payload: InformativeDraftPayload): boolean {
+  return (
+    payload.tasks.length === 0 ||
+    payload.unresolvedAssignees.length > 0 ||
+    payload.tasks.some((task) => task.assignmentType === "pending")
+  );
+}

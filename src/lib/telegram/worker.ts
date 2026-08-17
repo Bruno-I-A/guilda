@@ -46,6 +46,7 @@ function preferenceEnabled(
   if (preference === "xp") return settings?.xpNotifications ?? true;
   if (preference === "closings") return settings?.closingNotifications ?? true;
   if (preference === "campaigns") return settings?.campaignNotifications ?? true;
+  if (preference === "mural") return settings?.muralNotifications ?? true;
   return settings?.dailySummary ?? false;
 }
 

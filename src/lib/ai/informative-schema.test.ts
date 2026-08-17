@@ -23,9 +23,8 @@ const extraction = {
       category: "general" as const,
       title: "Controlar Fator R",
       description: "Acompanhar faturamento e folha.",
-      assignmentType: "individual" as const,
+      sector: "FISCAL",
       assignees: ["Camila Schütz"],
-      clanName: null,
       priority: 3,
       difficulty: 3,
       dueDate: null,
@@ -38,6 +37,38 @@ const extraction = {
   missingFields: [],
 };
 
+const CLAN_ID = "123e4567-e89b-12d3-a456-426614174000";
+
+const draftBase = {
+  ...extraction,
+  sourceFormat: "informative" as const,
+  company: {
+    ...extraction.company,
+    normalizedCnpj: "68100490000131",
+    clientId: null,
+    createClient: true,
+  },
+  observations: [],
+  unresolvedAssignees: [],
+};
+
+function draftTask(overrides: Record<string, unknown>) {
+  const [task] = extraction.tasks;
+  return {
+    category: task.category,
+    title: task.title,
+    description: task.description,
+    priority: task.priority,
+    difficulty: task.difficulty,
+    dueDate: task.dueDate,
+    closingYear: task.closingYear,
+    sourceSection: task.sourceSection,
+    sector: task.sector,
+    suggestions: [],
+    ...overrides,
+  };
+}
+
 describe("informativeExtractionSchema", () => {
   it("aceita uma extração estruturada válida", () => {
     expect(informativeExtractionSchema.parse(extraction).tasks).toHaveLength(1);
@@ -45,6 +76,15 @@ describe("informativeExtractionSchema", () => {
 
   it("é conversível para o formato estruturado da API", () => {
     expect(() => zodOutputFormat(informativeExtractionSchema)).not.toThrow();
+  });
+
+  it("devolve o setor como texto, sem escolher o destino", () => {
+    const parsed = informativeExtractionSchema.parse({
+      ...extraction,
+      tasks: [{ ...extraction.tasks[0], sector: "COBRANÇA / HONORÁRIO" }],
+    });
+    expect(parsed.tasks[0]?.sector).toBe("COBRANÇA / HONORÁRIO");
+    expect(parsed.tasks[0]).not.toHaveProperty("clanName");
   });
 
   it("representa conversa comum sem inventar uma missão", () => {
@@ -103,40 +143,12 @@ describe("informativeExtractionSchema", () => {
     expect(closure.tasks[0]?.assignees).toEqual([]);
   });
 
-  it("representa uma missão destinada somente a um clã", () => {
-    const clanTask = informativeExtractionSchema.parse({
+  it("aceita linha sem setor identificado", () => {
+    const parsed = informativeExtractionSchema.parse({
       ...extraction,
-      kind: "general_task",
-      tasks: [
-        {
-          ...extraction.tasks[0],
-          assignmentType: "clan",
-          assignees: [],
-          clanName: "Fiscal",
-        },
-      ],
+      tasks: [{ ...extraction.tasks[0], sector: null, assignees: [] }],
     });
-
-    expect(clanTask.tasks[0]).toMatchObject({
-      assignmentType: "clan",
-      assignees: [],
-      clanName: "Fiscal",
-    });
-  });
-
-  it("recusa combinações incoerentes de pessoa e clã", () => {
-    expect(() =>
-      informativeExtractionSchema.parse({
-        ...extraction,
-        tasks: [
-          {
-            ...extraction.tasks[0],
-            assignmentType: "clan",
-            clanName: "Fiscal",
-          },
-        ],
-      }),
-    ).toThrow();
+    expect(parsed.tasks[0]?.sector).toBeNull();
   });
 
   it("classifica uma data parcial como período, sem fechar o ano", () => {
@@ -198,68 +210,109 @@ describe("informativeExtractionSchema", () => {
 });
 
 describe("informativeDraftPayloadSchema", () => {
-  it("exige IDs e CNPJ normalizado no rascunho confirmado pelo servidor", () => {
+  it("exige IDs e CNPJ normalizado no rascunho resolvido pelo servidor", () => {
     const payload = informativeDraftPayloadSchema.parse({
-      ...extraction,
-      sourceFormat: "informative",
-      company: {
-        ...extraction.company,
-        normalizedCnpj: "68100490000131",
-        clientId: null,
-        createClient: true,
-      },
-      tasks: extraction.tasks.map((task) => ({
-        title: task.title,
-        description: task.description,
-        priority: task.priority,
-        difficulty: task.difficulty,
-        dueDate: task.dueDate,
-        category: task.category,
-        closingYear: task.closingYear,
-        sourceSection: task.sourceSection,
-        // Sem discriminador para provar compatibilidade com rascunhos individuais.
-        assigneeId: "user-1",
-        assigneeName: "Camila Schütz",
-        clanId: "123e4567-e89b-12d3-a456-426614174000",
-        clanName: "Fiscal",
-      })),
-      unresolvedAssignees: [],
+      ...draftBase,
+      tasks: [
+        draftTask({
+          assignmentType: "individual",
+          assigneeId: "user-1",
+          assigneeName: "Camila Schütz",
+          clanId: CLAN_ID,
+          clanName: "Fiscal",
+        }),
+      ],
     });
     expect(payload.company.createClient).toBe(true);
-    expect(payload.tasks[0]?.assigneeId).toBe("user-1");
-    expect(payload.tasks[0]?.assignmentType).toBe("individual");
-    expect(payload.tasks[0]?.clanName).toBe("Fiscal");
+    expect(payload.tasks[0]).toMatchObject({
+      assignmentType: "individual",
+      assigneeId: "user-1",
+      clanName: "Fiscal",
+    });
   });
 
-  it("aceita rascunho de missão sem pessoa responsável", () => {
+  it("guarda a sugestão do informativo na missão de clã, sem atribuir", () => {
     const payload = informativeDraftPayloadSchema.parse({
-      ...extraction,
-      sourceFormat: "business_mission",
-      kind: "general_task",
-      company: {
-        ...extraction.company,
-        normalizedCnpj: null,
-        clientId: null,
-        createClient: false,
-      },
+      ...draftBase,
       tasks: [
-        {
-          ...extraction.tasks[0],
+        draftTask({
           assignmentType: "clan",
           assigneeId: null,
           assigneeName: null,
-          clanId: "123e4567-e89b-12d3-a456-426614174000",
+          clanId: CLAN_ID,
           clanName: "Fiscal",
-          assignees: undefined,
-        },
+          suggestions: [
+            { rawName: "Camila", userId: "user-1", name: "Camila Schütz" },
+            { rawName: "Eduarda", userId: null, name: null },
+          ],
+        }),
       ],
-      unresolvedAssignees: [],
     });
-
     expect(payload.tasks[0]).toMatchObject({
       assignmentType: "clan",
       assigneeId: null,
-      clanName: "Fiscal",
     });
+    expect(payload.tasks[0]?.suggestions).toHaveLength(2);
+  });
+
+  it("representa a missão pendente de decisão humana", () => {
+    const payload = informativeDraftPayloadSchema.parse({
+      ...draftBase,
+      tasks: [
+        draftTask({
+          assignmentType: "pending",
+          assigneeId: null,
+          assigneeName: null,
+          clanId: null,
+          clanName: null,
+          sector: null,
+          reason: "Sem setor de clã e sem pessoa indicada. Escolha o destino.",
+        }),
+      ],
+    });
+    expect(payload.tasks[0]?.assignmentType).toBe("pending");
+  });
+
+  it("recusa missão pendente que já traga um clã escolhido", () => {
+    expect(() =>
+      informativeDraftPayloadSchema.parse({
+        ...draftBase,
+        tasks: [
+          draftTask({
+            assignmentType: "pending",
+            assigneeId: null,
+            assigneeName: null,
+            clanId: CLAN_ID,
+            clanName: "Fiscal",
+            reason: "qualquer",
+          }),
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("guarda as observações que não viram missão", () => {
+    const payload = informativeDraftPayloadSchema.parse({
+      ...draftBase,
+      observations: ["Camila responde por todos os informativos da empresa."],
+      tasks: [],
+    });
+    expect(payload.observations).toHaveLength(1);
+  });
+
+  it("recusa rascunho no formato anterior, sem discriminador", () => {
+    expect(() =>
+      informativeDraftPayloadSchema.parse({
+        ...draftBase,
+        tasks: [
+          draftTask({
+            assigneeId: "user-1",
+            assigneeName: "Camila Schütz",
+            clanId: CLAN_ID,
+            clanName: "Fiscal",
+          }),
+        ],
+      }),
+    ).toThrow();
   });
 });

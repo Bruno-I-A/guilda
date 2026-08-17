@@ -17,28 +17,6 @@ export type InformativeMember = Readonly<{ userId: string; name: string }>;
 export type InformativeClient = Readonly<{ name: string }>;
 export type InformativeClan = Readonly<{ id: string; name: string }>;
 
-function normalizeDirectoryName(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-/** Resolve somente o nome completo e inequívoco de um clã ativo. */
-export function resolveInformativeClan(
-  requestedName: string,
-  clans: readonly InformativeClan[],
-): InformativeClan | null {
-  const requested = normalizeDirectoryName(requestedName);
-  if (!requested) return null;
-  const exact = clans.filter(
-    (clan) => normalizeDirectoryName(clan.name) === requested,
-  );
-  return exact.length === 1 ? exact[0] : null;
-}
-
 function todayInSaoPaulo(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
@@ -77,6 +55,7 @@ Regras:
 - A ordem das informações, quebras de linha, rótulos, pontuação e uso de lista não importam.
 - Preencha missingFields somente com informações realmente ausentes: company quando faltar o nome em uma abertura, alteração, baixa ou qualquer fechamento contábil; actions quando não houver trabalho pedido; responsible quando não houver uma pessoa nem um clã destinatário; due_date quando um closing_period não trouxer a data final do período. Missões gerais podem não ter empresa. Não invente esses dados.
 - Extraia somente ações ainda necessárias. Não crie missão para "segue sem alterações", "ativo", "cadastrada", informação histórica ou item já concluído. Termos como "efetuado", "feito", "finalizado" e "empresa baixada" indicam conclusão e devem ser ignorados.
+- SÓ LINHA DE AÇÃO VIRA MISSÃO. O discriminador é o verbo no infinitivo que abre a descrição da ação. Combinado permanente ("Camila responde por todos os informativos", "distribuição de lucros trimestral", "Rafa e Bruno acompanham a contabilidade") não tem conclusão possível: mande para ignoredNotes, nunca para tasks. Todo o bloco OBSERVAÇÕES vai para ignoredNotes.
 - Em baixas, linhas como "COBRANÇA – RECIBO" e "ATENDIMENTO – Jessica" apenas registram contexto e não são ações. Já verbos no infinitivo como finalizar, retirar, separar, confeccionar, coletar, escanear, salvar, recortar e mover indicam ações pendentes, salvo quando marcadas como efetuadas/concluídas.
 - Uma linha pode gerar várias ações. Preserve detalhes importantes na descrição.
 - Na solicitação curta, cada ação independente deve gerar uma missão. Se uma frase trouxer dois resultados independentes, como prefeitura e certificado digital, separe em duas missões.
@@ -89,11 +68,13 @@ Regras:
   - baixa + prefeitura/alvará: "Solicitar baixa municipal/alvará".
   Não invente providências além das ações pedidas.
 - Para solicitações curtas, campos CNPJ, regime, cidade e contato podem ficar null sem gerar warning. Use prioridade 2 e dificuldade 2 para prefeitura, alvará e certificado, salvo urgência ou complexidade explicitamente informada.
-- Use assignmentType individual quando a missão for destinada a uma ou mais pessoas. Nesse caso, clanName deve ser null e assignees deve conter SOMENTE nomes exatos do diretório de membros. Quando o texto mencionar duas pessoas (ex.: Rafa/Bruno), retorne as duas. Se não houver correspondência segura, preserve o nome mencionado; o servidor o marcará como não reconhecido.
-- Use assignmentType clan somente quando o texto destinar a missão a um clã/setor sem indicar qual pessoa fará o trabalho. Nesse caso, assignees deve ser vazio e clanName deve usar SOMENTE o nome exato do diretório de clãs ativos. Não transforme uma missão individual em missão de clã. Se o clã mencionado não estiver no diretório, preserve o nome pedido para o servidor recusá-lo com segurança.
+- VOCÊ NÃO ESCOLHE O DESTINO DA MISSÃO. Devolva apenas dois dados e o servidor decide: sector (o setor da linha, copiado como texto) e assignees (os nomes citados naquela linha).
+- sector: copie o rótulo do setor exatamente como aparece no informativo, sem numeração e sem asteriscos ("FISCAL / EMISSÃO DE NOTAS", "CONTABIL", "RH — PRÓ-LABORE", "CERTIFICADO DIGITAL", "AUTOMAÇÃO", "SERVIDOR", "ARQUIVO", "ADMINISTRATIVO"). Use null quando a linha não trouxer setor algum. Nunca invente um setor por semelhança com a linha anterior.
+- assignees: os nomes citados na linha (o "Att.", ou o nome antes da descrição). Prefira o nome exato do diretório de membros quando a correspondência for segura; quando não for, preserve o nome como está escrito — o servidor o marcará como não reconhecido. Duas pessoas na mesma linha (ex.: Rafa/Bruno) devolvem os dois nomes. Sem nome citado, devolva lista vazia.
 - Na solicitação curta, aplique o responsável informado a todas as ações, salvo quando uma ação indicar explicitamente outra pessoa. Reconheça construções naturais como "para o Bruno", "responsável Bruno", "o Bruno faz" e o nome usado como vocativo em "Oi Bruno, fiz a abertura... pode encaminhar".
-- Se uma ação necessária não tiver pessoa nem clã indicado, use assignmentType individual, assignees vazio e clanName null. Nunca deduza o destinatário por proximidade com outra linha.
-- Não invente prazo. dueDate deve ser null se o texto não trouxer uma data clara para concluir a ação. Quando houver dia e mês sem ano, use o ano da data de referência, mesmo que a data já tenha passado.
+- Quando o texto destinar o trabalho a um clã/setor sem dizer quem faz, preencha sector com o nome do clã e deixe assignees vazio.
+- Nunca deduza o destinatário por proximidade com outra linha. Sem setor e sem nome, devolva sector null e assignees vazio: o servidor vai pedir a decisão a um humano.
+- NÃO INVENTE PRAZO. dueDate deve ser null se o texto não trouxer uma data clara para CONCLUIR a ação. Data de abertura da empresa ("ABERTURA: 16/07/2026") é dado cadastral, não prazo. Não existe prazo padrão por setor. Quando houver dia e mês sem ano, use o ano da data de referência, mesmo que a data já tenha passado.
 - Prioridade: 1 baixa, 2 normal, 3 urgente/importante. Dificuldade: 1 simples a 5 complexa.
 - Títulos devem começar pelo assunto da ação, sem repetir o nome da empresa.
 - taxRegime: simples, presumido, association ou real; null se ausente.
@@ -107,12 +88,14 @@ Exemplos de interpretação:
 - "Bruno, fecha o balanço da Scharff até 31/07" é general_task, gera uma ação closing_period para Bruno, com dueDate em 31/07 do ano de referência, e usa a empresa inequívoca do diretório cujo nome contenha Scharff. Não fecha o ano inteiro.
 - "Bruno, encerre o exercício inteiro de 2025 da Scharff" é general_task com category annual_closing e closingYear 2025.
 - "Bruno, organize os documentos internos até sexta" é general_task com category general e não exige empresa.
-- "Clã Fiscal, confiram as obrigações do mês" é general_task com assignmentType clan, clanName Fiscal e assignees vazio.
+- "Clã Fiscal, confiram as obrigações do mês" é general_task com sector "Fiscal" e assignees vazio.
+- "FISCAL – Att. CAMILA – parametrizar o Fator R" tem sector "FISCAL" e assignees ["Camila"]. Não decida se a missão é do clã ou da Camila: isso é do servidor.
+- "Camila responde por todos os informativos da empresa" não é ação — vai para ignoredNotes.
 
 Diretório de membros da Guilda:
 ${memberDirectory || "(vazio)"}
 
-Diretório de clãs ativos da Guilda:
+Setores que correspondem a clãs da Guilda (use o nome como sector quando a linha citar um deles):
 ${clanDirectory || "(vazio)"}
 
 Diretório de clientes ativos:

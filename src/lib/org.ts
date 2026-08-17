@@ -100,11 +100,19 @@ export async function listOrgMembersWithResolvedClan(
   });
 }
 
-/** Clãs ativos da organização, sempre dentro do contexto RLS. */
+/**
+ * Clãs ativos da organização, sempre dentro do contexto RLS.
+ * O slug acompanha o nome porque é a chave estável do roteamento
+ * setor→clã (ver src/domain/clan-routing.ts).
+ */
 export async function listActiveClans(orgId: string) {
   return withOrgTx(orgId, (tx) =>
     tx
-      .select({ id: schema.clans.id, name: schema.clans.name })
+      .select({
+        id: schema.clans.id,
+        name: schema.clans.name,
+        slug: schema.clans.slug,
+      })
       .from(schema.clans)
       .where(and(eq(schema.clans.orgId, orgId), eq(schema.clans.active, true)))
       .orderBy(asc(schema.clans.name)),

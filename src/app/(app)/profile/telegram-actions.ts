@@ -34,6 +34,7 @@ const preferencesSchema = z.object({
   xpNotifications: z.boolean(),
   closingNotifications: z.boolean(),
   campaignNotifications: z.boolean(),
+  muralNotifications: z.boolean(),
   dailySummary: z.boolean(),
   dailySummaryTime: z
     .string()
@@ -196,6 +197,7 @@ export async function updateTelegramPreferences(
     xpNotifications: checkbox(formData, "xpNotifications"),
     closingNotifications: checkbox(formData, "closingNotifications"),
     campaignNotifications: checkbox(formData, "campaignNotifications"),
+    muralNotifications: checkbox(formData, "muralNotifications"),
     dailySummary: checkbox(formData, "dailySummary"),
     dailySummaryTime: String(formData.get("dailySummaryTime") ?? ""),
     timezone: String(formData.get("timezone") ?? ""),

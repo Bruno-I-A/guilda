@@ -20,6 +20,8 @@ export type CreateTaskRecordInput = {
   /** Temporariamente opcional para manter compatibilidade com integrações legadas. */
   clanId?: string | null;
   clientId?: string | null;
+  /** Informativo que originou a missão — agrupa o pacote da empresa. */
+  informativeId?: string | null;
   closingId?: string | null;
   closingYearId?: string | null;
   title: string;
@@ -90,6 +92,7 @@ export async function createTaskRecord(
       assigneeId: input.assigneeId,
       clanId: input.clanId ?? null,
       clientId: input.clientId ?? null,
+      informativeId: input.informativeId ?? null,
       closingId: input.closingId ?? null,
       closingYearId: input.closingYearId ?? null,
       title: input.title,

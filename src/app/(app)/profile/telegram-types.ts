@@ -19,6 +19,7 @@ export type TelegramPreferencesView = {
   xpNotifications: boolean;
   closingNotifications: boolean;
   campaignNotifications: boolean;
+  muralNotifications: boolean;
   dailySummary: boolean;
   dailySummaryTime: string;
   timezone: string;

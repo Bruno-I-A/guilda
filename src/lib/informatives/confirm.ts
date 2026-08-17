@@ -1,0 +1,566 @@
+import "server-only";
+
+import { and, eq } from "drizzle-orm";
+
+import { type OrgTx, withOrgTx } from "@/db/org-tx";
+import * as schema from "@/db/schema";
+import { resolveAssigneeClan } from "@/domain/clans";
+import {
+  informativeDraftPayloadSchema,
+  type InformativeDraftPayload,
+  type InformativeDraftTask,
+} from "@/lib/ai/informative-schema";
+import { newClientNoticeBody, publishGuildNotice } from "@/lib/mural/notices";
+import { createTaskRecord } from "@/lib/tasks/create";
+
+import type { InformativeActor } from "./draft";
+
+/**
+ * Confirmação transacional de um informativo — a única porta que cria
+ * missões. Compartilhada pelo bot do Telegram e pelo painel: o que muda é
+ * apenas de onde vem a decisão sobre as missões pendentes.
+ */
+
+export type InformativeResult =
+  | { ok: true; message: string; taskIds: string[] }
+  | { ok: false; message: string };
+
+/** Destino escolhido por um humano para uma missão pendente da prévia. */
+export interface InformativeTaskDecision {
+  index: number;
+  clanId?: string | null;
+  assigneeId?: string | null;
+}
+
+const TAX_REGIME_LABELS: Record<string, string> = {
+  simples: "Simples Nacional",
+  presumido: "Lucro Presumido",
+  association: "Associação",
+  real: "Lucro Real",
+};
+
+function dueDateOf(value: string | null): Date | null {
+  return value ? new Date(`${value}T12:00:00Z`) : null;
+}
+
+/** Campos comuns às três variantes — descarta o `reason` da pendente. */
+function draftCore(task: InformativeDraftTask) {
+  return {
+    category: task.category,
+    title: task.title,
+    description: task.description,
+    priority: task.priority,
+    difficulty: task.difficulty,
+    dueDate: task.dueDate,
+    closingYear: task.closingYear,
+    sourceSection: task.sourceSection,
+    sector: task.sector,
+    suggestions: task.suggestions,
+  };
+}
+
+function closingPeriodTitle(value: string): string {
+  const [, month, day] = value.split("-");
+  return `${day}/${month}`;
+}
+
+async function ensureClosingYear(
+  tx: OrgTx,
+  input: { orgId: string; clientId: string; year: number },
+): Promise<string> {
+  const existing = await tx.query.accountingClosingYears.findFirst({
+    where: and(
+      eq(schema.accountingClosingYears.orgId, input.orgId),
+      eq(schema.accountingClosingYears.clientId, input.clientId),
+      eq(schema.accountingClosingYears.year, input.year),
+    ),
+    columns: { id: true },
+  });
+  if (existing) return existing.id;
+
+  const [created] = await tx
+    .insert(schema.accountingClosingYears)
+    .values({
+      orgId: input.orgId,
+      clientId: input.clientId,
+      year: input.year,
+    })
+    .onConflictDoNothing()
+    .returning({ id: schema.accountingClosingYears.id });
+  if (created) return created.id;
+
+  const raced = await tx.query.accountingClosingYears.findFirst({
+    where: and(
+      eq(schema.accountingClosingYears.orgId, input.orgId),
+      eq(schema.accountingClosingYears.clientId, input.clientId),
+      eq(schema.accountingClosingYears.year, input.year),
+    ),
+    columns: { id: true },
+  });
+  if (!raced) throw new Error("Não foi possível preparar a campanha de fechamentos.");
+  return raced.id;
+}
+
+/**
+ * Aplica as decisões humanas às missões pendentes. Nada aqui confia na
+ * interface: o clã precisa estar ativo na org da sessão e a pessoa precisa
+ * ter vínculo ativo com um clã — a resolução é a mesma da transferência.
+ */
+async function applyPendingDecisions(
+  tx: OrgTx,
+  orgId: string,
+  tasks: InformativeDraftTask[],
+  decisions: readonly InformativeTaskDecision[],
+): Promise<{ ok: true; tasks: InformativeDraftTask[] } | { ok: false; message: string }> {
+  if (decisions.length === 0) return { ok: true, tasks };
+  const resolved = [...tasks];
+
+  for (const decision of decisions) {
+    const task = resolved[decision.index];
+    if (!task) return { ok: false, message: "Missão inexistente na prévia." };
+    if (task.assignmentType !== "pending") {
+      return { ok: false, message: "Só missões pendentes aceitam um novo destino." };
+    }
+
+    if (decision.assigneeId) {
+      const memberships = await tx
+        .select({
+          clanId: schema.clanMemberships.clanId,
+          clanName: schema.clans.name,
+          isPrimary: schema.clanMemberships.isPrimary,
+        })
+        .from(schema.clanMemberships)
+        .innerJoin(
+          schema.clans,
+          and(
+            eq(schema.clans.id, schema.clanMemberships.clanId),
+            eq(schema.clans.orgId, schema.clanMemberships.orgId),
+          ),
+        )
+        .innerJoin(
+          schema.member,
+          and(
+            eq(schema.member.userId, schema.clanMemberships.userId),
+            eq(schema.member.organizationId, schema.clanMemberships.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(schema.clanMemberships.orgId, orgId),
+            eq(schema.clanMemberships.userId, decision.assigneeId),
+            eq(schema.clans.orgId, orgId),
+            eq(schema.clans.active, true),
+            eq(schema.member.organizationId, orgId),
+          ),
+        );
+      const clanChoice = resolveAssigneeClan(memberships, decision.clanId ?? undefined);
+      if (!clanChoice.ok) return { ok: false, message: clanChoice.reason };
+      const clan = memberships.find(
+        (membership) => membership.clanId === clanChoice.clanId,
+      );
+      if (!clan) return { ok: false, message: "Clã de destino não localizado." };
+      const [person] = await tx
+        .select({ name: schema.user.name })
+        .from(schema.user)
+        .innerJoin(
+          schema.member,
+          and(
+            eq(schema.member.userId, schema.user.id),
+            eq(schema.member.organizationId, orgId),
+          ),
+        )
+        .where(eq(schema.user.id, decision.assigneeId))
+        .limit(1);
+      if (!person) return { ok: false, message: "A pessoa não pertence a esta organização." };
+
+      resolved[decision.index] = {
+        ...draftCore(task),
+        assignmentType: "individual",
+        assigneeId: decision.assigneeId,
+        assigneeName: person.name,
+        clanId: clan.clanId,
+        clanName: clan.clanName,
+      };
+      continue;
+    }
+
+    if (decision.clanId) {
+      const [clan] = await tx
+        .select({ id: schema.clans.id, name: schema.clans.name })
+        .from(schema.clans)
+        .where(
+          and(
+            eq(schema.clans.orgId, orgId),
+            eq(schema.clans.id, decision.clanId),
+            eq(schema.clans.active, true),
+          ),
+        )
+        .limit(1);
+      if (!clan) return { ok: false, message: "Clã ativo não encontrado." };
+      resolved[decision.index] = {
+        ...draftCore(task),
+        assignmentType: "clan",
+        assigneeId: null,
+        assigneeName: null,
+        clanId: clan.id,
+        clanName: clan.name,
+      };
+      continue;
+    }
+
+    return { ok: false, message: "Escolha um clã ou uma pessoa para a missão pendente." };
+  }
+
+  return { ok: true, tasks: resolved };
+}
+
+/**
+ * Cancela a prévia sem criar nada. Idempotente: cancelar duas vezes devolve
+ * a mesma resposta.
+ */
+export async function cancelInformative(
+  actor: InformativeActor,
+  informativeId: string,
+  options: { connectionId?: string | null } = {},
+): Promise<InformativeResult> {
+  return withOrgTx(actor.orgId, async (tx): Promise<InformativeResult> => {
+    const informative = await lockInformative(tx, actor, informativeId, options);
+    if (!informative.ok) return informative;
+    const row = informative.row;
+    if (row.status === "confirmed") {
+      return { ok: false, message: "Este informativo já criou missões." };
+    }
+    if (row.status === "cancelled") {
+      return { ok: true, message: "Prévia cancelada. Nenhuma missão foi criada.", taskIds: [] };
+    }
+    await tx
+      .update(schema.informatives)
+      .set({ status: "cancelled", decidedAt: new Date() })
+      .where(eq(schema.informatives.id, row.id));
+    return { ok: true, message: "Prévia cancelada. Nenhuma missão foi criada.", taskIds: [] };
+  });
+}
+
+async function lockInformative(
+  tx: OrgTx,
+  actor: InformativeActor,
+  informativeId: string,
+  options: { connectionId?: string | null },
+): Promise<
+  | { ok: true; row: typeof schema.informatives.$inferSelect }
+  | { ok: false; message: string }
+> {
+  const [row] = await tx
+    .select()
+    .from(schema.informatives)
+    .where(
+      and(
+        eq(schema.informatives.id, informativeId),
+        eq(schema.informatives.orgId, actor.orgId),
+        eq(schema.informatives.requestedBy, actor.userId),
+      ),
+    )
+    .for("update");
+  if (!row) return { ok: false, message: "Informativo não encontrado." };
+  // O Telegram exige que a decisão venha da mesma conversa que pediu a prévia.
+  if (options.connectionId && row.connectionId !== options.connectionId) {
+    return { ok: false, message: "Informativo não encontrado." };
+  }
+  return { ok: true, row };
+}
+
+export async function confirmInformative(
+  actor: InformativeActor,
+  informativeId: string,
+  options: {
+    connectionId?: string | null;
+    decisions?: readonly InformativeTaskDecision[];
+  } = {},
+): Promise<InformativeResult> {
+  return withOrgTx(actor.orgId, async (tx): Promise<InformativeResult> => {
+    const locked = await lockInformative(tx, actor, informativeId, options);
+    if (!locked.ok) return locked;
+    const informative = locked.row;
+
+    if (informative.status === "confirmed") {
+      return {
+        ok: true,
+        message: "Este informativo já criou missões.",
+        taskIds: Array.isArray(informative.createdTaskIds)
+          ? (informative.createdTaskIds as string[])
+          : [],
+      };
+    }
+    if (informative.status !== "pending") {
+      return { ok: false, message: "Esta prévia já foi cancelada." };
+    }
+    if (informative.expiresAt <= new Date()) {
+      return { ok: false, message: "A prévia expirou. Envie o informativo novamente." };
+    }
+
+    const parsed = informativeDraftPayloadSchema.safeParse(informative.payload);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        message:
+          "Esta prévia usa um formato anterior ou está inválida. Envie o informativo novamente para gerar outra.",
+      };
+    }
+    const payload: InformativeDraftPayload = parsed.data;
+    if (payload.unresolvedAssignees.length) {
+      return {
+        ok: false,
+        message:
+          "Existem responsáveis sem clã ativo. Corrija o cadastro e gere outra prévia.",
+      };
+    }
+
+    const decided = await applyPendingDecisions(
+      tx,
+      actor.orgId,
+      [...payload.tasks],
+      options.decisions ?? [],
+    );
+    if (!decided.ok) return decided;
+    const tasks = decided.tasks;
+
+    if (tasks.length === 0) {
+      return { ok: false, message: "Nenhuma missão válida nesta prévia." };
+    }
+    if (tasks.some((task) => task.assignmentType === "pending")) {
+      return {
+        ok: false,
+        message: "Escolha o clã ou a pessoa das missões pendentes antes de criar.",
+      };
+    }
+
+    const activeMembershipRows = await tx
+      .select({
+        userId: schema.clanMemberships.userId,
+        clanId: schema.clanMemberships.clanId,
+      })
+      .from(schema.clanMemberships)
+      .innerJoin(
+        schema.clans,
+        and(
+          eq(schema.clans.id, schema.clanMemberships.clanId),
+          eq(schema.clans.orgId, schema.clanMemberships.orgId),
+        ),
+      )
+      .innerJoin(
+        schema.member,
+        and(
+          eq(schema.member.userId, schema.clanMemberships.userId),
+          eq(schema.member.organizationId, schema.clanMemberships.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(schema.clanMemberships.orgId, actor.orgId),
+          eq(schema.clans.orgId, actor.orgId),
+          eq(schema.clans.active, true),
+          eq(schema.member.organizationId, actor.orgId),
+        ),
+      );
+    const activeClanRows = await tx
+      .select({ clanId: schema.clans.id })
+      .from(schema.clans)
+      .where(
+        and(eq(schema.clans.orgId, actor.orgId), eq(schema.clans.active, true)),
+      );
+    const activeMembershipKeys = new Set(
+      activeMembershipRows.map((row) => `${row.userId}:${row.clanId}`),
+    );
+    const activeClanIds = new Set(activeClanRows.map((row) => row.clanId));
+    if (
+      tasks.some(
+        (task) =>
+          !task.clanId ||
+          !activeClanIds.has(task.clanId) ||
+          (task.assignmentType === "individual" &&
+            !activeMembershipKeys.has(`${task.assigneeId}:${task.clanId}`)),
+      )
+    ) {
+      return {
+        ok: false,
+        message:
+          "Um clã deixou de estar ativo ou um responsável não pertence mais ao clã selecionado. Gere outra prévia.",
+      };
+    }
+
+    let clientId: string | null = null;
+    if (payload.company.clientId) {
+      const existing = await tx.query.clients.findFirst({
+        where: and(
+          eq(schema.clients.id, payload.company.clientId),
+          eq(schema.clients.orgId, actor.orgId),
+          eq(schema.clients.active, true),
+        ),
+        columns: { id: true },
+      });
+      clientId = existing?.id ?? null;
+    }
+    let createdClient = false;
+    if (
+      !clientId &&
+      payload.company.createClient &&
+      payload.company.legalName &&
+      payload.company.taxRegime &&
+      payload.company.normalizedCnpj
+    ) {
+      const [client] = await tx
+        .insert(schema.clients)
+        .values({
+          orgId: actor.orgId,
+          name: payload.company.legalName,
+          cnpj: payload.company.normalizedCnpj,
+          taxRegime: payload.company.taxRegime,
+        })
+        .onConflictDoNothing()
+        .returning({ id: schema.clients.id });
+      clientId = client?.id ?? null;
+      createdClient = Boolean(client);
+      if (!clientId && payload.company.normalizedCnpj) {
+        const existing = await tx.query.clients.findFirst({
+          where: and(
+            eq(schema.clients.orgId, actor.orgId),
+            eq(schema.clients.cnpj, payload.company.normalizedCnpj),
+          ),
+          columns: { id: true },
+        });
+        clientId = existing?.id ?? null;
+      }
+    }
+    if (
+      tasks.some(
+        (task) =>
+          (task.category === "closing_period" && (!clientId || !task.dueDate)) ||
+          (task.category === "annual_closing" && (!clientId || !task.closingYear)),
+      )
+    ) {
+      return {
+        ok: false,
+        message:
+          "O fechamento perdeu o vínculo com a empresa, o período ou o ano. Gere outra prévia.",
+      };
+    }
+
+    const taskIds: string[] = [];
+    const periodClosingIds = new Map<string, string>();
+    for (const task of tasks) {
+      let closingId: string | null = null;
+      let closingYearId: string | null = null;
+      if (task.category === "closing_period") {
+        if (!clientId || !task.dueDate) throw new Error("Período de fechamento inválido.");
+        const closingKey = `${clientId}:${task.dueDate}:${task.title}`;
+        closingId = periodClosingIds.get(closingKey) ?? null;
+        if (!closingId) {
+          const [createdClosing] = await tx
+            .insert(schema.accountingClosings)
+            .values({
+              orgId: actor.orgId,
+              clientId,
+              title: closingPeriodTitle(task.dueDate),
+              dueDate: task.dueDate,
+              status: "pending",
+              notes: task.description,
+              createdBy: actor.userId,
+            })
+            .returning({ id: schema.accountingClosings.id });
+          closingId = createdClosing.id;
+          periodClosingIds.set(closingKey, closingId);
+        }
+      } else if (task.category === "annual_closing") {
+        if (!clientId || !task.closingYear) throw new Error("Fechamento anual inválido.");
+        closingYearId = await ensureClosingYear(tx, {
+          orgId: actor.orgId,
+          clientId,
+          year: task.closingYear,
+        });
+      }
+      const companySuffix = payload.company.legalName
+        ? ` — ${payload.company.legalName}`
+        : "";
+      const created = await createTaskRecord(tx, {
+        orgId: actor.orgId,
+        creatorId: actor.userId,
+        assigneeId: task.assigneeId,
+        clanId: task.clanId,
+        clientId: clientId ?? null,
+        informativeId: informative.id,
+        closingId,
+        closingYearId,
+        title: `${task.title}${companySuffix}`.slice(0, 200),
+        description: task.description,
+        priority: task.priority,
+        difficulty: task.difficulty,
+        dueDate: dueDateOf(task.dueDate),
+      });
+      taskIds.push(created.id);
+
+      // O "Att." do informativo fica registrado como sugestão, inclusive
+      // quando o nome não foi reconhecido — é a trilha que o líder lê.
+      if (task.suggestions.length > 0) {
+        await tx.insert(schema.taskAssigneeSuggestions).values(
+          task.suggestions.map((suggestion) => ({
+            orgId: actor.orgId,
+            taskId: created.id,
+            userId: suggestion.userId,
+            rawName: suggestion.rawName.slice(0, 200),
+          })),
+        );
+      }
+    }
+
+    // Aviso de empresa nova na MESMA transação, idempotente pelo índice
+    // parcial: reconfirmar o informativo não gera um segundo aviso.
+    let noticePublished = false;
+    if (payload.kind === "new_client" && clientId && payload.company.legalName) {
+      const notice = await publishGuildNotice(tx, {
+        orgId: actor.orgId,
+        authorId: actor.userId,
+        kind: "new_client",
+        title: `Nova empresa: ${payload.company.legalName}`,
+        body: newClientNoticeBody({
+          legalName: payload.company.legalName,
+          cnpj: payload.company.normalizedCnpj,
+          taxRegime: payload.company.taxRegime
+            ? TAX_REGIME_LABELS[payload.company.taxRegime] ?? payload.company.taxRegime
+            : null,
+          city: payload.company.city,
+          contact: payload.company.contact,
+          summary: payload.company.summary,
+          observations: payload.observations,
+          taskCount: taskIds.length,
+        }),
+        clientId,
+        informativeId: informative.id,
+        requiresAck: true,
+      });
+      noticePublished = Boolean(notice);
+    }
+
+    await tx
+      .update(schema.informatives)
+      .set({
+        status: "confirmed",
+        decidedAt: new Date(),
+        createdTaskIds: taskIds,
+      })
+      .where(eq(schema.informatives.id, informative.id));
+
+    const missionMessage = payload.company.legalName
+      ? `${taskIds.length} missão(ões) criada(s) para ${payload.company.legalName}.`
+      : `${taskIds.length} missão(ões) criada(s).`;
+    const closingMessage = periodClosingIds.size
+      ? ` ${periodClosingIds.size} período(s) pendente(s) adicionado(s) aos fechamentos.`
+      : "";
+    const clientMessage = createdClient ? " Empresa cadastrada no painel." : "";
+    const noticeMessage = noticePublished ? " Aviso publicado no mural." : "";
+    return {
+      ok: true,
+      message: `${missionMessage}${closingMessage}${clientMessage}${noticeMessage}`,
+      taskIds,
+    };
+  });
+}

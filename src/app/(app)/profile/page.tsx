@@ -47,6 +47,7 @@ const DEFAULT_TELEGRAM_PREFERENCES: TelegramPreferencesView = {
   xpNotifications: true,
   closingNotifications: true,
   campaignNotifications: true,
+  muralNotifications: true,
   dailySummary: false,
   dailySummaryTime: "08:00",
   timezone: "America/Sao_Paulo",
@@ -159,6 +160,7 @@ export default async function ProfilePage() {
                 closingNotifications: telegramData.preferences.closingNotifications,
                 campaignNotifications:
                   telegramData.preferences.campaignNotifications,
+                muralNotifications: telegramData.preferences.muralNotifications,
                 dailySummary: telegramData.preferences.dailySummary,
                 dailySummaryTime: telegramData.preferences.dailySummaryTime,
                 timezone: telegramData.preferences.timezone,

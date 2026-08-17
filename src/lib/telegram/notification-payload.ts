@@ -5,6 +5,7 @@ export type TelegramPreferenceKey =
   | "xp"
   | "closings"
   | "campaigns"
+  | "mural"
   | "daily_summary";
 
 export interface TelegramNotificationButton {
@@ -38,6 +39,7 @@ export function isTelegramNotificationPayload(
       "xp",
       "closings",
       "campaigns",
+      "mural",
       "daily_summary",
     ].includes(String(payload.preference))
   ) {

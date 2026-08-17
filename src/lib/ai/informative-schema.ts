@@ -18,18 +18,15 @@ const informativeTaskCoreSchema = z.object({
   sourceSection: z.string().trim().min(1).max(1000),
 });
 
-const informativeExtractionTaskSchema = z.discriminatedUnion("assignmentType", [
-  informativeTaskCoreSchema.extend({
-    assignmentType: z.literal("individual"),
-    assignees: z.array(z.string().trim().min(1).max(200)).max(8),
-    clanName: z.null(),
-  }),
-  informativeTaskCoreSchema.extend({
-    assignmentType: z.literal("clan"),
-    assignees: z.array(z.string().trim().min(1).max(200)).max(0),
-    clanName: z.string().trim().min(1).max(100),
-  }),
-]);
+/**
+ * A IA NÃO escolhe mais entre missão individual e missão de clã: devolve o
+ * setor como texto e os nomes citados. Quem decide o destino é a função pura
+ * `routeInformativeTask` no servidor (ver src/domain/clan-routing.ts).
+ */
+const informativeExtractionTaskSchema = informativeTaskCoreSchema.extend({
+  sector: nullableText(120),
+  assignees: z.array(z.string().trim().min(1).max(200)).max(8),
+});
 
 export const informativeExtractionSchema = z.object({
   isMissionRequest: z.boolean(),
@@ -45,9 +42,7 @@ export const informativeExtractionSchema = z.object({
     contact: nullableText(160),
     summary: nullableText(1200),
   }),
-  tasks: z
-    .array(informativeExtractionTaskSchema)
-    .max(30),
+  tasks: z.array(informativeExtractionTaskSchema).max(30),
   ignoredNotes: z.array(z.string().trim().min(1).max(500)).max(30),
   warnings: z.array(z.string().trim().min(1).max(500)).max(20),
   missingFields: z
@@ -57,21 +52,48 @@ export const informativeExtractionSchema = z.object({
 
 export type InformativeExtraction = z.infer<typeof informativeExtractionSchema>;
 
-const individualDraftTaskSchema = informativeTaskCoreSchema.extend({
-  // Rascunhos individuais gerados antes do discriminador continuam válidos.
-  assignmentType: z.literal("individual").default("individual"),
+/** "Att. FULANO" já confrontado com o diretório de membros da Guilda. */
+const assigneeSuggestionSchema = z.object({
+  rawName: z.string().min(1).max(200),
+  userId: z.string().min(1).nullable(),
+  name: z.string().min(1).max(200).nullable(),
+});
+
+export type AssigneeSuggestionPayload = z.infer<typeof assigneeSuggestionSchema>;
+
+const draftTaskCoreSchema = informativeTaskCoreSchema.extend({
+  sector: z.string().max(120).nullable(),
+  suggestions: z.array(assigneeSuggestionSchema).max(8),
+});
+
+const individualDraftTaskSchema = draftTaskCoreSchema.extend({
+  assignmentType: z.literal("individual"),
   assigneeId: z.string().min(1),
   assigneeName: z.string().min(1).max(200),
   clanId: z.string().uuid(),
   clanName: z.string().min(1).max(100),
 });
 
-const clanDraftTaskSchema = informativeTaskCoreSchema.extend({
+const clanDraftTaskSchema = draftTaskCoreSchema.extend({
   assignmentType: z.literal("clan"),
   assigneeId: z.null(),
   assigneeName: z.null(),
   clanId: z.string().uuid(),
   clanName: z.string().min(1).max(100),
+});
+
+/**
+ * Sem clã e sem nome reconhecido: a missão NÃO é criada até um humano
+ * escolher o destino na prévia. Nunca adivinhar por proximidade com a linha
+ * anterior.
+ */
+const pendingDraftTaskSchema = draftTaskCoreSchema.extend({
+  assignmentType: z.literal("pending"),
+  assigneeId: z.null(),
+  assigneeName: z.null(),
+  clanId: z.null(),
+  clanName: z.null(),
+  reason: z.string().min(1).max(300),
 });
 
 export const informativeDraftPayloadSchema = informativeExtractionSchema
@@ -85,9 +107,18 @@ export const informativeDraftPayloadSchema = informativeExtractionSchema
       createClient: z.boolean(),
     }),
     tasks: z
-      .array(z.union([individualDraftTaskSchema, clanDraftTaskSchema]))
+      .array(
+        z.union([
+          individualDraftTaskSchema,
+          clanDraftTaskSchema,
+          pendingDraftTaskSchema,
+        ]),
+      )
       .max(60),
+    /** Linhas do informativo que não são ação — corpo do aviso no mural. */
+    observations: z.array(z.string().trim().min(1).max(500)).max(30),
     unresolvedAssignees: z.array(z.string().min(1).max(200)).max(30),
   });
 
 export type InformativeDraftPayload = z.infer<typeof informativeDraftPayloadSchema>;
+export type InformativeDraftTask = InformativeDraftPayload["tasks"][number];

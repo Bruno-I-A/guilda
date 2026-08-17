@@ -71,7 +71,9 @@ export async function enqueueTelegramNotificationIfEnabled(
               ? preferences?.closingNotifications ?? true
               : input.payload.preference === "campaigns"
                 ? preferences?.campaignNotifications ?? true
-                : preferences?.dailySummary ?? false;
+                : input.payload.preference === "mural"
+                  ? preferences?.muralNotifications ?? true
+                  : preferences?.dailySummary ?? false;
   if (!preferenceEnabled) return;
 
   await tx

@@ -71,6 +71,11 @@ const NOTIFICATION_OPTIONS = [
     label: "Campanhas",
     description: "Início, andamento e conclusão de campanhas.",
   },
+  {
+    name: "muralNotifications",
+    label: "Mural da Guilda",
+    description: "Avisos que exigem a sua confirmação de leitura.",
+  },
 ] as const;
 
 const TIMEZONES = [

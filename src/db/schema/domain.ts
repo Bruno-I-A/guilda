@@ -757,6 +757,9 @@ export const telegramPreferences = pgTable(
     campaignNotifications: boolean("campaign_notifications")
       .notNull()
       .default(true),
+    // Avisos do Mural que exigem confirmação de leitura. Aviso sem
+    // requires_ack nunca notifica — senão o mural vira spam.
+    muralNotifications: boolean("mural_notifications").notNull().default(true),
     dailySummary: boolean("daily_summary").notNull().default(false),
     dailySummaryTime: time("daily_summary_time").notNull().default("08:00:00"),
     timezone: varchar("timezone", { length: 64 })
