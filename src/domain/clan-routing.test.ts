@@ -1,0 +1,320 @@
+import { describe, expect, test } from "vitest";
+
+import {
+  normalizeSectorText,
+  resolveSectorClan,
+  routeInformativeTask,
+  stripSectorDecorations,
+  type AssigneeSuggestion,
+  type RoutingClan,
+} from "./clan-routing";
+
+/** Os cinco clãs fixos da Guilda — nunca criar novos para acomodar setor. */
+const CLANS: RoutingClan[] = [
+  { id: "clan-fiscal", name: "Fiscal", slug: "fiscal" },
+  { id: "clan-contabil", name: "Contabilidade", slug: "contabilidade" },
+  { id: "clan-rh", name: "RH", slug: "rh" },
+  { id: "clan-societario", name: "Societário", slug: "societario" },
+  { id: "clan-financeiro", name: "Financeiro", slug: "financeiro" },
+];
+
+function known(rawName: string, userId: string): AssigneeSuggestion {
+  return { rawName, userId, name: rawName };
+}
+
+function unknown(rawName: string): AssigneeSuggestion {
+  return { rawName, userId: null, name: null };
+}
+
+describe("normalização do setor", () => {
+  test("remove acento, caixa e pontuação", () => {
+    expect(normalizeSectorText("PRÓ-LABORE")).toBe("pro labore");
+    expect(normalizeSectorText("Certificado Digital")).toBe("certificado digital");
+  });
+
+  test("remove numeração e negrito do WhatsApp", () => {
+    expect(stripSectorDecorations("5.0 – *COBRANÇA")).toBe("COBRANÇA");
+    expect(stripSectorDecorations("1.1 - FISCAL")).toBe("FISCAL");
+  });
+});
+
+describe("tabela de sinônimos setor→clã", () => {
+  test.each([
+    ["CONTABIL", "clan-contabil"],
+    ["EMISSÃO DE NOTAS", "clan-fiscal"],
+    ["INFORMATIVOS", "clan-fiscal"],
+    ["COBRANÇA", "clan-financeiro"],
+    ["HONORÁRIO", "clan-financeiro"],
+    ["PRÓ-LABORE", "clan-rh"],
+    ["ABERTURA", "clan-societario"],
+    ["ALTERAÇÃO", "clan-societario"],
+    ["BAIXA", "clan-societario"],
+  ])("%s roteia para o clã", (sector, clanId) => {
+    expect(resolveSectorClan(sector, CLANS)?.id).toBe(clanId);
+  });
+
+  test("aceita o nome do próprio clã", () => {
+    expect(resolveSectorClan("Societário", CLANS)?.id).toBe("clan-societario");
+    expect(resolveSectorClan("rh", CLANS)?.id).toBe("clan-rh");
+  });
+
+  test.each([
+    "CERTIFICADO DIGITAL",
+    "AUTOMAÇÃO",
+    "SERVIDOR",
+    "ARQUIVO",
+    "Administrativo",
+  ])("%s não vira clã — os clãs continuam sendo cinco", (sector) => {
+    expect(resolveSectorClan(sector, CLANS)).toBeNull();
+  });
+
+  test("rótulo composto com segmentos do mesmo clã resolve", () => {
+    expect(
+      resolveSectorClan("FISCAL / EMISSÃO DE NOTAS / INFORMATIVOS", CLANS)?.id,
+    ).toBe("clan-fiscal");
+    expect(resolveSectorClan("COBRANÇA / HONORÁRIO", CLANS)?.id).toBe(
+      "clan-financeiro",
+    );
+    expect(resolveSectorClan("RH — PRÓ-LABORE", CLANS)?.id).toBe("clan-rh");
+  });
+
+  test("segmentos que apontam para clãs diferentes não são adivinhados", () => {
+    expect(resolveSectorClan("FISCAL / CONTABIL", CLANS)).toBeNull();
+  });
+
+  test("setor vazio ou ausente não resolve", () => {
+    expect(resolveSectorClan(null, CLANS)).toBeNull();
+    expect(resolveSectorClan("   ", CLANS)).toBeNull();
+  });
+
+  test("clã inativo fora da lista não é alcançável", () => {
+    const semRh = CLANS.filter((clan) => clan.slug !== "rh");
+    expect(resolveSectorClan("PRÓ-LABORE", semRh)).toBeNull();
+  });
+});
+
+describe("regra de roteamento — as três linhas da tabela", () => {
+  test("1. setor com clã: nasce do clã, sem responsável, mesmo com Att.", () => {
+    const route = routeInformativeTask({
+      sector: "FISCAL",
+      suggestions: [known("Camila", "user-camila")],
+      clans: CLANS,
+    });
+    expect(route).toEqual({ outcome: "clan", clan: CLANS[0] });
+  });
+
+  test("2. sem clã mas com nome reconhecido: missão individual", () => {
+    const route = routeInformativeTask({
+      sector: "CERTIFICADO DIGITAL",
+      suggestions: [known("Bruno", "user-bruno")],
+      clans: CLANS,
+    });
+    expect(route.outcome).toBe("individual");
+    if (route.outcome !== "individual") throw new Error("rota inesperada");
+    expect(route.assignees.map((person) => person.userId)).toEqual(["user-bruno"]);
+  });
+
+  test("3. sem clã e sem nome: pendente de decisão humana", () => {
+    const route = routeInformativeTask({
+      sector: "WHATSAPP / BOAS-VINDAS",
+      suggestions: [],
+      clans: CLANS,
+    });
+    expect(route.outcome).toBe("pending");
+  });
+
+  test("nomes múltiplos sem clã geram uma missão por pessoa reconhecida", () => {
+    const route = routeInformativeTask({
+      sector: "ARQUIVO",
+      suggestions: [known("Rafa", "user-rafa"), known("Bruno", "user-bruno")],
+      clans: CLANS,
+    });
+    expect(route.outcome).toBe("individual");
+    if (route.outcome !== "individual") throw new Error("rota inesperada");
+    expect(route.assignees).toHaveLength(2);
+  });
+
+  test("a mesma pessoa citada duas vezes não duplica a missão", () => {
+    const route = routeInformativeTask({
+      sector: "SERVIDOR",
+      suggestions: [known("Bruno", "user-bruno"), known("bruno", "user-bruno")],
+      clans: CLANS,
+    });
+    expect(route.outcome).toBe("individual");
+    if (route.outcome !== "individual") throw new Error("rota inesperada");
+    expect(route.assignees).toHaveLength(1);
+  });
+
+  test("nome desconhecido sem clã fica pendente e preserva o nome citado", () => {
+    const route = routeInformativeTask({
+      sector: "AUTOMAÇÃO",
+      suggestions: [unknown("Jurandir")],
+      clans: CLANS,
+    });
+    expect(route.outcome).toBe("pending");
+    if (route.outcome !== "pending") throw new Error("rota inesperada");
+    expect(route.reason).toContain("Jurandir");
+  });
+
+  test("nome desconhecido junto de um reconhecido não bloqueia a missão", () => {
+    const route = routeInformativeTask({
+      sector: "ARQUIVO",
+      suggestions: [unknown("Jurandir"), known("Eduarda", "user-eduarda")],
+      clans: CLANS,
+    });
+    expect(route.outcome).toBe("individual");
+    if (route.outcome !== "individual") throw new Error("rota inesperada");
+    expect(route.assignees.map((person) => person.userId)).toEqual([
+      "user-eduarda",
+    ]);
+  });
+});
+
+/**
+ * Informativo real da PICCOLI AGRO (2026-08-17), no formato antigo do
+ * WhatsApp. O resultado esperado é o da spec: 5 para clã, 5 direto, 1 pendente.
+ */
+describe("informativo real da PICCOLI — formato antigo", () => {
+  const PEOPLE: Record<string, string> = {
+    Camila: "user-camila",
+    Eduarda: "user-eduarda",
+    Carol: "user-carol",
+    Jenifer: "user-jenifer",
+    Rafa: "user-rafa",
+    Bruno: "user-bruno",
+    Fabi: "user-fabi",
+  };
+  const suggest = (...names: string[]): AssigneeSuggestion[] =>
+    names.map((name) =>
+      PEOPLE[name] ? known(name, PEOPLE[name]) : unknown(name),
+    );
+
+  const LINES: Array<{
+    sector: string;
+    names: string[];
+    expected: "clan" | "individual" | "pending";
+    clanId?: string;
+  }> = [
+    {
+      sector: "1.1 – *FISCAL / EMISSÃO DE NOTAS / INFORMATIVOS",
+      names: ["Camila", "Eduarda"],
+      expected: "clan",
+      clanId: "clan-fiscal",
+    },
+    {
+      sector: "2.0 - RH — PRÓ-LABORE",
+      names: ["Carol", "Jenifer"],
+      expected: "clan",
+      clanId: "clan-rh",
+    },
+    {
+      sector: "3.0 – CONTABIL",
+      names: ["Rafa", "Bruno"],
+      expected: "clan",
+      clanId: "clan-contabil",
+    },
+    {
+      sector: "5.0 – *COBRANÇA / HONORÁRIO",
+      names: ["Camila"],
+      expected: "clan",
+      clanId: "clan-financeiro",
+    },
+    {
+      sector: "1.2 – *FISCAL",
+      names: ["Camila"],
+      expected: "clan",
+      clanId: "clan-fiscal",
+    },
+    {
+      sector: "4.0 – CERTIFICADO DIGITAL",
+      names: ["Bruno"],
+      expected: "individual",
+    },
+    {
+      sector: "6.0 – AUTOMAÇÃO FABI – ONVIO",
+      names: ["Fabi"],
+      expected: "individual",
+    },
+    {
+      sector: "6.0 – AUTOMAÇÃO – VERI",
+      names: ["Bruno"],
+      expected: "individual",
+    },
+    { sector: "7.0 - SERVIDOR", names: ["Bruno"], expected: "individual" },
+    { sector: "8.0 – ARQUIVO", names: ["Eduarda"], expected: "individual" },
+    {
+      sector: "9.0 – WHATSAPP / BOAS-VINDAS",
+      names: [],
+      expected: "pending",
+    },
+  ];
+
+  test.each(LINES)("$sector → $expected", ({ sector, names, expected, clanId }) => {
+    const route = routeInformativeTask({
+      sector,
+      suggestions: suggest(...names),
+      clans: CLANS,
+    });
+    expect(route.outcome).toBe(expected);
+    if (route.outcome === "clan" && clanId) {
+      expect(route.clan.id).toBe(clanId);
+    }
+  });
+
+  test("o informativo inteiro dá 5 de clã, 5 diretas e 1 pendente", () => {
+    const outcomes = LINES.map(
+      ({ sector, names }) =>
+        routeInformativeTask({
+          sector,
+          suggestions: suggest(...names),
+          clans: CLANS,
+        }).outcome,
+    );
+    expect(outcomes.filter((outcome) => outcome === "clan")).toHaveLength(5);
+    expect(outcomes.filter((outcome) => outcome === "individual")).toHaveLength(5);
+    expect(outcomes.filter((outcome) => outcome === "pending")).toHaveLength(1);
+  });
+
+  test("nenhuma linha do informativo é roteada para fora dos cinco clãs", () => {
+    for (const { sector } of LINES) {
+      const clan = resolveSectorClan(sector, CLANS);
+      if (clan) expect(CLANS).toContain(clan);
+    }
+  });
+});
+
+/** O mesmo informativo reescrito no formato recomendado pela spec. */
+describe("informativo da PICCOLI — formato novo", () => {
+  const PEOPLE: Record<string, string> = {
+    Camila: "user-camila",
+    Eduarda: "user-eduarda",
+    Bruno: "user-bruno",
+    Fabi: "user-fabi",
+  };
+  const LINES: Array<[string, string[], string]> = [
+    ["Fiscal", ["Camila"], "clan"],
+    ["Fiscal", ["Eduarda"], "clan"],
+    ["RH", [], "clan"],
+    ["Contabilidade", [], "clan"],
+    ["Financeiro", ["Camila"], "clan"],
+    ["Certificado digital", ["Bruno"], "individual"],
+    ["Automação", ["Fabi"], "individual"],
+    ["Automação", ["Bruno"], "individual"],
+    ["Servidor", ["Bruno"], "individual"],
+    ["Arquivo", ["Eduarda"], "individual"],
+    ["Administrativo", ["Eduarda"], "individual"],
+  ];
+
+  test("5 para clã, 6 diretas e nenhuma pendente", () => {
+    const outcomes = LINES.map(([sector, names]) =>
+      routeInformativeTask({
+        sector,
+        suggestions: names.map((name) => known(name, PEOPLE[name])),
+        clans: CLANS,
+      }).outcome,
+    );
+    expect(outcomes.filter((outcome) => outcome === "clan")).toHaveLength(5);
+    expect(outcomes.filter((outcome) => outcome === "individual")).toHaveLength(6);
+    expect(outcomes.filter((outcome) => outcome === "pending")).toHaveLength(0);
+  });
+});
