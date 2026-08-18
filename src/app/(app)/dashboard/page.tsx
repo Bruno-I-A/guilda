@@ -83,8 +83,10 @@ export default async function DashboardPage() {
         orderBy: [desc(schema.tasks.createdAt)],
         limit: 50,
       });
-      const clans = await clanIds.length
-        ? tx.query.tasks.findMany({
+      // Ternario com await precisa do await DENTRO do ramo: `await a ? b : c`
+      // seria lido como `(await a) ? b : c` e devolveria a query sem executar.
+      const clans = clanIds.length
+        ? await tx.query.tasks.findMany({
             where: and(
               eq(schema.tasks.orgId, session.orgId),
               inArray(schema.tasks.clanId, clanIds),
@@ -109,7 +111,7 @@ export default async function DashboardPage() {
             orderBy: [desc(schema.tasks.createdAt)],
             limit: 50,
           })
-        : Promise.resolve([]);
+        : [];
 
       return {
         memberCount: guildStats?.memberCount ?? 0,
