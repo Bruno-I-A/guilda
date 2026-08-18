@@ -30,6 +30,7 @@ function instructions(
   members: InformativeMember[],
   clients: InformativeClient[],
   clans: InformativeClan[],
+  isNewClientOnboarding: boolean,
 ): string {
   const memberDirectory = members.map((member) => `- ${member.name}`).join("\n");
   const clientDirectory = clients.map((client) => `- ${client.name}`).join("\n");
@@ -55,7 +56,12 @@ Regras:
 - A ordem das informações, quebras de linha, rótulos, pontuação e uso de lista não importam.
 - Preencha missingFields somente com informações realmente ausentes: company quando faltar o nome em uma abertura, alteração, baixa ou qualquer fechamento contábil; actions quando não houver trabalho pedido; responsible quando não houver uma pessoa nem um clã destinatário; due_date quando um closing_period não trouxer a data final do período. Missões gerais podem não ter empresa. Não invente esses dados.
 - Extraia somente ações ainda necessárias. Não crie missão para "segue sem alterações", "ativo", "cadastrada", informação histórica ou item já concluído. Termos como "efetuado", "feito", "finalizado" e "empresa baixada" indicam conclusão e devem ser ignorados.
-- SÓ LINHA DE AÇÃO VIRA MISSÃO. O discriminador é o verbo no infinitivo que abre a descrição da ação. Combinado permanente ("Camila responde por todos os informativos", "distribuição de lucros trimestral", "Rafa e Bruno acompanham a contabilidade") não tem conclusão possível: mande para ignoredNotes, nunca para tasks. Todo o bloco OBSERVAÇÕES vai para ignoredNotes.
+- SÓ LINHA DE AÇÃO VIRA MISSÃO. O discriminador é o verbo no infinitivo que abre a descrição da ação. Combinado permanente ("Camila responde por todos os informativos", "distribuição de lucros trimestral", "Rafa e Bruno acompanham a contabilidade") não tem conclusão possível: mande para ignoredNotes, nunca para tasks. Todo o bloco OBSERVAÇÕES vai para ignoredNotes.${
+    isNewClientOnboarding
+      ? `
+- EXCEÇÃO — CADASTRO DE CLIENTE NOVO: esta mensagem cadastra um cliente que ainda não existe no sistema, então nada do que ela descreve já está configurado. Uma frase que seria "combinado permanente" para um cliente já cadastrado (ex.: "distribuição de lucros de 20 mil por mês", "pró-labore de X", "Fator R já parametrizado") aqui significa que alguém precisa CONFIGURAR essa política pela primeira vez: gere uma missão "Configurar [o que a linha descreve]" para o setor/pessoa citada na linha. Só NÃO gere missão quando a linha for uma negação pura, sem nada a configurar (ex.: "sem pró-labore", "sem particularidades", "nenhuma pendência").`
+      : ""
+  }
 - Em baixas, linhas como "COBRANÇA – RECIBO" e "ATENDIMENTO – Jessica" apenas registram contexto e não são ações. Já verbos no infinitivo como finalizar, retirar, separar, confeccionar, coletar, escanear, salvar, recortar e mover indicam ações pendentes, salvo quando marcadas como efetuadas/concluídas.
 - Uma linha pode gerar várias ações. Preserve detalhes importantes na descrição.
 - Na solicitação curta, cada ação independente deve gerar uma missão. Se uma frase trouxer dois resultados independentes, como prefeitura e certificado digital, separe em duas missões.
@@ -90,7 +96,12 @@ Exemplos de interpretação:
 - "Bruno, organize os documentos internos até sexta" é general_task com category general e não exige empresa.
 - "Clã Fiscal, confiram as obrigações do mês" é general_task com sector "Fiscal" e assignees vazio.
 - "FISCAL – Att. CAMILA – parametrizar o Fator R" tem sector "FISCAL" e assignees ["Camila"]. Não decida se a missão é do clã ou da Camila: isso é do servidor.
-- "Camila responde por todos os informativos da empresa" não é ação — vai para ignoredNotes.
+- "Camila responde por todos os informativos da empresa" não é ação — vai para ignoredNotes.${
+    isNewClientOnboarding
+      ? `
+- (Cadastro de cliente novo) "FISCAL - Sem particularidades / CONTABILIDADE - Distribuição de lucros de 20 mil mês / RH - Sem pró-labore": as duas primeiras linhas são negação pura, não geram missão; a de CONTABILIDADE gera a missão "Configurar distribuição de lucros mensal de R$ 20.000" com sector "CONTABILIDADE".`
+      : ""
+  }
 
 Diretório de membros da Guilda:
 ${memberDirectory || "(vazio)"}
@@ -108,6 +119,13 @@ export async function extractInformative(
   clients: InformativeClient[],
   clans: InformativeClan[],
   actorKey: string,
+  /**
+   * true só no fluxo "Novo cliente" (empresa já resolvida por CNPJ): muda
+   * como a IA trata frases de "combinado permanente" — para um cliente que
+   * ainda não existe no sistema, elas descrevem o que falta CONFIGURAR, não
+   * um lembrete sobre algo já em vigor (ver `instructions`).
+   */
+  isNewClientOnboarding = false,
 ): Promise<{ model: string; data: InformativeExtraction }> {
   const text = sourceText.trim();
   if (text.length < 10) throw new Error("A mensagem está curta demais para analisar.");
@@ -126,7 +144,7 @@ export async function extractInformative(
     model: config.model,
     max_tokens: 8_192,
     thinking: { type: "disabled" },
-    system: instructions(members, clients, clans),
+    system: instructions(members, clients, clans, isNewClientOnboarding),
     messages: [{ role: "user", content: text }],
     metadata: {
       user_id: createHash("sha256")

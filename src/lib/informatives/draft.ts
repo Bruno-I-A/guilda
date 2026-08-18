@@ -150,13 +150,17 @@ export async function buildInformativeDraft(
     clients.map(({ name }) => ({ name })),
     activeClans,
     `${actor.orgId}:${actor.userId}`,
+    Boolean(resolvedCompany),
   );
 
   if (!extracted.data.isMissionRequest) {
     return {
       ok: false,
-      message:
-        "Não identifiquei uma solicitação de nova missão. Diga o que precisa ser feito, a pessoa responsável ou o clã e, quando houver, a empresa e o prazo.",
+      // A empresa já é conhecida no fluxo por CNPJ — pedir "a empresa" de
+      // novo seria enganoso; o que falta ali é sempre uma ação de verdade.
+      message: resolvedCompany
+        ? "Não identifiquei nenhuma ação nesse texto. Cada linha precisa descrever algo a fazer (ex.: “parametrizar”, “cadastrar”) — uma nota sem ação, como “sem particularidades”, não gera missão."
+        : "Não identifiquei uma solicitação de nova missão. Diga o que precisa ser feito, a pessoa responsável ou o clã e, quando houver, a empresa e o prazo.",
     };
   }
 
