@@ -8,6 +8,7 @@ import {
   Pencil,
   Play,
   RotateCcw,
+  Trash2,
   Undo2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -40,6 +41,7 @@ import {
   cancelTask,
   claimTask,
   completeTask,
+  deleteTask,
   rejectTask,
   revertCompletion,
   startTask,
@@ -80,6 +82,7 @@ export function TaskActionBar({
     reject: boolean;
     cancel: boolean;
     edit: boolean;
+    delete: boolean;
     revert: boolean;
     transfer: boolean;
   };
@@ -90,6 +93,7 @@ export function TaskActionBar({
   const [pending, startTransition] = useTransition();
   const [rejectOpen, setRejectOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -118,9 +122,30 @@ export function TaskActionBar({
     });
   }
 
+  function runDelete() {
+    startTransition(async () => {
+      const result = await deleteTask({ taskId: task.id });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Missão excluída.");
+      // A página desta missão deixa de existir — refresh() a manteria
+      // montada; a lista é o único lugar para onde faz sentido voltar.
+      router.push("/tasks");
+    });
+  }
+
   const hasPrimary =
     can.claim || can.start || can.resume || can.complete || can.approve || can.reject;
-  if (!hasPrimary && !can.edit && !can.cancel && !can.revert && !can.transfer) {
+  if (
+    !hasPrimary &&
+    !can.edit &&
+    !can.cancel &&
+    !can.delete &&
+    !can.revert &&
+    !can.transfer
+  ) {
     return null;
   }
 
@@ -213,6 +238,17 @@ export function TaskActionBar({
           onClick={() => setCancelOpen(true)}
         >
           <Ban aria-hidden /> Cancelar
+        </Button>
+      ) : null}
+
+      {can.delete ? (
+        <Button
+          variant="ghost"
+          className="text-destructive hover:text-destructive"
+          disabled={pending}
+          onClick={() => setDeleteOpen(true)}
+        >
+          <Trash2 aria-hidden /> Excluir
         </Button>
       ) : null}
 
@@ -351,6 +387,34 @@ export function TaskActionBar({
               }}
             >
               Cancelar missão
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Excluir esta missão?</DialogTitle>
+            <DialogDescription>
+              A missão some por completo, com todo o histórico — diferente de
+              cancelar, que arquiva mas mantém o registro. Não é possível
+              desfazer.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+              Voltar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={pending}
+              onClick={() => {
+                setDeleteOpen(false);
+                runDelete();
+              }}
+            >
+              Excluir missão
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -10,7 +10,11 @@ import {
   authorizeTaskTransfer,
   resolveAssigneeClan,
 } from "@/domain/clans";
-import { authorizeTransition, type TaskStatus } from "@/domain/task-state";
+import {
+  authorizeTaskDeletion,
+  authorizeTransition,
+  type TaskStatus,
+} from "@/domain/task-state";
 import {
   err,
   requireMemberContext,
@@ -909,4 +913,94 @@ export async function cancelTask(input: {
     allowedFrom: ["pending", "in_progress", "awaiting_approval", "rejected"],
     note: parsed.data.note,
   });
+}
+
+const deleteTaskSchema = z.object({ taskId: z.uuid() });
+
+/**
+ * Exclusão física — diferente de cancelar, que arquiva mantendo o
+ * histórico. Só é permitida para missão que NUNCA foi concluída e NUNCA
+ * mudou de mãos (`authorizeTaskDeletion`): uma missão concluída sempre
+ * deixa lançamento em `xp_ledger`, e `task_transfers` é INSERT-only para o
+ * role da aplicação (UPDATE/DELETE revogados na migration 0022) — não há
+ * como apagar a linha de transferência, então a missão com esse histórico
+ * também não pode ser apagada.
+ *
+ * `task_events` não tem cascade de propósito — é apagado aqui, dentro da
+ * mesma transação, antes da linha da missão. `task_assignee_suggestions`
+ * tem `onDelete: cascade` e cuida de si mesma.
+ */
+export async function deleteTask(input: {
+  taskId: string;
+}): Promise<ActionResult> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+
+  const parsed = deleteTaskSchema.safeParse(input);
+  if (!parsed.success) return err("Missão inválida.");
+
+  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
+    // Lock da linha: uma conclusão concorrente perde a corrida contra a
+    // exclusão, ou a exclusão perde contra a conclusão — nunca as duas juntas.
+    const [task] = await tx
+      .select()
+      .from(schema.tasks)
+      .where(and(eq(schema.tasks.id, parsed.data.taskId), eq(schema.tasks.orgId, ctx.orgId)))
+      .for("update");
+    if (!task) return err("Missão não encontrada.");
+
+    const [completedEvent] = await tx
+      .select({ id: schema.taskEvents.id })
+      .from(schema.taskEvents)
+      .where(
+        and(
+          eq(schema.taskEvents.orgId, ctx.orgId),
+          eq(schema.taskEvents.taskId, task.id),
+          eq(schema.taskEvents.toStatus, "completed"),
+        ),
+      )
+      .limit(1);
+    const [transfer] = await tx
+      .select({ id: schema.taskTransfers.id })
+      .from(schema.taskTransfers)
+      .where(
+        and(
+          eq(schema.taskTransfers.orgId, ctx.orgId),
+          eq(schema.taskTransfers.taskId, task.id),
+        ),
+      )
+      .limit(1);
+
+    const decision = authorizeTaskDeletion({
+      actor: { id: ctx.userId, role: ctx.role },
+      task: {
+        creatorId: task.creatorId,
+        everCompleted: Boolean(completedEvent),
+        everTransferred: Boolean(transfer),
+      },
+    });
+    if (!decision.allowed) return err(decision.reason);
+
+    await tx
+      .delete(schema.taskEvents)
+      .where(
+        and(
+          eq(schema.taskEvents.orgId, ctx.orgId),
+          eq(schema.taskEvents.taskId, task.id),
+        ),
+      );
+    await tx
+      .delete(schema.tasks)
+      .where(and(eq(schema.tasks.id, task.id), eq(schema.tasks.orgId, ctx.orgId)));
+
+    return { ok: true };
+  });
+
+  if (result.ok) {
+    revalidatePath("/tasks");
+    revalidatePath("/dashboard");
+    revalidatePath("/clans");
+    revalidatePath("/clans/[id]", "page");
+  }
+  return result;
 }

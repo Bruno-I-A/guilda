@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  authorizeTaskDeletion,
   authorizeTransition,
   canTransition,
   type OrgRole,
@@ -331,6 +332,76 @@ describe("transições inválidas retornam motivo", () => {
       "in_progress",
       ctx({ actorId: "assignee-1", status: "cancelled" }),
     );
+    expect(decision.allowed).toBe(false);
+  });
+});
+
+describe("authorizeTaskDeletion — excluir é diferente de cancelar", () => {
+  test("quem criou pode excluir missão sem histórico de conclusão ou transferência", () => {
+    const decision = authorizeTaskDeletion({
+      actor: { id: "creator-1", role: "member" },
+      task: { creatorId: "creator-1", everCompleted: false, everTransferred: false },
+    });
+    expect(decision.allowed).toBe(true);
+  });
+
+  test.each(["admin", "owner"] as const)(
+    "%s exclui missão de outra pessoa, desde que sem histórico",
+    (role) => {
+      const decision = authorizeTaskDeletion({
+        actor: { id: "someone-else", role },
+        task: { creatorId: "creator-1", everCompleted: false, everTransferred: false },
+      });
+      expect(decision.allowed).toBe(true);
+    },
+  );
+
+  test("member que não criou não pode excluir", () => {
+    const decision = authorizeTaskDeletion({
+      actor: { id: "outro-membro", role: "member" },
+      task: { creatorId: "creator-1", everCompleted: false, everTransferred: false },
+    });
+    expect(decision.allowed).toBe(false);
+  });
+
+  test.each(["member", "admin", "owner"] as const)(
+    "missão que já foi concluída alguma vez NUNCA pode ser excluída (%s)",
+    (role) => {
+      const decision = authorizeTaskDeletion({
+        actor: { id: "creator-1", role },
+        task: { creatorId: "creator-1", everCompleted: true, everTransferred: false },
+      });
+      expect(decision.allowed).toBe(false);
+    },
+  );
+
+  test("revertida para in_progress continua bloqueada — o XP já foi creditado", () => {
+    // everCompleted é sobre o HISTÓRICO, não o status atual: uma missão
+    // completed → in_progress (reversão) continua com o lançamento de XP
+    // no ledger para sempre.
+    const decision = authorizeTaskDeletion({
+      actor: { id: "admin-1", role: "admin" },
+      task: { creatorId: "creator-1", everCompleted: true, everTransferred: false },
+    });
+    expect(decision.allowed).toBe(false);
+  });
+
+  test.each(["member", "admin", "owner"] as const)(
+    "missão já transferida/assumida NUNCA pode ser excluída (%s) — task_transfers é INSERT-only no banco",
+    (role) => {
+      const decision = authorizeTaskDeletion({
+        actor: { id: "creator-1", role },
+        task: { creatorId: "creator-1", everCompleted: false, everTransferred: true },
+      });
+      expect(decision.allowed).toBe(false);
+    },
+  );
+
+  test("conclusão bloqueia mesmo quando a transferência sozinha não bloquearia", () => {
+    const decision = authorizeTaskDeletion({
+      actor: { id: "creator-1", role: "admin" },
+      task: { creatorId: "creator-1", everCompleted: true, everTransferred: true },
+    });
     expect(decision.allowed).toBe(false);
   });
 });

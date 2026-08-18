@@ -135,3 +135,56 @@ export function authorizeTransition(
 
   return deny("Transição de status inválida.");
 }
+
+export interface TaskDeletionContext {
+  actor: { id: string; role: OrgRole };
+  task: {
+    creatorId: string;
+    /**
+     * A missão já passou por `→ completed` alguma vez — mesmo que tenha
+     * sido revertida depois. `creditTaskXp` e `syncClosingFromTask` só
+     * disparam nessa transição, e o crédito de XP nunca é apagado (regra
+     * inegociável do ledger imutável), então este é o único fato que
+     * importa: não é sobre o status atual da missão.
+     */
+    everCompleted: boolean;
+    /**
+     * A missão já tem linha em `task_transfers` — de um "assumir", uma
+     * transferência ou uma distribuição da Mesa do Líder. Essa tabela é
+     * INSERT-only para o role da aplicação (UPDATE/DELETE revogados na
+     * migration 0022, mesmo tratamento do xp_ledger): não há como apagar a
+     * missão sem apagar a linha do histórico primeiro, e isso o banco não
+     * deixa. Por isso o bloqueio é sobre o fato, não uma escolha de design.
+     */
+    everTransferred: boolean;
+  };
+}
+
+/**
+ * Excluir é diferente de cancelar: cancelar arquiva (estado terminal, mantém
+ * o histórico); excluir apaga o registro por completo. Por isso só é
+ * permitido para uma missão que nunca gerou XP, nunca tocou um fechamento e
+ * nunca mudou de mãos — uma missão que precisa sumir de vez porque nunca
+ * deveria ter existido (duplicata, empresa errada, teste). Qualquer missão
+ * com histórico de verdade usa cancelar.
+ */
+export function authorizeTaskDeletion(
+  ctx: TaskDeletionContext,
+): TransitionDecision {
+  const { actor, task } = ctx;
+
+  if (task.everCompleted) {
+    return deny(
+      "Esta missão já foi concluída e gerou XP — não pode ser excluída. Use cancelar para tirá-la de circulação sem apagar o histórico.",
+    );
+  }
+  if (task.everTransferred) {
+    return deny(
+      "Esta missão já mudou de responsável alguma vez — o histórico de transferência é permanente e impede a exclusão. Use cancelar.",
+    );
+  }
+
+  return actor.id === task.creatorId || isApproverRole(actor.role)
+    ? ALLOW
+    : deny("Apenas quem criou a missão ou um admin pode excluí-la.");
+}

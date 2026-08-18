@@ -12,7 +12,11 @@ import { Separator } from "@/components/ui/separator";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { isTransferableTaskStatus } from "@/domain/clans";
-import { authorizeTransition, type OrgRole } from "@/domain/task-state";
+import {
+  authorizeTaskDeletion,
+  authorizeTransition,
+  type OrgRole,
+} from "@/domain/task-state";
 import { initials } from "@/lib/people";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 import {
@@ -166,6 +170,18 @@ export default async function TaskDetailPage({
     edit:
       ["pending", "in_progress", "rejected"].includes(task.status) &&
       (task.creatorId === session.user.id || isAdmin),
+    // Excluir é diferente de cancelar: apaga o registro por completo, e só
+    // é permitido para missão que nunca passou por `→ completed` nem por
+    // `task_transfers` (INSERT-only no banco — ver authorizeTaskDeletion).
+    // Mesmos fatos usados pela Server Action; aqui só refletem a régua na UI.
+    delete: authorizeTaskDeletion({
+      actor: { id: session.user.id, role: member.role as OrgRole },
+      task: {
+        creatorId: task.creatorId,
+        everCompleted: task.events.some((event) => event.toStatus === "completed"),
+        everTransferred: task.transfers.length > 0,
+      },
+    }).allowed,
     revert:
       task.status === "completed" &&
       authorizeTransition("in_progress", context).allowed,
