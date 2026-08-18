@@ -36,30 +36,28 @@ export default async function ClansPage() {
   const viewerIsAdmin = isAdminRole(viewer.role);
 
   const { clans, orgMembers } = await withOrgTx(session.orgId, async (tx) => {
-    const [clanRows, memberRows] = await Promise.all([
-      tx.query.clans.findMany({
-        where: eq(schema.clans.orgId, session.orgId),
-        with: {
-          memberships: {
-            with: { user: { columns: { name: true } } },
-          },
-          tasks: {
-            columns: {
-              status: true,
-              assigneeId: true,
-              dueDate: true,
-            },
+    const clanRows = await tx.query.clans.findMany({
+      where: eq(schema.clans.orgId, session.orgId),
+      with: {
+        memberships: {
+          with: { user: { columns: { name: true } } },
+        },
+        tasks: {
+          columns: {
+            status: true,
+            assigneeId: true,
+            dueDate: true,
           },
         },
-        orderBy: [asc(schema.clans.name)],
-      }),
-      tx
-        .select({ userId: schema.member.userId, name: schema.user.name })
-        .from(schema.member)
-        .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
-        .where(eq(schema.member.organizationId, session.orgId))
-        .orderBy(asc(schema.user.name)),
-    ]);
+      },
+      orderBy: [asc(schema.clans.name)],
+    });
+    const memberRows = await tx
+      .select({ userId: schema.member.userId, name: schema.user.name })
+      .from(schema.member)
+      .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+      .where(eq(schema.member.organizationId, session.orgId))
+      .orderBy(asc(schema.user.name));
     return { clans: clanRows, orgMembers: memberRows };
   });
   const orgMemberIds = new Set(orgMembers.map((memberRow) => memberRow.userId));

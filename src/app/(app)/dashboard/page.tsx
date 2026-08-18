@@ -63,55 +63,53 @@ export default async function DashboardPage() {
         );
       const clanIds = memberships.map((membership) => membership.clanId);
 
-      const [[guildStats], mine, clans] = await Promise.all([
-        tx
-          .select({ memberCount: count() })
-          .from(schema.member)
-          .where(eq(schema.member.organizationId, session.orgId)),
-        tx.query.tasks.findMany({
-          where: and(
-            eq(schema.tasks.orgId, session.orgId),
-            eq(schema.tasks.assigneeId, session.user.id),
-            notInArray(schema.tasks.status, ["completed", "cancelled"]),
-          ),
-          columns: {
-            id: true,
-            title: true,
-            status: true,
-            dueDate: true,
-            xpValue: true,
-          },
-          orderBy: [desc(schema.tasks.createdAt)],
-          limit: 50,
-        }),
-        clanIds.length
-          ? tx.query.tasks.findMany({
-              where: and(
-                eq(schema.tasks.orgId, session.orgId),
-                inArray(schema.tasks.clanId, clanIds),
-                notInArray(schema.tasks.status, ["completed", "cancelled"]),
-                or(
-                  isNull(schema.tasks.assigneeId),
-                  ne(schema.tasks.assigneeId, session.user.id),
-                ),
+      const [guildStats] = await tx
+        .select({ memberCount: count() })
+        .from(schema.member)
+        .where(eq(schema.member.organizationId, session.orgId));
+      const mine = await tx.query.tasks.findMany({
+        where: and(
+          eq(schema.tasks.orgId, session.orgId),
+          eq(schema.tasks.assigneeId, session.user.id),
+          notInArray(schema.tasks.status, ["completed", "cancelled"]),
+        ),
+        columns: {
+          id: true,
+          title: true,
+          status: true,
+          dueDate: true,
+          xpValue: true,
+        },
+        orderBy: [desc(schema.tasks.createdAt)],
+        limit: 50,
+      });
+      const clans = await clanIds.length
+        ? tx.query.tasks.findMany({
+            where: and(
+              eq(schema.tasks.orgId, session.orgId),
+              inArray(schema.tasks.clanId, clanIds),
+              notInArray(schema.tasks.status, ["completed", "cancelled"]),
+              or(
+                isNull(schema.tasks.assigneeId),
+                ne(schema.tasks.assigneeId, session.user.id),
               ),
-              columns: {
-                id: true,
-                title: true,
-                status: true,
-                dueDate: true,
-                xpValue: true,
-                assigneeId: true,
-              },
-              with: {
-                assignee: { columns: { name: true } },
-                clan: { columns: { name: true } },
-              },
-              orderBy: [desc(schema.tasks.createdAt)],
-              limit: 50,
-            })
-          : Promise.resolve([]),
-      ]);
+            ),
+            columns: {
+              id: true,
+              title: true,
+              status: true,
+              dueDate: true,
+              xpValue: true,
+              assigneeId: true,
+            },
+            with: {
+              assignee: { columns: { name: true } },
+              clan: { columns: { name: true } },
+            },
+            orderBy: [desc(schema.tasks.createdAt)],
+            limit: 50,
+          })
+        : Promise.resolve([]);
 
       return {
         memberCount: guildStats?.memberCount ?? 0,

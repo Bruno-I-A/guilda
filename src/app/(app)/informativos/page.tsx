@@ -22,55 +22,53 @@ export default async function InformativosPage() {
   const { pendingDraft, clans, members, leadsAnyClan } = await withOrgTx(
     session.orgId,
     async (tx) => {
-      const [draftRow, clanRows, memberRows, leadership] = await Promise.all([
-        tx
-          .select()
-          .from(schema.informatives)
-          .where(
-            and(
-              eq(schema.informatives.orgId, session.orgId),
-              eq(schema.informatives.requestedBy, session.user.id),
-              eq(schema.informatives.status, "pending"),
-            ),
-          )
-          .orderBy(desc(schema.informatives.createdAt))
-          .limit(1),
-        tx
-          .select({ id: schema.clans.id, name: schema.clans.name })
-          .from(schema.clans)
-          .where(
-            and(
-              eq(schema.clans.orgId, session.orgId),
-              eq(schema.clans.active, true),
-            ),
-          )
-          .orderBy(asc(schema.clans.name)),
-        tx
-          .select({ userId: schema.member.userId, name: schema.user.name })
-          .from(schema.member)
-          .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
-          .where(eq(schema.member.organizationId, session.orgId))
-          .orderBy(asc(schema.user.name)),
-        tx
-          .select({ id: schema.clanMemberships.id })
-          .from(schema.clanMemberships)
-          .innerJoin(
-            schema.clans,
-            and(
-              eq(schema.clans.id, schema.clanMemberships.clanId),
-              eq(schema.clans.orgId, schema.clanMemberships.orgId),
-            ),
-          )
-          .where(
-            and(
-              eq(schema.clanMemberships.orgId, session.orgId),
-              eq(schema.clanMemberships.userId, session.user.id),
-              eq(schema.clanMemberships.isLeader, true),
-              eq(schema.clans.active, true),
-            ),
-          )
-          .limit(1),
-      ]);
+      const draftRow = await tx
+        .select()
+        .from(schema.informatives)
+        .where(
+          and(
+            eq(schema.informatives.orgId, session.orgId),
+            eq(schema.informatives.requestedBy, session.user.id),
+            eq(schema.informatives.status, "pending"),
+          ),
+        )
+        .orderBy(desc(schema.informatives.createdAt))
+        .limit(1);
+      const clanRows = await tx
+        .select({ id: schema.clans.id, name: schema.clans.name })
+        .from(schema.clans)
+        .where(
+          and(
+            eq(schema.clans.orgId, session.orgId),
+            eq(schema.clans.active, true),
+          ),
+        )
+        .orderBy(asc(schema.clans.name));
+      const memberRows = await tx
+        .select({ userId: schema.member.userId, name: schema.user.name })
+        .from(schema.member)
+        .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+        .where(eq(schema.member.organizationId, session.orgId))
+        .orderBy(asc(schema.user.name));
+      const leadership = await tx
+        .select({ id: schema.clanMemberships.id })
+        .from(schema.clanMemberships)
+        .innerJoin(
+          schema.clans,
+          and(
+            eq(schema.clans.id, schema.clanMemberships.clanId),
+            eq(schema.clans.orgId, schema.clanMemberships.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(schema.clanMemberships.orgId, session.orgId),
+            eq(schema.clanMemberships.userId, session.user.id),
+            eq(schema.clanMemberships.isLeader, true),
+            eq(schema.clans.active, true),
+          ),
+        )
+        .limit(1);
 
       return {
         pendingDraft: draftRow[0] ?? null,

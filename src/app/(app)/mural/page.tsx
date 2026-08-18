@@ -21,46 +21,44 @@ export default async function MuralPage() {
   const { notices, orgMembers, leadsAnyClan } = await withOrgTx(
     session.orgId,
     async (tx) => {
-      const [noticeRows, memberRows, leadership] = await Promise.all([
-        tx.query.guildNotices.findMany({
-          where: and(
-            eq(schema.guildNotices.orgId, session.orgId),
-            isNull(schema.guildNotices.archivedAt),
+      const noticeRows = await tx.query.guildNotices.findMany({
+        where: and(
+          eq(schema.guildNotices.orgId, session.orgId),
+          isNull(schema.guildNotices.archivedAt),
+        ),
+        with: {
+          author: { columns: { id: true, name: true } },
+          client: { columns: { id: true, name: true } },
+          reads: { columns: { userId: true } },
+        },
+        orderBy: [desc(schema.guildNotices.pinned), desc(schema.guildNotices.publishedAt)],
+        limit: 60,
+      });
+      const memberRows = await tx
+        .select({ userId: schema.member.userId, name: schema.user.name })
+        .from(schema.member)
+        .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+        .where(eq(schema.member.organizationId, session.orgId))
+        .orderBy(asc(schema.user.name));
+      const leadership = await tx
+        .select({ id: schema.clanMemberships.id })
+        .from(schema.clanMemberships)
+        .innerJoin(
+          schema.clans,
+          and(
+            eq(schema.clans.id, schema.clanMemberships.clanId),
+            eq(schema.clans.orgId, schema.clanMemberships.orgId),
           ),
-          with: {
-            author: { columns: { id: true, name: true } },
-            client: { columns: { id: true, name: true } },
-            reads: { columns: { userId: true } },
-          },
-          orderBy: [desc(schema.guildNotices.pinned), desc(schema.guildNotices.publishedAt)],
-          limit: 60,
-        }),
-        tx
-          .select({ userId: schema.member.userId, name: schema.user.name })
-          .from(schema.member)
-          .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
-          .where(eq(schema.member.organizationId, session.orgId))
-          .orderBy(asc(schema.user.name)),
-        tx
-          .select({ id: schema.clanMemberships.id })
-          .from(schema.clanMemberships)
-          .innerJoin(
-            schema.clans,
-            and(
-              eq(schema.clans.id, schema.clanMemberships.clanId),
-              eq(schema.clans.orgId, schema.clanMemberships.orgId),
-            ),
-          )
-          .where(
-            and(
-              eq(schema.clanMemberships.orgId, session.orgId),
-              eq(schema.clanMemberships.userId, session.user.id),
-              eq(schema.clanMemberships.isLeader, true),
-              eq(schema.clans.active, true),
-            ),
-          )
-          .limit(1),
-      ]);
+        )
+        .where(
+          and(
+            eq(schema.clanMemberships.orgId, session.orgId),
+            eq(schema.clanMemberships.userId, session.user.id),
+            eq(schema.clanMemberships.isLeader, true),
+            eq(schema.clans.active, true),
+          ),
+        )
+        .limit(1);
 
       return {
         notices: noticeRows,
