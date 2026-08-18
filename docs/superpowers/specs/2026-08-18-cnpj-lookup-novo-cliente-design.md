@@ -121,3 +121,35 @@ Vitest: `mapBrasilApiResponse` (campos completos, sem atividades secundárias,
 some em missingFields, dedup por CNPJ existente). `tsc`/lint limpos. Teste
 manual no navegador contra o BrasilAPI de verdade: CNPJ ativo real,
 CNPJ inexistente, e o fallback manual quando a busca falha.
+
+## Ajustes pós-uso real (2026-08-18, mesmo dia)
+
+Dois problemas só apareceram testando com texto de verdade — nenhum teste
+automatizado pega isso, porque dependem do julgamento da IA e de uma regra de
+negócio que não estava no desenho original.
+
+**1. "Combinado permanente" numa empresa que ainda não existe.** O prompt
+(inalterado até aqui) trata frase tipo "distribuição de lucros de X" como
+observação, nunca como missão — correto para cliente já cadastrado, onde é só
+um lembrete. Mas para cliente NOVO, a mesma frase quer dizer que a política
+ainda precisa ser configurada pela primeira vez. `extractInformative` ganhou
+o parâmetro `isNewClientOnboarding` (true só quando `resolvedCompany` está
+presente): o prompt só adiciona essa exceção nesse caso — os outros 3 tipos
+de informativo (alteração, baixa, missão geral) ficam exatamente como
+estavam.
+
+**2. O Fiscal precisa saber de cliente novo mesmo sem nada pra fazer.**
+Regra de negócio nova (não estava no design original): quando uma empresa
+nova é cadastrada, o clã Fiscal SEMPRE recebe uma missão pra definir quem
+assume a carteira dessa empresa — mesmo quando a linha "FISCAL" do
+informativo diz "sem particularidades". Depender da IA reconhecer isso no
+texto livre seria frágil (foi exatamente por causa disso que "sem
+particularidades" some do jeito 1 lida com ela). Por isso é **determinístico
+no servidor**: `buildInformativeDraft`, quando `resolvedCompany && createClient`,
+sempre injeta uma missão pro clã Fiscal (nome, CNPJ formatado e regime na
+descrição) — INDEPENDENTE do que a IA extraiu do texto. Como consequência,
+os dois bloqueios de "não é missão"/"faltou dizer o que fazer" também
+passaram a ser pulados quando `resolvedCompany` está presente: o próprio
+cadastro do cliente já é a missão, o texto do passo 2 é só detalhe
+complementar, e a missão garantida do Fiscal cobre o caso de um texto sem
+nenhuma linha acionável.

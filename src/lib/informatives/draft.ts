@@ -6,7 +6,7 @@ import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { routeInformativeTask, type RoutingClan } from "@/domain/clan-routing";
 import { resolveAssigneeClan } from "@/domain/clans";
-import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
+import { formatCnpj, normalizeCnpj, validateCnpj } from "@/domain/cnpj";
 import { extractObservationLines } from "@/domain/informative-text";
 import type { OrgRole } from "@/domain/task-state";
 import { resolveClientName } from "@/lib/ai/client-resolution";
@@ -17,6 +17,8 @@ import {
   type InformativeDraftPayload,
 } from "@/lib/ai/informative-schema";
 import { resolveMemberName } from "@/lib/ai/member-resolution";
+import { FISCAL_CLAN_SLUG } from "@/lib/clans/rules";
+import { TAX_REGIME_LABELS, type TaxRegime } from "@/lib/clients-ui";
 import { listActiveClans, listOrgMembers } from "@/lib/org";
 import { isDetailedInformativeMessage } from "@/lib/telegram/informative-detection";
 
@@ -51,7 +53,7 @@ export interface InformativeActor {
 export interface ResolvedCompany {
   legalName: string;
   normalizedCnpj: string;
-  taxRegime: InformativeDraftPayload["company"]["taxRegime"];
+  taxRegime: TaxRegime;
   cnaeCode: string | null;
   cnaeDescription: string | null;
   secondaryCnaes: { code: string; description: string }[] | null;
@@ -153,14 +155,16 @@ export async function buildInformativeDraft(
     Boolean(resolvedCompany),
   );
 
-  if (!extracted.data.isMissionRequest) {
+  // Com empresa resolvida por CNPJ, o pedido de missão já é certo — é o
+  // próprio cadastro do cliente novo. O texto do passo 2 é detalhe
+  // complementar, nunca o único sinal de "isto é uma missão": mesmo um texto
+  // sem nenhuma linha acionável ainda gera a missão garantida do Fiscal
+  // (abaixo), então a checagem da IA não pode bloquear aqui.
+  if (!resolvedCompany && !extracted.data.isMissionRequest) {
     return {
       ok: false,
-      // A empresa já é conhecida no fluxo por CNPJ — pedir "a empresa" de
-      // novo seria enganoso; o que falta ali é sempre uma ação de verdade.
-      message: resolvedCompany
-        ? "Não identifiquei nenhuma ação nesse texto. Cada linha precisa descrever algo a fazer (ex.: “parametrizar”, “cadastrar”) — uma nota sem ação, como “sem particularidades”, não gera missão."
-        : "Não identifiquei uma solicitação de nova missão. Diga o que precisa ser feito, a pessoa responsável ou o clã e, quando houver, a empresa e o prazo.",
+      message:
+        "Não identifiquei uma solicitação de nova missão. Diga o que precisa ser feito, a pessoa responsável ou o clã e, quando houver, a empresa e o prazo.",
     };
   }
 
@@ -182,7 +186,10 @@ export async function buildInformativeDraft(
   ) {
     missing.add("company");
   }
-  if (extracted.data.tasks.length === 0) missing.add("actions");
+  // Idem: sem resolvedCompany, zero tarefas extraídas é bloqueio de verdade.
+  // Com empresa resolvida, a missão garantida do Fiscal cobre o caso de um
+  // texto sem nenhuma linha acionável — não é "faltou dizer o que fazer".
+  if (!resolvedCompany && extracted.data.tasks.length === 0) missing.add("actions");
   // O destino deixou de ser bloqueio de extração: quem não tem clã nem pessoa
   // vira missão pendente e a decisão acontece na prévia.
   missing.delete("responsible");
@@ -386,6 +393,44 @@ export async function buildInformativeDraft(
     );
   } else if (sourceFormat === "informative" && !existingClient && !createClient) {
     warnings.push("As missões serão criadas sem vínculo com uma empresa do painel.");
+  }
+
+  // Cliente novo de verdade: o Fiscal SEMPRE precisa saber, mesmo quando a
+  // linha "FISCAL" do informativo diz "sem particularidades" — o ponto não é
+  // o conteúdo da linha, é que alguém tem que assumir a carteira desta
+  // empresa. Depender da IA reconhecer isso no texto livre seria frágil (é
+  // exatamente o motivo de "sem particularidades" ter sumido antes); aqui é
+  // garantido no servidor, à parte de qualquer coisa que a IA extraiu.
+  if (resolvedCompany && createClient) {
+    const fiscalClan = routingClans.find((clan) => clan.slug === FISCAL_CLAN_SLUG);
+    if (fiscalClan) {
+      tasks.push({
+        assignmentType: "clan",
+        assigneeId: null,
+        assigneeName: null,
+        clanId: fiscalClan.id,
+        clanName: fiscalClan.name,
+        suggestions: [],
+        category: "general",
+        title: `Definir responsável fiscal — ${resolvedCompany.legalName}`,
+        description:
+          `Cliente novo cadastrado: ${resolvedCompany.legalName} ` +
+          `(CNPJ ${formatCnpj(resolvedCompany.normalizedCnpj)}), regime ` +
+          `${TAX_REGIME_LABELS[resolvedCompany.taxRegime]}.\n\n` +
+          "Definir quem será a pessoa responsável pelos informativos mensais " +
+          "e adicionar a empresa à carteira fiscal.",
+        priority: 2,
+        difficulty: 1,
+        dueDate: null,
+        closingYear: null,
+        sourceSection: "Gerado automaticamente pelo cadastro do cliente novo.",
+        sector: null,
+      });
+    } else {
+      warnings.push(
+        "Clã Fiscal não está ativo — adicione a empresa à carteira fiscal manualmente.",
+      );
+    }
   }
 
   // Decisão 11: o que não é ação vira corpo do aviso no mural, não missão.
