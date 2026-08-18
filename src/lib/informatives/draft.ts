@@ -42,6 +42,22 @@ export interface InformativeActor {
   role: OrgRole;
 }
 
+/**
+ * Empresa já resolvida pelo fluxo "Novo cliente" (consulta de CNPJ na
+ * Receita, ver src/lib/cnpj-lookup.ts). Quando presente, `buildInformativeDraft`
+ * NÃO pede à IA para adivinhar esses campos — ela só extrai as tarefas do
+ * texto do passo 2, que descreve apenas "o que precisa ser feito".
+ */
+export interface ResolvedCompany {
+  legalName: string;
+  normalizedCnpj: string;
+  taxRegime: InformativeDraftPayload["company"]["taxRegime"];
+  cnaeCode: string | null;
+  cnaeDescription: string | null;
+  secondaryCnaes: { code: string; description: string }[] | null;
+  openedAt: string | null;
+}
+
 export type BuildInformativeDraftResult =
   | { ok: true; payload: InformativeDraftPayload; model: string }
   | { ok: false; message: string };
@@ -62,6 +78,7 @@ function currentYearInSaoPaulo(): number {
 export async function buildInformativeDraft(
   actor: InformativeActor,
   sourceText: string,
+  resolvedCompany?: ResolvedCompany,
 ): Promise<BuildInformativeDraftResult> {
   const [members, clients, activeClanMemberships, activeClans] =
     await Promise.all([
@@ -120,9 +137,13 @@ export async function buildInformativeDraft(
     slug: clan.slug,
   }));
 
-  const sourceFormat = isDetailedInformativeMessage(sourceText)
+  // Com empresa já resolvida, o texto do passo 2 não traz dados de empresa
+  // (só "o que precisa ser feito") — a heurística de detecção não se aplica.
+  const sourceFormat = resolvedCompany
     ? "informative"
-    : "business_mission";
+    : isDetailedInformativeMessage(sourceText)
+      ? "informative"
+      : "business_mission";
   const extracted = await extractInformative(
     sourceText,
     members.map(({ userId, name }) => ({ userId, name })),
@@ -139,7 +160,7 @@ export async function buildInformativeDraft(
     };
   }
 
-  const kind = extracted.data.kind ?? "general_task";
+  const kind = resolvedCompany ? "new_client" : extracted.data.kind ?? "general_task";
   const hasClosingPeriod = extracted.data.tasks.some(
     (task) => task.category === "closing_period",
   );
@@ -147,7 +168,11 @@ export async function buildInformativeDraft(
     (task) => task.category === "annual_closing",
   );
   const missing = new Set(extracted.data.missingFields);
-  if (
+  // A empresa já é conhecida — a IA não tem como "encontrá-la" num texto que
+  // só descreve tarefas, e não faz sentido bloquear por isso.
+  if (resolvedCompany) {
+    missing.delete("company");
+  } else if (
     (kind !== "general_task" || hasClosingPeriod || hasAnnualClosing) &&
     !extracted.data.company.legalName
   ) {
@@ -172,16 +197,19 @@ export async function buildInformativeDraft(
     };
   }
 
-  const legalName = extracted.data.company.legalName;
-  const normalizedCnpj = extracted.data.company.cnpj
-    ? normalizeCnpj(extracted.data.company.cnpj)
-    : null;
+  const legalName = resolvedCompany?.legalName ?? extracted.data.company.legalName;
+  const normalizedCnpj =
+    resolvedCompany?.normalizedCnpj ??
+    (extracted.data.company.cnpj ? normalizeCnpj(extracted.data.company.cnpj) : null);
   const validCnpj =
-    normalizedCnpj && validateCnpj(normalizedCnpj) ? normalizedCnpj : null;
-  const existingClient =
-    (validCnpj
-      ? clients.find((client) => client.cnpj === validCnpj) ?? null
-      : null) ?? (legalName ? resolveClientName(legalName, clients) : null);
+    resolvedCompany?.normalizedCnpj ??
+    (normalizedCnpj && validateCnpj(normalizedCnpj) ? normalizedCnpj : null);
+  // Empresa resolvida por CNPJ: casa só por CNPJ, nunca por nome — o objetivo
+  // aqui é não duplicar cadastro, não "adivinhar" que é outra empresa parecida.
+  const existingClient = resolvedCompany
+    ? clients.find((client) => client.cnpj === validCnpj) ?? null
+    : (validCnpj ? clients.find((client) => client.cnpj === validCnpj) ?? null : null) ??
+      (legalName ? resolveClientName(legalName, clients) : null);
 
   if ((hasClosingPeriod || hasAnnualClosing) && !existingClient) {
     return {
@@ -316,36 +344,39 @@ export async function buildInformativeDraft(
     }
   }
 
-  const createClient =
-    sourceFormat === "informative" &&
-    extracted.data.kind === "new_client" &&
-    Boolean(finalLegalName) &&
-    !existingClient &&
-    Boolean(validCnpj && extracted.data.company.taxRegime);
-  if (
-    sourceFormat === "informative" &&
-    extracted.data.kind === "new_client" &&
-    !validCnpj
-  ) {
+  const finalTaxRegime = resolvedCompany?.taxRegime ?? extracted.data.company.taxRegime;
+  // Empresa já resolvida por CNPJ: legalName/CNPJ/regime sempre presentes
+  // (o passo 1 da tela exige regime antes de liberar o passo 2) — o único
+  // motivo para NÃO criar é já existir um cliente com este CNPJ.
+  const createClient = resolvedCompany
+    ? !existingClient
+    : sourceFormat === "informative" &&
+      kind === "new_client" &&
+      Boolean(finalLegalName) &&
+      !existingClient &&
+      Boolean(validCnpj && finalTaxRegime);
+  if (!resolvedCompany && sourceFormat === "informative" && kind === "new_client" && !validCnpj) {
     warnings.push(
       "CNPJ ausente ou inválido; a empresa não poderá ser criada automaticamente.",
     );
   }
   if (
+    !resolvedCompany &&
     sourceFormat === "informative" &&
-    extracted.data.kind === "new_client" &&
+    kind === "new_client" &&
     !existingClient &&
-    !extracted.data.company.taxRegime
+    !finalTaxRegime
   ) {
     warnings.push(
       "Regime tributário não identificado; a empresa não poderá ser criada automaticamente.",
     );
   }
-  if (
-    sourceFormat === "informative" &&
-    !existingClient &&
-    extracted.data.kind === "client_closure"
-  ) {
+  if (resolvedCompany && existingClient) {
+    warnings.push(
+      `Este CNPJ já está cadastrado como “${existingClient.name}” — nenhuma empresa nova será criada.`,
+    );
+  }
+  if (sourceFormat === "informative" && !existingClient && kind === "client_closure") {
     warnings.push(
       "Cliente baixado não localizado no painel; as missões serão criadas sem vínculo.",
     );
@@ -368,6 +399,7 @@ export async function buildInformativeDraft(
     company: {
       ...extracted.data.company,
       legalName: finalLegalName,
+      taxRegime: finalTaxRegime,
       summary:
         extracted.data.company.summary ??
         (finalLegalName
@@ -376,6 +408,10 @@ export async function buildInformativeDraft(
       normalizedCnpj: validCnpj,
       clientId: existingClient?.id ?? null,
       createClient,
+      cnaeCode: resolvedCompany?.cnaeCode ?? null,
+      cnaeDescription: resolvedCompany?.cnaeDescription ?? null,
+      secondaryCnaes: resolvedCompany?.secondaryCnaes ?? null,
+      openedAt: resolvedCompany?.openedAt ?? null,
     },
     tasks,
     observations,

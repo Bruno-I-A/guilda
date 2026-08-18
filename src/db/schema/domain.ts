@@ -428,6 +428,14 @@ export const clients = pgTable(
     name: varchar("name", { length: 200 }).notNull(),
     taxRegime: taxRegime("tax_regime").notNull(),
     cnpj: varchar("cnpj", { length: 14 }), // opcional; normalizado (só dígitos)
+    // Preenchidos só pelo fluxo "Novo cliente" dos Informativos (consulta de
+    // CNPJ na Receita via BrasilAPI) — nulos no cadastro manual/import CSV.
+    cnaeCode: varchar("cnae_code", { length: 10 }),
+    cnaeDescription: varchar("cnae_description", { length: 200 }),
+    secondaryCnaes: jsonb("secondary_cnaes").$type<
+      { code: string; description: string }[]
+    >(),
+    openedAt: date("opened_at", { mode: "string" }),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

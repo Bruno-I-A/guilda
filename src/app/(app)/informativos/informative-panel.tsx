@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Flag, ScanText, Trash2, UserRound } from "lucide-react";
+import { AlertTriangle, Building2, Flag, ScanText, Trash2, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -21,6 +21,7 @@ import {
   cancelInformativeDraft,
   confirmInformativeDraft,
 } from "./actions";
+import { NewClientWizard } from "./new-client-wizard";
 
 export interface DraftTaskView {
   index: number;
@@ -42,6 +43,8 @@ export interface DraftView {
     cnpj: string | null;
     taxRegime: string | null;
     createClient: boolean;
+    cnaeDescription: string | null;
+    openedAt: string | null;
   };
   tasks: DraftTaskView[];
   observations: string[];
@@ -65,6 +68,7 @@ export function InformativePanel({
   const [pending, startTransition] = useTransition();
   const [sourceText, setSourceText] = useState("");
   const [decisions, setDecisions] = useState<Record<number, Decision>>({});
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const pendingTasks = draft?.tasks.filter((t) => t.assignmentType === "pending") ?? [];
   const undecided = pendingTasks.filter((task) => !decisions[task.index]);
@@ -127,29 +131,38 @@ export function InformativePanel({
 
   return (
     <div className="grid gap-5">
-      <div className="grid gap-2">
-        <Textarea
-          value={sourceText}
-          onChange={(event) => setSourceText(event.target.value)}
-          rows={10}
-          maxLength={12_000}
-          placeholder={
-            "INFORMATIVO — NOVO CLIENTE\n\nRazão social: ...\nCNPJ: ...\nEnquadramento: ...\n\nAÇÕES\nFiscal - Camila - parametrizar ...\nRH - cadastrar o pró-labore ..."
-          }
-          className="font-mono text-xs"
-        />
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">
-            {sourceText.length}/12.000
-          </span>
-          <Button
-            onClick={handleAnalyze}
-            disabled={pending || sourceText.trim().length < 10}
-          >
-            <ScanText className="size-4" aria-hidden /> Analisar
-          </Button>
+      {wizardOpen ? (
+        <NewClientWizard onDone={() => setWizardOpen(false)} />
+      ) : (
+        <div className="grid gap-2">
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => setWizardOpen(true)}>
+              <Building2 className="size-4" aria-hidden /> Novo cliente
+            </Button>
+          </div>
+          <Textarea
+            value={sourceText}
+            onChange={(event) => setSourceText(event.target.value)}
+            rows={10}
+            maxLength={12_000}
+            placeholder={
+              "INFORMATIVO — NOVO CLIENTE\n\nRazão social: ...\nCNPJ: ...\nEnquadramento: ...\n\nAÇÕES\nFiscal - Camila - parametrizar ...\nRH - cadastrar o pró-labore ..."
+            }
+            className="font-mono text-xs"
+          />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground">
+              {sourceText.length}/12.000
+            </span>
+            <Button
+              onClick={handleAnalyze}
+              disabled={pending || sourceText.trim().length < 10}
+            >
+              <ScanText className="size-4" aria-hidden /> Analisar
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {!draft ? null : (
         <div className="panel-cut grid gap-4 rounded-lg border bg-card/50 p-4">
@@ -162,6 +175,14 @@ export function InformativePanel({
               {draft.company.taxRegime ?? "regime não informado"}
               {draft.company.createClient ? " · empresa nova, será cadastrada" : ""}
             </p>
+            {draft.company.cnaeDescription ? (
+              <p className="text-xs text-muted-foreground">
+                {draft.company.cnaeDescription}
+                {draft.company.openedAt
+                  ? ` · aberta em ${new Date(`${draft.company.openedAt}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "UTC" })}`
+                  : ""}
+              </p>
+            ) : null}
           </div>
 
           {draft.unresolvedAssignees.length > 0 ? (

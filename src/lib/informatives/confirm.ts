@@ -415,6 +415,10 @@ export async function confirmInformative(
           name: payload.company.legalName,
           cnpj: payload.company.normalizedCnpj,
           taxRegime: payload.company.taxRegime,
+          cnaeCode: payload.company.cnaeCode,
+          cnaeDescription: payload.company.cnaeDescription,
+          secondaryCnaes: payload.company.secondaryCnaes,
+          openedAt: payload.company.openedAt,
         })
         .onConflictDoNothing()
         .returning({ id: schema.clients.id });

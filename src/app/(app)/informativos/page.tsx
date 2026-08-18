@@ -94,6 +94,8 @@ export default async function InformativosPage() {
           cnpj: parsed.data.company.cnpj,
           taxRegime: parsed.data.company.taxRegime,
           createClient: parsed.data.company.createClient,
+          cnaeDescription: parsed.data.company.cnaeDescription,
+          openedAt: parsed.data.company.openedAt,
         },
         tasks: parsed.data.tasks.map((task, index) => ({
           index,

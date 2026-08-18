@@ -105,6 +105,22 @@ export const informativeDraftPayloadSchema = informativeExtractionSchema
       normalizedCnpj: z.string().regex(/^\d{14}$/).nullable(),
       clientId: z.string().uuid().nullable(),
       createClient: z.boolean(),
+      // Só preenchidos pelo fluxo "Novo cliente" (consulta de CNPJ na
+      // Receita) — null no caminho de texto livre. `.default(null)` (não só
+      // `.nullable()`) porque prévias antigas já persistidas no banco nem
+      // têm essas chaves no JSONB; sem o default, o parse dessas prévias
+      // falharia e a página as trataria como inexistentes.
+      cnaeCode: nullableText(10).default(null),
+      cnaeDescription: nullableText(200).default(null),
+      secondaryCnaes: z
+        .array(z.object({ code: z.string(), description: z.string() }))
+        .nullable()
+        .default(null),
+      openedAt: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .nullable()
+        .default(null),
     }),
     tasks: z
       .array(

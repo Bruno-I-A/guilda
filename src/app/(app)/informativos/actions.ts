@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
 import { canHandleInformatives } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
 import {
@@ -13,6 +14,8 @@ import {
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
+import { lookupCnpj } from "@/lib/cnpj-lookup";
+import { TAX_REGIMES } from "@/lib/clients-ui";
 import {
   cancelInformative,
   confirmInformative,
@@ -22,6 +25,7 @@ import {
   buildInformativeDraft,
   saveInformativeDraft,
   type InformativeActor,
+  type ResolvedCompany,
 } from "@/lib/informatives/draft";
 
 /**
@@ -80,12 +84,90 @@ async function requireInformativeActor(): Promise<
   };
 }
 
+const cnpjLookupSchema = z.object({ cnpj: z.string().min(1, "Informe o CNPJ.") });
+
+export interface CnpjLookupView {
+  legalName: string;
+  normalizedCnpj: string;
+  cnaeCode: string | null;
+  cnaeDescription: string | null;
+  secondaryCnaes: { code: string; description: string }[];
+  openedAt: string | null;
+  /** null quando a Receita não confirma opção pelo Simples — resto é escolha humana. */
+  suggestedTaxRegime: (typeof TAX_REGIMES)[number] | null;
+  /** Ex.: "ATIVA", "BAIXADA" — a tela decide se avisa, a action nunca bloqueia. */
+  cadastralSituation: string | null;
+}
+
+/**
+ * Passo 1 do fluxo "Novo cliente": busca o CNPJ na Receita (via BrasilAPI).
+ * Nunca é a última palavra — falha, CNPJ não encontrado ou empresa baixada
+ * só viram aviso na tela; a pessoa sempre pode preencher os campos à mão e
+ * seguir (decisão de 2026-08-18).
+ */
+export async function lookupClientCnpj(input: {
+  cnpj: string;
+}): Promise<ActionResult<CnpjLookupView>> {
+  const gate = await requireInformativeActor();
+  if (!gate.ok) return gate;
+
+  const parsed = cnpjLookupSchema.safeParse(input);
+  if (!parsed.success) {
+    return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+  }
+
+  const normalized = normalizeCnpj(parsed.data.cnpj);
+  if (!validateCnpj(normalized)) {
+    return err("CNPJ inválido — confira os dígitos.");
+  }
+
+  const result = await lookupCnpj(normalized);
+  if (!result.ok) {
+    return err(
+      result.reason === "not_found"
+        ? "CNPJ não encontrado na Receita. Confira os dígitos ou preencha os dados manualmente."
+        : "Não foi possível consultar a Receita agora. Preencha os dados manualmente.",
+    );
+  }
+
+  return {
+    ok: true,
+    data: {
+      legalName: result.data.legalName,
+      normalizedCnpj: normalized,
+      cnaeCode: result.data.cnaeCode,
+      cnaeDescription: result.data.cnaeDescription,
+      secondaryCnaes: result.data.secondaryCnaes,
+      openedAt: result.data.openedAt,
+      suggestedTaxRegime: result.data.isSimplesOptant ? "simples" : null,
+      cadastralSituation: result.data.cadastralSituation,
+    },
+  };
+}
+
+const resolvedCompanySchema = z.object({
+  legalName: z.string().trim().min(2, "Razão social muito curta.").max(200),
+  normalizedCnpj: z.string().regex(/^\d{14}$/, "CNPJ inválido."),
+  taxRegime: z.enum(TAX_REGIMES, { error: "Escolha o regime tributário." }),
+  cnaeCode: z.string().trim().max(10).nullable(),
+  cnaeDescription: z.string().trim().max(200).nullable(),
+  secondaryCnaes: z
+    .array(z.object({ code: z.string(), description: z.string() }))
+    .nullable(),
+  openedAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
+});
+
 const analyzeSchema = z.object({
   sourceText: z
     .string()
     .trim()
     .min(10, "Cole o informativo — está curto demais para analisar.")
     .max(12_000, "O informativo excede 12.000 caracteres. Envie uma empresa por vez."),
+  /** Presente só no fluxo "Novo cliente" — empresa já resolvida no passo 1. */
+  resolvedCompany: resolvedCompanySchema.optional(),
 });
 
 /**
@@ -95,6 +177,7 @@ const analyzeSchema = z.object({
  */
 export async function analyzeInformative(input: {
   sourceText: string;
+  resolvedCompany?: ResolvedCompany;
 }): Promise<ActionResult<{ informativeId: string }>> {
   const gate = await requireInformativeActor();
   if (!gate.ok) return gate;
@@ -106,7 +189,11 @@ export async function analyzeInformative(input: {
 
   let draft;
   try {
-    draft = await buildInformativeDraft(gate.actor, parsed.data.sourceText);
+    draft = await buildInformativeDraft(
+      gate.actor,
+      parsed.data.sourceText,
+      parsed.data.resolvedCompany,
+    );
   } catch (error) {
     // Falha de rede/chave de API não deve vazar detalhe interno para a tela.
     console.error("informativo: falha ao extrair", error);
