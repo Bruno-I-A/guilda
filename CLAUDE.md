@@ -144,6 +144,52 @@ CREATE POLICY org_isolation ON tasks
 - **member**: criar tarefas (para si ou colegas da org), atualizar as suas,
   aprovar tarefas que criou
 
+## Estrutura por clã (decisões de 2026-08-18)
+
+O clã deixou de ser um diretório da Guilda e virou o **espaço de trabalho** da
+pessoa. Consequências, todas já implementadas:
+
+- **Visibilidade**: member enxerga apenas os clãs em que tem vínculo; admin/owner
+  veem todos. Quem tem um clã só é levado direto para ele em `/clans`
+  (`src/domain/clan-access.ts`, puro e testado). Clã alheio responde 404, não 403.
+- **A composição do clã (entrar, sair, liderança, clã principal) mudou para
+  `/settings`, restrita a admin/owner.** Isto REVOGA a Decisão 7 da Mesa do Líder
+  (o líder gerenciava os integrantes do próprio clã): como o vínculo passou a
+  definir o que a pessoa vê, ele virou organograma. O líder continua dono do dia
+  a dia — distribui missões e remaneja a carteira.
+- **A página do clã tem abas**: Missões (a Mesa do Líder de sempre), Integrantes
+  (leitura), Campanhas e — só no Fiscal — Carteira.
+
+### Carteira (só do clã Fiscal)
+
+`fiscal_portfolios (org_id, client_id, user_id, assigned_by, notes)` com unicidade
+em `(org_id, client_id)`: **um responsável fiscal por empresa**. A carteira de uma
+pessoa é o conjunto das suas linhas — não existe entidade "carteira" com nome
+próprio, porque o que o escritório move é a EMPRESA, não o pacote. A ausência de
+linha é o estado que mais importa na tela: a empresa sem responsável.
+
+Escopo deliberadamente fiscal: Contabilidade trabalha por `accounting_closings` e
+os demais clãs por informativo. **Se outro clã pedir carteira, aí sim generalizar**
+para `(clan_id, client_id, user_id)` — não antes.
+
+`fiscal_portfolio_events` guarda os repasses (de quem, para quem, por quem). Existe
+porque "essa empresa não é minha" é discussão real.
+
+Empresa presa a quem saiu do clã não some da tela: ganha bloco próprio com o nome
+de quem a deixou para trás.
+
+### Campanhas de clã
+
+`clan_campaigns (org_id, clan_id, name, period_year, period_month, due_date, status)`
+— o guarda-chuva mensal do trabalho recorrente do clã. **Esta etapa entrega só o
+guarda-chuva**; a materialização das missões de cada empresa a partir dos
+`mission_templates` é a etapa seguinte, e é por isso que `tasks` ainda NÃO tem
+`campaign_id`. A coluna nasce junto com a instanciação, não antes.
+
+Atenção: `clan_campaigns` é a campanha POR CLÃ, mensal. Não confundir com o modelo
+de `missions`/`mission_submissions` descrito na Fase 5 abaixo (pool auto-servido
+por regime), que continua não implementado.
+
 ## Design e UX (decisões já tomadas — não redecidir do zero)
 
 - **Direção estética**: dark, denso, "espaço próprio" — explicitamente NÃO

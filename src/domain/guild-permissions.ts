@@ -58,11 +58,26 @@ export interface ClanScopedFacts {
 }
 
 /**
- * Decisão 7: o líder passa a gerenciar os integrantes do próprio clã.
- * Nomear/destituir líder continua exclusivo de admin/owner (ver
- * `canAppointClanLeader`).
+ * Quem monta a composição dos clãs: SOMENTE admin/owner (decisão de
+ * 2026-08-18, que revoga a Decisão 7 — o líder gerenciava os integrantes do
+ * próprio clã). O motivo é de organograma, não de confiança: com o clã
+ * virando o espaço de trabalho da pessoa, entrar e sair de clã passou a
+ * definir o que ela vê, então a composição vive nas Configurações da Guilda.
+ *
+ * O líder continua dono do dia a dia: distribui missões
+ * (`canDistributeClanTasks`) e remaneja a carteira
+ * (`canManageFiscalPortfolio`).
  */
 export function canManageClanMembership(actor: ClanScopedFacts): boolean {
+  return isAdminRole(actor.role);
+}
+
+/**
+ * Remanejar empresa entre pessoas da carteira fiscal é trabalho do dia a dia
+ * do líder — mesma régua da Mesa do Líder. Membro comum enxerga a carteira
+ * inteira do clã (transparência de quem responde pelo quê) mas não move nada.
+ */
+export function canManageFiscalPortfolio(actor: ClanScopedFacts): boolean {
   return isAdminRole(actor.role) || actor.leadsThisClan;
 }
 

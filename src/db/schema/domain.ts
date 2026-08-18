@@ -1021,3 +1021,167 @@ export const taskAssigneeSuggestionsRelations = relations(
 
 export type GuildNotice = typeof guildNotices.$inferSelect;
 export type GuildNoticeRead = typeof guildNoticeReads.$inferSelect;
+
+/**
+ * Carteira do clã Fiscal: qual pessoa responde por qual empresa-cliente.
+ *
+ * Uma linha = uma empresa sob responsabilidade de alguém. A carteira de uma
+ * pessoa é o conjunto das suas linhas — não existe entidade "carteira" com
+ * nome próprio, porque a unidade que o escritório move é a EMPRESA, não o
+ * pacote. A AUSÊNCIA de linha é estado válido e o mais importante da tela:
+ * é a empresa sem responsável que o líder precisa distribuir.
+ *
+ * Escopo deliberadamente fiscal (decisão de 2026-08-18): Contabilidade
+ * trabalha por fechamento (accounting_closings) e os demais clãs por
+ * informativo, não por carteira. Se outro clã pedir o mesmo, aí sim vale
+ * generalizar para (clan_id, client_id, user_id).
+ */
+export const fiscalPortfolios = pgTable(
+  "fiscal_portfolios",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    /** Quem fez a atribuição — o líder ou admin que distribuiu. */
+    assignedBy: text("assigned_by")
+      .notNull()
+      .references(() => user.id),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Um único responsável fiscal por empresa: é o que torna "sem responsável"
+    // um LEFT JOIN ... IS NULL em vez de contagem, e impede duas pessoas
+    // acharem que a empresa é da outra.
+    uniqueIndex("fiscal_portfolios_org_client_uidx").on(t.orgId, t.clientId),
+    index("fiscal_portfolios_org_user_idx").on(t.orgId, t.userId),
+  ],
+);
+
+/**
+ * Histórico imutável de repasses da carteira fiscal. Existe porque "essa
+ * empresa não é minha" é discussão real: guarda quem passou o quê para quem
+ * e quando. `fromUserId` nulo = empresa não tinha responsável; `toUserId`
+ * nulo = empresa saiu da carteira sem destino.
+ */
+export const fiscalPortfolioEvents = pgTable(
+  "fiscal_portfolio_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id),
+    fromUserId: text("from_user_id").references(() => user.id),
+    toUserId: text("to_user_id").references(() => user.id),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => user.id),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("fiscal_portfolio_events_org_client_idx").on(t.orgId, t.clientId),
+    index("fiscal_portfolio_events_org_created_idx").on(t.orgId, t.createdAt),
+  ],
+);
+
+export const fiscalPortfoliosRelations = relations(fiscalPortfolios, ({ one }) => ({
+  client: one(clients, {
+    fields: [fiscalPortfolios.clientId],
+    references: [clients.id],
+  }),
+  user: one(user, {
+    fields: [fiscalPortfolios.userId],
+    references: [user.id],
+  }),
+}));
+
+export type FiscalPortfolio = typeof fiscalPortfolios.$inferSelect;
+export type FiscalPortfolioEvent = typeof fiscalPortfolioEvents.$inferSelect;
+
+/** Situação de uma campanha mensal de clã. */
+export const clanCampaignStatus = pgEnum("clan_campaign_status", [
+  "planned",
+  "active",
+  "completed",
+  "cancelled",
+]);
+
+/**
+ * Campanha mensal de clã: o trabalho grande e recorrente do mês
+ * (apuração do Fiscal, folha do RH, …). O guarda-chuva vive aqui; a
+ * materialização das missões a partir dos templates sobre a carteira é a
+ * etapa seguinte — por isso `tasks` ainda não referencia esta tabela.
+ */
+export const clanCampaigns = pgTable(
+  "clan_campaigns",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    clanId: uuid("clan_id").notNull(),
+    name: varchar("name", { length: 200 }).notNull(),
+    periodYear: smallint("period_year").notNull(),
+    periodMonth: smallint("period_month").notNull(),
+    dueDate: date("due_date", { mode: "string" }),
+    status: clanCampaignStatus("status").notNull().default("planned"),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "clan_campaigns_org_clan_fk",
+      columns: [t.orgId, t.clanId],
+      foreignColumns: [clans.orgId, clans.id],
+    }).onDelete("cascade"),
+    check(
+      "clan_campaigns_period_month_check",
+      sql`${t.periodMonth} BETWEEN 1 AND 12`,
+    ),
+    check(
+      "clan_campaigns_period_year_check",
+      sql`${t.periodYear} BETWEEN 2000 AND 2100`,
+    ),
+    uniqueIndex("clan_campaigns_org_clan_period_name_uidx").on(
+      t.orgId,
+      t.clanId,
+      t.periodYear,
+      t.periodMonth,
+      t.name,
+    ),
+    index("clan_campaigns_org_clan_period_idx").on(
+      t.orgId,
+      t.clanId,
+      t.periodYear,
+      t.periodMonth,
+    ),
+  ],
+);
+
+export const clanCampaignsRelations = relations(clanCampaigns, ({ one }) => ({
+  clan: one(clans, {
+    fields: [clanCampaigns.clanId],
+    references: [clans.id],
+  }),
+  createdByUser: one(user, {
+    fields: [clanCampaigns.createdBy],
+    references: [user.id],
+  }),
+}));
+
+export type ClanCampaign = typeof clanCampaigns.$inferSelect;

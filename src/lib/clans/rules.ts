@@ -8,6 +8,9 @@ export const DEFAULT_ORGANIZATION_CLANS = [
 
 export const DEFAULT_PRIMARY_CLAN_SLUG = "contabilidade";
 
+/** O clã que trabalha por carteira de empresas (ver src/lib/clan-tabs.ts). */
+export const FISCAL_CLAN_SLUG = "fiscal";
+
 export const ACTIVE_ASSIGNED_TASK_STATUSES = [
   "pending",
   "in_progress",

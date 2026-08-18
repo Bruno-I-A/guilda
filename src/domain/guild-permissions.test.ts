@@ -6,6 +6,7 @@ import {
   canEmphasizeNotice,
   canHandleInformatives,
   canManageClanMembership,
+  canManageFiscalPortfolio,
   canSeeNoticeAcknowledgements,
 } from "./guild-permissions";
 
@@ -63,14 +64,23 @@ describe("mural — quem pode obrigar a Guilda a dar ciência", () => {
   });
 });
 
-describe("clã — decisão 7", () => {
-  test("líder gerencia integrantes do próprio clã", () => {
+describe("clã — composição é das Configurações", () => {
+  test.each(["admin", "owner"] as const)(
+    "%s gerencia a composição do clã",
+    (role) => {
+      expect(canManageClanMembership({ role, leadsThisClan: false })).toBe(true);
+    },
+  );
+
+  // Revoga a Decisão 7 (2026-08-18): entrar/sair de clã define o que a pessoa
+  // vê, então nem o líder do próprio clã mexe nisso.
+  test("líder do próprio clã NÃO gerencia mais a composição", () => {
     expect(
       canManageClanMembership({ role: "member", leadsThisClan: true }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  test("líder de outro clã não gerencia este", () => {
+  test("member comum não gerencia composição", () => {
     expect(
       canManageClanMembership({ role: "member", leadsThisClan: false }),
     ).toBe(false);
@@ -94,6 +104,24 @@ describe("clã — decisão 7", () => {
     );
     expect(
       canDistributeClanTasks({ role: "member", leadsThisClan: false }),
+    ).toBe(false);
+  });
+});
+
+describe("carteira fiscal — quem remaneja empresa", () => {
+  test("líder do clã remaneja a carteira do próprio clã", () => {
+    expect(
+      canManageFiscalPortfolio({ role: "member", leadsThisClan: true }),
+    ).toBe(true);
+  });
+
+  test.each(["admin", "owner"] as const)("%s remaneja qualquer carteira", (role) => {
+    expect(canManageFiscalPortfolio({ role, leadsThisClan: false })).toBe(true);
+  });
+
+  test("member comum só enxerga, não remaneja", () => {
+    expect(
+      canManageFiscalPortfolio({ role: "member", leadsThisClan: false }),
     ).toBe(false);
   });
 });
