@@ -16,7 +16,16 @@ const DRIZZLE_KIT = "node_modules/drizzle-kit/bin.cjs";
  */
 function runMigrations() {
   return new Promise((resolve, reject) => {
-    console.log("Aplicando migrations do banco...");
+    // Migrations precisam do role DONO das tabelas (cria tabela e politica).
+    // O role da aplicacao nao consegue. Dizer qual variavel foi usada evita
+    // um crash-loop silencioso quando so DATABASE_URL (nao-owner) existe.
+    const usingOwner = Boolean(process.env.MIGRATION_DATABASE_URL);
+    console.log(
+      usingOwner
+        ? "Aplicando migrations com MIGRATION_DATABASE_URL (role dono)..."
+        : "Aplicando migrations com DATABASE_URL (MIGRATION_DATABASE_URL ausente) — " +
+          "se este for o role da aplicacao, a migration vai falhar por falta de permissao.",
+    );
     const child = spawn(process.execPath, [DRIZZLE_KIT, "migrate"], {
       env: process.env,
       stdio: "inherit",
