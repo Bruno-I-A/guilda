@@ -14,6 +14,9 @@ const NEW_TABLES = [
   "guild_notices",
   "guild_notice_reads",
   "informatives",
+  "fiscal_portfolios",
+  "fiscal_portfolio_events",
+  "clan_campaigns",
 ];
 
 let failures = 0;

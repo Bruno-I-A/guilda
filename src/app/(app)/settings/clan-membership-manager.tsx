@@ -27,7 +27,7 @@ import {
   removeClanMembership,
   setClanLeader,
   setPrimaryClan,
-} from "./actions";
+} from "./clan-actions";
 
 interface MembershipView {
   userId: string;
@@ -82,7 +82,7 @@ export function ClanMembershipManager({
   }
 
   return (
-    <div className="grid gap-3 border-t pt-4">
+    <div className="grid gap-3">
       <div className="flex flex-wrap items-center gap-2">
         {available.length > 0 ? (
           <>

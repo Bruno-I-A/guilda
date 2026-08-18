@@ -12,14 +12,17 @@ import {
   LogOut,
   MoreHorizontal,
   ScrollText,
+  Settings,
   Trophy,
   Users,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { GuildSeal } from "@/components/guild-crest";
+import { isAdminRole } from "@/domain/guild-permissions";
+import type { OrgRole } from "@/domain/task-state";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -51,12 +54,13 @@ const NAV_ITEMS = [
   { href: "/tasks", label: "Missões", icon: ListTodo },
   { href: "/mural", label: "Mural", icon: ScrollText },
   { href: "/closings", label: "Fechamentos", icon: CalendarCheck2 },
-  { href: "/clans", label: "Clãs", icon: Flag },
+  { href: "/clans", label: "Meu clã", icon: Flag },
   { href: "/informativos", label: "Informativos", icon: Inbox },
   { href: "/clients", label: "Clientes", icon: Building2 },
   { href: "/leaderboard", label: "Ranking", icon: Trophy },
   { href: "/members", label: "Membros", icon: Users },
   { href: "/profile", label: "Perfil", icon: CircleUser },
+  { href: "/settings", label: "Configurações", icon: Settings, adminOnly: true },
 ] as const;
 
 const MOBILE_PRIMARY_HREFS = [
@@ -66,12 +70,14 @@ const MOBILE_PRIMARY_HREFS = [
   "/closings",
 ] as const;
 
-const MOBILE_PRIMARY = NAV_ITEMS.filter((item) =>
-  (MOBILE_PRIMARY_HREFS as readonly string[]).includes(item.href),
-);
-const MOBILE_OVERFLOW = NAV_ITEMS.filter(
-  (item) => !(MOBILE_PRIMARY_HREFS as readonly string[]).includes(item.href),
-);
+/**
+ * Esconder o item não é a proteção — a própria rota /settings redireciona
+ * quem não é admin. Aqui é só não oferecer porta que não abre.
+ */
+function navItemsFor(role: string) {
+  const admin = isAdminRole(role as OrgRole);
+  return NAV_ITEMS.filter((item) => !("adminOnly" in item) || admin);
+}
 
 function UserMenu({
   user,
@@ -157,7 +163,15 @@ export function AppShell({
   const pathname = usePathname();
   const [overflowOpen, setOverflowOpen] = useState(false);
 
-  const overflowActive = MOBILE_OVERFLOW.some((item) =>
+  const navItems = useMemo(() => navItemsFor(role), [role]);
+  const mobilePrimary = navItems.filter((item) =>
+    (MOBILE_PRIMARY_HREFS as readonly string[]).includes(item.href),
+  );
+  const mobileOverflow = navItems.filter(
+    (item) => !(MOBILE_PRIMARY_HREFS as readonly string[]).includes(item.href),
+  );
+
+  const overflowActive = mobileOverflow.some((item) =>
     pathname.startsWith(item.href),
   );
 
@@ -175,7 +189,7 @@ export function AppShell({
         </div>
         <div className="divider-rune mx-4 mb-2" />
         <nav className="flex flex-1 flex-col gap-1 px-2" aria-label="Principal">
-          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+          {navItems.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href);
             return (
               <Link
@@ -225,7 +239,7 @@ export function AppShell({
           aria-label="Navegação inferior"
           className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-background/95 backdrop-blur md:hidden"
         >
-          {MOBILE_PRIMARY.map(({ href, label, icon: Icon }) => {
+          {mobilePrimary.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href);
             return (
               <Link
@@ -269,7 +283,7 @@ export function AppShell({
                 <SheetTitle>Mais da Guilda</SheetTitle>
               </SheetHeader>
               <nav className="grid gap-1 px-4 pb-6" aria-label="Rotas adicionais">
-                {MOBILE_OVERFLOW.map(({ href, label, icon: Icon }) => {
+                {mobileOverflow.map(({ href, label, icon: Icon }) => {
                   const active = pathname.startsWith(href);
                   return (
                     <Link

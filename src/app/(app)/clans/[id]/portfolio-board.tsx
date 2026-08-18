@@ -1,0 +1,408 @@
+"use client";
+
+import {
+  AlertTriangle,
+  Building2,
+  Crown,
+  Search,
+  UserRoundX,
+  Users,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  TAX_REGIME_BADGE_CLASSES,
+  TAX_REGIME_LABELS,
+  type TaxRegime,
+} from "@/lib/clients-ui";
+import { cn } from "@/lib/utils";
+
+import { assignPortfolioClients } from "./portfolio-actions";
+
+export interface PortfolioClientView {
+  id: string;
+  name: string;
+  taxRegime: TaxRegime;
+  active: boolean;
+}
+
+export interface PortfolioBucketView {
+  userId: string;
+  name: string;
+  isLeader: boolean;
+  clients: PortfolioClientView[];
+}
+
+interface MemberOption {
+  userId: string;
+  name: string;
+}
+
+/** Devolve à fila de "sem responsável" — valor sentinela do Select. */
+const UNASSIGN = "__unassign__";
+
+function normalize(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+}
+
+function ClientRow({
+  client,
+  selected,
+  onToggle,
+  selectable,
+}: {
+  client: PortfolioClientView;
+  selected: boolean;
+  onToggle: (id: string) => void;
+  selectable: boolean;
+}) {
+  const content = (
+    <>
+      <span className="min-w-0 flex-1 truncate">{client.name}</span>
+      {!client.active ? (
+        <Badge variant="outline" className="shrink-0 text-[10px]">
+          inativa
+        </Badge>
+      ) : null}
+      <span
+        className={cn(
+          "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+          TAX_REGIME_BADGE_CLASSES[client.taxRegime],
+        )}
+      >
+        {TAX_REGIME_LABELS[client.taxRegime]}
+      </span>
+    </>
+  );
+
+  if (!selectable) {
+    return (
+      <li className="flex items-center gap-2 rounded-md bg-muted/25 px-2.5 py-1.5 text-sm">
+        {content}
+      </li>
+    );
+  }
+
+  return (
+    <li>
+      <label
+        className={cn(
+          "flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors",
+          selected ? "bg-primary/15" : "bg-muted/25 hover:bg-muted/50",
+        )}
+      >
+        <input
+          type="checkbox"
+          className="size-3.5 shrink-0 accent-primary"
+          checked={selected}
+          onChange={() => onToggle(client.id)}
+        />
+        {content}
+      </label>
+    </li>
+  );
+}
+
+export function PortfolioBoard({
+  clanId,
+  canManage,
+  members,
+  buckets,
+  orphans,
+  stranded,
+  totalClients,
+  averagePerMember,
+}: {
+  clanId: string;
+  canManage: boolean;
+  members: readonly MemberOption[];
+  buckets: readonly PortfolioBucketView[];
+  orphans: readonly PortfolioClientView[];
+  stranded: readonly { client: PortfolioClientView; holderName: string }[];
+  totalClients: number;
+  averagePerMember: number;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [destination, setDestination] = useState(members[0]?.userId ?? "");
+
+  const needle = normalize(query.trim());
+  const matches = (client: PortfolioClientView) =>
+    !needle || normalize(client.name).includes(needle);
+
+  const visibleOrphans = orphans.filter(matches);
+  const visibleStranded = stranded.filter((row) => matches(row.client));
+  const visibleBuckets = buckets.map((bucket) => ({
+    ...bucket,
+    visible: bucket.clients.filter(matches),
+  }));
+
+  function toggle(id: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleMany(ids: readonly string[]) {
+    setSelected((current) => {
+      const next = new Set(current);
+      const allSelected = ids.every((id) => next.has(id));
+      for (const id of ids) {
+        if (allSelected) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function apply() {
+    const clientIds = [...selected];
+    if (clientIds.length === 0) return;
+    const userId = destination === UNASSIGN ? null : destination;
+
+    startTransition(async () => {
+      const result = await assignPortfolioClients({ clanId, userId, clientIds });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      const { moved, skipped } = result.data ?? { moved: 0, skipped: 0 };
+      toast.success(
+        `${moved} ${moved === 1 ? "empresa movida" : "empresas movidas"}` +
+          (skipped > 0 ? ` · ${skipped} ignorada(s)` : ""),
+      );
+      setSelected(new Set());
+      router.refresh();
+    });
+  }
+
+  const assignedCount = buckets.reduce(
+    (total, bucket) => total + bucket.clients.length,
+    0,
+  );
+
+  return (
+    <div className="grid gap-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="rounded-lg bg-muted/45 p-2.5">
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Building2 className="size-3.5" aria-hidden /> Empresas
+          </span>
+          <strong className="mt-1 block font-mono text-lg">{totalClients}</strong>
+        </div>
+        <div className="rounded-lg bg-muted/45 p-2.5">
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <UserRoundX className="size-3.5" aria-hidden /> Sem responsável
+          </span>
+          <strong
+            className={cn(
+              "mt-1 block font-mono text-lg",
+              orphans.length + stranded.length > 0 && "text-destructive",
+            )}
+          >
+            {orphans.length + stranded.length}
+          </strong>
+        </div>
+        <div className="rounded-lg bg-muted/45 p-2.5">
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Users className="size-3.5" aria-hidden /> Na carteira
+          </span>
+          <strong className="mt-1 block font-mono text-lg">{assignedCount}</strong>
+        </div>
+        <div className="rounded-lg bg-muted/45 p-2.5">
+          <span className="text-xs text-muted-foreground">Média por pessoa</span>
+          <strong className="mt-1 block font-mono text-lg">
+            {averagePerMember.toFixed(1)}
+          </strong>
+        </div>
+      </div>
+
+      <div className="relative">
+        <Search
+          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+          aria-hidden
+        />
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Buscar empresa pelo nome"
+          aria-label="Buscar empresa"
+          className="pl-9"
+        />
+      </div>
+
+      {/* Barra de ação: só existe com seleção — sem seleção não há decisão. */}
+      {canManage && selected.size > 0 ? (
+        <div className="sticky bottom-20 z-20 flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 shadow-lg md:bottom-4">
+          <span className="text-sm font-medium">
+            {selected.size}{" "}
+            {selected.size === 1 ? "empresa selecionada" : "empresas selecionadas"}
+          </span>
+          <Select value={destination} onValueChange={setDestination}>
+            <SelectTrigger className="min-w-44 flex-1" aria-label="Destino">
+              <SelectValue placeholder="Para quem" />
+            </SelectTrigger>
+            <SelectContent>
+              {members.map((member) => (
+                <SelectItem key={member.userId} value={member.userId}>
+                  {member.name}
+                </SelectItem>
+              ))}
+              <SelectItem value={UNASSIGN}>Tirar da carteira</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button type="button" disabled={pending || !destination} onClick={apply}>
+            Mover
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => setSelected(new Set())}
+          >
+            Limpar
+          </Button>
+        </div>
+      ) : null}
+
+      {visibleStranded.length > 0 ? (
+        <section className="grid gap-2 rounded-lg border border-destructive/50 bg-destructive/5 p-3">
+          <h3 className="flex items-center gap-1.5 text-sm font-medium text-destructive">
+            <AlertTriangle className="size-4" aria-hidden />
+            {visibleStranded.length} com quem saiu do clã
+          </h3>
+          <ul className="grid gap-1">
+            {visibleStranded.map(({ client, holderName }) => (
+              <li key={client.id} className="grid gap-0.5">
+                <ClientRow
+                  client={client}
+                  selected={selected.has(client.id)}
+                  onToggle={toggle}
+                  selectable={canManage}
+                />
+                <span className="px-2.5 text-[11px] text-muted-foreground">
+                  estava com {holderName}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section className="grid gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="flex items-center gap-1.5 font-medium">
+            <UserRoundX className="size-4 text-muted-foreground" aria-hidden />
+            Sem responsável
+            <span className="font-mono text-sm text-muted-foreground">
+              {visibleOrphans.length}
+            </span>
+          </h3>
+          {canManage && visibleOrphans.length > 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => toggleMany(visibleOrphans.map((client) => client.id))}
+            >
+              Selecionar todas
+            </Button>
+          ) : null}
+        </div>
+        {visibleOrphans.length === 0 ? (
+          <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+            {needle
+              ? "Nenhuma empresa sem responsável com esse nome."
+              : "Toda empresa tem responsável."}
+          </p>
+        ) : (
+          <ul className="grid gap-1">
+            {visibleOrphans.map((client) => (
+              <ClientRow
+                key={client.id}
+                client={client}
+                selected={selected.has(client.id)}
+                onToggle={toggle}
+                selectable={canManage}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {visibleBuckets.length === 0 ? (
+        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+          Nenhuma pessoa vinculada ao clã. A composição é definida nas
+          Configurações da Guilda.
+        </p>
+      ) : (
+        visibleBuckets.map((bucket) => (
+          <section key={bucket.userId} className="grid gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="flex items-center gap-1.5 font-medium">
+                {bucket.name}
+                {bucket.isLeader ? (
+                  <Crown className="size-3.5 text-primary" aria-hidden />
+                ) : null}
+                <span className="font-mono text-sm text-muted-foreground">
+                  {bucket.clients.length}
+                </span>
+              </h3>
+              {canManage && bucket.visible.length > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    toggleMany(bucket.visible.map((client) => client.id))
+                  }
+                >
+                  Selecionar todas
+                </Button>
+              ) : null}
+            </div>
+            {bucket.visible.length === 0 ? (
+              <p className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">
+                {needle
+                  ? "Nenhuma empresa com esse nome nesta carteira."
+                  : "Carteira vazia."}
+              </p>
+            ) : (
+              <ul className="grid gap-1">
+                {bucket.visible.map((client) => (
+                  <ClientRow
+                    key={client.id}
+                    client={client}
+                    selected={selected.has(client.id)}
+                    onToggle={toggle}
+                    selectable={canManage}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
+        ))
+      )}
+    </div>
+  );
+}
