@@ -18,7 +18,8 @@
     "import:clients": "node --conditions=react-server --import=tsx scripts/import-clients.ts",
     "telegram:worker": "node --conditions=react-server --import=tsx scripts/telegram-worker.ts",
     "e2e:phase2": "node scripts/e2e-phase2.mjs",
-    "e2e:phase3": "node scripts/e2e-phase3.mjs"
+    "e2e:phase3": "node scripts/e2e-phase3.mjs",
+    "check:rls": "node scripts/check-rls.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
