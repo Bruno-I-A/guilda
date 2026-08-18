@@ -1,0 +1,4 @@
+Mantém a pasta public/ no versionamento mesmo vazia.
+O Next.js serve arquivos estáticos daqui e o Dockerfile a copia para a
+imagem final; sem este arquivo o Git descarta o diretório vazio e o build
+quebra em "COPY /app/public: not found".

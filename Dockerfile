@@ -16,6 +16,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
 ENV BETTER_AUTH_SECRET=placeholder-somente-para-o-build-32ch
 ENV BETTER_AUTH_URL=http://localhost:4000
+# Garante que public/ exista mesmo sem nenhum asset: o Git nao versiona
+# diretorio vazio e o COPY do estagio runner falharia sem ela.
+RUN mkdir -p public
 RUN npm run build
 
 # Roda as migrations do Drizzle (precisa das devDependencies)
