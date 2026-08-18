@@ -2,7 +2,6 @@
 
 import {
   Building2,
-  CalendarCheck2,
   CircleUser,
   Flag,
   Home,
@@ -53,7 +52,6 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Início", icon: Home },
   { href: "/tasks", label: "Missões", icon: ListTodo },
   { href: "/mural", label: "Mural", icon: ScrollText },
-  { href: "/closings", label: "Fechamentos", icon: CalendarCheck2 },
   { href: "/clans", label: "Meu clã", icon: Flag },
   { href: "/informativos", label: "Informativos", icon: Inbox },
   { href: "/clients", label: "Clientes", icon: Building2 },
@@ -67,7 +65,7 @@ const MOBILE_PRIMARY_HREFS = [
   "/dashboard",
   "/tasks",
   "/mural",
-  "/closings",
+  "/clans",
 ] as const;
 
 /**

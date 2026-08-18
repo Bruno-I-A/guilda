@@ -462,7 +462,7 @@ async function transitionTask(options: {
     revalidatePath(`/tasks/${options.taskId}`);
     revalidatePath("/dashboard");
     revalidatePath("/clans");
-    revalidatePath("/closings");
+    revalidatePath("/clans/[id]", "page");
     revalidatePath("/profile");
     revalidatePath("/leaderboard");
   }

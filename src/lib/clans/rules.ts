@@ -11,6 +11,9 @@ export const DEFAULT_PRIMARY_CLAN_SLUG = "contabilidade";
 /** O clã que trabalha por carteira de empresas (ver src/lib/clan-tabs.ts). */
 export const FISCAL_CLAN_SLUG = "fiscal";
 
+/** O clã que trabalha por fechamento anual das empresas. */
+export const CONTABILIDADE_CLAN_SLUG = "contabilidade";
+
 export const ACTIVE_ASSIGNED_TASK_STATUSES = [
   "pending",
   "in_progress",

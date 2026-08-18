@@ -19,6 +19,7 @@ import { getActiveMember, requireOrgSession } from "@/lib/session";
 
 import { CampaignsTab } from "./campaigns-tab";
 import { ClanTabNav } from "./clan-tab-nav";
+import { ClosingsTab, type ClosingsTabParams } from "./closings-tab";
 import { MembersTab } from "./members-tab";
 import { MissionsTab } from "./missions-tab";
 import { PortfolioTab } from "./portfolio-tab";
@@ -36,10 +37,12 @@ export default async function ClanPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  // Além da aba, a página carrega os filtros das seções que os usam
+  // (Fechamentos filtra por ano, regime, busca e situação).
+  searchParams: Promise<{ tab?: string } & ClosingsTabParams>;
 }) {
   const { id } = await params;
-  const { tab } = await searchParams;
+  const { tab, ...filters } = await searchParams;
   const session = await requireOrgSession();
   const viewer = await getActiveMember();
   if (!viewer) redirect("/onboarding");
@@ -167,6 +170,10 @@ export default async function ClanPage({
           memberships={memberships}
           canManage={canManageFiscalPortfolio({ role, leadsThisClan })}
         />
+      ) : null}
+
+      {activeTab === "closings" ? (
+        <ClosingsTab orgId={session.orgId} clanId={clan.id} params={filters} />
       ) : null}
     </div>
   );

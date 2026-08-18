@@ -81,7 +81,7 @@ export async function createClient(
   }
 
   revalidatePath("/clients");
-  revalidatePath("/closings");
+  revalidatePath("/clans/[id]", "page");
   return { ok: true };
 }
 
@@ -127,7 +127,7 @@ export async function updateClient(
   }
 
   revalidatePath("/clients");
-  revalidatePath("/closings");
+  revalidatePath("/clans/[id]", "page");
   return { ok: true };
 }
 
@@ -160,7 +160,7 @@ export async function setClientActive(
   if (updated.length === 0) return err("Empresa não encontrada.");
 
   revalidatePath("/clients");
-  revalidatePath("/closings");
+  revalidatePath("/clans/[id]", "page");
   return { ok: true };
 }
 
@@ -290,6 +290,6 @@ export async function importClientsFromSpreadsheet(
   });
 
   revalidatePath("/clients");
-  revalidatePath("/closings");
+  revalidatePath("/clans/[id]", "page");
   return { ok: true, data: summary };
 }

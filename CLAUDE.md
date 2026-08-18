@@ -158,7 +158,16 @@ pessoa. Consequências, todas já implementadas:
   definir o que a pessoa vê, ele virou organograma. O líder continua dono do dia
   a dia — distribui missões e remaneja a carteira.
 - **A página do clã tem abas**: Missões (a Mesa do Líder de sempre), Integrantes
-  (leitura), Campanhas e — só no Fiscal — Carteira.
+  (leitura), Campanhas e mais uma seção específica do clã quando existe —
+  **Carteira** no Fiscal, **Fechamentos** na Contabilidade. Missões/Integrantes/
+  Campanhas valem para todo clã; as outras duas são específicas porque o
+  trabalho tem forma diferente em cada área, e enfiá-las em todo clã encheria a
+  navegação de aba morta. A tabela aba→clã dono vive em `src/lib/clan-tabs.ts`.
+- **`/closings` saiu da navegação global** e virou a aba Fechamentos da
+  Contabilidade. A rota sobrevive apenas como **redirecionamento** (o botão
+  "Abrir fechamentos" das notificações do Telegram aponta para ela). Como
+  Fechamentos passou a viver em rota dinâmica, quem revalida usa
+  `revalidatePath("/clans/[id]", "page")`.
 
 ### Carteira (só do clã Fiscal)
 

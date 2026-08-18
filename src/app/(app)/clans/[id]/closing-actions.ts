@@ -132,7 +132,7 @@ export async function createClosing(
   });
 
   if (!result.ok) return result;
-  revalidatePath("/closings");
+  revalidatePath("/clans/[id]", "page");
   return result;
 }
 
@@ -202,7 +202,7 @@ export async function updateClosing(
   });
 
   if (!result.ok) return result;
-  revalidatePath("/closings");
+  revalidatePath("/clans/[id]", "page");
   return { ok: true };
 }
 
@@ -272,7 +272,7 @@ export async function setClosingStatus(
   });
 
   if (updated.length === 0) return err("Fechamento não encontrado.");
-  revalidatePath("/closings");
+  revalidatePath("/clans/[id]", "page");
   return { ok: true };
 }
 
@@ -300,7 +300,7 @@ export async function deleteClosing(
   );
 
   if (deleted.length === 0) return err("Fechamento não encontrado.");
-  revalidatePath("/closings");
+  revalidatePath("/clans/[id]", "page");
   return { ok: true };
 }
 
@@ -425,7 +425,7 @@ export async function setYearClosed(
   });
 
   if (!result.ok) return result;
-  revalidatePath("/closings");
+  revalidatePath("/clans/[id]", "page");
   if (result.data.xpAwarded) {
     revalidatePath("/profile");
     revalidatePath("/leaderboard");
@@ -494,7 +494,7 @@ export async function setDefisCompleted(
   });
 
   if (!result.ok) return result;
-  revalidatePath("/closings");
+  revalidatePath("/clans/[id]", "page");
   return { ok: true };
 }
 
@@ -556,6 +556,6 @@ export async function updateYearNotes(
   });
 
   if (!result.ok) return result;
-  revalidatePath("/closings");
+  revalidatePath("/clans/[id]", "page");
   return { ok: true };
 }

@@ -45,7 +45,7 @@ import {
   setYearClosed,
   updateClosing,
   updateYearNotes,
-} from "./actions";
+} from "./closing-actions";
 
 export interface ClosingView {
   id: string;
