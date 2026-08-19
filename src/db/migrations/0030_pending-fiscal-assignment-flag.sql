@@ -1,0 +1,1 @@
+ALTER TABLE "clients" ADD COLUMN "pending_fiscal_assignment" boolean DEFAULT false NOT NULL;

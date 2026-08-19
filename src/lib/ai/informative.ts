@@ -59,7 +59,8 @@ Regras:
 - SÓ LINHA DE AÇÃO VIRA MISSÃO. O discriminador é o verbo no infinitivo que abre a descrição da ação. Combinado permanente ("Camila responde por todos os informativos", "distribuição de lucros trimestral", "Rafa e Bruno acompanham a contabilidade") não tem conclusão possível: mande para ignoredNotes, nunca para tasks. Todo o bloco OBSERVAÇÕES vai para ignoredNotes.${
     isNewClientOnboarding
       ? `
-- EXCEÇÃO — CADASTRO DE CLIENTE NOVO: esta mensagem cadastra um cliente que ainda não existe no sistema, então nada do que ela descreve já está configurado. Uma frase que seria "combinado permanente" para um cliente já cadastrado (ex.: "distribuição de lucros de 20 mil por mês", "pró-labore de X", "Fator R já parametrizado") aqui significa que alguém precisa CONFIGURAR essa política pela primeira vez: gere uma missão "Configurar [o que a linha descreve]" para o setor/pessoa citada na linha. Só NÃO gere missão quando a linha for uma negação pura, sem nada a configurar (ex.: "sem pró-labore", "sem particularidades", "nenhuma pendência").`
+- EXCEÇÃO — CADASTRO DE CLIENTE NOVO: esta mensagem cadastra um cliente que ainda não existe no sistema, então nada do que ela descreve já está configurado. Uma frase que seria "combinado permanente" para um cliente já cadastrado (ex.: "distribuição de lucros de 20 mil por mês", "pró-labore de X", "Fator R já parametrizado") aqui significa que alguém precisa CONFIGURAR essa política pela primeira vez: gere uma missão "Configurar [o que a linha descreve]" para o setor/pessoa citada na linha. Só NÃO gere missão quando a linha for uma negação pura, sem nada a configurar (ex.: "sem pró-labore", "sem particularidades", "nenhuma pendência").
+- EXCEÇÃO DENTRO DA EXCEÇÃO — SETOR FISCAL: esta regra de "Configurar X" NÃO vale para o setor FISCAL. Uma linha do FISCAL que seja combinado permanente (valores combinados, faturamento, Fator R, particularidades tributárias) NÃO vira missão nenhuma e NÃO vai para ignoredNotes: preencha fiscalNote.text com o conteúdo da linha (sem o prefixo "FISCAL –") e fiscalNote.assignee com o nome citado nela, se houver. Isso porque quem decide o responsável fiscal desta empresa é o líder do clã, fora do fluxo de missões — a informação vai direto para a carteira dele. Uma linha do FISCAL que seja ação de verdade (ex.: "entregar informativos mensais", "parametrizar o Simples") continua virando missão normalmente, sem relação com fiscalNote. Negação pura do FISCAL ("sem particularidades") não gera missão nem fiscalNote — fica tudo null.`
       : ""
   }
 - Em baixas, linhas como "COBRANÇA – RECIBO" e "ATENDIMENTO – Jessica" apenas registram contexto e não são ações. Já verbos no infinitivo como finalizar, retirar, separar, confeccionar, coletar, escanear, salvar, recortar e mover indicam ações pendentes, salvo quando marcadas como efetuadas/concluídas.
@@ -86,6 +87,7 @@ Regras:
 - taxRegime: simples, presumido, association ou real; null se ausente.
 - CNPJ pode vir formatado; preserve-o no campo cnpj.
 - Quando a mensagem mencionar uma empresa já cadastrada, devolva legalName exatamente como aparece no diretório de clientes se houver uma correspondência inequívoca. Para novo cliente, preserve o nome informado.
+- fiscalNote: null na imensa maioria dos casos. Só é preenchido na exceção do setor FISCAL descrita acima, exclusiva de cadastro de cliente novo.
 
 Exemplos de interpretação:
 - "Fiz a baixa da ALUMINIUM ENGENHARIA LTDA, Bruno pode solicitar na prefeitura a baixa também" é client_closure, empresa ALUMINIUM ENGENHARIA LTDA, uma ação de baixa municipal atribuída a Bruno.
@@ -99,7 +101,9 @@ Exemplos de interpretação:
 - "Camila responde por todos os informativos da empresa" não é ação — vai para ignoredNotes.${
     isNewClientOnboarding
       ? `
-- (Cadastro de cliente novo) "FISCAL - Sem particularidades / CONTABILIDADE - Distribuição de lucros de 20 mil mês / RH - Sem pró-labore": as duas primeiras linhas são negação pura, não geram missão; a de CONTABILIDADE gera a missão "Configurar distribuição de lucros mensal de R$ 20.000" com sector "CONTABILIDADE".`
+- (Cadastro de cliente novo) "FISCAL - Sem particularidades / CONTABILIDADE - Distribuição de lucros de 20 mil mês / RH - Sem pró-labore": a de FISCAL é negação pura, fiscalNote fica null; a de CONTABILIDADE gera a missão "Configurar distribuição de lucros mensal de R$ 20.000" com sector "CONTABILIDADE"; a de RH é negação pura, não gera missão.
+- (Cadastro de cliente novo) "FISCAL – CAMILA – valores combinado: Faturamento médio 15.000,00 mensais podendo chegar a 15.000,00 iniciando em AGOSTO/2026. (CONTROLAR O FATOR R)": não gera missão nenhuma. fiscalNote.text = "valores combinado: Faturamento médio R$ 15.000,00 mensais, podendo chegar a R$ 15.000,00, iniciando em agosto/2026 (controlar o Fator R)", fiscalNote.assignee = "CAMILA".
+- (Cadastro de cliente novo) "FISCAL – Att. CAMILA – parametrizar o Fator R": é ação de verdade (verbo "parametrizar"), gera missão normalmente com sector "FISCAL" e assignees ["Camila"]; fiscalNote fica null.`
       : ""
   }
 

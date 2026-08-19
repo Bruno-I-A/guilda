@@ -419,6 +419,11 @@ export async function confirmInformative(
           cnaeDescription: payload.company.cnaeDescription,
           secondaryCnaes: payload.company.secondaryCnaes,
           openedAt: payload.company.openedAt,
+          pendingFiscalNote: payload.company.pendingFiscalNote,
+          suggestedFiscalOwnerId: payload.company.suggestedFiscalOwnerId,
+          // Todo cliente que nasce aqui precisa de alguém na carteira fiscal
+          // — mesmo sem nota nenhuma (ver comentário no schema).
+          pendingFiscalAssignment: true,
         })
         .onConflictDoNothing()
         .returning({ id: schema.clients.id });

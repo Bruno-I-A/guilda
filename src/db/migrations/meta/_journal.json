@@ -204,6 +204,20 @@
       "when": 1787089160669,
       "tag": "0028_cnpj-lookup-client-fields",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1787140951567,
+      "tag": "0029_fiscal-portfolio-onboarding",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1787141167604,
+      "tag": "0030_pending-fiscal-assignment-flag",
+      "breakpoints": true
     }
   ]
 }

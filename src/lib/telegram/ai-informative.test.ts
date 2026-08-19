@@ -34,6 +34,8 @@ const baseDraft = {
     cnaeDescription: null,
     secondaryCnaes: null,
     openedAt: null,
+    pendingFiscalNote: null,
+    suggestedFiscalOwnerId: null,
   },
   tasks: [],
   ignoredNotes: [],

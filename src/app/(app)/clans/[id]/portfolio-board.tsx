@@ -5,6 +5,7 @@ import {
   Building2,
   Crown,
   Search,
+  Sparkles,
   UserRoundX,
   Users,
 } from "lucide-react";
@@ -29,7 +30,7 @@ import {
 } from "@/lib/clients-ui";
 import { cn } from "@/lib/utils";
 
-import { assignPortfolioClients } from "./portfolio-actions";
+import { assignPortfolioClients, confirmNewClientPortfolio } from "./portfolio-actions";
 
 export interface PortfolioClientView {
   id: string;
@@ -43,6 +44,14 @@ export interface PortfolioBucketView {
   name: string;
   isLeader: boolean;
   clients: PortfolioClientView[];
+}
+
+/** Cliente novo (qualquer via de cadastro) ainda sem carteira. */
+export interface AwaitingPortfolioView {
+  client: PortfolioClientView;
+  note: string | null;
+  /** Só preenchido quando a pessoa sugerida ainda é do clã hoje. */
+  suggestedOwnerId: string | null;
 }
 
 interface MemberOption {
@@ -118,11 +127,84 @@ function ClientRow({
   );
 }
 
+/**
+ * Uma empresa nova por vez, com nota e sugestão próprias — por isso fora do
+ * fluxo de seleção múltipla das demais seções. Confirmar aqui não só move a
+ * carteira: também credita XP a quem assume (ver confirmNewClientPortfolio).
+ */
+function AwaitingRow({
+  clanId,
+  row,
+  members,
+}: {
+  clanId: string;
+  row: AwaitingPortfolioView;
+  members: readonly MemberOption[];
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [userId, setUserId] = useState(row.suggestedOwnerId ?? "");
+
+  function confirm() {
+    if (!userId) return;
+    startTransition(async () => {
+      const result = await confirmNewClientPortfolio({
+        clanId,
+        clientId: row.client.id,
+        userId,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`${row.client.name} entrou na carteira.`);
+      router.refresh();
+    });
+  }
+
+  return (
+    <li className="grid gap-2 rounded-md border border-primary/30 bg-card/60 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="min-w-0 flex-1 truncate font-medium">{row.client.name}</span>
+        <span
+          className={cn(
+            "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+            TAX_REGIME_BADGE_CLASSES[row.client.taxRegime],
+          )}
+        >
+          {TAX_REGIME_LABELS[row.client.taxRegime]}
+        </span>
+      </div>
+      {row.note ? (
+        <p className="text-xs whitespace-pre-wrap text-muted-foreground">{row.note}</p>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={userId} onValueChange={setUserId}>
+          <SelectTrigger size="sm" className="min-w-44 flex-1" aria-label="Responsável">
+            <SelectValue placeholder="Quem vai assumir…" />
+          </SelectTrigger>
+          <SelectContent>
+            {members.map((member) => (
+              <SelectItem key={member.userId} value={member.userId}>
+                {member.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button type="button" size="sm" disabled={pending || !userId} onClick={confirm}>
+          Confirmar
+        </Button>
+      </div>
+    </li>
+  );
+}
+
 export function PortfolioBoard({
   clanId,
   canManage,
   members,
   buckets,
+  awaiting,
   orphans,
   stranded,
   totalClients,
@@ -132,6 +214,7 @@ export function PortfolioBoard({
   canManage: boolean;
   members: readonly MemberOption[];
   buckets: readonly PortfolioBucketView[];
+  awaiting: readonly AwaitingPortfolioView[];
   orphans: readonly PortfolioClientView[];
   stranded: readonly { client: PortfolioClientView; holderName: string }[];
   totalClients: number;
@@ -217,10 +300,11 @@ export function PortfolioBoard({
           <strong
             className={cn(
               "mt-1 block font-mono text-lg",
-              orphans.length + stranded.length > 0 && "text-destructive",
+              orphans.length + stranded.length + awaiting.length > 0 &&
+                "text-destructive",
             )}
           >
-            {orphans.length + stranded.length}
+            {orphans.length + stranded.length + awaiting.length}
           </strong>
         </div>
         <div className="rounded-lg bg-muted/45 p-2.5">
@@ -236,6 +320,23 @@ export function PortfolioBoard({
           </strong>
         </div>
       </div>
+
+      {canManage && awaiting.length > 0 ? (
+        <section className="grid gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
+          <h3 className="flex items-center gap-1.5 text-sm font-medium">
+            <Sparkles className="size-4 text-primary" aria-hidden />
+            {awaiting.length}{" "}
+            {awaiting.length === 1
+              ? "cliente novo aguardando carteira"
+              : "clientes novos aguardando carteira"}
+          </h3>
+          <ul className="grid gap-2">
+            {awaiting.map((row) => (
+              <AwaitingRow key={row.client.id} clanId={clanId} row={row} members={members} />
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <div className="relative">
         <Search

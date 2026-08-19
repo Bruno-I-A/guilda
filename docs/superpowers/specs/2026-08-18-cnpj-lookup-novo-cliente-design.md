@@ -153,3 +153,48 @@ passaram a ser pulados quando `resolvedCompany` está presente: o próprio
 cadastro do cliente já é a missão, o texto do passo 2 é só detalhe
 complementar, e a missão garantida do Fiscal cobre o caso de um texto sem
 nenhuma linha acionável.
+
+## Redesenho: carteira em vez de missão de distribuição (2026-08-18, mesmo dia)
+
+O item 2 acima (missão fixa "Definir responsável fiscal" na Mesa do Líder)
+foi **substituído** depois de ver o fluxo de verdade: o usuário apontou que
+"definir responsável" não é *trabalho a distribuir* — é uma *decisão de
+carteira*, e o líder já tem uma tela própria pra isso (`fiscal_portfolios`).
+Usar a Mesa do Líder (Responsável… + Enviar) confundia as duas coisas: a
+missão ficava atribuída a alguém, mas ninguém adicionava a empresa na
+carteira de verdade — dois passos manuais em vez de um.
+
+Desenho aprovado e implementado:
+
+- **`clients` ganha 3 colunas** (não 2, como eu havia planejado): além de
+  `pending_fiscal_note` (o combinado do Fiscal) e `suggested_fiscal_owner_id`
+  (nome citado na linha, resolvido contra o diretório), precisei de
+  **`pending_fiscal_assignment` (boolean)** — sem ele, o caso de negação pura
+  ("sem particularidades", sem nota nenhuma) ficaria indistinguível de
+  qualquer empresa antiga sem responsável na carteira. É `true` em TODO
+  cliente recém-criado (qualquer via — fluxo de CNPJ ou texto livre antigo),
+  independente de ter nota.
+- **O prompt ganha uma exceção dentro da exceção**: a regra "combinado vira
+  'Configurar X'" (do ajuste anterior) NÃO vale pro setor FISCAL — pra ele, a
+  IA preenche o campo estruturado `fiscalNote: { text, assignee } | null` em
+  vez de gerar tarefa ou observação. Fora do cadastro de cliente novo,
+  `fiscalNote` é sempre null.
+- **A aba Carteira ganha uma seção "aguardando carteira"**, visível só pro
+  líder/admin, à frente do "sem responsável" comum — cada linha mostra a
+  nota (se houver) e um seletor pré-preenchido com a pessoa sugerida (se ela
+  ainda for do clã). Empresa sem nota aparece do mesmo jeito, só sem
+  pré-preenchimento.
+- **Nova Server Action `confirmNewClientPortfolio`**, diferente de
+  `assignPortfolioClients` (remanejamento do dia a dia, sem XP): esta atribui
+  a carteira **e** cria uma missão já `completed` com XP (30, dificuldade
+  1/prioridade 2) pra quem assumiu — é o registro "confirmação" no histórico/
+  perfil/ranking da pessoa. `assignPortfolioClients` continua igual, sem
+  gerar XP a cada remanejamento comum.
+
+Verificado ponta a ponta no Postgres local (sem precisar da chave da IA, já
+que essa parte não toca a extração): cliente com nota + sugestão pré-preenche
+e confirma corretamente, gravando em `fiscal_portfolios.notes` e
+`fiscal_portfolio_events`; cliente sem nota aparece sem pré-preenchimento e
+aceita escolha manual; os dois casos creditam 30 XP e criam a missão
+`completed` correspondente; os campos pendentes são limpos após a
+confirmação.

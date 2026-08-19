@@ -436,6 +436,22 @@ export const clients = pgTable(
       { code: string; description: string }[]
     >(),
     openedAt: date("opened_at", { mode: "string" }),
+    // Combinado do Fiscal extraído do informativo de cliente novo (ex.: Fator
+    // R, faturamento) — mora aqui só até o líder confirmar a carteira; a
+    // action de confirmação limpa os dois e move o texto para
+    // fiscal_portfolios.notes (decisão de 2026-08-18).
+    pendingFiscalNote: text("pending_fiscal_note"),
+    suggestedFiscalOwnerId: text("suggested_fiscal_owner_id").references(
+      () => user.id,
+    ),
+    // true em TODO cliente recém-criado (qualquer via, não só o fluxo de
+    // CNPJ) — inclusive quando não há nota nenhuma (ex.: "FISCAL - sem
+    // particularidades"). Sem isto, esse caso ficaria indistinguível de
+    // qualquer empresa antiga sem responsável na aba Carteira. Zerado junto
+    // com os dois campos acima quando o líder confirma quem assume.
+    pendingFiscalAssignment: boolean("pending_fiscal_assignment")
+      .notNull()
+      .default(false),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -6,7 +6,7 @@ import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { routeInformativeTask, type RoutingClan } from "@/domain/clan-routing";
 import { resolveAssigneeClan } from "@/domain/clans";
-import { formatCnpj, normalizeCnpj, validateCnpj } from "@/domain/cnpj";
+import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
 import { extractObservationLines } from "@/domain/informative-text";
 import type { OrgRole } from "@/domain/task-state";
 import { resolveClientName } from "@/lib/ai/client-resolution";
@@ -17,8 +17,7 @@ import {
   type InformativeDraftPayload,
 } from "@/lib/ai/informative-schema";
 import { resolveMemberName } from "@/lib/ai/member-resolution";
-import { FISCAL_CLAN_SLUG } from "@/lib/clans/rules";
-import { TAX_REGIME_LABELS, type TaxRegime } from "@/lib/clients-ui";
+import { type TaxRegime } from "@/lib/clients-ui";
 import { listActiveClans, listOrgMembers } from "@/lib/org";
 import { isDetailedInformativeMessage } from "@/lib/telegram/informative-detection";
 
@@ -395,43 +394,17 @@ export async function buildInformativeDraft(
     warnings.push("As missões serão criadas sem vínculo com uma empresa do painel.");
   }
 
-  // Cliente novo de verdade: o Fiscal SEMPRE precisa saber, mesmo quando a
-  // linha "FISCAL" do informativo diz "sem particularidades" — o ponto não é
-  // o conteúdo da linha, é que alguém tem que assumir a carteira desta
-  // empresa. Depender da IA reconhecer isso no texto livre seria frágil (é
-  // exatamente o motivo de "sem particularidades" ter sumido antes); aqui é
-  // garantido no servidor, à parte de qualquer coisa que a IA extraiu.
-  if (resolvedCompany && createClient) {
-    const fiscalClan = routingClans.find((clan) => clan.slug === FISCAL_CLAN_SLUG);
-    if (fiscalClan) {
-      tasks.push({
-        assignmentType: "clan",
-        assigneeId: null,
-        assigneeName: null,
-        clanId: fiscalClan.id,
-        clanName: fiscalClan.name,
-        suggestions: [],
-        category: "general",
-        title: `Definir responsável fiscal — ${resolvedCompany.legalName}`,
-        description:
-          `Cliente novo cadastrado: ${resolvedCompany.legalName} ` +
-          `(CNPJ ${formatCnpj(resolvedCompany.normalizedCnpj)}), regime ` +
-          `${TAX_REGIME_LABELS[resolvedCompany.taxRegime]}.\n\n` +
-          "Definir quem será a pessoa responsável pelos informativos mensais " +
-          "e adicionar a empresa à carteira fiscal.",
-        priority: 2,
-        difficulty: 1,
-        dueDate: null,
-        closingYear: null,
-        sourceSection: "Gerado automaticamente pelo cadastro do cliente novo.",
-        sector: null,
-      });
-    } else {
-      warnings.push(
-        "Clã Fiscal não está ativo — adicione a empresa à carteira fiscal manualmente.",
-      );
-    }
-  }
+  // Cliente novo de verdade: o combinado do Fiscal (se houver) vai direto
+  // para a carteira, não para uma missão — quem decide o responsável é o
+  // líder do clã Fiscal na aba Carteira (ver portfolio-actions.ts), não a
+  // Mesa do Líder. O nome sugerido só pré-preenche o seletor do líder; ele
+  // sempre pode trocar.
+  const pendingFiscalNote =
+    resolvedCompany && createClient ? extracted.data.fiscalNote?.text ?? null : null;
+  const suggestedFiscalOwnerId =
+    resolvedCompany && createClient && extracted.data.fiscalNote?.assignee
+      ? resolveMemberName(extracted.data.fiscalNote.assignee, members)?.userId ?? null
+      : null;
 
   // Decisão 11: o que não é ação vira corpo do aviso no mural, não missão.
   const observations = [
@@ -461,6 +434,8 @@ export async function buildInformativeDraft(
       cnaeDescription: resolvedCompany?.cnaeDescription ?? null,
       secondaryCnaes: resolvedCompany?.secondaryCnaes ?? null,
       openedAt: resolvedCompany?.openedAt ?? null,
+      pendingFiscalNote,
+      suggestedFiscalOwnerId,
     },
     tasks,
     observations,

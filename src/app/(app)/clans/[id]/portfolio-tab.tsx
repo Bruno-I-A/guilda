@@ -38,6 +38,9 @@ export async function PortfolioTab({
         active: schema.clients.active,
         holderId: schema.fiscalPortfolios.userId,
         holderName: schema.user.name,
+        pendingFiscalAssignment: schema.clients.pendingFiscalAssignment,
+        pendingFiscalNote: schema.clients.pendingFiscalNote,
+        suggestedFiscalOwnerId: schema.clients.suggestedFiscalOwnerId,
       })
       .from(schema.clients)
       .leftJoin(
@@ -107,6 +110,34 @@ export async function PortfolioTab({
     holderName: row.holderName ?? "pessoa removida",
   }));
 
+  // Cliente novo (qualquer via de cadastro) sem carteira ainda: ganha bloco
+  // próprio, à frente do "sem responsável" comum — é decisão do líder, não
+  // fila normal. A pessoa sugerida só é usada se ainda for do clã hoje.
+  const memberNameById = new Map(
+    memberships.map((membership) => [membership.userId, membership.name]),
+  );
+  const orphanClients = summary.orphans.filter(
+    (client) => !strandedIds.has(client.clientId),
+  );
+  const awaiting = orphanClients
+    .filter((client) => detailById.get(client.clientId)?.pendingFiscalAssignment)
+    .map((client) => {
+      const detail = detailById.get(client.clientId);
+      const suggestedOwnerId = detail?.suggestedFiscalOwnerId ?? null;
+      return {
+        client: toView(client.clientId, client.clientName),
+        note: detail?.pendingFiscalNote ?? null,
+        suggestedOwnerId:
+          suggestedOwnerId && memberNameById.has(suggestedOwnerId)
+            ? suggestedOwnerId
+            : null,
+      };
+    });
+  const awaitingIds = new Set(awaiting.map((row) => row.client.id));
+  const orphans = orphanClients
+    .filter((client) => !awaitingIds.has(client.clientId))
+    .map((client) => toView(client.clientId, client.clientName));
+
   return (
     <PortfolioBoard
       clanId={clanId}
@@ -116,11 +147,8 @@ export async function PortfolioTab({
         name: membership.name,
       }))}
       buckets={buckets}
-      orphans={summary.orphans
-        // Sem dono válido elas também caem em `orphans`; aqui saem, porque
-        // ganharam bloco próprio com o nome de quem as deixou para trás.
-        .filter((client) => !strandedIds.has(client.clientId))
-        .map((client) => toView(client.clientId, client.clientName))}
+      awaiting={awaiting}
+      orphans={orphans}
       stranded={stranded}
       totalClients={relevant.length}
       averagePerMember={summary.averagePerMember}

@@ -48,6 +48,18 @@ export const informativeExtractionSchema = z.object({
   missingFields: z
     .array(z.enum(["company", "actions", "responsible", "due_date"]))
     .max(4),
+  /**
+   * Combinado permanente do setor FISCAL (valores, Fator R etc.) — só
+   * preenchido no cadastro de cliente novo (ver isNewClientOnboarding em
+   * src/lib/ai/informative.ts). Fora desse caso fica sempre null.
+   */
+  fiscalNote: z
+    .object({
+      text: z.string().trim().min(1).max(1000),
+      assignee: nullableText(200),
+    })
+    .nullable()
+    .default(null),
 });
 
 export type InformativeExtraction = z.infer<typeof informativeExtractionSchema>;
@@ -97,7 +109,9 @@ const pendingDraftTaskSchema = draftTaskCoreSchema.extend({
 });
 
 export const informativeDraftPayloadSchema = informativeExtractionSchema
-  .omit({ isMissionRequest: true, missingFields: true })
+  // fiscalNote é resolvido (suggestedFiscalOwnerId) e persistido só em
+  // company.pendingFiscalNote — o payload não guarda o formato bruto da IA.
+  .omit({ isMissionRequest: true, missingFields: true, fiscalNote: true })
   .extend({
     kind: z.enum(["new_client", "client_change", "client_closure", "general_task"]),
     sourceFormat: z.enum(["informative", "business_mission"]),
@@ -121,6 +135,11 @@ export const informativeDraftPayloadSchema = informativeExtractionSchema
         .regex(/^\d{4}-\d{2}-\d{2}$/)
         .nullable()
         .default(null),
+      // Resolvidos a partir de fiscalNote — combinado do Fiscal e a pessoa
+      // sugerida, pendentes até o líder confirmar a carteira (ver
+      // src/app/(app)/clans/[id]/portfolio-actions.ts).
+      pendingFiscalNote: z.string().trim().max(1000).nullable().default(null),
+      suggestedFiscalOwnerId: z.string().min(1).nullable().default(null),
     }),
     tasks: z
       .array(
