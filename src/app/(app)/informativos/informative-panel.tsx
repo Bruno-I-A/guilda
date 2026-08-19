@@ -45,6 +45,8 @@ export interface DraftView {
     createClient: boolean;
     cnaeDescription: string | null;
     openedAt: string | null;
+    /** Combinado do Fiscal — vai para a carteira, não vira missão. */
+    pendingFiscalNote: string | null;
   };
   tasks: DraftTaskView[];
   observations: string[];
@@ -72,9 +74,12 @@ export function InformativePanel({
 
   const pendingTasks = draft?.tasks.filter((t) => t.assignmentType === "pending") ?? [];
   const undecided = pendingTasks.filter((task) => !decisions[task.index]);
+  // Espelha draftIsBlocked no servidor: prévia sem missão continua
+  // confirmável quando há empresa nova a cadastrar (as linhas podem ser todas
+  // combinado do Fiscal ou "sem particularidades").
   const blocked =
     !draft ||
-    draft.tasks.length === 0 ||
+    (draft.tasks.length === 0 && !draft.company.createClient) ||
     draft.unresolvedAssignees.length > 0 ||
     undecided.length > 0;
 
@@ -195,11 +200,33 @@ export function InformativePanel({
             </p>
           ) : null}
 
+          {/* O combinado do Fiscal não vira missão: mostrar aqui é o que prova
+              para quem confere que a informação não se perdeu. */}
+          {draft.company.pendingFiscalNote ? (
+            <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+              <p className="hud-label">Vai para a carteira do Fiscal</p>
+              <p className="mt-1 text-sm whitespace-pre-wrap">
+                {draft.company.pendingFiscalNote}
+              </p>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                O líder do Fiscal escolhe quem assume a empresa na aba Carteira.
+              </p>
+            </div>
+          ) : null}
+
           {draft.warnings.map((warning) => (
             <p key={warning} className="text-xs text-muted-foreground">
               {warning}
             </p>
           ))}
+
+          {draft.tasks.length === 0 ? (
+            <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
+              Nenhuma missão nesta prévia — as linhas eram combinado ou “sem
+              particularidades”. A empresa será cadastrada e entra na fila da
+              carteira do Fiscal.
+            </p>
+          ) : null}
 
           <ul className="grid gap-2">
             {draft.tasks.map((task) => {
@@ -302,8 +329,9 @@ export function InformativePanel({
               <Trash2 className="size-4" aria-hidden /> Descartar prévia
             </Button>
             <Button onClick={handleConfirm} disabled={pending || blocked}>
-              Criar {draft.tasks.length}{" "}
-              {draft.tasks.length === 1 ? "missão" : "missões"}
+              {draft.tasks.length === 0
+                ? "Cadastrar empresa"
+                : `Criar ${draft.tasks.length} ${draft.tasks.length === 1 ? "missão" : "missões"}`}
             </Button>
           </div>
 

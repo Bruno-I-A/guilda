@@ -96,6 +96,7 @@ export default async function InformativosPage() {
           createClient: parsed.data.company.createClient,
           cnaeDescription: parsed.data.company.cnaeDescription,
           openedAt: parsed.data.company.openedAt,
+          pendingFiscalNote: parsed.data.company.pendingFiscalNote,
         },
         tasks: parsed.data.tasks.map((task, index) => ({
           index,

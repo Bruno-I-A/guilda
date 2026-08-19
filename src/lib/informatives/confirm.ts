@@ -324,7 +324,13 @@ export async function confirmInformative(
     if (!decided.ok) return decided;
     const tasks = decided.tasks;
 
-    if (tasks.length === 0) {
+    // Zero missões é resultado LEGÍTIMO no cadastro de cliente novo: todas as
+    // linhas podem ser combinado (vai para a carteira do Fiscal) ou negação
+    // pura ("sem particularidades"). O trabalho da confirmação, aí, é criar a
+    // empresa e mandá-la para a fila da carteira — bloquear aqui deixaria o
+    // cadastro impossível. Sem empresa nova para criar, aí sim não há nada a
+    // fazer.
+    if (tasks.length === 0 && !payload.company.createClient) {
       return { ok: false, message: "Nenhuma missão válida nesta prévia." };
     }
     if (tasks.some((task) => task.assignmentType === "pending")) {
@@ -558,9 +564,12 @@ export async function confirmInformative(
       })
       .where(eq(schema.informatives.id, informative.id));
 
-    const missionMessage = payload.company.legalName
-      ? `${taskIds.length} missão(ões) criada(s) para ${payload.company.legalName}.`
-      : `${taskIds.length} missão(ões) criada(s).`;
+    const missionMessage =
+      taskIds.length === 0
+        ? "Nenhuma missão a criar — as linhas eram combinado ou sem particularidades."
+        : payload.company.legalName
+          ? `${taskIds.length} missão(ões) criada(s) para ${payload.company.legalName}.`
+          : `${taskIds.length} missão(ões) criada(s).`;
     const closingMessage = periodClosingIds.size
       ? ` ${periodClosingIds.size} período(s) pendente(s) adicionado(s) aos fechamentos.`
       : "";
