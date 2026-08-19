@@ -80,7 +80,16 @@ export async function publishGuildNotice(
   return created;
 }
 
-/** Corpo do aviso de empresa nova: dados cadastrais + o que não virou missão. */
+/**
+ * Corpo do aviso de empresa nova: dados cadastrais + o que a consulta de
+ * CNPJ trouxe (atividades, data de abertura) + o que não virou missão.
+ *
+ * O combinado do Fiscal (`fiscalPortfolioNote`) também é vida dupla aqui: já
+ * fica gravado em `fiscal_portfolios.notes` quando o líder confirma a
+ * carteira, mas o aviso é visto pela Guilda inteira ANTES disso acontecer —
+ * sem repetir aqui, a informação ficaria invisível até alguém abrir a aba
+ * Carteira.
+ */
 export function newClientNoticeBody(input: {
   legalName: string;
   cnpj: string | null;
@@ -88,6 +97,10 @@ export function newClientNoticeBody(input: {
   city: string | null;
   contact: string | null;
   summary: string | null;
+  cnaeDescription: string | null;
+  secondaryCnaes: readonly { code: string; description: string }[] | null;
+  openedAt: string | null;
+  fiscalPortfolioNote: string | null;
   observations: readonly string[];
   taskCount: number;
 }): string {
@@ -99,6 +112,21 @@ export function newClientNoticeBody(input: {
   if (input.taxRegime) lines.push(`Enquadramento: ${input.taxRegime}`);
   if (input.city) lines.push(`Cidade: ${input.city}`);
   if (input.contact) lines.push(`Contato: ${input.contact}`);
+  if (input.openedAt) {
+    lines.push(
+      `Abertura: ${new Date(`${input.openedAt}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "UTC" })}`,
+    );
+  }
+  if (input.cnaeDescription) {
+    const secondary =
+      input.secondaryCnaes && input.secondaryCnaes.length > 0
+        ? ` (e mais ${input.secondaryCnaes.length} atividade${input.secondaryCnaes.length === 1 ? "" : "s"} secundária${input.secondaryCnaes.length === 1 ? "" : "s"})`
+        : "";
+    lines.push("", `Atividade principal: ${input.cnaeDescription}${secondary}`);
+  }
+  if (input.fiscalPortfolioNote) {
+    lines.push("", "Combinado do Fiscal", input.fiscalPortfolioNote);
+  }
   if (input.observations.length > 0) {
     lines.push("", "Observações e combinados");
     for (const observation of input.observations) {
