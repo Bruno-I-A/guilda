@@ -21,6 +21,7 @@ import {
   type ActionResult,
 } from "@/lib/action-context";
 import { syncClosingFromTask } from "@/lib/closings/task-sync";
+import { syncCommitmentPeriodFromTask } from "@/lib/commitments/task-sync";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 import { createTaskRecord } from "@/lib/tasks/create";
 import { encodeTaskCallback } from "@/lib/telegram/endpoint";
@@ -405,6 +406,12 @@ async function transitionTask(options: {
       await options.sideEffect(tx, task, event.id);
     }
     await syncClosingFromTask(tx, {
+      task,
+      fromStatus: task.status,
+      toStatus: options.to,
+      changedAt: now,
+    });
+    await syncCommitmentPeriodFromTask(tx, {
       task,
       fromStatus: task.status,
       toStatus: options.to,

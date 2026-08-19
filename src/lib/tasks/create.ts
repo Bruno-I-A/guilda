@@ -24,6 +24,8 @@ export type CreateTaskRecordInput = {
   informativeId?: string | null;
   closingId?: string | null;
   closingYearId?: string | null;
+  /** Ocorrência de compromisso recorrente que originou esta missão. */
+  commitmentPeriodId?: string | null;
   title: string;
   description?: string | null;
   priority: number;
@@ -95,6 +97,7 @@ export async function createTaskRecord(
       informativeId: input.informativeId ?? null,
       closingId: input.closingId ?? null,
       closingYearId: input.closingYearId ?? null,
+      commitmentPeriodId: input.commitmentPeriodId ?? null,
       title: input.title,
       description: input.description ?? null,
       priority: input.priority,

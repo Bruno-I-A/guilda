@@ -38,6 +38,7 @@ const baseDraft = {
     suggestedFiscalOwnerId: null,
   },
   tasks: [],
+  commitments: [],
   ignoredNotes: [],
   observations: [],
   warnings: [],

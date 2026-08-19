@@ -11,10 +11,10 @@ const keys = (slug: string) => clanTabsFor(slug).map((tab) => tab.key);
 
 describe("abas comuns a todo clã", () => {
   test.each(["fiscal", "contabilidade", "rh", "societario", "financeiro"])(
-    "%s tem missões, integrantes e campanhas",
+    "%s tem missões, integrantes, campanhas e compromissos",
     (slug) => {
       expect(keys(slug)).toEqual(
-        expect.arrayContaining(["missions", "members", "campaigns"]),
+        expect.arrayContaining(["missions", "members", "campaigns", "commitments"]),
       );
     },
   );
@@ -45,7 +45,12 @@ describe("abas específicas de cada clã", () => {
   });
 
   test("clã desconhecido fica só com as abas comuns", () => {
-    expect(keys("marketing")).toEqual(["missions", "members", "campaigns"]);
+    expect(keys("marketing")).toEqual([
+      "missions",
+      "members",
+      "campaigns",
+      "commitments",
+    ]);
   });
 });
 

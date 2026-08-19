@@ -17,6 +17,8 @@ const NEW_TABLES = [
   "fiscal_portfolios",
   "fiscal_portfolio_events",
   "clan_campaigns",
+  "client_commitments",
+  "client_commitment_periods",
 ];
 
 let failures = 0;

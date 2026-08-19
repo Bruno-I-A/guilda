@@ -11,6 +11,7 @@ import {
   type InformativeDraftTask,
 } from "@/lib/ai/informative-schema";
 import { newClientNoticeBody, publishGuildNotice } from "@/lib/mural/notices";
+import { periodsForCadence } from "@/domain/commitments";
 import { createTaskRecord } from "@/lib/tasks/create";
 
 import type { InformativeActor } from "./draft";
@@ -527,6 +528,47 @@ export async function confirmInformative(
       }
     }
 
+    // Compromissos recorrentes: a regra por empresa e o ano já planejado, na
+    // MESMA transação. Sem empresa vinculada não há o que criar — o texto
+    // desses compromissos já entrou nas observações do aviso na prévia.
+    let createdCommitments = 0;
+    if (clientId && payload.commitments.length > 0) {
+      const commitmentYear = Number(
+        new Intl.DateTimeFormat("en", {
+          timeZone: "America/Sao_Paulo",
+          year: "numeric",
+        }).format(new Date()),
+      );
+      for (const commitment of payload.commitments) {
+        const [created] = await tx
+          .insert(schema.clientCommitments)
+          .values({
+            orgId: actor.orgId,
+            clanId: commitment.clanId,
+            clientId,
+            title: commitment.title,
+            notes: commitment.notes,
+            cadence: commitment.cadence,
+            sourceInformativeId: informative.id,
+            createdBy: actor.userId,
+          })
+          .returning({ id: schema.clientCommitments.id });
+        await tx
+          .insert(schema.clientCommitmentPeriods)
+          .values(
+            periodsForCadence(commitment.cadence, commitmentYear).map((period) => ({
+              orgId: actor.orgId,
+              commitmentId: created.id,
+              periodYear: commitmentYear,
+              periodIndex: period.index,
+              dueDate: period.dueDate,
+            })),
+          )
+          .onConflictDoNothing();
+        createdCommitments += 1;
+      }
+    }
+
     // Aviso de empresa nova na MESMA transação, idempotente pelo índice
     // parcial: reconfirmar o informativo não gera um segundo aviso.
     let noticePublished = false;
@@ -578,10 +620,13 @@ export async function confirmInformative(
       ? ` ${periodClosingIds.size} período(s) pendente(s) adicionado(s) aos fechamentos.`
       : "";
     const clientMessage = createdClient ? " Empresa cadastrada no painel." : "";
+    const commitmentMessage = createdCommitments
+      ? ` ${createdCommitments} compromisso(s) recorrente(s) com o ano planejado.`
+      : "";
     const noticeMessage = noticePublished ? " Aviso publicado no mural." : "";
     return {
       ok: true,
-      message: `${missionMessage}${closingMessage}${clientMessage}${noticeMessage}`,
+      message: `${missionMessage}${closingMessage}${clientMessage}${commitmentMessage}${noticeMessage}`,
       taskIds,
     };
   });

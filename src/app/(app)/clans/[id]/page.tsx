@@ -10,6 +10,7 @@ import * as schema from "@/db/schema";
 import { canViewClan } from "@/domain/clan-access";
 import {
   canDistributeClanTasks,
+  canManageClanCommitments,
   canManageFiscalPortfolio,
   isAdminRole,
 } from "@/domain/guild-permissions";
@@ -20,6 +21,7 @@ import { getActiveMember, requireOrgSession } from "@/lib/session";
 import { CampaignsTab } from "./campaigns-tab";
 import { ClanTabNav } from "./clan-tab-nav";
 import { ClosingsTab, type ClosingsTabParams } from "./closings-tab";
+import { CommitmentsTab } from "./commitments-tab";
 import { MembersTab } from "./members-tab";
 import { MissionsTab } from "./missions-tab";
 import { PortfolioTab } from "./portfolio-tab";
@@ -160,6 +162,14 @@ export default async function ClanPage({
           orgId={session.orgId}
           clanId={clan.id}
           canManage={canDistributeClanTasks({ role, leadsThisClan })}
+        />
+      ) : null}
+
+      {activeTab === "commitments" ? (
+        <CommitmentsTab
+          orgId={session.orgId}
+          clanId={clan.id}
+          canManage={canManageClanCommitments({ role, leadsThisClan })}
         />
       ) : null}
 

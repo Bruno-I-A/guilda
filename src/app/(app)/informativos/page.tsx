@@ -109,6 +109,12 @@ export default async function InformativosPage() {
           assigneeName: task.assigneeName,
           reason: "reason" in task ? task.reason : null,
         })),
+        commitments: parsed.data.commitments.map((commitment) => ({
+          clanName: commitment.clanName,
+          title: commitment.title,
+          cadence: commitment.cadence,
+          notes: commitment.notes,
+        })),
         observations: parsed.data.observations,
         unresolvedAssignees: parsed.data.unresolvedAssignees,
         warnings: parsed.data.warnings,

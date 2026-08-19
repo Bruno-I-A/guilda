@@ -6,16 +6,18 @@ import {
 /**
  * As seções de um clã.
  *
- * Missões, Integrantes e Campanhas existem em todo clã. As outras duas são
- * específicas porque o trabalho tem forma diferente em cada área: o Fiscal se
- * organiza por CARTEIRA (empresa sob responsabilidade de alguém) e a
- * Contabilidade por FECHAMENTO (o ano de cada empresa). Enfiar as duas em todo
- * clã encheria a navegação de aba morta.
+ * Missões, Integrantes, Campanhas e Compromissos existem em todo clã — todo
+ * clã distribui trabalho e todo clã tem obrigação que se repete sobre alguma
+ * empresa. As outras duas são específicas porque o trabalho tem forma
+ * diferente em cada área: o Fiscal se organiza por CARTEIRA (empresa sob
+ * responsabilidade de alguém) e a Contabilidade por FECHAMENTO (o ano de cada
+ * empresa). Enfiar as duas em todo clã encheria a navegação de aba morta.
  */
 export const CLAN_TABS = [
   { key: "missions", label: "Missões" },
   { key: "members", label: "Integrantes" },
   { key: "campaigns", label: "Campanhas" },
+  { key: "commitments", label: "Compromissos" },
   { key: "portfolio", label: "Carteira" },
   { key: "closings", label: "Fechamentos" },
 ] as const;

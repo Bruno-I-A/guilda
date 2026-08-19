@@ -124,6 +124,10 @@ export const tasks = pgTable(
     closingYearId: uuid("closing_year_id").references(
       () => accountingClosingYears.id,
     ),
+    // Ocorrência de compromisso recorrente que gerou esta missão. Sem FK
+    // (mesma razão de closing_by_task_id): evita ciclo físico entre as duas
+    // tabelas, que se referenciam nos dois sentidos.
+    commitmentPeriodId: uuid("commitment_period_id"),
     title: varchar("title", { length: 200 }).notNull(),
     description: text("description"),
     priority: smallint("priority").notNull().default(2), // 1 baixa, 2 média, 3 alta
@@ -1209,3 +1213,144 @@ export const clanCampaignsRelations = relations(clanCampaigns, ({ one }) => ({
 }));
 
 export type ClanCampaign = typeof clanCampaigns.$inferSelect;
+
+/** Com que frequência um compromisso se repete (ver src/domain/commitments.ts). */
+export const commitmentCadence = pgEnum("commitment_cadence", [
+  "monthly",
+  "quarterly",
+  "semiannual",
+  "annual",
+]);
+
+/**
+ * Compromisso recorrente de UMA empresa-cliente: a REGRA ("o Banrisul faz
+ * distribuição de lucros, trimestralmente, e a Contabilidade responde").
+ *
+ * É a peça que faltava entre `mission_templates` (checklist por REGIME, vale
+ * para todo cliente do Simples) e `accounting_closings` (uma ocorrência
+ * avulsa). Sem ela, o que chega no informativo — "fazer distribuição de
+ * lucros trimestral" — virava texto solto e a recorrência continuava na
+ * cabeça de alguém.
+ *
+ * Sempre de um cliente específico (decisão de 2026-08-19): para "todo cliente
+ * do regime X faz Y" existem os templates.
+ */
+export const clientCommitments = pgTable(
+  "client_commitments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    /** O clã que responde pelo compromisso. */
+    clanId: uuid("clan_id").notNull(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id),
+    title: varchar("title", { length: 200 }).notNull(),
+    /** O combinado: valores, condições, o que observar. */
+    notes: text("notes"),
+    cadence: commitmentCadence("cadence").notNull(),
+    /** Alimenta o XP da missão gerada a cada período (fórmula de sempre). */
+    difficulty: smallint("difficulty").notNull().default(2),
+    active: boolean("active").notNull().default(true),
+    /** De qual informativo este compromisso nasceu, quando veio de um. */
+    sourceInformativeId: uuid("source_informative_id").references(
+      () => informatives.id,
+    ),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "client_commitments_org_clan_fk",
+      columns: [t.orgId, t.clanId],
+      foreignColumns: [clans.orgId, clans.id],
+    }),
+    uniqueIndex("client_commitments_org_id_uidx").on(t.orgId, t.id),
+    index("client_commitments_org_clan_idx").on(t.orgId, t.clanId, t.active),
+    index("client_commitments_org_client_idx").on(t.orgId, t.clientId),
+  ],
+);
+
+/**
+ * A ocorrência de um período: "distribuição de lucros do 1º tri/2026".
+ *
+ * Nasce em lote com o ano inteiro planejado — é o que dá o controle de
+ * enxergar o ano de uma vez. A MISSÃO (`task_id`) só nasce quando o período
+ * chega, para não entupir a fila do clã em janeiro com trabalho de dezembro.
+ * A ocorrência também pode ser concluída direto, sem missão, para o que não
+ * precisa ser distribuído.
+ */
+export const clientCommitmentPeriods = pgTable(
+  "client_commitment_periods",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    commitmentId: uuid("commitment_id").notNull(),
+    periodYear: smallint("period_year").notNull(),
+    /** 1-based dentro do ano: 1–12 mensal, 1–4 trimestral, 1–2 semestral, 1 anual. */
+    periodIndex: smallint("period_index").notNull(),
+    dueDate: date("due_date", { mode: "string" }).notNull(),
+    notes: text("notes"),
+    completedBy: text("completed_by").references(() => user.id),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    /** A missão gerada para este período. Sem FK: evita ciclo físico com tasks. */
+    taskId: uuid("task_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "client_commitment_periods_org_commitment_fk",
+      columns: [t.orgId, t.commitmentId],
+      foreignColumns: [clientCommitments.orgId, clientCommitments.id],
+    }).onDelete("cascade"),
+    // Regerar o ano é idempotente: a ocorrência do período já existente não
+    // duplica nem perde o que já foi feito nela.
+    uniqueIndex("client_commitment_periods_uidx").on(
+      t.orgId,
+      t.commitmentId,
+      t.periodYear,
+      t.periodIndex,
+    ),
+    index("client_commitment_periods_org_due_idx").on(t.orgId, t.dueDate),
+  ],
+);
+
+export const clientCommitmentsRelations = relations(
+  clientCommitments,
+  ({ one, many }) => ({
+    client: one(clients, {
+      fields: [clientCommitments.clientId],
+      references: [clients.id],
+    }),
+    clan: one(clans, {
+      fields: [clientCommitments.clanId],
+      references: [clans.id],
+    }),
+    periods: many(clientCommitmentPeriods),
+  }),
+);
+
+export const clientCommitmentPeriodsRelations = relations(
+  clientCommitmentPeriods,
+  ({ one }) => ({
+    commitment: one(clientCommitments, {
+      fields: [clientCommitmentPeriods.commitmentId],
+      references: [clientCommitments.id],
+    }),
+    completedByUser: one(user, {
+      fields: [clientCommitmentPeriods.completedBy],
+      references: [user.id],
+    }),
+  }),
+);
+
+export type ClientCommitment = typeof clientCommitments.$inferSelect;
+export type ClientCommitmentPeriod = typeof clientCommitmentPeriods.$inferSelect;

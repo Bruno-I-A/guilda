@@ -44,6 +44,7 @@ function payload(
       suggestedFiscalOwnerId: null,
     },
     tasks: overrides.tasks ?? [],
+    commitments: [],
     ignoredNotes: [],
     observations: [],
     warnings: [],

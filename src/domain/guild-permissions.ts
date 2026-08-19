@@ -89,3 +89,13 @@ export function canAppointClanLeader(actor: ClanScopedFacts): boolean {
 export function canDistributeClanTasks(actor: ClanScopedFacts): boolean {
   return isAdminRole(actor.role) || actor.leadsThisClan;
 }
+
+/**
+ * Compromisso recorrente da empresa (cadastrar, editar prazo, gerar a missão
+ * do período): mesma régua do dia a dia do líder. Membro comum ENXERGA os
+ * compromissos do clã — é o que tira o controle da cabeça de uma pessoa só —
+ * mas quem altera a regra e gera trabalho é líder ou admin.
+ */
+export function canManageClanCommitments(actor: ClanScopedFacts): boolean {
+  return isAdminRole(actor.role) || actor.leadsThisClan;
+}

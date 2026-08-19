@@ -1,6 +1,14 @@
 "use client";
 
-import { AlertTriangle, Building2, Flag, ScanText, Trash2, UserRound } from "lucide-react";
+import {
+  AlertTriangle,
+  Building2,
+  Flag,
+  Repeat2,
+  ScanText,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -15,6 +23,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+
+import { CADENCE_LABELS, type CommitmentCadence } from "@/domain/commitments";
 
 import {
   analyzeInformative,
@@ -49,6 +59,13 @@ export interface DraftView {
     pendingFiscalNote: string | null;
   };
   tasks: DraftTaskView[];
+  /** Obrigações que se repetem — viram compromisso, não missão. */
+  commitments: {
+    clanName: string;
+    title: string;
+    cadence: CommitmentCadence;
+    notes: string | null;
+  }[];
   observations: string[];
   unresolvedAssignees: string[];
   warnings: string[];
@@ -219,6 +236,33 @@ export function InformativePanel({
               {warning}
             </p>
           ))}
+
+          {draft.commitments.length > 0 ? (
+            <div className="grid gap-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+              <p className="hud-label">Vira compromisso recorrente</p>
+              <ul className="grid gap-1.5">
+                {draft.commitments.map((commitment) => (
+                  <li key={`${commitment.clanName}-${commitment.title}`} className="text-sm">
+                    <span className="font-medium">{commitment.title}</span>
+                    <Badge variant="secondary" className="ml-2 gap-1">
+                      <Repeat2 className="size-3" aria-hidden />
+                      {CADENCE_LABELS[commitment.cadence]}
+                    </Badge>
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      clã {commitment.clanName}
+                    </span>
+                    {commitment.notes ? (
+                      <p className="text-xs text-muted-foreground">{commitment.notes}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-muted-foreground">
+                O ano já nasce planejado na aba Compromissos do clã; a missão de
+                cada período é gerada quando ele chega.
+              </p>
+            </div>
+          ) : null}
 
           {draft.tasks.length === 0 ? (
             <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">

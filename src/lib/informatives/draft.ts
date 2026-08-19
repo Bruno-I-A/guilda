@@ -4,7 +4,11 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
-import { routeInformativeTask, type RoutingClan } from "@/domain/clan-routing";
+import {
+  resolveSectorClan,
+  routeInformativeTask,
+  type RoutingClan,
+} from "@/domain/clan-routing";
 import { resolveAssigneeClan } from "@/domain/clans";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
 import { extractObservationLines } from "@/domain/informative-text";
@@ -399,6 +403,29 @@ export async function buildInformativeDraft(
   // líder do clã Fiscal na aba Carteira (ver portfolio-actions.ts), não a
   // Mesa do Líder. O nome sugerido só pré-preenche o seletor do líder; ele
   // sempre pode trocar.
+  // Compromisso recorrente: o clã sai de resolveSectorClan aqui no servidor,
+  // nunca da IA. Linha cujo setor não casa com clã ativo NÃO vira compromisso
+  // — compromisso sem dono não tem quem cobre; o texto cai em observações e
+  // aparece no aviso do mural.
+  const commitments: InformativeDraftPayload["commitments"] = [];
+  const unroutedCommitments: string[] = [];
+  for (const commitment of extracted.data.commitments) {
+    const clan = resolveSectorClan(commitment.sector, routingClans);
+    if (!clan) {
+      unroutedCommitments.push(
+        `${commitment.title}${commitment.notes ? ` — ${commitment.notes}` : ""}`.slice(0, 500),
+      );
+      continue;
+    }
+    commitments.push({
+      clanId: clan.id,
+      clanName: clan.name,
+      title: commitment.title,
+      cadence: commitment.cadence,
+      notes: commitment.notes,
+    });
+  }
+
   const pendingFiscalNote =
     resolvedCompany && createClient ? extracted.data.fiscalNote?.text ?? null : null;
   const suggestedFiscalOwnerId =
@@ -411,6 +438,8 @@ export async function buildInformativeDraft(
     ...new Set([
       ...extractObservationLines(sourceText),
       ...extracted.data.ignoredNotes,
+      // Compromisso sem clã reconhecido não some: vira observação do aviso.
+      ...unroutedCommitments,
     ]),
   ].slice(0, 30);
 
@@ -438,6 +467,7 @@ export async function buildInformativeDraft(
       suggestedFiscalOwnerId,
     },
     tasks,
+    commitments,
     observations,
     unresolvedAssignees: [...unresolved],
     warnings,

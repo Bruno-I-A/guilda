@@ -11,6 +11,7 @@ import {
   type TaskStatus,
 } from "@/domain/task-state";
 import { syncClosingFromTask } from "@/lib/closings/task-sync";
+import { syncCommitmentPeriodFromTask } from "@/lib/commitments/task-sync";
 
 import type { TaskCallbackAction } from "./endpoint";
 import { encodeTaskCallback } from "./endpoint";
@@ -128,6 +129,12 @@ export async function runTelegramTaskAction(input: {
         .onConflictDoNothing();
     }
     await syncClosingFromTask(tx, {
+      task,
+      fromStatus: task.status,
+      toStatus: intent.to,
+      changedAt: now,
+    });
+    await syncCommitmentPeriodFromTask(tx, {
       task,
       fromStatus: task.status,
       toStatus: intent.to,

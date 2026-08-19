@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { COMMITMENT_CADENCES } from "@/domain/commitments";
 import { TAX_REGIMES } from "@/lib/clients-ui";
 
 const nullableText = (max: number) => z.string().trim().max(max).nullable();
@@ -60,6 +61,23 @@ export const informativeExtractionSchema = z.object({
     })
     .nullable()
     .default(null),
+  /**
+   * Obrigações que se REPETEM ("distribuição de lucros trimestral"), de
+   * qualquer setor. Não são missão: viram compromisso recorrente da empresa,
+   * que planeja o ano e gera a missão de cada período (ver
+   * src/domain/commitments.ts).
+   */
+  commitments: z
+    .array(
+      z.object({
+        sector: nullableText(120),
+        title: z.string().trim().min(3).max(200),
+        cadence: z.enum(COMMITMENT_CADENCES),
+        notes: nullableText(1000),
+      }),
+    )
+    .max(10)
+    .default([]),
 });
 
 export type InformativeExtraction = z.infer<typeof informativeExtractionSchema>;
@@ -111,7 +129,12 @@ const pendingDraftTaskSchema = draftTaskCoreSchema.extend({
 export const informativeDraftPayloadSchema = informativeExtractionSchema
   // fiscalNote é resolvido (suggestedFiscalOwnerId) e persistido só em
   // company.pendingFiscalNote — o payload não guarda o formato bruto da IA.
-  .omit({ isMissionRequest: true, missingFields: true, fiscalNote: true })
+  .omit({
+    isMissionRequest: true,
+    missingFields: true,
+    fiscalNote: true,
+    commitments: true,
+  })
   .extend({
     kind: z.enum(["new_client", "client_change", "client_closure", "general_task"]),
     sourceFormat: z.enum(["informative", "business_mission"]),
@@ -150,6 +173,24 @@ export const informativeDraftPayloadSchema = informativeExtractionSchema
         ]),
       )
       .max(60),
+    /**
+     * Compromissos recorrentes já roteados: o clã saiu de `resolveSectorClan`
+     * no servidor, não da IA. Sem clã reconhecido a linha não vira
+     * compromisso (vira observação), porque compromisso sem dono não tem
+     * quem cobre.
+     */
+    commitments: z
+      .array(
+        z.object({
+          clanId: z.string().uuid(),
+          clanName: z.string().min(1).max(100),
+          title: z.string().trim().min(3).max(200),
+          cadence: z.enum(COMMITMENT_CADENCES),
+          notes: nullableText(1000),
+        }),
+      )
+      .max(10)
+      .default([]),
     /** Linhas do informativo que não são ação — corpo do aviso no mural. */
     observations: z.array(z.string().trim().min(1).max(500)).max(30),
     unresolvedAssignees: z.array(z.string().min(1).max(200)).max(30),
