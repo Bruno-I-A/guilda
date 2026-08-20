@@ -127,7 +127,10 @@ export function DeleteClientButton({
               </div>
             </div>
           ) : null}
-          <DialogFooter>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancelar
+            </Button>
             <Button
               variant="destructive"
               disabled={!summary || confirmText !== summary.clientName || deleting}
