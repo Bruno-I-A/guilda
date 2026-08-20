@@ -126,7 +126,7 @@ export const tasks = pgTable(
     closingYearId: uuid("closing_year_id").references(
       () => accountingClosingYears.id,
     ),
-    // Ocorrência de compromisso recorrente que gerou esta missão. Sem FK
+    // Período de distribuição de lucros que gerou esta missão. Sem FK
     // (mesma razão de closing_by_task_id): evita ciclo físico entre as duas
     // tabelas, que se referenciam nos dois sentidos.
     commitmentPeriodId: uuid("commitment_period_id"),
@@ -1216,7 +1216,7 @@ export const clanCampaignsRelations = relations(clanCampaigns, ({ one }) => ({
 
 export type ClanCampaign = typeof clanCampaigns.$inferSelect;
 
-/** Com que frequência um compromisso se repete (ver src/domain/commitments.ts). */
+/** Com que frequência a distribuição de lucros é planejada. */
 export const commitmentCadence = pgEnum("commitment_cadence", [
   "monthly",
   "quarterly",
@@ -1225,17 +1225,8 @@ export const commitmentCadence = pgEnum("commitment_cadence", [
 ]);
 
 /**
- * Compromisso recorrente de UMA empresa-cliente: a REGRA ("o Banrisul faz
- * distribuição de lucros, trimestralmente, e a Contabilidade responde").
- *
- * É a peça que faltava entre `mission_templates` (checklist por REGIME, vale
- * para todo cliente do Simples) e `accounting_closings` (uma ocorrência
- * avulsa). Sem ela, o que chega no informativo — "fazer distribuição de
- * lucros trimestral" — virava texto solto e a recorrência continuava na
- * cabeça de alguém.
- *
- * Sempre de um cliente específico (decisão de 2026-08-19): para "todo cliente
- * do regime X faz Y" existem os templates.
+ * Planejamento recorrente de distribuição de lucros de UMA empresa-cliente.
+ * O nome físico legado é mantido para preservar os registros existentes.
  */
 export const clientCommitments = pgTable(
   "client_commitments",
@@ -1244,7 +1235,7 @@ export const clientCommitments = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organization.id),
-    /** O clã que responde pelo compromisso. */
+    /** O clã Contabilidade, que responde pelo planejamento. */
     clanId: uuid("clan_id").notNull(),
     clientId: uuid("client_id")
       .notNull()
@@ -1256,7 +1247,7 @@ export const clientCommitments = pgTable(
     /** Alimenta o XP da missão gerada a cada período (fórmula de sempre). */
     difficulty: smallint("difficulty").notNull().default(2),
     active: boolean("active").notNull().default(true),
-    /** De qual informativo este compromisso nasceu, quando veio de um. */
+    /** De qual informativo este planejamento nasceu, quando veio de um. */
     sourceInformativeId: uuid("source_informative_id").references(
       () => informatives.id,
     ),
@@ -1299,6 +1290,8 @@ export const clientCommitmentPeriods = pgTable(
     /** 1-based dentro do ano: 1–12 mensal, 1–4 trimestral, 1–2 semestral, 1 anual. */
     periodIndex: smallint("period_index").notNull(),
     dueDate: date("due_date", { mode: "string" }).notNull(),
+    /** Total distribuído no período. Nulo significa "ainda não informado". */
+    distributedAmount: numeric("distributed_amount", { precision: 15, scale: 2 }),
     notes: text("notes"),
     completedBy: text("completed_by").references(() => user.id),
     completedAt: timestamp("completed_at", { withTimezone: true }),

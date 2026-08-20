@@ -25,7 +25,7 @@ import {
 
 /**
  * Botão + dialog de exclusão permanente. O resumo (quantas missões,
- * fechamentos, compromissos, quem tem a carteira) é buscado ANTES de abrir o
+ * fechamentos, distribuições, quem tem a carteira) é buscado ANTES de abrir o
  * dialog — mesmo padrão do GitHub para apagar repositório: mostra o estrago,
  * só então pede o nome exato para habilitar o botão destrutivo.
  */
@@ -101,7 +101,7 @@ export function DeleteClientButton({
               <ul className="grid gap-1 text-muted-foreground">
                 <li>{summary.taskCount} missão(ões)</li>
                 <li>{summary.closingCount} fechamento(s)</li>
-                <li>{summary.commitmentCount} compromisso(s)</li>
+                <li>{summary.commitmentCount} planejamento(s) de distribuição</li>
                 {summary.portfolioHolderName ? (
                   <li>Carteira com {summary.portfolioHolderName}</li>
                 ) : null}

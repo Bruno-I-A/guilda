@@ -59,7 +59,7 @@ export interface DraftView {
     pendingFiscalNote: string | null;
   };
   tasks: DraftTaskView[];
-  /** Obrigações que se repetem — viram compromisso, não missão. */
+  /** Distribuições de lucros recorrentes — viram planejamento, não missão. */
   commitments: {
     clanName: string;
     title: string;
@@ -239,7 +239,7 @@ export function InformativePanel({
 
           {draft.commitments.length > 0 ? (
             <div className="grid gap-2 rounded-md border border-primary/30 bg-primary/5 p-3">
-              <p className="hud-label">Vira compromisso recorrente</p>
+              <p className="hud-label">Vira planejamento de distribuição de lucros</p>
               <ul className="grid gap-1.5">
                 {draft.commitments.map((commitment) => (
                   <li key={`${commitment.clanName}-${commitment.title}`} className="text-sm">
@@ -258,8 +258,8 @@ export function InformativePanel({
                 ))}
               </ul>
               <p className="text-xs text-muted-foreground">
-                O ano já nasce planejado na aba Compromissos do clã; a missão de
-                cada período é gerada quando ele chega.
+                Os períodos ainda abertos do ano são planejados na aba Distribuição
+                de lucros; cada missão é gerada somente quando necessário.
               </p>
             </div>
           ) : null}

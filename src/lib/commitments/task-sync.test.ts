@@ -69,7 +69,7 @@ function filterColumns(where: unknown): string[] {
 }
 
 describe("syncCommitmentPeriodFromTask", () => {
-  test("missão sem vínculo com compromisso não toca em nada", async () => {
+  test("missão sem vínculo com distribuição não toca em nada", async () => {
     const { tx, calls } = fakeTx();
     await syncCommitmentPeriodFromTask(tx as never, {
       task: task({ commitmentPeriodId: null }),
@@ -93,6 +93,7 @@ describe("syncCommitmentPeriodFromTask", () => {
       completedBy: "user-1",
       completedAt: CHANGED_AT,
     });
+    expect(calls[0].set).not.toHaveProperty("distributedAmount");
   });
 
   test("concluir sem responsável é invariante violada, não silêncio", async () => {

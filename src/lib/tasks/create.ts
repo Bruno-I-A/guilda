@@ -24,7 +24,7 @@ export type CreateTaskRecordInput = {
   informativeId?: string | null;
   closingId?: string | null;
   closingYearId?: string | null;
-  /** Ocorrência de compromisso recorrente que originou esta missão. */
+  /** Período de distribuição de lucros que originou esta missão. */
   commitmentPeriodId?: string | null;
   title: string;
   description?: string | null;

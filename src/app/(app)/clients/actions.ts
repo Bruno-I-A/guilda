@@ -307,7 +307,7 @@ export interface ClientDeletionSummary {
 
 /**
  * Contagem para o dialog de confirmação — a mesma consulta que fundamenta a
- * mensagem "vai apagar N missões, M fechamentos, P compromissos" antes do
+ * mensagem "vai apagar N missões, M fechamentos, P distribuições" antes do
  * usuário decidir se confirma. As quatro contagens rodam na mesma transação
  * que a leitura do cliente, então são consistentes ENTRE SI (uma única foto
  * do banco) — mas isto é uma chamada separada de `deleteClientPermanently`,
@@ -398,7 +398,7 @@ const deletePermanentlySchema = z.object({
 /**
  * Exclusão física de uma empresa-cliente, em cascata: missões, eventos de
  * missão, transferências, fechamentos, anos de fechamento, carteira,
- * histórico de carteira e compromissos somem junto (ON DELETE CASCADE nas
+ * histórico de carteira e distribuições somem junto (ON DELETE CASCADE nas
  * FKs — ver migration 0033). `xp_ledger.task_id`/`closing_year_id` e
  * `guild_notices.client_id` viram NULL em vez de apagar (ON DELETE SET
  * NULL): o XP já creditado nunca é tocado, só perde o rastro de onde veio.

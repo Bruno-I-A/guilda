@@ -59,9 +59,9 @@ Regras:
 - SÓ LINHA DE AÇÃO VIRA MISSÃO. O discriminador é o verbo no infinitivo que abre a descrição da ação. Combinado permanente ("Camila responde por todos os informativos", "distribuição de lucros trimestral", "Rafa e Bruno acompanham a contabilidade") não tem conclusão possível: mande para ignoredNotes, nunca para tasks. Todo o bloco OBSERVAÇÕES vai para ignoredNotes.${
     isNewClientOnboarding
       ? `
-- EXCEÇÃO — CADASTRO DE CLIENTE NOVO: esta mensagem cadastra um cliente que ainda não existe no sistema. Uma linha de combinado permanente aqui descreve algo que se REPETE ("distribuição de lucros trimestral", "pró-labore mensal de X", "controlar o Fator R todo mês"): não vira missão nem ignoredNotes — devolva em commitments, com sector copiado da linha, title curto do que se repete ("Distribuição de lucros"), cadence (monthly/quarterly/semiannual/annual) e notes com valores e condições. Quem transforma isso em trabalho é o servidor, que planeja o ano e gera a missão de cada período.
-- Cadência: use o que a linha disser — "trimestral" → quarterly, "mensal"/"todo mês" → monthly, "semestral" → semiannual, "anual"/"por ano" → annual. Quando a linha descrever algo permanente SEM dizer a frequência (ex.: "controlar o Fator R"), use monthly, que é o acompanhamento mais comum. NÃO invente compromisso a partir de linha que descreve ação de uma vez só.
-- Negação pura ("sem pró-labore", "sem particularidades", "nenhuma pendência") não gera missão NEM compromisso — a linha simplesmente não produz nada.
+- EXCEÇÃO — DISTRIBUIÇÃO DE LUCROS NO CADASTRO DE CLIENTE NOVO: somente uma linha da CONTABILIDADE que diga explicitamente que a empresa faz distribuição de lucros recorrente sai de ignoredNotes e vai para commitments. Use title exatamente "Distribuição de lucros", copie o sector, extraia cadence (monthly/quarterly/semiannual/annual) e coloque valores/condições em notes. Pró-labore, Fator R e qualquer outro combinado recorrente NÃO vão para commitments.
+- Cadência da distribuição: "trimestral" → quarterly, "mensal"/"todo mês" → monthly, "semestral" → semiannual, "anual"/"por ano" → annual. Se a distribuição de lucros for explícita mas não disser frequência, use monthly e acrescente um warning informando a suposição. NÃO invente planejamento a partir de ação pontual.
+- Negação pura ("sem distribuição de lucros", "sem pró-labore", "sem particularidades", "nenhuma pendência") não gera missão nem planejamento — a linha simplesmente não produz nada.
 - EXCEÇÃO DENTRO DA EXCEÇÃO — SETOR FISCAL: a linha do FISCAL que traz o combinado da empresa (valores combinados, faturamento, particularidades tributárias) NÃO vai para commitments nem para tasks: preencha fiscalNote.text com o conteúdo da linha (sem o prefixo "FISCAL –") e fiscalNote.assignee com o nome citado, se houver. Isso porque quem decide o responsável fiscal desta empresa é o líder do clã, fora do fluxo de missões — a informação vai direto para a carteira dele. Uma linha do FISCAL que seja ação de verdade ("entregar informativos mensais", "parametrizar o Simples") continua virando missão normalmente.`
       : ""
   }
@@ -90,7 +90,7 @@ Regras:
 - CNPJ pode vir formatado; preserve-o no campo cnpj.
 - Quando a mensagem mencionar uma empresa já cadastrada, devolva legalName exatamente como aparece no diretório de clientes se houver uma correspondência inequívoca. Para novo cliente, preserve o nome informado.
 - fiscalNote: null na imensa maioria dos casos. Só é preenchido na exceção do setor FISCAL descrita acima, exclusiva de cadastro de cliente novo.
-- commitments: lista vazia na imensa maioria dos casos. Só é preenchida no cadastro de cliente novo, para linhas que descrevem algo recorrente.
+- commitments: lista vazia na imensa maioria dos casos. Só é preenchida no cadastro de cliente novo para distribuição de lucros recorrente da CONTABILIDADE.
 
 Exemplos de interpretação:
 - "Fiz a baixa da ALUMINIUM ENGENHARIA LTDA, Bruno pode solicitar na prefeitura a baixa também" é client_closure, empresa ALUMINIUM ENGENHARIA LTDA, uma ação de baixa municipal atribuída a Bruno.

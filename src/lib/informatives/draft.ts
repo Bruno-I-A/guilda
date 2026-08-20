@@ -24,6 +24,7 @@ import { resolveMemberName } from "@/lib/ai/member-resolution";
 import { type TaxRegime } from "@/lib/clients-ui";
 import { listActiveClans, listOrgMembers } from "@/lib/org";
 import { isDetailedInformativeMessage } from "@/lib/telegram/informative-detection";
+import { CONTABILIDADE_CLAN_SLUG } from "@/lib/clans/rules";
 
 /**
  * Construção da prévia de um informativo — compartilhada pelas DUAS portas de
@@ -403,15 +404,14 @@ export async function buildInformativeDraft(
   // líder do clã Fiscal na aba Carteira (ver portfolio-actions.ts), não a
   // Mesa do Líder. O nome sugerido só pré-preenche o seletor do líder; ele
   // sempre pode trocar.
-  // Compromisso recorrente: o clã sai de resolveSectorClan aqui no servidor,
-  // nunca da IA. Linha cujo setor não casa com clã ativo NÃO vira compromisso
-  // — compromisso sem dono não tem quem cobre; o texto cai em observações e
-  // aparece no aviso do mural.
+  // Distribuição de lucros: o setor precisa resolver especificamente para a
+  // Contabilidade. A IA não pode transformar outros combinados recorrentes
+  // em um planejamento financeiro genérico.
   const commitments: InformativeDraftPayload["commitments"] = [];
   const unroutedCommitments: string[] = [];
   for (const commitment of extracted.data.commitments) {
     const clan = resolveSectorClan(commitment.sector, routingClans);
-    if (!clan) {
+    if (!clan || clan.slug !== CONTABILIDADE_CLAN_SLUG) {
       unroutedCommitments.push(
         `${commitment.title}${commitment.notes ? ` — ${commitment.notes}` : ""}`.slice(0, 500),
       );
@@ -420,7 +420,7 @@ export async function buildInformativeDraft(
     commitments.push({
       clanId: clan.id,
       clanName: clan.name,
-      title: commitment.title,
+      title: "Distribuição de lucros",
       cadence: commitment.cadence,
       notes: commitment.notes,
     });
@@ -438,7 +438,7 @@ export async function buildInformativeDraft(
     ...new Set([
       ...extractObservationLines(sourceText),
       ...extracted.data.ignoredNotes,
-      // Compromisso sem clã reconhecido não some: vira observação do aviso.
+      // Distribuição sem clã reconhecido não some: vira observação do aviso.
       ...unroutedCommitments,
     ]),
   ].slice(0, 30);

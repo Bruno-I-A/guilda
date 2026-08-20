@@ -5,13 +5,18 @@ import {
   ArchiveRestore,
   CalendarClock,
   Check,
+  ChevronLeft,
+  ChevronRight,
+  CircleDollarSign,
+  ClipboardList,
+  Pencil,
   Plus,
   Repeat2,
   Send,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -37,22 +42,34 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   CADENCE_LABELS,
   COMMITMENT_CADENCES,
+  commitmentPeriodLabel,
+  firstOpenPeriod,
+  nextCommitmentPeriod,
+  periodsForCadence,
+  periodsForCadenceRange,
+  periodsPerYear,
   type CommitmentCadence,
+  type CommitmentPeriodCoordinate,
 } from "@/domain/commitments";
-import type { ActionResult } from "@/lib/action-context";
 import { cn } from "@/lib/utils";
 
 import {
   createCommitment,
-  createMissionForPeriod,
+  createMissionsForPeriods,
+  planCommitmentPeriods,
   setCommitmentActive,
   updateCommitmentPeriod,
+  updateDistributionClosingNote,
 } from "./commitment-actions";
 
 export interface CommitmentPeriodView {
   id: string;
+  year: number;
+  index: number;
   label: string;
   dueDate: string;
+  notes: string | null;
+  distributedAmount: string | null;
   completedAt: string | null;
   completedByName: string | null;
   taskId: string | null;
@@ -63,11 +80,17 @@ export interface CommitmentView {
   id: string;
   clientId: string;
   clientName: string;
-  title: string;
   notes: string | null;
   cadence: CommitmentCadence;
   active: boolean;
+  latestPeriod: CommitmentPeriodCoordinate | null;
   periods: CommitmentPeriodView[];
+}
+
+export interface ClosingNoteView {
+  clientId: string;
+  clientName: string;
+  notes: string;
 }
 
 interface ClientOption {
@@ -81,40 +104,313 @@ function formatDate(value: string): string {
   });
 }
 
-/**
- * Uma ocorrência do ano. Três estados que importam: concluída (o histórico),
- * com missão viva (já está na fila de alguém) e em aberto — dessa última, a
- * vencida aparece destacada, porque é a única que pede ação agora.
- */
-function PeriodRow({
+function formatMoney(value: string): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(Number(value));
+}
+
+function moneyInput(value: string | null): string {
+  return value === null ? "" : Number(value).toFixed(2).replace(".", ",");
+}
+
+function periodOptions(cadence: CommitmentCadence, year: number) {
+  return periodsForCadence(cadence, year).map((period) => ({
+    value: String(period.index),
+    label: commitmentPeriodLabel(cadence, year, period.index),
+  }));
+}
+
+function RangeFields({
+  cadence,
+  start,
+  end,
+  onStart,
+  onEnd,
+}: {
+  cadence: CommitmentCadence;
+  start: CommitmentPeriodCoordinate;
+  end: CommitmentPeriodCoordinate;
+  onStart: (value: CommitmentPeriodCoordinate) => void;
+  onEnd: (value: CommitmentPeriodCoordinate) => void;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-2">
+        <Label>Começar em</Label>
+        <div className="grid grid-cols-[1fr_6.5rem] gap-2">
+          <Select
+            value={String(start.index)}
+            onValueChange={(value) => onStart({ ...start, index: Number(value) })}
+          >
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {periodOptions(cadence, start.year).map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            type="number"
+            min={2000}
+            max={2100}
+            value={start.year}
+            onChange={(event) => onStart({ ...start, year: Number(event.target.value) })}
+            aria-label="Ano inicial"
+          />
+        </div>
+      </div>
+      <div className="grid gap-2">
+        <Label>Planejar até</Label>
+        <div className="grid grid-cols-[1fr_6.5rem] gap-2">
+          <Select
+            value={String(end.index)}
+            onValueChange={(value) => onEnd({ ...end, index: Number(value) })}
+          >
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {periodOptions(cadence, end.year).map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            type="number"
+            min={2000}
+            max={2100}
+            value={end.year}
+            onChange={(event) => onEnd({ ...end, year: Number(event.target.value) })}
+            aria-label="Ano final"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PeriodEditorDialog({
   clanId,
   period,
-  canManage,
-  onDone,
+  completeOnSave,
+  onClose,
+  onSaved,
 }: {
   clanId: string;
   period: CommitmentPeriodView;
-  canManage: boolean;
-  onDone: () => void;
+  completeOnSave: boolean;
+  onClose: () => void;
+  onSaved: () => void;
 }) {
   const [pending, startTransition] = useTransition();
+  const [dueDate, setDueDate] = useState(period.dueDate);
+  const [amount, setAmount] = useState(moneyInput(period.distributedAmount));
+  const [notes, setNotes] = useState(period.notes ?? "");
 
-  function run(action: () => Promise<ActionResult<unknown>>, message: string) {
+  function submit() {
     startTransition(async () => {
-      const result = await action();
+      const result = await updateCommitmentPeriod({
+        clanId,
+        periodId: period.id,
+        dueDate,
+        distributedAmount: amount,
+        notes,
+        ...(completeOnSave ? { completed: true } : {}),
+      });
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
-      toast.success(message);
-      onDone();
+      toast.success(completeOnSave ? "Distribuição concluída." : "Período atualizado.");
+      onClose();
+      onSaved();
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {completeOnSave ? "Concluir distribuição" : "Editar distribuição"}
+          </DialogTitle>
+          <DialogDescription>
+            {period.label} · registre o valor total e o que precisa permanecer no histórico.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="distribution-due-date">Prazo</Label>
+              <Input
+                id="distribution-due-date"
+                type="date"
+                value={dueDate}
+                onChange={(event) => setDueDate(event.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="distribution-amount">Valor distribuído</Label>
+              <Input
+                id="distribution-amount"
+                inputMode="decimal"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                placeholder="Ex.: 18.500,00"
+              />
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="distribution-period-notes">Observações do período</Label>
+            <Textarea
+              id="distribution-period-notes"
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              rows={4}
+              maxLength={2000}
+              placeholder="Sócios, condições, pendências ou cuidados deste período…"
+            />
+          </div>
+        </div>
+        <DialogFooter className="gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button type="button" disabled={pending || !dueDate} onClick={submit}>
+            {completeOnSave ? "Salvar e concluir" : "Salvar alterações"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PlanRangeDialog({
+  clanId,
+  commitment,
+  today,
+  onClose,
+  onSaved,
+}: {
+  clanId: string;
+  commitment: CommitmentView;
+  today: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [pending, startTransition] = useTransition();
+  const suggestedStart = commitment.latestPeriod
+    ? nextCommitmentPeriod(commitment.cadence, commitment.latestPeriod)
+    : firstOpenPeriod(commitment.cadence, today);
+  const [start, setStart] = useState(suggestedStart);
+  const [end, setEnd] = useState<CommitmentPeriodCoordinate>({
+    year: suggestedStart.year,
+    index: periodsPerYear(commitment.cadence),
+  });
+  const preview = useMemo(
+    () => periodsForCadenceRange(commitment.cadence, start, end),
+    [commitment.cadence, start, end],
+  );
+
+  function submit() {
+    startTransition(async () => {
+      const result = await planCommitmentPeriods({
+        clanId,
+        commitmentId: commitment.id,
+        startYear: start.year,
+        startIndex: start.index,
+        endYear: end.year,
+        endIndex: end.index,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(
+        result.data?.periods
+          ? `${result.data.periods} nova(s) distribuição(ões) planejada(s).`
+          : "Este intervalo já estava planejado.",
+      );
+      onClose();
+      onSaved();
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Planejar próximas distribuições</DialogTitle>
+          <DialogDescription>
+            {commitment.clientName} · períodos já existentes não serão duplicados.
+          </DialogDescription>
+        </DialogHeader>
+        <RangeFields
+          cadence={commitment.cadence}
+          start={start}
+          end={end}
+          onStart={setStart}
+          onEnd={setEnd}
+        />
+        <p className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
+          {preview.length > 0
+            ? `${preview.length} período(s): ${commitmentPeriodLabel(commitment.cadence, preview[0].year, preview[0].index)} até ${commitmentPeriodLabel(commitment.cadence, preview.at(-1)!.year, preview.at(-1)!.index)}.`
+            : "Escolha um intervalo válido."}
+        </p>
+        <DialogFooter className="gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button type="button" disabled={pending || preview.length === 0} onClick={submit}>
+            Planejar períodos
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PeriodRow({
+  clanId,
+  period,
+  canManage,
+  selected,
+  onSelected,
+  onEdit,
+  onComplete,
+  onSaved,
+}: {
+  clanId: string;
+  period: CommitmentPeriodView;
+  canManage: boolean;
+  selected: boolean;
+  onSelected: (selected: boolean) => void;
+  onEdit: () => void;
+  onComplete: () => void;
+  onSaved: () => void;
+}) {
+  const [pending, startTransition] = useTransition();
+  const selectable = canManage && !period.completedAt && !period.taskId;
+
+  function createMission() {
+    startTransition(async () => {
+      const result = await createMissionsForPeriods({
+        clanId,
+        periodIds: [period.id],
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Missão criada na fila da Contabilidade.");
+      onSaved();
     });
   }
 
   return (
     <li
       className={cn(
-        "flex flex-wrap items-center gap-2 rounded-md px-2.5 py-1.5 text-sm",
+        "grid gap-2 rounded-md px-3 py-2 text-sm sm:grid-cols-[auto_1fr_auto] sm:items-center",
         period.completedAt
           ? "bg-muted/25"
           : period.overdue
@@ -122,72 +418,75 @@ function PeriodRow({
             : "bg-muted/40",
       )}
     >
-      <span className="min-w-20 font-mono text-xs">{period.label}</span>
-      <span
-        className={cn(
-          "flex items-center gap-1 text-xs",
-          period.overdue && !period.completedAt
-            ? "text-destructive"
-            : "text-muted-foreground",
-        )}
-      >
-        <CalendarClock className="size-3.5" aria-hidden />
-        {formatDate(period.dueDate)}
-      </span>
+      {selectable ? (
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={(event) => onSelected(event.target.checked)}
+          aria-label={`Selecionar ${period.label}`}
+          className="size-4 accent-primary"
+        />
+      ) : <span className="hidden sm:block" />}
 
-      {period.completedAt ? (
-        <Badge variant="outline" className="gap-1 border-transparent bg-primary/10">
-          <Check className="size-3" aria-hidden />
-          {period.completedByName ?? "concluído"}
-        </Badge>
-      ) : null}
-
-      <span className="flex-1" />
-
-      {period.taskId ? (
-        <Link
-          href={`/tasks/${period.taskId}`}
-          className="font-mono text-xs text-primary hover:underline"
-        >
-          ver missão →
-        </Link>
-      ) : canManage && !period.completedAt ? (
-        <div className="flex items-center gap-1">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={pending}
-            onClick={() =>
-              run(
-                () => createMissionForPeriod({ clanId, periodId: period.id }),
-                "Missão criada na fila do clã.",
-              )
-            }
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="min-w-20 font-mono text-xs font-semibold">{period.label}</span>
+          <span
+            className={cn(
+              "flex items-center gap-1 text-xs",
+              period.overdue && !period.completedAt
+                ? "text-destructive"
+                : "text-muted-foreground",
+            )}
           >
-            <Send className="size-3.5" aria-hidden /> Gerar missão
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={pending}
-            onClick={() =>
-              run(
-                () =>
-                  updateCommitmentPeriod({
-                    clanId,
-                    periodId: period.id,
-                    completed: true,
-                  }),
-                "Período concluído.",
-              )
-            }
-          >
-            <Check className="size-3.5" aria-hidden /> Concluir
-          </Button>
+            <CalendarClock className="size-3.5" aria-hidden />
+            {formatDate(period.dueDate)}
+          </span>
+          {period.distributedAmount !== null ? (
+            <span className="font-mono text-xs text-emerald-300">
+              {formatMoney(period.distributedAmount)}
+            </span>
+          ) : period.completedAt ? (
+            <span className="text-xs text-amber-300">valor não informado</span>
+          ) : null}
+          {period.completedAt ? (
+            <Badge variant="outline" className="gap-1 border-transparent bg-primary/10">
+              <Check className="size-3" aria-hidden />
+              {period.completedByName ?? "concluído"}
+            </Badge>
+          ) : null}
         </div>
-      ) : null}
+        {period.notes ? (
+          <p className="mt-1 truncate text-xs text-muted-foreground" title={period.notes}>
+            {period.notes}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-end gap-1">
+        {period.taskId ? (
+          <Link
+            href={`/tasks/${period.taskId}`}
+            className="px-2 font-mono text-xs text-primary hover:underline"
+          >
+            ver missão →
+          </Link>
+        ) : canManage && !period.completedAt ? (
+          <>
+            <Button type="button" size="sm" variant="outline" disabled={pending} onClick={createMission}>
+              <Send className="size-3.5" aria-hidden /> Gerar missão
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={onComplete}>
+              <Check className="size-3.5" aria-hidden /> Concluir
+            </Button>
+          </>
+        ) : null}
+        {canManage ? (
+          <Button type="button" size="icon-sm" variant="ghost" onClick={onEdit} aria-label={`Editar ${period.label}`}>
+            <Pencil className="size-3.5" aria-hidden />
+          </Button>
+        ) : null}
+      </div>
     </li>
   );
 }
@@ -197,51 +496,109 @@ export function CommitmentBoard({
   canManage,
   commitments,
   clients,
+  closingNotes,
   year,
+  today,
 }: {
   clanId: string;
   canManage: boolean;
   commitments: readonly CommitmentView[];
   clients: readonly ClientOption[];
+  closingNotes: readonly ClosingNoteView[];
   year: number;
+  today: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [createOpen, setCreateOpen] = useState(false);
   const [clientId, setClientId] = useState("");
-  const [title, setTitle] = useState("");
   const [cadence, setCadence] = useState<CommitmentCadence>("quarterly");
+  const initialStart = firstOpenPeriod("quarterly", today);
+  const [start, setStart] = useState(initialStart);
+  const [end, setEnd] = useState<CommitmentPeriodCoordinate>({
+    year: initialStart.year,
+    index: periodsPerYear("quarterly"),
+  });
   const [notes, setNotes] = useState("");
+  const [difficulty, setDifficulty] = useState("2");
+  const [selectedPeriods, setSelectedPeriods] = useState<Set<string>>(new Set());
+  const [periodEditor, setPeriodEditor] = useState<{
+    period: CommitmentPeriodView;
+    complete: boolean;
+  } | null>(null);
+  const [planning, setPlanning] = useState<CommitmentView | null>(null);
+  const [closingDraft, setClosingDraft] = useState<{
+    clientId: string;
+    notes: string;
+  } | null>(null);
 
   const refresh = () => router.refresh();
+  const createPreview = useMemo(
+    () => periodsForCadenceRange(cadence, start, end),
+    [cadence, start, end],
+  );
 
-  function submit() {
-    if (!clientId || title.trim().length < 3) return;
+  function changeCadence(value: CommitmentCadence) {
+    const next = firstOpenPeriod(value, today);
+    setCadence(value);
+    setStart(next);
+    setEnd({ year: next.year, index: periodsPerYear(value) });
+  }
+
+  function submitCreate() {
+    if (!clientId || createPreview.length === 0) return;
     startTransition(async () => {
       const result = await createCommitment({
         clanId,
         clientId,
-        title: title.trim(),
         cadence,
-        notes: notes.trim() || undefined,
+        notes,
+        difficulty: Number(difficulty),
+        startYear: start.year,
+        startIndex: start.index,
+        endYear: end.year,
+        endIndex: end.index,
       });
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
-      toast.success(
-        `Compromisso criado — ${result.data?.periods ?? 0} período(s) planejado(s) para ${year}.`,
-      );
+      toast.success(`${result.data?.periods ?? 0} distribuição(ões) planejada(s).`);
       setCreateOpen(false);
       setClientId("");
-      setTitle("");
       setNotes("");
       refresh();
     });
   }
 
+  function createSelectedMissions() {
+    const ids = [...selectedPeriods];
+    if (ids.length === 0) return;
+    startTransition(async () => {
+      const result = await createMissionsForPeriods({ clanId, periodIds: ids });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`${result.data?.created ?? 0} missão(ões) criada(s).`);
+      setSelectedPeriods(new Set());
+      refresh();
+    });
+  }
+
+  function toggleSelected(id: string, selected: boolean) {
+    setSelectedPeriods((current) => {
+      const next = new Set(current);
+      if (selected) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
   const active = commitments.filter((commitment) => commitment.active);
   const archived = commitments.filter((commitment) => !commitment.active);
+  const activeClientIds = new Set(active.map((commitment) => commitment.clientId));
+  const planningClients = clients.filter((client) => !activeClientIds.has(client.id));
   const openOverdue = active.reduce(
     (total, commitment) =>
       total + commitment.periods.filter((period) => period.overdue).length,
@@ -249,226 +606,330 @@ export function CommitmentBoard({
   );
 
   return (
-    <div className="grid gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="grid gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="hud-label">Compromissos de {year}</p>
+          <p className="hud-label">Distribuição de lucros</p>
           <p className="text-sm text-muted-foreground">
-            O que se repete para cada empresa — a recorrência fica aqui, não na
-            memória de quem lembrou.
+            Planeje os períodos, gere missões quando necessário e mantenha o valor distribuído no histórico.
           </p>
         </div>
-        {canManage ? (
-          <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" aria-hidden /> Novo compromisso
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center rounded-lg border bg-muted/40 p-0.5">
+            <Link href={`/clans/${clanId}?tab=commitments&distributionYear=${year - 1}`} className="flex size-8 items-center justify-center rounded-md hover:bg-background" aria-label={`Ver ${year - 1}`}>
+              <ChevronLeft className="size-4" aria-hidden />
+            </Link>
+            <span className="min-w-16 text-center font-mono text-sm font-semibold">{year}</span>
+            <Link href={`/clans/${clanId}?tab=commitments&distributionYear=${year + 1}`} className="flex size-8 items-center justify-center rounded-md hover:bg-background" aria-label={`Ver ${year + 1}`}>
+              <ChevronRight className="size-4" aria-hidden />
+            </Link>
+          </div>
+          {canManage ? (
+            <Button
+              type="button"
+              size="sm"
+              disabled={planningClients.length === 0}
+              onClick={() => setCreateOpen(true)}
+            >
+              <Plus className="size-4" aria-hidden /> Nova distribuição
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {openOverdue > 0 ? (
         <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
-          {openOverdue}{" "}
-          {openOverdue === 1 ? "período vencido" : "períodos vencidos"} sem
-          conclusão.
+          {openOverdue} {openOverdue === 1 ? "período vencido" : "períodos vencidos"} sem conclusão em {year}.
         </p>
+      ) : null}
+
+      {selectedPeriods.size > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+          <span className="text-sm">{selectedPeriods.size} período(s) selecionado(s)</span>
+          <Button type="button" size="sm" disabled={pending} onClick={createSelectedMissions}>
+            <Send className="size-4" aria-hidden /> Gerar missões selecionadas
+          </Button>
+        </div>
       ) : null}
 
       {active.length === 0 ? (
         <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          Nenhum compromisso ativo neste clã. Cadastre o que se repete —
-          distribuição de lucros, conferências periódicas — para o ano inteiro
-          ficar planejado.
+          Nenhuma empresa possui planejamento ativo de distribuição de lucros.
         </p>
       ) : (
         active.map((commitment) => (
-          <section
-            key={commitment.id}
-            className="panel-cut grid gap-2 rounded-lg border bg-card/50 p-4"
-          >
+          <section key={commitment.id} className="panel-cut grid gap-3 rounded-lg border bg-card/50 p-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
-                <h3 className="font-medium">
-                  {commitment.title}
-                  <span className="text-muted-foreground"> — {commitment.clientName}</span>
-                </h3>
+                <h3 className="font-medium">{commitment.clientName}</h3>
                 {commitment.notes ? (
-                  <p className="mt-0.5 text-xs whitespace-pre-wrap text-muted-foreground">
-                    {commitment.notes}
-                  </p>
+                  <p className="mt-0.5 whitespace-pre-wrap text-xs text-muted-foreground">{commitment.notes}</p>
                 ) : null}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1">
                 <Badge variant="secondary" className="gap-1">
-                  <Repeat2 className="size-3" aria-hidden />
-                  {CADENCE_LABELS[commitment.cadence]}
+                  <Repeat2 className="size-3" aria-hidden /> {CADENCE_LABELS[commitment.cadence]}
                 </Badge>
                 {canManage ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled={pending}
-                    onClick={() =>
-                      startTransition(async () => {
-                        const result = await setCommitmentActive({
-                          clanId,
-                          commitmentId: commitment.id,
-                          active: false,
-                        });
-                        if (!result.ok) {
-                          toast.error(result.error);
-                          return;
-                        }
-                        toast.info("Compromisso arquivado.");
-                        refresh();
-                      })
-                    }
-                  >
-                    <Archive className="size-3.5" aria-hidden />
-                  </Button>
+                  <>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setPlanning(commitment)}>
+                      <Plus className="size-3.5" aria-hidden /> Planejar próximas
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      disabled={pending}
+                      aria-label={`Arquivar distribuição de ${commitment.clientName}`}
+                      onClick={() => startTransition(async () => {
+                        const result = await setCommitmentActive({ clanId, commitmentId: commitment.id, active: false });
+                        if (!result.ok) toast.error(result.error);
+                        else { toast.info("Planejamento arquivado."); refresh(); }
+                      })}
+                    >
+                      <Archive className="size-3.5" aria-hidden />
+                    </Button>
+                  </>
                 ) : null}
               </div>
             </div>
 
-            <ul className="grid gap-1">
-              {commitment.periods.map((period) => (
-                <PeriodRow
-                  key={period.id}
-                  clanId={clanId}
-                  period={period}
-                  canManage={canManage}
-                  onDone={refresh}
-                />
-              ))}
-            </ul>
+            {commitment.periods.length > 0 ? (
+              <ul className="grid gap-1">
+                {commitment.periods.map((period) => (
+                  <PeriodRow
+                    key={period.id}
+                    clanId={clanId}
+                    period={period}
+                    canManage={canManage}
+                    selected={selectedPeriods.has(period.id)}
+                    onSelected={(selected) => toggleSelected(period.id, selected)}
+                    onEdit={() => setPeriodEditor({ period, complete: false })}
+                    onComplete={() => setPeriodEditor({ period, complete: true })}
+                    onSaved={refresh}
+                  />
+                ))}
+              </ul>
+            ) : (
+              <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
+                Nenhum período planejado para {year}.
+              </p>
+            )}
           </section>
         ))
       )}
 
-      {archived.length > 0 ? (
-        <section className="grid gap-2">
-          <h3 className="hud-label">Arquivados</h3>
-          <ul className="grid gap-1">
-            {archived.map((commitment) => (
-              <li
-                key={commitment.id}
-                className="flex flex-wrap items-center gap-2 rounded-md bg-muted/25 px-2.5 py-1.5 text-sm text-muted-foreground"
-              >
-                <span className="min-w-0 flex-1 truncate">
-                  {commitment.title} — {commitment.clientName}
-                </span>
-                {canManage ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled={pending}
-                    onClick={() =>
-                      startTransition(async () => {
-                        const result = await setCommitmentActive({
-                          clanId,
-                          commitmentId: commitment.id,
-                          active: true,
-                        });
-                        if (!result.ok) {
-                          toast.error(result.error);
-                          return;
-                        }
-                        toast.success("Compromisso reativado.");
-                        refresh();
-                      })
-                    }
-                  >
-                    <ArchiveRestore className="size-3.5" aria-hidden /> Reativar
-                  </Button>
-                ) : null}
+      <section className="grid gap-3 rounded-lg border bg-card/35 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <p className="hud-label">Empresas a fechar · {year}</p>
+            <p className="text-sm text-muted-foreground">
+              Anotações gerais, mesmo sem distribuição planejada ou missão. Também aparecem em Fechamentos.
+            </p>
+          </div>
+          {canManage ? (
+            <Button type="button" size="sm" variant="outline" disabled={clients.length === 0} onClick={() => setClosingDraft({ clientId: clients[0]?.id ?? "", notes: "" })}>
+              <ClipboardList className="size-4" aria-hidden /> Anotar empresa
+            </Button>
+          ) : null}
+        </div>
+        {closingNotes.length > 0 ? (
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {closingNotes.map((note) => (
+              <li key={note.clientId} className="rounded-md bg-muted/35 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{note.clientName}</p>
+                    <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">{note.notes}</p>
+                  </div>
+                  {canManage ? (
+                    <Button type="button" size="icon-sm" variant="ghost" onClick={() => setClosingDraft({ clientId: note.clientId, notes: note.notes })} aria-label={`Editar observação de ${note.clientName}`}>
+                      <Pencil className="size-3.5" aria-hidden />
+                    </Button>
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>
+        ) : (
+          <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
+            Nenhuma anotação de fechamento em {year}.
+          </p>
+        )}
+      </section>
+
+      {archived.length > 0 ? (
+        <section className="grid gap-2">
+          <h3 className="hud-label">Planejamentos arquivados</h3>
+          {archived.map((commitment) => (
+            <div key={commitment.id} className="flex items-center gap-2 rounded-md bg-muted/25 px-3 py-2 text-sm text-muted-foreground">
+              <span className="flex-1">{commitment.clientName} · {CADENCE_LABELS[commitment.cadence]}</span>
+              {canManage ? (
+                <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => startTransition(async () => {
+                  const result = await setCommitmentActive({ clanId, commitmentId: commitment.id, active: true });
+                  if (!result.ok) toast.error(result.error);
+                  else { toast.success("Planejamento reativado."); refresh(); }
+                })}>
+                  <ArchiveRestore className="size-3.5" aria-hidden /> Reativar
+                </Button>
+              ) : null}
+            </div>
+          ))}
         </section>
       ) : null}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Novo compromisso</DialogTitle>
+            <DialogTitle>Nova distribuição de lucros</DialogTitle>
             <DialogDescription>
-              A regra que se repete. Ao salvar, os períodos de {year} já nascem
-              planejados; a missão de cada um você gera quando o período chegar.
+              Planeja apenas o intervalo escolhido. As missões continuam opcionais.
             </DialogDescription>
           </DialogHeader>
-
-          <div className="grid gap-2">
-            <Label htmlFor="commitment-client">Empresa</Label>
-            <Select value={clientId} onValueChange={setClientId}>
-              <SelectTrigger id="commitment-client" className="w-full">
-                <SelectValue placeholder="Escolha a empresa" />
-              </SelectTrigger>
-              <SelectContent>
-                {clients.map((client) => (
-                  <SelectItem key={client.id} value={client.id}>
-                    {client.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label>Empresa</Label>
+              <Select value={clientId} onValueChange={setClientId}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Escolha a empresa" /></SelectTrigger>
+                <SelectContent>
+                  {planningClients.map((client) => <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label>Periodicidade</Label>
+                <Select value={cadence} onValueChange={(value) => changeCadence(value as CommitmentCadence)}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {COMMITMENT_CADENCES.map((option) => <SelectItem key={option} value={option}>{CADENCE_LABELS[option]}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Dificuldade das missões</Label>
+                <Select value={difficulty} onValueChange={setDifficulty}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4, 5].map((value) => <SelectItem key={value} value={String(value)}>Nível {value}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <RangeFields cadence={cadence} start={start} end={end} onStart={setStart} onEnd={setEnd} />
+            <div className="grid gap-2">
+              <Label htmlFor="distribution-notes">Combinado geral (opcional)</Label>
+              <Textarea id="distribution-notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} maxLength={2000} placeholder="Condições gerais, sócios ou cuidados recorrentes…" />
+            </div>
+            <p className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
+              {createPreview.length > 0 ? `${createPreview.length} período(s) serão planejados; nenhuma missão será criada agora.` : "Escolha um intervalo válido."}
+            </p>
           </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="commitment-title">O que se repete</Label>
-            <Input
-              id="commitment-title"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="Ex.: Distribuição de lucros"
-              maxLength={200}
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="commitment-cadence">Periodicidade</Label>
-            <Select
-              value={cadence}
-              onValueChange={(value) => setCadence(value as CommitmentCadence)}
-            >
-              <SelectTrigger id="commitment-cadence" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {COMMITMENT_CADENCES.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {CADENCE_LABELS[option]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="commitment-notes">O combinado (opcional)</Label>
-            <Textarea
-              id="commitment-notes"
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              rows={3}
-              maxLength={2000}
-              placeholder="Valores, condições, o que observar…"
-            />
-          </div>
-
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancelar
-            </Button>
-            <Button
-              disabled={pending || !clientId || title.trim().length < 3}
-              onClick={submit}
-            >
-              Criar e planejar {year}
+            <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button>
+            <Button type="button" disabled={pending || !clientId || createPreview.length === 0} onClick={submitCreate}>
+              <CircleDollarSign className="size-4" aria-hidden /> Criar planejamento
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {periodEditor ? (
+        <PeriodEditorDialog
+          key={`${periodEditor.period.id}-${periodEditor.complete}`}
+          clanId={clanId}
+          period={periodEditor.period}
+          completeOnSave={periodEditor.complete}
+          onClose={() => setPeriodEditor(null)}
+          onSaved={refresh}
+        />
+      ) : null}
+      {planning ? (
+        <PlanRangeDialog
+          key={planning.id}
+          clanId={clanId}
+          commitment={planning}
+          today={today}
+          onClose={() => setPlanning(null)}
+          onSaved={refresh}
+        />
+      ) : null}
+      {closingDraft ? (
+        <ClosingNoteDialog
+          key={`${closingDraft.clientId}-${year}`}
+          clanId={clanId}
+          clients={clients}
+          year={year}
+          initial={closingDraft}
+          onClose={() => setClosingDraft(null)}
+          onSaved={refresh}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function ClosingNoteDialog({
+  clanId,
+  clients,
+  year,
+  initial,
+  onClose,
+  onSaved,
+}: {
+  clanId: string;
+  clients: readonly ClientOption[];
+  year: number;
+  initial: { clientId: string; notes: string };
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [clientId, setClientId] = useState(initial.clientId);
+  const [notes, setNotes] = useState(initial.notes);
+
+  function submit() {
+    startTransition(async () => {
+      const result = await updateDistributionClosingNote({ clanId, clientId, year, notes });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(notes.trim() ? "Anotação salva." : "Anotação removida.");
+      onClose();
+      onSaved();
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Anotar empresa a fechar</DialogTitle>
+          <DialogDescription>
+            Registro geral de {year}; não cria distribuição nem missão.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          <div className="grid gap-2">
+            <Label>Empresa</Label>
+            <Select value={clientId} onValueChange={setClientId}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {clients.map((client) => <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="closing-note">Observação do fechamento</Label>
+            <Textarea id="closing-note" value={notes} onChange={(event) => setNotes(event.target.value)} rows={5} maxLength={3000} placeholder="Pendências, documentos ou cuidados antes de fechar a empresa…" />
+          </div>
+        </div>
+        <DialogFooter className="gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button type="button" disabled={pending || !clientId} onClick={submit}>Salvar anotação</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

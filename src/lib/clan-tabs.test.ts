@@ -11,10 +11,10 @@ const keys = (slug: string) => clanTabsFor(slug).map((tab) => tab.key);
 
 describe("abas comuns a todo clã", () => {
   test.each(["fiscal", "contabilidade", "rh", "societario", "financeiro"])(
-    "%s tem missões, integrantes, campanhas e compromissos",
+    "%s tem missões, integrantes e campanhas",
     (slug) => {
       expect(keys(slug)).toEqual(
-        expect.arrayContaining(["missions", "members", "campaigns", "commitments"]),
+        expect.arrayContaining(["missions", "members", "campaigns"]),
       );
     },
   );
@@ -35,13 +35,18 @@ describe("abas específicas de cada clã", () => {
     expect(keys("financeiro")).not.toContain("closings");
   });
 
-  test("nenhum clã recebe as duas abas especiais", () => {
-    for (const slug of ["fiscal", "contabilidade", "rh"]) {
-      const special = keys(slug).filter(
-        (key) => key === "portfolio" || key === "closings",
-      );
-      expect(special.length).toBeLessThanOrEqual(1);
-    }
+  test("Distribuição de lucros só existe na Contabilidade", () => {
+    expect(keys("contabilidade")).toContain("commitments");
+    expect(keys("fiscal")).not.toContain("commitments");
+    expect(keys("rh")).not.toContain("commitments");
+  });
+
+  test("cada área recebe somente as ferramentas do seu trabalho", () => {
+    expect(keys("fiscal")).toContain("portfolio");
+    expect(keys("fiscal")).not.toContain("closings");
+    expect(keys("contabilidade")).toEqual(
+      expect.arrayContaining(["commitments", "closings"]),
+    );
   });
 
   test("clã desconhecido fica só com as abas comuns", () => {
@@ -49,7 +54,6 @@ describe("abas específicas de cada clã", () => {
       "missions",
       "members",
       "campaigns",
-      "commitments",
     ]);
   });
 });

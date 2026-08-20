@@ -41,10 +41,12 @@ export default async function ClanPage({
   params: Promise<{ id: string }>;
   // Além da aba, a página carrega os filtros das seções que os usam
   // (Fechamentos filtra por ano, regime, busca e situação).
-  searchParams: Promise<{ tab?: string } & ClosingsTabParams>;
+  searchParams: Promise<
+    { tab?: string; distributionYear?: string } & ClosingsTabParams
+  >;
 }) {
   const { id } = await params;
-  const { tab, ...filters } = await searchParams;
+  const { tab, distributionYear, ...filters } = await searchParams;
   const session = await requireOrgSession();
   const viewer = await getActiveMember();
   if (!viewer) redirect("/onboarding");
@@ -170,6 +172,7 @@ export default async function ClanPage({
           orgId={session.orgId}
           clanId={clan.id}
           canManage={canManageClanCommitments({ role, leadsThisClan })}
+          requestedYear={distributionYear}
         />
       ) : null}
 

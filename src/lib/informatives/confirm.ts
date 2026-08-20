@@ -11,7 +11,11 @@ import {
   type InformativeDraftTask,
 } from "@/lib/ai/informative-schema";
 import { newClientNoticeBody, publishGuildNotice } from "@/lib/mural/notices";
-import { periodsForCadence } from "@/domain/commitments";
+import {
+  firstOpenPeriod,
+  periodsForCadenceRange,
+  periodsPerYear,
+} from "@/domain/commitments";
 import { createTaskRecord } from "@/lib/tasks/create";
 
 import type { InformativeActor } from "./draft";
@@ -42,6 +46,17 @@ const TAX_REGIME_LABELS: Record<string, string> = {
 
 function dueDateOf(value: string | null): Date | null {
   return value ? new Date(`${value}T12:00:00Z`) : null;
+}
+
+function todayInSaoPaulo(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
 }
 
 /** Campos comuns às três variantes — descarta o `reason` da pendente. */
@@ -528,38 +543,52 @@ export async function confirmInformative(
       }
     }
 
-    // Compromissos recorrentes: a regra por empresa e o ano já planejado, na
-    // MESMA transação. Sem empresa vinculada não há o que criar — o texto
-    // desses compromissos já entrou nas observações do aviso na prévia.
+    // Distribuição de lucros: planeja somente do período ainda aberto em
+    // diante, na MESMA transação. Assim um onboarding em agosto não cria sete
+    // pendências retroativas.
     let createdCommitments = 0;
     if (clientId && payload.commitments.length > 0) {
-      const commitmentYear = Number(
-        new Intl.DateTimeFormat("en", {
-          timeZone: "America/Sao_Paulo",
-          year: "numeric",
-        }).format(new Date()),
-      );
+      const today = todayInSaoPaulo();
       for (const commitment of payload.commitments) {
+        const [existing] = await tx
+          .select({ id: schema.clientCommitments.id })
+          .from(schema.clientCommitments)
+          .where(
+            and(
+              eq(schema.clientCommitments.orgId, actor.orgId),
+              eq(schema.clientCommitments.clanId, commitment.clanId),
+              eq(schema.clientCommitments.clientId, clientId),
+              eq(schema.clientCommitments.active, true),
+            ),
+          )
+          .limit(1);
+        if (existing) continue;
+
         const [created] = await tx
           .insert(schema.clientCommitments)
           .values({
             orgId: actor.orgId,
             clanId: commitment.clanId,
             clientId,
-            title: commitment.title,
+            title: "Distribuição de lucros",
             notes: commitment.notes,
             cadence: commitment.cadence,
             sourceInformativeId: informative.id,
             createdBy: actor.userId,
           })
           .returning({ id: schema.clientCommitments.id });
+        const start = firstOpenPeriod(commitment.cadence, today);
+        const end = {
+          year: start.year,
+          index: periodsPerYear(commitment.cadence),
+        };
         await tx
           .insert(schema.clientCommitmentPeriods)
           .values(
-            periodsForCadence(commitment.cadence, commitmentYear).map((period) => ({
+            periodsForCadenceRange(commitment.cadence, start, end).map((period) => ({
               orgId: actor.orgId,
               commitmentId: created.id,
-              periodYear: commitmentYear,
+              periodYear: period.year,
               periodIndex: period.index,
               dueDate: period.dueDate,
             })),
@@ -621,7 +650,7 @@ export async function confirmInformative(
       : "";
     const clientMessage = createdClient ? " Empresa cadastrada no painel." : "";
     const commitmentMessage = createdCommitments
-      ? ` ${createdCommitments} compromisso(s) recorrente(s) com o ano planejado.`
+      ? ` ${createdCommitments} planejamento(s) de distribuição de lucros criado(s).`
       : "";
     const noticeMessage = noticePublished ? " Aviso publicado no mural." : "";
     return {

@@ -62,10 +62,8 @@ export const informativeExtractionSchema = z.object({
     .nullable()
     .default(null),
   /**
-   * Obrigações que se REPETEM ("distribuição de lucros trimestral"), de
-   * qualquer setor. Não são missão: viram compromisso recorrente da empresa,
-   * que planeja o ano e gera a missão de cada período (ver
-   * src/domain/commitments.ts).
+   * Distribuição de lucros recorrente identificada no cadastro de cliente
+   * novo. A chave mantém o nome legado para ler prévias já persistidas.
    */
   commitments: z
     .array(
@@ -174,10 +172,8 @@ export const informativeDraftPayloadSchema = informativeExtractionSchema
       )
       .max(60),
     /**
-     * Compromissos recorrentes já roteados: o clã saiu de `resolveSectorClan`
-     * no servidor, não da IA. Sem clã reconhecido a linha não vira
-     * compromisso (vira observação), porque compromisso sem dono não tem
-     * quem cobre.
+     * Distribuições já roteadas para a Contabilidade no servidor. A chave
+     * mantém o nome legado para compatibilidade com prévias antigas.
      */
     commitments: z
       .array(

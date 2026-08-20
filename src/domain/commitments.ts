@@ -1,7 +1,7 @@
 /**
- * Compromissos recorrentes de uma empresa-cliente (funções puras).
+ * Planejamento de distribuição de lucros por empresa (funções puras).
  *
- * Um compromisso é a REGRA ("o Banrisul faz distribuição de lucros,
+ * Um planejamento é a REGRA ("o Banrisul faz distribuição de lucros,
  * trimestralmente"); as ocorrências são as linhas de controle geradas a
  * partir dela, uma por período. Estas funções só traduzem cadência em
  * períodos — nada aqui toca banco nem aceita valor da interface.
@@ -43,6 +43,15 @@ export interface CommitmentPeriod {
   dueDate: string;
 }
 
+export interface CommitmentPeriodCoordinate {
+  year: number;
+  index: number;
+}
+
+export interface PlannedCommitmentPeriod extends CommitmentPeriod {
+  year: number;
+}
+
 /**
  * Último dia do mês, sem depender de fuso: `Date.UTC(ano, mês, 0)` devolve o
  * último dia do mês ANTERIOR ao informado, então passar `month` 1-based já dá
@@ -69,6 +78,66 @@ export function periodsForCadence(
     const index = position + 1;
     return { index, dueDate: lastDayOfMonth(year, index * span) };
   });
+}
+
+/**
+ * Gera somente o intervalo escolhido, inclusive nas duas pontas. Essa é a
+ * diferença entre "planejar" e criar o ano inteiro às cegas: uma empresa que
+ * começa em agosto não ganha sete pendências retroativas.
+ */
+export function periodsForCadenceRange(
+  cadence: CommitmentCadence,
+  start: CommitmentPeriodCoordinate,
+  end: CommitmentPeriodCoordinate,
+): PlannedCommitmentPeriod[] {
+  const total = periodsPerYear(cadence);
+  if (
+    start.year < 2000 ||
+    end.year > 2100 ||
+    start.index < 1 ||
+    start.index > total ||
+    end.index < 1 ||
+    end.index > total
+  ) {
+    return [];
+  }
+
+  const startOrdinal = start.year * total + start.index - 1;
+  const endOrdinal = end.year * total + end.index - 1;
+  if (startOrdinal > endOrdinal) return [];
+
+  const result: PlannedCommitmentPeriod[] = [];
+  for (let year = start.year; year <= end.year; year += 1) {
+    for (const period of periodsForCadence(cadence, year)) {
+      const ordinal = year * total + period.index - 1;
+      if (ordinal < startOrdinal || ordinal > endOrdinal) continue;
+      result.push({ year, ...period });
+    }
+  }
+  return result;
+}
+
+/** Primeiro período cujo encerramento ainda não passou. */
+export function firstOpenPeriod(
+  cadence: CommitmentCadence,
+  today: string,
+): CommitmentPeriodCoordinate {
+  const year = Number(today.slice(0, 4));
+  const current = periodsForCadence(cadence, year).find(
+    (period) => period.dueDate >= today,
+  );
+  return current ? { year, index: current.index } : { year: year + 1, index: 1 };
+}
+
+/** Próximo período cronológico depois do informado. */
+export function nextCommitmentPeriod(
+  cadence: CommitmentCadence,
+  period: CommitmentPeriodCoordinate,
+): CommitmentPeriodCoordinate {
+  const total = periodsPerYear(cadence);
+  return period.index < total
+    ? { year: period.year, index: period.index + 1 }
+    : { year: period.year + 1, index: 1 };
 }
 
 const MONTH_ABBREVIATIONS = [

@@ -1,0 +1,1 @@
+ALTER TABLE "client_commitment_periods" ADD COLUMN "distributed_amount" numeric(15, 2);

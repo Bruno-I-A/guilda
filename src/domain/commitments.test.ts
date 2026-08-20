@@ -2,8 +2,11 @@ import { describe, expect, test } from "vitest";
 
 import {
   commitmentPeriodLabel,
+  firstOpenPeriod,
   isPeriodOverdue,
+  nextCommitmentPeriod,
   periodsForCadence,
+  periodsForCadenceRange,
   periodsPerYear,
 } from "./commitments";
 
@@ -55,6 +58,68 @@ describe("periodsForCadence", () => {
     for (const cadence of ["monthly", "quarterly", "semiannual", "annual"] as const) {
       expect(periodsForCadence(cadence, 2026)).toHaveLength(periodsPerYear(cadence));
     }
+  });
+});
+
+describe("periodsForCadenceRange", () => {
+  test("começar em agosto não cria pendências de janeiro a julho", () => {
+    expect(
+      periodsForCadenceRange(
+        "monthly",
+        { year: 2026, index: 8 },
+        { year: 2026, index: 12 },
+      ),
+    ).toEqual([
+      { year: 2026, index: 8, dueDate: "2026-08-31" },
+      { year: 2026, index: 9, dueDate: "2026-09-30" },
+      { year: 2026, index: 10, dueDate: "2026-10-31" },
+      { year: 2026, index: 11, dueDate: "2026-11-30" },
+      { year: 2026, index: 12, dueDate: "2026-12-31" },
+    ]);
+  });
+
+  test("atravessa o ano mantendo as duas pontas", () => {
+    expect(
+      periodsForCadenceRange(
+        "quarterly",
+        { year: 2026, index: 4 },
+        { year: 2027, index: 2 },
+      ).map(({ year, index }) => ({ year, index })),
+    ).toEqual([
+      { year: 2026, index: 4 },
+      { year: 2027, index: 1 },
+      { year: 2027, index: 2 },
+    ]);
+  });
+
+  test("intervalo invertido ou índice inválido não gera nada", () => {
+    expect(
+      periodsForCadenceRange(
+        "monthly",
+        { year: 2026, index: 9 },
+        { year: 2026, index: 8 },
+      ),
+    ).toEqual([]);
+    expect(
+      periodsForCadenceRange(
+        "quarterly",
+        { year: 2026, index: 5 },
+        { year: 2026, index: 5 },
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("navegação dos períodos", () => {
+  test("sugere o período corrente e avança pela virada do ano", () => {
+    expect(firstOpenPeriod("monthly", "2026-08-20")).toEqual({
+      year: 2026,
+      index: 8,
+    });
+    expect(nextCommitmentPeriod("quarterly", { year: 2026, index: 4 })).toEqual({
+      year: 2027,
+      index: 1,
+    });
   });
 });
 

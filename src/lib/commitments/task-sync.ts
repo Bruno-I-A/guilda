@@ -7,7 +7,7 @@ import * as schema from "@/db/schema";
 import type { TaskStatus } from "@/domain/task-state";
 
 /**
- * Mantém a ocorrência do compromisso em sincronia com a missão gerada a
+ * Mantém o período de distribuição em sincronia com a missão gerada a
  * partir dela — mesmo mecanismo de `syncClosingFromTask` nos fechamentos.
  *
  * Concluir a missão fecha a ocorrência; reverter a conclusão reabre. A
@@ -30,7 +30,7 @@ export async function syncCommitmentPeriodFromTask(
   if (input.toStatus === "completed") {
     if (!task.assigneeId) {
       throw new Error(
-        "Uma missão precisa estar atribuída a uma pessoa antes de concluir um compromisso.",
+        "Uma missão precisa estar atribuída a uma pessoa antes de concluir uma distribuição.",
       );
     }
     await tx
