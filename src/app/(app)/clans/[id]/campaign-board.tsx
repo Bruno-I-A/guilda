@@ -1,6 +1,7 @@
 "use client";
 
-import { CalendarRange, Check, Plus, X } from "lucide-react";
+import { CalendarRange, Check, ClipboardCheck, Plus, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -81,7 +82,13 @@ function formatDueDate(value: string): string {
   return `${day}/${month}/${year}`;
 }
 
-export function NewCampaignButton({ clanId }: { clanId: string }) {
+export function NewCampaignButton({
+  clanId,
+  isFiscal,
+}: {
+  clanId: string;
+  isFiscal: boolean;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -91,6 +98,7 @@ export function NewCampaignButton({ clanId }: { clanId: string }) {
   const [year, setYear] = useState(String(now.getFullYear()));
   const [month, setMonth] = useState(String(now.getMonth() + 1));
   const [dueDate, setDueDate] = useState("");
+  const [openFiscalControl, setOpenFiscalControl] = useState(isFiscal);
 
   const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
 
@@ -102,12 +110,23 @@ export function NewCampaignButton({ clanId }: { clanId: string }) {
         periodYear: Number(year),
         periodMonth: Number(month),
         dueDate: dueDate || undefined,
+        openFiscalControl,
       });
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
-      toast.success("Campanha aberta.");
+      const fiscalSummary = result.data;
+      toast.success(
+        fiscalSummary?.fiscalControlCreated
+          ? `Campanha e controle abertos para ${fiscalSummary.fiscalControlCreated} empresa(s).`
+          : "Campanha aberta.",
+      );
+      if (fiscalSummary?.fiscalControlConflicts) {
+        toast.warning(
+          `${fiscalSummary.fiscalControlConflicts} controle(s) já pertenciam a outra campanha e foram preservados.`,
+        );
+      }
       setName("");
       setDueDate("");
       setOpen(false);
@@ -176,6 +195,21 @@ export function NewCampaignButton({ clanId }: { clanId: string }) {
             </div>
           </div>
 
+          {isFiscal ? (
+            <label className="flex items-start gap-2 rounded-lg border bg-muted/25 p-3 text-xs">
+              <input
+                type="checkbox"
+                className="mt-0.5 accent-primary"
+                checked={openFiscalControl}
+                onChange={(event) => setOpenFiscalControl(event.target.checked)}
+              />
+              <span>
+                Abrir também o Controle Fiscal desta competência, congelando
+                a ficha e o responsável atual de cada empresa.
+              </span>
+            </label>
+          ) : null}
+
           <div className="grid gap-1.5">
             <Label htmlFor="campaign-due">Prazo (opcional)</Label>
             <Input
@@ -205,10 +239,12 @@ export function CampaignBoard({
   clanId,
   campaigns,
   canManage,
+  isFiscal,
 }: {
   clanId: string;
   campaigns: readonly CampaignView[];
   canManage: boolean;
+  isFiscal: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -252,6 +288,15 @@ export function CampaignBoard({
 
             <div className="flex shrink-0 items-center gap-2">
               <Badge variant={meta.variant}>{meta.label}</Badge>
+              {isFiscal ? (
+                <Button asChild type="button" variant="outline" size="sm">
+                  <Link
+                    href={`/clans/${clanId}?tab=portfolio&fiscalView=control&fiscalYear=${campaign.periodYear}&fiscalMonth=${campaign.periodMonth}`}
+                  >
+                    <ClipboardCheck aria-hidden /> Controle
+                  </Link>
+                </Button>
+              ) : null}
               {canManage ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

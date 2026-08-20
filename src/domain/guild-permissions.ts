@@ -81,6 +81,36 @@ export function canManageFiscalPortfolio(actor: ClanScopedFacts): boolean {
   return isAdminRole(actor.role) || actor.leadsThisClan;
 }
 
+/**
+ * A Ficha Fiscal, a importação e a abertura de competências alteram a
+ * configuração do trabalho de toda a equipe. Seguem, portanto, a mesma
+ * régua da carteira: liderança do Fiscal ou admin/owner.
+ */
+export function canManageFiscalOperations(actor: ClanScopedFacts): boolean {
+  return canManageFiscalPortfolio(actor);
+}
+
+export interface FiscalControlActorFacts extends ClanScopedFacts {
+  /** A pessoa continua como integrante ativa do clã Fiscal. */
+  isActiveClanMember: boolean;
+  /** A competência guardou essa pessoa como responsável no seu snapshot. */
+  ownsControlSnapshot: boolean;
+}
+
+/**
+ * Líder/admin pode corrigir qualquer controle. Integrante comum atualiza
+ * somente as empresas que ficaram sob sua responsabilidade quando a
+ * competência foi aberta; remanejamentos futuros não reescrevem o histórico.
+ */
+export function canUpdateFiscalControl(
+  actor: FiscalControlActorFacts,
+): boolean {
+  return (
+    canManageFiscalOperations(actor) ||
+    (actor.isActiveClanMember && actor.ownsControlSnapshot)
+  );
+}
+
 export function canAppointClanLeader(actor: ClanScopedFacts): boolean {
   return isAdminRole(actor.role);
 }

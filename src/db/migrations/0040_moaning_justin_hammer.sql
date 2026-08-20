@@ -1,0 +1,1 @@
+ALTER TYPE "public"."fiscal_control_event_type" ADD VALUE 'campaign_linked' BEFORE 'step_updated';

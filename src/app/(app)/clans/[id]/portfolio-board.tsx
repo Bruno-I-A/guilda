@@ -31,12 +31,18 @@ import {
 import { cn } from "@/lib/utils";
 
 import { assignPortfolioClients, confirmNewClientPortfolio } from "./portfolio-actions";
+import {
+  FiscalProfileDialog,
+  type FiscalProfileView,
+} from "./fiscal-profile-dialog";
+import { FiscalImportDialog } from "./fiscal-import-dialog";
 
 export interface PortfolioClientView {
   id: string;
   name: string;
   taxRegime: TaxRegime;
   active: boolean;
+  profile: FiscalProfileView;
 }
 
 export interface PortfolioBucketView {
@@ -70,59 +76,67 @@ function normalize(value: string): string {
 }
 
 function ClientRow({
+  clanId,
   client,
   selected,
   onToggle,
   selectable,
+  canManage,
+  contextNote,
 }: {
+  clanId: string;
   client: PortfolioClientView;
   selected: boolean;
   onToggle: (id: string) => void;
   selectable: boolean;
+  canManage: boolean;
+  contextNote?: string;
 }) {
-  const content = (
-    <>
-      <span className="min-w-0 flex-1 truncate">{client.name}</span>
-      {!client.active ? (
-        <Badge variant="outline" className="shrink-0 text-[10px]">
-          inativa
-        </Badge>
-      ) : null}
-      <span
-        className={cn(
-          "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
-          TAX_REGIME_BADGE_CLASSES[client.taxRegime],
-        )}
-      >
-        {TAX_REGIME_LABELS[client.taxRegime]}
-      </span>
-    </>
-  );
-
-  if (!selectable) {
-    return (
-      <li className="flex items-center gap-2 rounded-md bg-muted/25 px-2.5 py-1.5 text-sm">
-        {content}
-      </li>
-    );
-  }
-
   return (
-    <li>
-      <label
-        className={cn(
-          "flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors",
-          selected ? "bg-primary/15" : "bg-muted/25 hover:bg-muted/50",
-        )}
-      >
-        <input
-          type="checkbox"
-          className="size-3.5 shrink-0 accent-primary"
-          checked={selected}
-          onChange={() => onToggle(client.id)}
+    <li
+      className={cn(
+        "grid gap-1 rounded-md bg-muted/25 px-2.5 py-1.5 text-sm transition-colors",
+        selected && "bg-primary/15",
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        {selectable ? (
+          <input
+            type="checkbox"
+            aria-label={`Selecionar ${client.name}`}
+            className="size-3.5 shrink-0 accent-primary"
+            checked={selected}
+            onChange={() => onToggle(client.id)}
+          />
+        ) : null}
+        <span className="min-w-0 flex-1 truncate">{client.name}</span>
+        {!client.active ? (
+          <Badge variant="outline" className="shrink-0 text-[10px]">inativa</Badge>
+        ) : null}
+        {client.profile.missingFields.length > 0 ? (
+          <Badge variant="outline" className="shrink-0 border-amber-500/40 text-[10px] text-amber-300">
+            ficha incompleta
+          </Badge>
+        ) : null}
+        <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium", TAX_REGIME_BADGE_CLASSES[client.taxRegime])}>
+          {TAX_REGIME_LABELS[client.taxRegime]}
+        </span>
+        <FiscalProfileDialog
+          clanId={clanId}
+          clientId={client.id}
+          clientName={client.name}
+          profile={client.profile}
+          canManage={canManage}
         />
-        {content}
-      </label>
+      </div>
+      {client.profile.permanentNotes ? (
+        <p className="line-clamp-2 pl-5 text-[11px] whitespace-pre-wrap text-muted-foreground">
+          {client.profile.permanentNotes}
+        </p>
+      ) : null}
+      {contextNote ? (
+        <span className="pl-5 text-[11px] text-muted-foreground">{contextNote}</span>
+      ) : null}
     </li>
   );
 }
@@ -136,10 +150,12 @@ function AwaitingRow({
   clanId,
   row,
   members,
+  canManage,
 }: {
   clanId: string;
   row: AwaitingPortfolioView;
   members: readonly MemberOption[];
+  canManage: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -174,6 +190,13 @@ function AwaitingRow({
         >
           {TAX_REGIME_LABELS[row.client.taxRegime]}
         </span>
+        <FiscalProfileDialog
+          clanId={clanId}
+          clientId={row.client.id}
+          clientName={row.client.name}
+          profile={row.client.profile}
+          canManage={canManage}
+        />
       </div>
       {row.note ? (
         <p className="text-xs whitespace-pre-wrap text-muted-foreground">{row.note}</p>
@@ -321,6 +344,16 @@ export function PortfolioBoard({
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card/40 p-3">
+        <div>
+          <h2 className="font-medium">Carteira e Fichas Fiscais</h2>
+          <p className="text-xs text-muted-foreground">
+            O responsável pode mudar; regras e observações permanentes continuam com a empresa.
+          </p>
+        </div>
+        {canManage ? <FiscalImportDialog clanId={clanId} /> : null}
+      </div>
+
       {canManage && awaiting.length > 0 ? (
         <section className="grid gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
           <h3 className="flex items-center gap-1.5 text-sm font-medium">
@@ -332,7 +365,7 @@ export function PortfolioBoard({
           </h3>
           <ul className="grid gap-2">
             {awaiting.map((row) => (
-              <AwaitingRow key={row.client.id} clanId={clanId} row={row} members={members} />
+              <AwaitingRow key={row.client.id} clanId={clanId} row={row} members={members} canManage={canManage} />
             ))}
           </ul>
         </section>
@@ -394,17 +427,16 @@ export function PortfolioBoard({
           </h3>
           <ul className="grid gap-1">
             {visibleStranded.map(({ client, holderName }) => (
-              <li key={client.id} className="grid gap-0.5">
-                <ClientRow
-                  client={client}
-                  selected={selected.has(client.id)}
-                  onToggle={toggle}
-                  selectable={canManage}
-                />
-                <span className="px-2.5 text-[11px] text-muted-foreground">
-                  estava com {holderName}
-                </span>
-              </li>
+              <ClientRow
+                key={client.id}
+                clanId={clanId}
+                client={client}
+                selected={selected.has(client.id)}
+                onToggle={toggle}
+                selectable={canManage}
+                canManage={canManage}
+                contextNote={`estava com ${holderName}`}
+              />
             ))}
           </ul>
         </section>
@@ -441,10 +473,12 @@ export function PortfolioBoard({
             {visibleOrphans.map((client) => (
               <ClientRow
                 key={client.id}
+                clanId={clanId}
                 client={client}
                 selected={selected.has(client.id)}
                 onToggle={toggle}
                 selectable={canManage}
+                canManage={canManage}
               />
             ))}
           </ul>
@@ -493,10 +527,12 @@ export function PortfolioBoard({
                 {bucket.visible.map((client) => (
                   <ClientRow
                     key={client.id}
+                    clanId={clanId}
                     client={client}
                     selected={selected.has(client.id)}
                     onToggle={toggle}
                     selectable={canManage}
+                    canManage={canManage}
                   />
                 ))}
               </ul>

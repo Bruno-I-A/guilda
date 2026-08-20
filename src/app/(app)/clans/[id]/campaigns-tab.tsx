@@ -11,18 +11,20 @@ import {
 } from "./campaign-board";
 
 /**
- * Campanhas mensais do clã. Esta etapa entrega o guarda-chuva — nome,
- * período, prazo e situação. A materialização das missões de cada empresa a
- * partir dos templates é a etapa seguinte.
+ * Campanhas mensais do clã. No Fiscal, a abertura pode materializar o
+ * controle da competência; nos demais clãs continua sendo o guarda-chuva de
+ * nome, período, prazo e situação.
  */
 export async function CampaignsTab({
   orgId,
   clanId,
   canManage,
+  isFiscal,
 }: {
   orgId: string;
   clanId: string;
   canManage: boolean;
+  isFiscal: boolean;
 }) {
   const rows = await withOrgTx(orgId, (tx) =>
     tx
@@ -64,7 +66,7 @@ export async function CampaignsTab({
           O trabalho grande e recorrente do mês. Abra a campanha para declarar
           o que está em jogo e acompanhar em que pé está.
         </p>
-        {canManage ? <NewCampaignButton clanId={clanId} /> : null}
+        {canManage ? <NewCampaignButton clanId={clanId} isFiscal={isFiscal} /> : null}
       </div>
 
       {campaigns.length === 0 ? (
@@ -82,13 +84,15 @@ export async function CampaignsTab({
           clanId={clanId}
           campaigns={campaigns}
           canManage={canManage}
+          isFiscal={isFiscal}
         />
       )}
 
       <p className="flex items-start gap-2 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
         <Flag className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-        Em breve: gerar automaticamente as missões de cada empresa da campanha a
-        partir dos templates por regime.
+        {isFiscal
+          ? "A campanha abre o controle da competência sem transformar cada célula em missão. Missões ficam reservadas às exceções."
+          : "Em breve: gerar automaticamente as missões de cada empresa da campanha a partir dos templates por regime."}
       </p>
     </div>
   );

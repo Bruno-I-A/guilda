@@ -1,10 +1,11 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import pg from "pg";
 
 // Lê a DATABASE_URL do .env: é o role guilda_app (NAO-superuser), o unico
 // para o qual o RLS realmente se aplica.
-const env = readFileSync(".env", "utf8");
-const url = env.match(/^DATABASE_URL=(.+)$/m)[1].trim();
+const env = existsSync(".env") ? readFileSync(".env", "utf8") : "";
+const url = process.env.DATABASE_URL ?? env.match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim();
+if (!url) throw new Error("Defina DATABASE_URL ou crie um arquivo .env.");
 
 const client = new pg.Client({ connectionString: url });
 await client.connect();
@@ -19,7 +20,27 @@ const NEW_TABLES = [
   "clan_campaigns",
   "client_commitments",
   "client_commitment_periods",
+  "fiscal_client_profiles",
+  "fiscal_client_profile_events",
+  "fiscal_client_aliases",
+  "fiscal_import_batches",
+  "fiscal_import_rows",
+  "fiscal_control_periods",
+  "fiscal_control_events",
 ];
+
+const APPEND_ONLY_TABLES = [
+  "guild_notice_reads",
+  "fiscal_portfolio_events",
+  "fiscal_client_profile_events",
+  "fiscal_control_events",
+];
+
+const SPLIT_POLICY_TABLES = new Set([
+  "fiscal_portfolio_events",
+  "fiscal_client_profile_events",
+  "fiscal_control_events",
+]);
 
 let failures = 0;
 const check = (label, ok, detail = "") => {
@@ -39,30 +60,52 @@ for (const t of NEW_TABLES) {
     row ? `enabled=${row.relrowsecurity} forced=${row.relforcerowsecurity}` : "tabela ausente");
 }
 
-console.log("\n== 2. Politica org_isolation presente ==");
+console.log("\n== 2. Politicas de isolamento presentes ==");
 const pol = await client.query(
-  `SELECT tablename FROM pg_policies
-    WHERE policyname = 'org_isolation' AND tablename = ANY($1)`,
+  `SELECT tablename, policyname FROM pg_policies
+    WHERE tablename = ANY($1)`,
   [NEW_TABLES],
 );
 for (const t of NEW_TABLES) {
-  check(t, pol.rows.some((r) => r.tablename === t));
+  const policies = pol.rows
+    .filter((r) => r.tablename === t)
+    .map((r) => r.policyname);
+  const ok = SPLIT_POLICY_TABLES.has(t)
+    ? policies.includes("org_isolation_select") && policies.includes("org_isolation_insert")
+    : policies.includes("org_isolation");
+  check(t, ok, policies.join(","));
 }
 
-console.log("\n== 3. Confirmacao de leitura e imutavel por PRIVILEGIO ==");
-const priv = await client.query(
-  `SELECT privilege_type FROM information_schema.role_table_grants
-    WHERE table_name = 'guild_notice_reads' AND grantee = current_user`,
-);
-const granted = priv.rows.map((r) => r.privilege_type);
-check("SELECT concedido", granted.includes("SELECT"), granted.join(","));
-check("INSERT concedido", granted.includes("INSERT"));
-check("UPDATE revogado", !granted.includes("UPDATE"));
-check("DELETE revogado", !granted.includes("DELETE"));
+console.log("\n== 3. Historicos imutaveis por PRIVILEGIO ==");
+for (const table of APPEND_ONLY_TABLES) {
+  const priv = await client.query(
+    `SELECT privilege_type FROM information_schema.role_table_grants
+      WHERE table_name = $1 AND grantee = current_user`,
+    [table],
+  );
+  const granted = priv.rows.map((r) => r.privilege_type);
+  check(`${table}: SELECT`, granted.includes("SELECT"), granted.join(","));
+  check(`${table}: INSERT`, granted.includes("INSERT"));
+  check(`${table}: UPDATE revogado`, !granted.includes("UPDATE"));
+  check(`${table}: DELETE revogado`, !granted.includes("DELETE"));
+}
 
 console.log("\n== 4. Isolamento entre tenants (tudo com ROLLBACK) ==");
-const org = await client.query(`SELECT id FROM organization LIMIT 1`);
-const orgId = org.rows[0].id;
+const organizations = await client.query(`SELECT id FROM organization ORDER BY created_at`);
+let orgId;
+for (const candidate of organizations.rows) {
+  await client.query(`SELECT set_config('app.org_id', $1, false)`, [candidate.id]);
+  const profile = await client.query(`SELECT id FROM fiscal_client_profiles LIMIT 1`);
+  const member = await client.query(
+    `SELECT user_id FROM member WHERE organization_id = $1 LIMIT 1`,
+    [candidate.id],
+  );
+  if (profile.rowCount > 0 && member.rowCount > 0) {
+    orgId = candidate.id;
+    break;
+  }
+}
+if (!orgId) throw new Error("Nenhuma organização com ficha fiscal e integrante foi encontrada.");
 const usr = await client.query(
   `SELECT user_id FROM member WHERE organization_id = $1 LIMIT 1`, [orgId]);
 const userId = usr.rows[0].user_id;
@@ -89,6 +132,7 @@ try {
 
   // Tentar gravar com org_id alheio deve bater no WITH CHECK.
   let blocked = false;
+  await client.query("SAVEPOINT foreign_insert_probe");
   try {
     await client.query(
       `INSERT INTO guild_notices (org_id, author_id, kind, title, body)
@@ -97,8 +141,81 @@ try {
     );
   } catch {
     blocked = true;
+    await client.query("ROLLBACK TO SAVEPOINT foreign_insert_probe");
   }
+  await client.query("RELEASE SAVEPOINT foreign_insert_probe");
   check("gravar em tenant alheio e BLOQUEADO", blocked);
+
+  await client.query(`SELECT set_config('app.org_id', $1, true)`, [orgId]);
+  const fiscalMine = await client.query(`SELECT id FROM fiscal_client_profiles`);
+  check("fichas fiscais visiveis no proprio tenant", fiscalMine.rowCount > 0,
+    `viu ${fiscalMine.rowCount} ficha(s)`);
+
+  const control = await client.query(
+    `INSERT INTO fiscal_control_periods (
+       org_id, client_id, period_year, period_month, profile_id, profile_version,
+       profile_snapshot, tax_regime_snapshot, movements_status, incoming_status,
+       outgoing_status, guide_status, nfs_status, delivery_status, status,
+       created_by, updated_by
+     )
+     SELECT p.org_id, p.client_id, 2100, 12, p.id, p.version,
+            jsonb_build_object('version', p.version), c.tax_regime,
+            'pending', 'pending', 'pending', 'pending', 'pending', 'pending',
+            'not_started', $1, $1
+       FROM fiscal_client_profiles AS p
+       INNER JOIN clients AS c ON c.org_id = p.org_id AND c.id = p.client_id
+      LIMIT 1
+     RETURNING id`,
+    [userId],
+  );
+
+  let snapshotBlocked = false;
+  await client.query("SAVEPOINT immutable_snapshot_probe");
+  try {
+    await client.query(
+      `UPDATE fiscal_control_periods
+          SET profile_version = profile_version + 1
+        WHERE id = $1`,
+      [control.rows[0].id],
+    );
+  } catch {
+    snapshotBlocked = true;
+    await client.query("ROLLBACK TO SAVEPOINT immutable_snapshot_probe");
+  }
+  await client.query("RELEASE SAVEPOINT immutable_snapshot_probe");
+  check("snapshot mensal e IMUTAVEL", snapshotBlocked);
+
+  const operationalUpdate = await client.query(
+    `UPDATE fiscal_control_periods
+        SET monthly_notes = 'alteracao operacional permitida'
+      WHERE id = $1`,
+    [control.rows[0].id],
+  );
+  check("andamento mensal pode ser atualizado", operationalUpdate.rowCount === 1);
+
+  const campaign = await client.query(
+    `INSERT INTO clan_campaigns (
+       org_id, clan_id, name, period_year, period_month, created_by
+     )
+     SELECT $1, id, 'RLS probe fiscal', 2100, 12, $2
+       FROM clans
+      WHERE org_id = $1 AND active = true
+      LIMIT 1
+     RETURNING id`,
+    [orgId, userId],
+  );
+  const campaignLink = await client.query(
+    `UPDATE fiscal_control_periods
+        SET campaign_id = $1
+      WHERE id = $2`,
+    [campaign.rows[0].id, control.rows[0].id],
+  );
+  check("campanha pode adotar competencia existente", campaignLink.rowCount === 1);
+
+  await client.query(`SELECT set_config('app.org_id', $1, true)`, [OTHER]);
+  const fiscalForeign = await client.query(`SELECT id FROM fiscal_client_profiles`);
+  check("fichas fiscais do outro tenant ficam INVISIVEIS", fiscalForeign.rowCount === 0,
+    `viu ${fiscalForeign.rowCount} ficha(s)`);
 } finally {
   await client.query("ROLLBACK");
 }

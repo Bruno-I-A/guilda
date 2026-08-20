@@ -15,6 +15,8 @@ import {
 } from "@/lib/action-context";
 import { clanHasPortfolio } from "@/lib/clan-tabs";
 import { isActiveClanMember, loadClanScopedFacts } from "@/lib/clans/facts";
+import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
+import { fiscalProfileSnapshot } from "@/lib/fiscal/materialize";
 
 /**
  * Server Actions da carteira fiscal — quem responde por qual empresa.
@@ -56,6 +58,7 @@ export async function assignPortfolioClients(
   const result = await withOrgTx(
     ctx.orgId,
     async (tx): Promise<ActionResult<PortfolioAssignSummary>> => {
+      await lockActiveClansForMembershipRead(tx, ctx.orgId);
       const { clan, facts } = await loadClanScopedFacts(
         tx,
         ctx.orgId,
@@ -155,7 +158,6 @@ export async function assignPortfolioClients(
               clientId: client.id,
               userId: data.userId,
               assignedBy: ctx.userId,
-              notes: data.note ?? null,
             })
             .onConflictDoUpdate({
               target: [
@@ -165,7 +167,6 @@ export async function assignPortfolioClients(
               set: {
                 userId: data.userId,
                 assignedBy: ctx.userId,
-                notes: data.note ?? null,
                 updatedAt: now,
               },
             });
@@ -233,6 +234,7 @@ export async function confirmNewClientPortfolio(
   const data = parsed.data;
 
   const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
+    await lockActiveClansForMembershipRead(tx, ctx.orgId);
     const { clan, facts } = await loadClanScopedFacts(
       tx,
       ctx.orgId,
@@ -266,12 +268,16 @@ export async function confirmNewClientPortfolio(
         name: schema.clients.name,
         active: schema.clients.active,
         pendingFiscalNote: schema.clients.pendingFiscalNote,
+        pendingFiscalAssignment: schema.clients.pendingFiscalAssignment,
       })
       .from(schema.clients)
       .where(and(eq(schema.clients.id, data.clientId), eq(schema.clients.orgId, ctx.orgId)))
       .for("update");
     if (!client) return err("Empresa não encontrada.");
     if (!client.active) return err("Empresa inativa não entra em carteira.");
+    if (!client.pendingFiscalAssignment) {
+      return err("Esta empresa já teve a entrada na carteira confirmada.");
+    }
 
     const [existingHolder] = await tx
       .select({ id: schema.fiscalPortfolios.id })
@@ -289,12 +295,73 @@ export async function confirmNewClientPortfolio(
 
     const note = client.pendingFiscalNote;
 
+    // A Ficha Fiscal é permanente e independe da carteira. O texto do
+    // onboarding é copiado antes de limpar o campo pendente, mas nunca
+    // substitui uma ficha que já contenha informação mais confiável.
+    const [existingProfile] = await tx
+      .select()
+      .from(schema.fiscalClientProfiles)
+      .where(
+        and(
+          eq(schema.fiscalClientProfiles.orgId, ctx.orgId),
+          eq(schema.fiscalClientProfiles.clientId, client.id),
+        ),
+      )
+      .for("update");
+    if (!existingProfile) {
+      const [profile] = await tx
+        .insert(schema.fiscalClientProfiles)
+        .values({
+          orgId: ctx.orgId,
+          clientId: client.id,
+          permanentNotes: note,
+          createdBy: ctx.userId,
+          updatedBy: ctx.userId,
+        })
+        .returning();
+      await tx.insert(schema.fiscalClientProfileEvents).values({
+        orgId: ctx.orgId,
+        profileId: profile.id,
+        clientId: client.id,
+        eventType: "created",
+        version: profile.version,
+        snapshot: fiscalProfileSnapshot(profile),
+        changedFields: note ? ["permanentNotes"] : [],
+        actorId: ctx.userId,
+      });
+    } else if (note && !existingProfile.permanentNotes?.trim()) {
+      const [profile] = await tx
+        .update(schema.fiscalClientProfiles)
+        .set({
+          permanentNotes: note,
+          version: existingProfile.version + 1,
+          updatedBy: ctx.userId,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.fiscalClientProfiles.orgId, ctx.orgId),
+            eq(schema.fiscalClientProfiles.id, existingProfile.id),
+          ),
+        )
+        .returning();
+      await tx.insert(schema.fiscalClientProfileEvents).values({
+        orgId: ctx.orgId,
+        profileId: profile.id,
+        clientId: client.id,
+        eventType: "backfilled",
+        version: profile.version,
+        snapshot: fiscalProfileSnapshot(profile),
+        changedFields: ["permanentNotes"],
+        actorId: ctx.userId,
+      });
+    }
+
     await tx.insert(schema.fiscalPortfolios).values({
       orgId: ctx.orgId,
       clientId: client.id,
       userId: data.userId,
       assignedBy: ctx.userId,
-      notes: note,
     });
     await tx.insert(schema.fiscalPortfolioEvents).values({
       orgId: ctx.orgId,

@@ -38,6 +38,12 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // Build mínimo para o Docker (copia .next/standalone no Dockerfile)
   output: "standalone",
+  experimental: {
+    // Importações fiscais aceitam planilhas de até 5 MB. A validação do
+    // arquivo continua na Server Action; este teto só permite que ela receba o
+    // corpo para validar e produzir a prévia de conciliação.
+    serverActions: { bodySizeLimit: "6mb" },
+  },
   async headers() {
     return [
       {

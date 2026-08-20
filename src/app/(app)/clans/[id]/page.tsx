@@ -42,11 +42,24 @@ export default async function ClanPage({
   // Além da aba, a página carrega os filtros das seções que os usam
   // (Fechamentos filtra por ano, regime, busca e situação).
   searchParams: Promise<
-    { tab?: string; distributionYear?: string } & ClosingsTabParams
+    {
+      tab?: string;
+      distributionYear?: string;
+      fiscalView?: string;
+      fiscalYear?: string;
+      fiscalMonth?: string;
+    } & ClosingsTabParams
   >;
 }) {
   const { id } = await params;
-  const { tab, distributionYear, ...filters } = await searchParams;
+  const {
+    tab,
+    distributionYear,
+    fiscalView,
+    fiscalYear,
+    fiscalMonth,
+    ...filters
+  } = await searchParams;
   const session = await requireOrgSession();
   const viewer = await getActiveMember();
   if (!viewer) redirect("/onboarding");
@@ -164,6 +177,7 @@ export default async function ClanPage({
           orgId={session.orgId}
           clanId={clan.id}
           canManage={canDistributeClanTasks({ role, leadsThisClan })}
+          isFiscal={clan.slug === "fiscal"}
         />
       ) : null}
 
@@ -181,7 +195,11 @@ export default async function ClanPage({
           orgId={session.orgId}
           clanId={clan.id}
           memberships={memberships}
+          viewerId={session.user.id}
           canManage={canManageFiscalPortfolio({ role, leadsThisClan })}
+          requestedView={fiscalView}
+          requestedYear={fiscalYear}
+          requestedMonth={fiscalMonth}
         />
       ) : null}
 

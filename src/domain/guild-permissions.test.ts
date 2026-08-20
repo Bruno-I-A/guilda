@@ -7,7 +7,9 @@ import {
   canHandleInformatives,
   canManageClanMembership,
   canManageFiscalPortfolio,
+  canManageFiscalOperations,
   canSeeNoticeAcknowledgements,
+  canUpdateFiscalControl,
 } from "./guild-permissions";
 
 describe("informativos — decisão 9", () => {
@@ -123,5 +125,65 @@ describe("carteira fiscal — quem remaneja empresa", () => {
     expect(
       canManageFiscalPortfolio({ role: "member", leadsThisClan: false }),
     ).toBe(false);
+  });
+});
+
+describe("operação fiscal — ficha, importação e competência", () => {
+  test("somente liderança/admin gerencia ficha e importação", () => {
+    expect(
+      canManageFiscalOperations({ role: "member", leadsThisClan: true }),
+    ).toBe(true);
+    expect(
+      canManageFiscalOperations({ role: "member", leadsThisClan: false }),
+    ).toBe(false);
+  });
+
+  test("integrante atualiza a empresa do snapshot sob sua responsabilidade", () => {
+    expect(
+      canUpdateFiscalControl({
+        role: "member",
+        leadsThisClan: false,
+        isActiveClanMember: true,
+        ownsControlSnapshot: true,
+      }),
+    ).toBe(true);
+  });
+
+  test("integrante não atualiza snapshot alheio nem depois de sair do clã", () => {
+    expect(
+      canUpdateFiscalControl({
+        role: "member",
+        leadsThisClan: false,
+        isActiveClanMember: true,
+        ownsControlSnapshot: false,
+      }),
+    ).toBe(false);
+    expect(
+      canUpdateFiscalControl({
+        role: "member",
+        leadsThisClan: false,
+        isActiveClanMember: false,
+        ownsControlSnapshot: true,
+      }),
+    ).toBe(false);
+  });
+
+  test("admin e líder corrigem qualquer controle", () => {
+    expect(
+      canUpdateFiscalControl({
+        role: "admin",
+        leadsThisClan: false,
+        isActiveClanMember: false,
+        ownsControlSnapshot: false,
+      }),
+    ).toBe(true);
+    expect(
+      canUpdateFiscalControl({
+        role: "member",
+        leadsThisClan: true,
+        isActiveClanMember: true,
+        ownsControlSnapshot: false,
+      }),
+    ).toBe(true);
   });
 });

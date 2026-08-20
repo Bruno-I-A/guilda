@@ -13,13 +13,16 @@ import {
   type ActionResult,
 } from "@/lib/action-context";
 import { loadClanScopedFacts } from "@/lib/clans/facts";
+import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
+import { FISCAL_CLAN_SLUG } from "@/lib/clans/rules";
+import { materializeFiscalControl } from "@/lib/fiscal/materialize";
 
 /**
  * Campanhas mensais do clã — o trabalho grande e recorrente do mês.
  *
- * Esta etapa cria e conduz o guarda-chuva. A materialização das missões a
- * partir dos templates sobre a carteira é a etapa seguinte; até lá a campanha
- * serve para o clã declarar o que está em jogo no mês e em que pé está.
+ * No Fiscal, a campanha pode materializar o controle da competência na mesma
+ * transação, sem gerar uma missão para cada célula. Missões ficam reservadas
+ * às exceções; nos demais clãs a campanha segue como guarda-chuva mensal.
  */
 
 const CAMPAIGN_STATUSES = ["planned", "active", "completed", "cancelled"] as const;
@@ -46,6 +49,7 @@ const createSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Prazo inválido.")
     .optional()
     .or(z.literal("")),
+  openFiscalControl: z.boolean().optional().default(false),
 });
 
 const statusSchema = z.object({
@@ -60,7 +64,7 @@ function revalidateClanCampaigns(clanId: string): void {
 
 export async function createClanCampaign(
   input: z.input<typeof createSchema>,
-): Promise<ActionResult<{ id: string }>> {
+): Promise<ActionResult<{ id: string; fiscalControlCreated: number; fiscalControlConflicts: number }>> {
   const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
 
@@ -72,7 +76,8 @@ export async function createClanCampaign(
 
   const result = await withOrgTx(
     ctx.orgId,
-    async (tx): Promise<ActionResult<{ id: string }>> => {
+    async (tx): Promise<ActionResult<{ id: string; fiscalControlCreated: number; fiscalControlConflicts: number }>> => {
+      await lockActiveClansForMembershipRead(tx, ctx.orgId);
       const { clan, facts } = await loadClanScopedFacts(
         tx,
         ctx.orgId,
@@ -114,9 +119,39 @@ export async function createClanCampaign(
           dueDate: data.dueDate ? data.dueDate : null,
           createdBy: ctx.userId,
         })
+        .onConflictDoNothing({
+          target: [
+            schema.clanCampaigns.orgId,
+            schema.clanCampaigns.clanId,
+            schema.clanCampaigns.periodYear,
+            schema.clanCampaigns.periodMonth,
+            schema.clanCampaigns.name,
+          ],
+        })
         .returning({ id: schema.clanCampaigns.id });
+      if (!created) {
+        return err("Este clã já tem uma campanha com esse nome nesse mês.");
+      }
 
-      return { ok: true, data: { id: created.id } };
+      const fiscalControl =
+        clan.slug === FISCAL_CLAN_SLUG && data.openFiscalControl
+          ? await materializeFiscalControl(tx, {
+              orgId: ctx.orgId,
+              actorId: ctx.userId,
+              periodYear: data.periodYear,
+              periodMonth: data.periodMonth,
+              campaignId: created.id,
+            })
+          : { created: 0, existing: 0, campaignConflicts: 0 };
+
+      return {
+        ok: true,
+        data: {
+          id: created.id,
+          fiscalControlCreated: fiscalControl.created,
+          fiscalControlConflicts: fiscalControl.campaignConflicts,
+        },
+      };
     },
   );
 
@@ -137,6 +172,7 @@ export async function setClanCampaignStatus(
   const data = parsed.data;
 
   const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
+    await lockActiveClansForMembershipRead(tx, ctx.orgId);
     const { clan, facts } = await loadClanScopedFacts(
       tx,
       ctx.orgId,

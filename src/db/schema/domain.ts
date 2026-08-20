@@ -441,9 +441,9 @@ export const clients = pgTable(
     >(),
     openedAt: date("opened_at", { mode: "string" }),
     // Combinado do Fiscal extraído do informativo de cliente novo (ex.: Fator
-    // R, faturamento) — mora aqui só até o líder confirmar a carteira; a
-    // action de confirmação limpa os dois e move o texto para
-    // fiscal_portfolios.notes (decisão de 2026-08-18).
+    // R, faturamento) — mora aqui só até o líder confirmar a carteira. A Ficha
+    // Fiscal permanente recebe o texto antes de estes campos serem limpos;
+    // trocar o responsável não altera a ficha.
     pendingFiscalNote: text("pending_fiscal_note"),
     suggestedFiscalOwnerId: text("suggested_fiscal_owner_id").references(
       () => user.id,
@@ -461,6 +461,9 @@ export const clients = pgTable(
   },
   (t) => [
     index("clients_org_active_idx").on(t.orgId, t.active),
+    // Permite FKs compostas nas tabelas novas, impedindo que um registro de
+    // uma organização aponte por engano para um cliente de outra organização.
+    uniqueIndex("clients_org_id_uidx").on(t.orgId, t.id),
     // CNPJ único por org QUANDO presente (chave de dedup do import)
     uniqueIndex("clients_org_cnpj_uidx")
       .on(t.orgId, t.cnpj)
@@ -1200,6 +1203,7 @@ export const clanCampaigns = pgTable(
       t.periodYear,
       t.periodMonth,
     ),
+    uniqueIndex("clan_campaigns_org_id_uidx").on(t.orgId, t.id),
   ],
 );
 
@@ -1215,6 +1219,570 @@ export const clanCampaignsRelations = relations(clanCampaigns, ({ one }) => ({
 }));
 
 export type ClanCampaign = typeof clanCampaigns.$inferSelect;
+
+/** Se uma etapa do controle mensal se aplica à empresa. */
+export const fiscalApplicability = pgEnum("fiscal_applicability", [
+  "unknown",
+  "required",
+  "not_required",
+  "not_applicable",
+]);
+
+/** Origem de um nome alternativo usado na conciliação de planilhas. */
+export const fiscalAliasSource = pgEnum("fiscal_alias_source", [
+  "client_name",
+  "manual",
+  "import_reconciliation",
+]);
+
+export const fiscalProfileEventType = pgEnum("fiscal_profile_event_type", [
+  "created",
+  "updated",
+  "backfilled",
+  "imported",
+]);
+
+export const fiscalImportBatchStatus = pgEnum("fiscal_import_batch_status", [
+  "pending",
+  "reconciling",
+  "ready",
+  "completed",
+  "failed",
+]);
+
+export const fiscalImportRowStatus = pgEnum("fiscal_import_row_status", [
+  "pending",
+  "suggested",
+  "matched",
+  "ignored",
+  "imported",
+  "error",
+]);
+
+export const fiscalImportResolutionMethod = pgEnum(
+  "fiscal_import_resolution_method",
+  ["exact_alias", "exact_name", "fuzzy", "manual"],
+);
+
+/** Situação de cada célula operacional da competência fiscal. */
+export const fiscalStepStatus = pgEnum("fiscal_step_status", [
+  "not_applicable",
+  "pending",
+  "completed",
+  "blocked",
+]);
+
+/** Situação consolidada de uma empresa em uma competência. */
+export const fiscalControlStatus = pgEnum("fiscal_control_status", [
+  "not_started",
+  "in_progress",
+  "blocked",
+  "completed",
+]);
+
+export const fiscalControlEventType = pgEnum("fiscal_control_event_type", [
+  "created",
+  "campaign_linked",
+  "step_updated",
+  "status_updated",
+  "note_updated",
+  "completed",
+  "reopened",
+]);
+
+export const fiscalControlStage = pgEnum("fiscal_control_stage", [
+  "movements",
+  "incoming",
+  "outgoing",
+  "guide",
+  "nfs",
+  "delivery",
+]);
+
+export type FiscalClientProfileSnapshot = {
+  version: number;
+  movementsApplicability: (typeof fiscalApplicability.enumValues)[number];
+  incomingApplicability: (typeof fiscalApplicability.enumValues)[number];
+  outgoingApplicability: (typeof fiscalApplicability.enumValues)[number];
+  guideApplicability: (typeof fiscalApplicability.enumValues)[number];
+  nfsApplicability: (typeof fiscalApplicability.enumValues)[number];
+  deliveryChannel: string | null;
+  factorRApplicability: (typeof fiscalApplicability.enumValues)[number];
+  revenueReference: string | null;
+  permanentNotes: string | null;
+};
+
+export type FiscalImportReport = {
+  totalRows: number;
+  matchedRows: number;
+  pendingRows: number;
+  ignoredRows: number;
+  errorRows: number;
+  createdProfiles?: number;
+  updatedProfiles?: number;
+  unchangedProfiles?: number;
+  rejectedRows?: number;
+};
+
+/**
+ * Ficha Fiscal permanente da empresa. Ela não pertence a uma carteira: trocar
+ * o responsável nunca apaga os combinados operacionais do cliente.
+ */
+export const fiscalClientProfiles = pgTable(
+  "fiscal_client_profiles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    movementsApplicability: fiscalApplicability("movements_applicability")
+      .notNull()
+      .default("unknown"),
+    incomingApplicability: fiscalApplicability("incoming_applicability")
+      .notNull()
+      .default("unknown"),
+    outgoingApplicability: fiscalApplicability("outgoing_applicability")
+      .notNull()
+      .default("unknown"),
+    guideApplicability: fiscalApplicability("guide_applicability")
+      .notNull()
+      .default("unknown"),
+    nfsApplicability: fiscalApplicability("nfs_applicability")
+      .notNull()
+      .default("unknown"),
+    deliveryChannel: varchar("delivery_channel", { length: 120 }),
+    factorRApplicability: fiscalApplicability("factor_r_applicability")
+      .notNull()
+      .default("unknown"),
+    revenueReference: numeric("revenue_reference", { precision: 15, scale: 2 }),
+    permanentNotes: text("permanent_notes"),
+    version: integer("version").notNull().default(1),
+    // Nulos apenas no backfill inicial, onde não existe um ator humano.
+    createdBy: text("created_by").references(() => user.id),
+    updatedBy: text("updated_by").references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "fiscal_client_profiles_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+    uniqueIndex("fiscal_client_profiles_org_client_uidx").on(t.orgId, t.clientId),
+    uniqueIndex("fiscal_client_profiles_org_id_uidx").on(t.orgId, t.id),
+    check("fiscal_client_profiles_version_check", sql`${t.version} >= 1`),
+  ],
+);
+
+/** Snapshot imutável de cada versão da Ficha Fiscal. */
+export const fiscalClientProfileEvents = pgTable(
+  "fiscal_client_profile_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    profileId: uuid("profile_id").notNull(),
+    clientId: uuid("client_id").notNull(),
+    eventType: fiscalProfileEventType("event_type").notNull(),
+    version: integer("version").notNull(),
+    snapshot: jsonb("snapshot").$type<FiscalClientProfileSnapshot>().notNull(),
+    changedFields: jsonb("changed_fields").$type<string[]>().notNull().default([]),
+    actorId: text("actor_id").references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "fiscal_client_profile_events_org_profile_fk",
+      columns: [t.orgId, t.profileId],
+      foreignColumns: [fiscalClientProfiles.orgId, fiscalClientProfiles.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "fiscal_client_profile_events_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+    uniqueIndex("fiscal_client_profile_events_org_profile_version_uidx").on(
+      t.orgId,
+      t.profileId,
+      t.version,
+    ),
+    index("fiscal_client_profile_events_org_client_idx").on(t.orgId, t.clientId),
+    check("fiscal_client_profile_events_version_check", sql`${t.version} >= 1`),
+    check(
+      "fiscal_client_profile_events_snapshot_version_check",
+      sql`(${t.snapshot} ->> 'version')::integer = ${t.version}`,
+    ),
+  ],
+);
+
+/** Nome da planilha já conciliado com uma empresa do cadastro. */
+export const fiscalClientAliases = pgTable(
+  "fiscal_client_aliases",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    aliasName: varchar("alias_name", { length: 240 }).notNull(),
+    normalizedName: varchar("normalized_name", { length: 240 }).notNull(),
+    source: fiscalAliasSource("source").notNull().default("manual"),
+    createdBy: text("created_by").references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "fiscal_client_aliases_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+    uniqueIndex("fiscal_client_aliases_org_normalized_name_uidx").on(
+      t.orgId,
+      t.normalizedName,
+    ),
+    uniqueIndex("fiscal_client_aliases_org_id_uidx").on(t.orgId, t.id),
+    index("fiscal_client_aliases_org_client_idx").on(t.orgId, t.clientId),
+    check(
+      "fiscal_client_aliases_normalized_name_check",
+      sql`length(btrim(${t.normalizedName})) > 0`,
+    ),
+  ],
+);
+
+/** Um arquivo de planilha submetido ao processo assistido de conciliação. */
+export const fiscalImportBatches = pgTable(
+  "fiscal_import_batches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    fileName: varchar("file_name", { length: 255 }).notNull(),
+    status: fiscalImportBatchStatus("status").notNull().default("pending"),
+    totalRows: integer("total_rows").notNull().default(0),
+    matchedRows: integer("matched_rows").notNull().default(0),
+    pendingRows: integer("pending_rows").notNull().default(0),
+    ignoredRows: integer("ignored_rows").notNull().default(0),
+    errorRows: integer("error_rows").notNull().default(0),
+    report: jsonb("report").$type<FiscalImportReport>(),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("fiscal_import_batches_org_id_uidx").on(t.orgId, t.id),
+    index("fiscal_import_batches_org_created_idx").on(t.orgId, t.createdAt),
+    check(
+      "fiscal_import_batches_counts_check",
+      sql`${t.totalRows} >= 0 AND ${t.matchedRows} >= 0 AND ${t.pendingRows} >= 0 AND ${t.ignoredRows} >= 0 AND ${t.errorRows} >= 0`,
+    ),
+  ],
+);
+
+/** Linha original e sua decisão de conciliação, preservadas para auditoria. */
+export const fiscalImportRows = pgTable(
+  "fiscal_import_rows",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    batchId: uuid("batch_id").notNull(),
+    rowNumber: integer("row_number").notNull(),
+    sourceName: varchar("source_name", { length: 240 }).notNull(),
+    normalizedSourceName: varchar("normalized_source_name", { length: 240 }).notNull(),
+    rawData: jsonb("raw_data").$type<Record<string, unknown>>().notNull(),
+    status: fiscalImportRowStatus("status").notNull().default("pending"),
+    suggestedClientId: uuid("suggested_client_id").references(() => clients.id, {
+      onDelete: "set null",
+    }),
+    resolvedClientId: uuid("resolved_client_id").references(() => clients.id, {
+      onDelete: "set null",
+    }),
+    resolvedAliasId: uuid("resolved_alias_id").references(
+      () => fiscalClientAliases.id,
+      { onDelete: "set null" },
+    ),
+    matchConfidence: numeric("match_confidence", { precision: 5, scale: 4 }),
+    resolutionMethod: fiscalImportResolutionMethod("resolution_method"),
+    resolvedBy: text("resolved_by").references(() => user.id),
+    resolutionNote: text("resolution_note"),
+    appliedAt: timestamp("applied_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "fiscal_import_rows_org_batch_fk",
+      columns: [t.orgId, t.batchId],
+      foreignColumns: [fiscalImportBatches.orgId, fiscalImportBatches.id],
+    }).onDelete("cascade"),
+    uniqueIndex("fiscal_import_rows_org_batch_row_uidx").on(
+      t.orgId,
+      t.batchId,
+      t.rowNumber,
+    ),
+    index("fiscal_import_rows_org_status_idx").on(t.orgId, t.status),
+    check("fiscal_import_rows_row_number_check", sql`${t.rowNumber} >= 1`),
+    check(
+      "fiscal_import_rows_confidence_check",
+      sql`${t.matchConfidence} IS NULL OR (${t.matchConfidence} >= 0 AND ${t.matchConfidence} <= 1)`,
+    ),
+    check(
+      "fiscal_import_rows_resolved_check",
+      sql`${t.status} NOT IN ('matched', 'imported') OR ${t.resolvedClientId} IS NOT NULL`,
+    ),
+  ],
+);
+
+/**
+ * Uma linha do controle fiscal mensal. A ficha, o responsável e o regime são
+ * snapshots: mudanças futuras jamais reescrevem uma competência já aberta.
+ */
+export const fiscalControlPeriods = pgTable(
+  "fiscal_control_periods",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    periodYear: smallint("period_year").notNull(),
+    periodMonth: smallint("period_month").notNull(),
+    profileId: uuid("profile_id").notNull(),
+    profileVersion: integer("profile_version").notNull(),
+    profileSnapshot: jsonb("profile_snapshot")
+      .$type<FiscalClientProfileSnapshot>()
+      .notNull(),
+    responsibleUserId: text("responsible_user_id").references(() => user.id),
+    taxRegimeSnapshot: taxRegime("tax_regime_snapshot").notNull(),
+    campaignId: uuid("campaign_id").references(() => clanCampaigns.id, {
+      onDelete: "set null",
+    }),
+    movementsStatus: fiscalStepStatus("movements_status").notNull(),
+    incomingStatus: fiscalStepStatus("incoming_status").notNull(),
+    outgoingStatus: fiscalStepStatus("outgoing_status").notNull(),
+    guideStatus: fiscalStepStatus("guide_status").notNull(),
+    nfsStatus: fiscalStepStatus("nfs_status").notNull(),
+    deliveryStatus: fiscalStepStatus("delivery_status").notNull(),
+    status: fiscalControlStatus("status").notNull().default("not_started"),
+    monthlyNotes: text("monthly_notes"),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id),
+    updatedBy: text("updated_by")
+      .notNull()
+      .references(() => user.id),
+    completedBy: text("completed_by").references(() => user.id),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "fiscal_control_periods_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "fiscal_control_periods_org_profile_fk",
+      columns: [t.orgId, t.profileId],
+      foreignColumns: [fiscalClientProfiles.orgId, fiscalClientProfiles.id],
+    }),
+    uniqueIndex("fiscal_control_periods_org_client_period_uidx").on(
+      t.orgId,
+      t.clientId,
+      t.periodYear,
+      t.periodMonth,
+    ),
+    uniqueIndex("fiscal_control_periods_org_id_uidx").on(t.orgId, t.id),
+    index("fiscal_control_periods_org_period_status_idx").on(
+      t.orgId,
+      t.periodYear,
+      t.periodMonth,
+      t.status,
+    ),
+    index("fiscal_control_periods_org_responsible_idx").on(
+      t.orgId,
+      t.responsibleUserId,
+      t.periodYear,
+      t.periodMonth,
+    ),
+    check("fiscal_control_periods_month_check", sql`${t.periodMonth} BETWEEN 1 AND 12`),
+    check("fiscal_control_periods_year_check", sql`${t.periodYear} BETWEEN 2000 AND 2100`),
+    check("fiscal_control_periods_profile_version_check", sql`${t.profileVersion} >= 1`),
+    check(
+      "fiscal_control_periods_snapshot_version_check",
+      sql`(${t.profileSnapshot} ->> 'version')::integer = ${t.profileVersion}`,
+    ),
+    check(
+      "fiscal_control_periods_completion_check",
+      sql`(${t.status} = 'completed' AND ${t.completedAt} IS NOT NULL AND ${t.completedBy} IS NOT NULL) OR (${t.status} <> 'completed' AND ${t.completedAt} IS NULL AND ${t.completedBy} IS NULL)`,
+    ),
+  ],
+);
+
+/** Evento imutável de uma alteração no controle fiscal mensal. */
+export const fiscalControlEvents = pgTable(
+  "fiscal_control_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    controlPeriodId: uuid("control_period_id").notNull(),
+    clientId: uuid("client_id").notNull(),
+    eventType: fiscalControlEventType("event_type").notNull(),
+    stage: fiscalControlStage("stage"),
+    previousValue: jsonb("previous_value"),
+    newValue: jsonb("new_value"),
+    note: text("note"),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "fiscal_control_events_org_period_fk",
+      columns: [t.orgId, t.controlPeriodId],
+      foreignColumns: [fiscalControlPeriods.orgId, fiscalControlPeriods.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "fiscal_control_events_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+    index("fiscal_control_events_org_period_created_idx").on(
+      t.orgId,
+      t.controlPeriodId,
+      t.createdAt,
+    ),
+  ],
+);
+
+export const fiscalClientProfilesRelations = relations(
+  fiscalClientProfiles,
+  ({ one, many }) => ({
+    client: one(clients, {
+      fields: [fiscalClientProfiles.clientId],
+      references: [clients.id],
+    }),
+    events: many(fiscalClientProfileEvents),
+    controlPeriods: many(fiscalControlPeriods),
+  }),
+);
+
+export const fiscalClientProfileEventsRelations = relations(
+  fiscalClientProfileEvents,
+  ({ one }) => ({
+    profile: one(fiscalClientProfiles, {
+      fields: [fiscalClientProfileEvents.profileId],
+      references: [fiscalClientProfiles.id],
+    }),
+    client: one(clients, {
+      fields: [fiscalClientProfileEvents.clientId],
+      references: [clients.id],
+    }),
+  }),
+);
+
+export const fiscalClientAliasesRelations = relations(
+  fiscalClientAliases,
+  ({ one }) => ({
+    client: one(clients, {
+      fields: [fiscalClientAliases.clientId],
+      references: [clients.id],
+    }),
+  }),
+);
+
+export const fiscalImportBatchesRelations = relations(
+  fiscalImportBatches,
+  ({ one, many }) => ({
+    creator: one(user, {
+      fields: [fiscalImportBatches.createdBy],
+      references: [user.id],
+    }),
+    rows: many(fiscalImportRows),
+  }),
+);
+
+export const fiscalImportRowsRelations = relations(fiscalImportRows, ({ one }) => ({
+  batch: one(fiscalImportBatches, {
+    fields: [fiscalImportRows.batchId],
+    references: [fiscalImportBatches.id],
+  }),
+  suggestedClient: one(clients, {
+    fields: [fiscalImportRows.suggestedClientId],
+    references: [clients.id],
+    relationName: "fiscal_import_row_suggested_client",
+  }),
+  resolvedClient: one(clients, {
+    fields: [fiscalImportRows.resolvedClientId],
+    references: [clients.id],
+    relationName: "fiscal_import_row_resolved_client",
+  }),
+  resolvedAlias: one(fiscalClientAliases, {
+    fields: [fiscalImportRows.resolvedAliasId],
+    references: [fiscalClientAliases.id],
+  }),
+}));
+
+export const fiscalControlPeriodsRelations = relations(
+  fiscalControlPeriods,
+  ({ one, many }) => ({
+    client: one(clients, {
+      fields: [fiscalControlPeriods.clientId],
+      references: [clients.id],
+    }),
+    profile: one(fiscalClientProfiles, {
+      fields: [fiscalControlPeriods.profileId],
+      references: [fiscalClientProfiles.id],
+    }),
+    campaign: one(clanCampaigns, {
+      fields: [fiscalControlPeriods.campaignId],
+      references: [clanCampaigns.id],
+    }),
+    responsibleUser: one(user, {
+      fields: [fiscalControlPeriods.responsibleUserId],
+      references: [user.id],
+    }),
+    events: many(fiscalControlEvents),
+  }),
+);
+
+export const fiscalControlEventsRelations = relations(
+  fiscalControlEvents,
+  ({ one }) => ({
+    controlPeriod: one(fiscalControlPeriods, {
+      fields: [fiscalControlEvents.controlPeriodId],
+      references: [fiscalControlPeriods.id],
+    }),
+    client: one(clients, {
+      fields: [fiscalControlEvents.clientId],
+      references: [clients.id],
+    }),
+    actor: one(user, {
+      fields: [fiscalControlEvents.actorId],
+      references: [user.id],
+    }),
+  }),
+);
+
+export type FiscalClientProfile = typeof fiscalClientProfiles.$inferSelect;
+export type FiscalClientProfileEvent = typeof fiscalClientProfileEvents.$inferSelect;
+export type FiscalClientAlias = typeof fiscalClientAliases.$inferSelect;
+export type FiscalImportBatch = typeof fiscalImportBatches.$inferSelect;
+export type FiscalImportRow = typeof fiscalImportRows.$inferSelect;
+export type FiscalControlPeriod = typeof fiscalControlPeriods.$inferSelect;
+export type FiscalControlEvent = typeof fiscalControlEvents.$inferSelect;
 
 /** Com que frequência a distribuição de lucros é planejada. */
 export const commitmentCadence = pgEnum("commitment_cadence", [

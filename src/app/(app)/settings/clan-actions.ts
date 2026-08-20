@@ -12,6 +12,7 @@ import {
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
+import { FISCAL_CLAN_SLUG } from "@/lib/clans/rules";
 
 const membershipTargetSchema = z.object({
   clanId: z.uuid("Clã inválido."),
@@ -47,7 +48,11 @@ async function requireClanManager() {
  */
 async function lockClan(tx: OrgTx, orgId: string, clanId: string) {
   const [clan] = await tx
-    .select({ id: schema.clans.id, active: schema.clans.active })
+    .select({
+      id: schema.clans.id,
+      active: schema.clans.active,
+      slug: schema.clans.slug,
+    })
     .from(schema.clans)
     .where(and(eq(schema.clans.orgId, orgId), eq(schema.clans.id, clanId)))
     .for("update");
@@ -201,6 +206,24 @@ export async function removeClanMembership(
       return err(
         "Transfira ou conclua as missões ativas desta pessoa no clã antes de remover o vínculo.",
       );
+    }
+
+    if (clan.slug === FISCAL_CLAN_SLUG) {
+      const [portfolio] = await tx
+        .select({ id: schema.fiscalPortfolios.id })
+        .from(schema.fiscalPortfolios)
+        .where(
+          and(
+            eq(schema.fiscalPortfolios.orgId, ctx.orgId),
+            eq(schema.fiscalPortfolios.userId, parsed.data.userId),
+          ),
+        )
+        .limit(1);
+      if (portfolio) {
+        return err(
+          "Transfira as empresas da carteira fiscal desta pessoa antes de remover o vínculo.",
+        );
+      }
     }
 
     await tx
