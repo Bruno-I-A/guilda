@@ -14,6 +14,7 @@ import {
   Plus,
   Repeat2,
   Send,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -59,6 +60,7 @@ import { cn } from "@/lib/utils";
 import {
   createCommitment,
   createMissionsForPeriods,
+  deleteCommitment,
   planCommitmentPeriods,
   setCommitmentActive,
   updateCommitment,
@@ -454,6 +456,59 @@ function CommitmentEditorDialog({
   );
 }
 
+function DeleteCommitmentDialog({
+  clanId,
+  commitment,
+  onClose,
+  onDeleted,
+}: {
+  clanId: string;
+  commitment: CommitmentView;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [pending, startTransition] = useTransition();
+
+  function remove() {
+    startTransition(async () => {
+      const result = await deleteCommitment({
+        clanId,
+        commitmentId: commitment.id,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Distribuição apagada.");
+      onClose();
+      onDeleted();
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Apagar distribuição?</DialogTitle>
+          <DialogDescription>
+            {commitment.clientName} · esta ação é permanente.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+          Todos os períodos, valores distribuídos e anotações deste planejamento serão apagados.
+          Se houver uma missão vinculada, a exclusão será bloqueada.
+        </div>
+        <DialogFooter className="gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button type="button" variant="destructive" disabled={pending} onClick={remove}>
+            <Trash2 className="size-4" aria-hidden /> Apagar definitivamente
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function PeriodRow({
   clanId,
   period,
@@ -616,6 +671,7 @@ export function CommitmentBoard({
   } | null>(null);
   const [planning, setPlanning] = useState<CommitmentView | null>(null);
   const [editing, setEditing] = useState<CommitmentView | null>(null);
+  const [deleting, setDeleting] = useState<CommitmentView | null>(null);
   const [closingDraft, setClosingDraft] = useState<{
     clientId: string;
     notes: string;
@@ -791,15 +847,28 @@ export function CommitmentBoard({
                   ) : null}
                 </button>
                 {canManage ? (
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label={`Editar distribuição de ${commitment.clientName}`}
-                    onClick={() => setEditing(commitment)}
-                  >
-                    <Pencil className="size-3.5" aria-hidden />
-                  </Button>
+                  <div className="flex items-center gap-0.5">
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={`Editar distribuição de ${commitment.clientName}`}
+                      onClick={() => setEditing(commitment)}
+                    >
+                      <Pencil className="size-3.5" aria-hidden />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      disabled={pending}
+                      className="text-destructive hover:text-destructive"
+                      aria-label={`Apagar distribuição de ${commitment.clientName}`}
+                      onClick={() => setDeleting(commitment)}
+                    >
+                      <Trash2 className="size-3.5" aria-hidden />
+                    </Button>
+                  </div>
                 ) : null}
               </div>
 
@@ -913,13 +982,26 @@ export function CommitmentBoard({
             <div key={commitment.id} className="flex items-center gap-2 rounded-md bg-muted/25 px-3 py-2 text-sm text-muted-foreground">
               <span className="flex-1">{commitment.clientName} · {CADENCE_LABELS[commitment.cadence]}</span>
               {canManage ? (
-                <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => startTransition(async () => {
-                  const result = await setCommitmentActive({ clanId, commitmentId: commitment.id, active: true });
-                  if (!result.ok) toast.error(result.error);
-                  else { toast.success("Planejamento reativado."); refresh(); }
-                })}>
-                  <ArchiveRestore className="size-3.5" aria-hidden /> Reativar
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => startTransition(async () => {
+                    const result = await setCommitmentActive({ clanId, commitmentId: commitment.id, active: true });
+                    if (!result.ok) toast.error(result.error);
+                    else { toast.success("Planejamento reativado."); refresh(); }
+                  })}>
+                    <ArchiveRestore className="size-3.5" aria-hidden /> Reativar
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={pending}
+                    className="text-destructive hover:text-destructive"
+                    aria-label={`Apagar distribuição arquivada de ${commitment.clientName}`}
+                    onClick={() => setDeleting(commitment)}
+                  >
+                    <Trash2 className="size-3.5" aria-hidden />
+                  </Button>
+                </div>
               ) : null}
             </div>
           ))}
@@ -1019,6 +1101,18 @@ export function CommitmentBoard({
           commitment={editing}
           onClose={() => setEditing(null)}
           onSaved={refresh}
+        />
+      ) : null}
+      {deleting ? (
+        <DeleteCommitmentDialog
+          key={deleting.id}
+          clanId={clanId}
+          commitment={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => {
+            setSelectedPeriods(new Set());
+            refresh();
+          }}
         />
       ) : null}
       {closingDraft ? (

@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -314,6 +314,98 @@ export async function setCommitmentActive(
       )
       .returning({ id: schema.clientCommitments.id });
     return updated.length > 0 ? { ok: true } : err("Distribuição não encontrada.");
+  });
+
+  if (result.ok) revalidatePath(`/clans/${data.clanId}`);
+  return result;
+}
+
+const deleteCommitmentSchema = z.object({
+  clanId: z.uuid("Clã inválido."),
+  commitmentId: z.uuid("Distribuição inválida."),
+});
+
+export async function deleteCommitment(
+  input: z.input<typeof deleteCommitmentSchema>,
+): Promise<ActionResult> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  const parsed = deleteCommitmentSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+  const data = parsed.data;
+
+  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
+    const gate = await requireDistributionManager(tx, ctx, data.clanId);
+    if (!gate.ok) return gate;
+
+    const [commitment] = await tx
+      .select({ id: schema.clientCommitments.id })
+      .from(schema.clientCommitments)
+      .where(
+        and(
+          eq(schema.clientCommitments.id, data.commitmentId),
+          eq(schema.clientCommitments.orgId, ctx.orgId),
+          eq(schema.clientCommitments.clanId, gate.clanId),
+        ),
+      )
+      .for("update");
+    if (!commitment) return err("Distribuição não encontrada.");
+
+    // Serializa a exclusão contra uma geração de missão concorrente. A FK
+    // composta apaga estes períodos em cascata quando o planejamento sair.
+    const periods = await tx
+      .select({
+        id: schema.clientCommitmentPeriods.id,
+        taskId: schema.clientCommitmentPeriods.taskId,
+      })
+      .from(schema.clientCommitmentPeriods)
+      .where(
+        and(
+          eq(schema.clientCommitmentPeriods.orgId, ctx.orgId),
+          eq(schema.clientCommitmentPeriods.commitmentId, commitment.id),
+        ),
+      )
+      .for("update");
+
+    if (periods.length > 0) {
+      const periodIds = periods.map((period) => period.id);
+      const taskIds = periods.flatMap((period) =>
+        period.taskId ? [period.taskId] : [],
+      );
+      const taskLink = taskIds.length > 0
+        ? or(
+            inArray(schema.tasks.commitmentPeriodId, periodIds),
+            inArray(schema.tasks.id, taskIds),
+          )
+        : inArray(schema.tasks.commitmentPeriodId, periodIds);
+      const [linkedTask] = await tx
+        .select({ id: schema.tasks.id })
+        .from(schema.tasks)
+        .where(
+          and(
+            eq(schema.tasks.orgId, ctx.orgId),
+            taskLink,
+          ),
+        )
+        .limit(1);
+      if (linkedTask) {
+        return err(
+          "Esta distribuição possui missão vinculada. Exclua a missão primeiro e tente novamente.",
+        );
+      }
+    }
+
+    const deleted = await tx
+      .delete(schema.clientCommitments)
+      .where(
+        and(
+          eq(schema.clientCommitments.id, commitment.id),
+          eq(schema.clientCommitments.orgId, ctx.orgId),
+          eq(schema.clientCommitments.clanId, gate.clanId),
+        ),
+      )
+      .returning({ id: schema.clientCommitments.id });
+    return deleted.length > 0 ? { ok: true } : err("Distribuição não encontrada.");
   });
 
   if (result.ok) revalidatePath(`/clans/${data.clanId}`);
