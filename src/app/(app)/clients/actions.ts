@@ -308,8 +308,12 @@ export interface ClientDeletionSummary {
 /**
  * Contagem para o dialog de confirmação — a mesma consulta que fundamenta a
  * mensagem "vai apagar N missões, M fechamentos, P compromissos" antes do
- * usuário decidir se confirma. Roda na mesma transação que a leitura do
- * cliente para não haver corrida entre "mostrar o resumo" e "excluir".
+ * usuário decidir se confirma. As quatro contagens rodam na mesma transação
+ * que a leitura do cliente, então são consistentes ENTRE SI (uma única foto
+ * do banco) — mas isto é uma chamada separada de `deleteClientPermanently`,
+ * sem transação compartilhada entre as duas. Quem protege a exclusão de uma
+ * corrida é o `.for("update")` + a checagem de nome dentro da própria
+ * `deleteClientPermanently`, não este resumo.
  */
 export async function getClientDeletionSummary(
   input: z.input<typeof deletionSummarySchema>,
