@@ -114,7 +114,9 @@ export const tasks = pgTable(
       .references(() => user.id),
     assigneeId: text("assignee_id").references(() => user.id),
     clanId: uuid("clan_id"),
-    clientId: uuid("client_id").references(() => clients.id),
+    clientId: uuid("client_id").references(() => clients.id, {
+      onDelete: "cascade",
+    }),
     // Agrupa o "pacote" de missões nascidas do mesmo informativo — é o que a
     // Mesa do Líder usa para atribuir tudo de uma empresa de uma vez.
     informativeId: uuid("informative_id").references(() => informatives.id),
@@ -184,7 +186,7 @@ export const taskTransfers = pgTable(
       name: "task_transfers_org_task_fk",
       columns: [t.orgId, t.taskId],
       foreignColumns: [tasks.orgId, tasks.id],
-    }),
+    }).onDelete("cascade"),
     foreignKey({
       name: "task_transfers_org_from_clan_fk",
       columns: [t.orgId, t.fromClanId],
@@ -247,7 +249,7 @@ export const taskEvents = pgTable(
       .references(() => organization.id),
     taskId: uuid("task_id")
       .notNull()
-      .references(() => tasks.id),
+      .references(() => tasks.id, { onDelete: "cascade" }),
     actorId: text("actor_id")
       .notNull()
       .references(() => user.id),
@@ -282,10 +284,11 @@ export const xpLedger = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id),
-    taskId: uuid("task_id").references(() => tasks.id),
+    taskId: uuid("task_id").references(() => tasks.id, { onDelete: "set null" }),
     taskEventId: uuid("task_event_id"),
     closingYearId: uuid("closing_year_id").references(
       () => accountingClosingYears.id,
+      { onDelete: "set null" },
     ),
     amount: integer("amount").notNull(), // positivo = crédito, negativo = estorno
     reason: varchar("reason", { length: 50 }).notNull(),
@@ -506,7 +509,7 @@ export const accountingClosings = pgTable(
       .references(() => organization.id),
     clientId: uuid("client_id")
       .notNull()
-      .references(() => clients.id),
+      .references(() => clients.id, { onDelete: "cascade" }),
     title: varchar("title", { length: 160 }).notNull(),
     dueDate: date("due_date", { mode: "string" }).notNull(),
     status: closingStatus("status").notNull().default("pending"),
@@ -565,7 +568,7 @@ export const accountingClosingYears = pgTable(
       .references(() => organization.id),
     clientId: uuid("client_id")
       .notNull()
-      .references(() => clients.id),
+      .references(() => clients.id, { onDelete: "cascade" }),
     year: smallint("year").notNull(),
     notes: text("notes"),
     closedAt: timestamp("closed_at", { withTimezone: true }),
@@ -947,7 +950,9 @@ export const guildNotices = pgTable(
     kind: guildNoticeKind("kind").notNull().default("notice"),
     title: varchar("title", { length: 160 }).notNull(),
     body: text("body").notNull(),
-    clientId: uuid("client_id").references(() => clients.id),
+    clientId: uuid("client_id").references(() => clients.id, {
+      onDelete: "set null",
+    }),
     informativeId: uuid("informative_id").references(() => informatives.id),
     requiresAck: boolean("requires_ack").notNull().default(false),
     pinned: boolean("pinned").notNull().default(false),
@@ -1073,7 +1078,7 @@ export const fiscalPortfolios = pgTable(
       .references(() => organization.id),
     clientId: uuid("client_id")
       .notNull()
-      .references(() => clients.id),
+      .references(() => clients.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => user.id),
@@ -1109,7 +1114,7 @@ export const fiscalPortfolioEvents = pgTable(
       .references(() => organization.id),
     clientId: uuid("client_id")
       .notNull()
-      .references(() => clients.id),
+      .references(() => clients.id, { onDelete: "cascade" }),
     fromUserId: text("from_user_id").references(() => user.id),
     toUserId: text("to_user_id").references(() => user.id),
     actorId: text("actor_id")
@@ -1246,7 +1251,7 @@ export const clientCommitments = pgTable(
     clanId: uuid("clan_id").notNull(),
     clientId: uuid("client_id")
       .notNull()
-      .references(() => clients.id),
+      .references(() => clients.id, { onDelete: "cascade" }),
     title: varchar("title", { length: 200 }).notNull(),
     /** O combinado: valores, condições, o que observar. */
     notes: text("notes"),
