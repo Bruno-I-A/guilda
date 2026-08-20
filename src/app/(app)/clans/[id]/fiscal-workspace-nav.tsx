@@ -1,9 +1,9 @@
-import { ClipboardCheck, UsersRound } from "lucide-react";
+import { ClipboardCheck, UsersRound, WalletCards } from "lucide-react";
 import Link from "next/link";
 
 import { cn } from "@/lib/utils";
 
-export type FiscalWorkspaceView = "portfolio" | "control";
+export type FiscalWorkspaceView = "portfolio" | "control" | "fees";
 
 export function FiscalWorkspaceNav({
   clanId,
@@ -24,6 +24,12 @@ export function FiscalWorkspaceNav({
       label: "Controle mensal",
       icon: ClipboardCheck,
       href: `/clans/${clanId}?tab=portfolio&fiscalView=control`,
+    },
+    {
+      key: "fees" as const,
+      label: "Honorários",
+      icon: WalletCards,
+      href: `/clans/${clanId}?tab=portfolio&fiscalView=fees`,
     },
   ];
 

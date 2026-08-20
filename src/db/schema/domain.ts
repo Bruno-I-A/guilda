@@ -1250,6 +1250,12 @@ export const fiscalImportBatchStatus = pgEnum("fiscal_import_batch_status", [
   "failed",
 ]);
 
+/** Qual configuração fiscal está sendo conciliada no arquivo importado. */
+export const fiscalImportKind = pgEnum("fiscal_import_kind", [
+  "fiscal_profile",
+  "office_fee",
+]);
+
 export const fiscalImportRowStatus = pgEnum("fiscal_import_row_status", [
   "pending",
   "suggested",
@@ -1261,7 +1267,7 @@ export const fiscalImportRowStatus = pgEnum("fiscal_import_row_status", [
 
 export const fiscalImportResolutionMethod = pgEnum(
   "fiscal_import_resolution_method",
-  ["exact_alias", "exact_name", "fuzzy", "manual"],
+  ["exact_alias", "exact_name", "exact_cnpj", "fuzzy", "manual"],
 );
 
 /** Situação de cada célula operacional da competência fiscal. */
@@ -1299,6 +1305,35 @@ export const fiscalControlStage = pgEnum("fiscal_control_stage", [
   "delivery",
 ]);
 
+/** Meio usado pelo escritório para cobrar o honorário mensal. */
+export const officeFeeBillingMethod = pgEnum("office_fee_billing_method", [
+  "asaas",
+  "recibo",
+  "pix",
+  "other",
+]);
+
+export const officeFeeProfileEventType = pgEnum("office_fee_profile_event_type", [
+  "created",
+  "updated",
+  "imported",
+]);
+
+export const officeFeeControlEventType = pgEnum("office_fee_control_event_type", [
+  "created",
+  "step_updated",
+  "status_updated",
+  "note_updated",
+  "completed",
+  "reopened",
+]);
+
+export const officeFeeControlStage = pgEnum("office_fee_control_stage", [
+  "invoice",
+  "additional_installment",
+  "collection",
+]);
+
 export type FiscalClientProfileSnapshot = {
   version: number;
   movementsApplicability: (typeof fiscalApplicability.enumValues)[number];
@@ -1322,6 +1357,15 @@ export type FiscalImportReport = {
   updatedProfiles?: number;
   unchangedProfiles?: number;
   rejectedRows?: number;
+};
+
+/** Retrato de como o honorário deve ser tratado quando o mês foi aberto. */
+export type OfficeFeeProfileSnapshot = {
+  version: number;
+  billingMethod: (typeof officeFeeBillingMethod.enumValues)[number];
+  chargesAdditionalInstallment: boolean;
+  monthlyFee: string;
+  permanentNotes: string | null;
 };
 
 /**
@@ -1461,6 +1505,7 @@ export const fiscalImportBatches = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     fileName: varchar("file_name", { length: 255 }).notNull(),
+    kind: fiscalImportKind("kind").notNull().default("fiscal_profile"),
     status: fiscalImportBatchStatus("status").notNull().default("pending"),
     totalRows: integer("total_rows").notNull().default(0),
     matchedRows: integer("matched_rows").notNull().default(0),
@@ -1667,6 +1712,207 @@ export const fiscalControlEvents = pgTable(
   ],
 );
 
+/**
+ * Regra permanente de cobrança dos honorários do escritório. Diferente da
+ * carteira, mudar o responsável nunca altera meio, valor ou observações.
+ */
+export const officeFeeProfiles = pgTable(
+  "office_fee_profiles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    billingMethod: officeFeeBillingMethod("billing_method").notNull(),
+    chargesAdditionalInstallment: boolean("charges_additional_installment")
+      .notNull()
+      .default(false),
+    monthlyFee: numeric("monthly_fee", { precision: 15, scale: 2 }).notNull(),
+    permanentNotes: text("permanent_notes"),
+    version: integer("version").notNull().default(1),
+    createdBy: text("created_by").references(() => user.id),
+    updatedBy: text("updated_by").references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "office_fee_profiles_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+    uniqueIndex("office_fee_profiles_org_client_uidx").on(t.orgId, t.clientId),
+    uniqueIndex("office_fee_profiles_org_id_uidx").on(t.orgId, t.id),
+    check("office_fee_profiles_version_check", sql`${t.version} >= 1`),
+    check("office_fee_profiles_monthly_fee_check", sql`${t.monthlyFee} >= 0`),
+  ],
+);
+
+/** Histórico de versões da base de honorários — somente acréscimo. */
+export const officeFeeProfileEvents = pgTable(
+  "office_fee_profile_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    profileId: uuid("profile_id").notNull(),
+    clientId: uuid("client_id").notNull(),
+    eventType: officeFeeProfileEventType("event_type").notNull(),
+    version: integer("version").notNull(),
+    snapshot: jsonb("snapshot").$type<OfficeFeeProfileSnapshot>().notNull(),
+    changedFields: jsonb("changed_fields").$type<string[]>().notNull().default([]),
+    actorId: text("actor_id").references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "office_fee_profile_events_org_profile_fk",
+      columns: [t.orgId, t.profileId],
+      foreignColumns: [officeFeeProfiles.orgId, officeFeeProfiles.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "office_fee_profile_events_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+    uniqueIndex("office_fee_profile_events_org_profile_version_uidx").on(
+      t.orgId,
+      t.profileId,
+      t.version,
+    ),
+    index("office_fee_profile_events_org_client_idx").on(t.orgId, t.clientId),
+    check("office_fee_profile_events_version_check", sql`${t.version} >= 1`),
+    check(
+      "office_fee_profile_events_snapshot_version_check",
+      sql`(${t.snapshot} ->> 'version')::integer = ${t.version}`,
+    ),
+  ],
+);
+
+/**
+ * Uma competência de honorário por empresa cadastrada. A linha só nasce para
+ * empresas que possuem regra de honorário, e congela nome, CNPJ, responsável
+ * e configuração para que o fechamento mensal permaneça auditável.
+ */
+export const officeFeeControlPeriods = pgTable(
+  "office_fee_control_periods",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    periodYear: smallint("period_year").notNull(),
+    periodMonth: smallint("period_month").notNull(),
+    clientNameSnapshot: varchar("client_name_snapshot", { length: 200 }).notNull(),
+    clientCnpjSnapshot: varchar("client_cnpj_snapshot", { length: 14 }),
+    profileId: uuid("profile_id").notNull(),
+    profileVersion: integer("profile_version").notNull(),
+    profileSnapshot: jsonb("profile_snapshot")
+      .$type<OfficeFeeProfileSnapshot>()
+      .notNull(),
+    responsibleUserId: text("responsible_user_id").references(() => user.id),
+    invoiceStatus: fiscalStepStatus("invoice_status").notNull(),
+    additionalInstallmentStatus: fiscalStepStatus("additional_installment_status").notNull(),
+    collectionStatus: fiscalStepStatus("collection_status").notNull(),
+    status: fiscalControlStatus("status").notNull().default("not_started"),
+    monthlyNotes: text("monthly_notes"),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id),
+    updatedBy: text("updated_by")
+      .notNull()
+      .references(() => user.id),
+    completedBy: text("completed_by").references(() => user.id),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "office_fee_control_periods_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "office_fee_control_periods_org_profile_fk",
+      columns: [t.orgId, t.profileId],
+      foreignColumns: [officeFeeProfiles.orgId, officeFeeProfiles.id],
+    }),
+    uniqueIndex("office_fee_control_periods_org_client_period_uidx").on(
+      t.orgId,
+      t.clientId,
+      t.periodYear,
+      t.periodMonth,
+    ),
+    uniqueIndex("office_fee_control_periods_org_id_uidx").on(t.orgId, t.id),
+    index("office_fee_control_periods_org_period_status_idx").on(
+      t.orgId,
+      t.periodYear,
+      t.periodMonth,
+      t.status,
+    ),
+    index("office_fee_control_periods_org_responsible_idx").on(
+      t.orgId,
+      t.responsibleUserId,
+      t.periodYear,
+      t.periodMonth,
+    ),
+    check("office_fee_control_periods_month_check", sql`${t.periodMonth} BETWEEN 1 AND 12`),
+    check("office_fee_control_periods_year_check", sql`${t.periodYear} BETWEEN 2000 AND 2100`),
+    check("office_fee_control_periods_profile_version_check", sql`${t.profileVersion} >= 1`),
+    check(
+      "office_fee_control_periods_snapshot_version_check",
+      sql`(${t.profileSnapshot} ->> 'version')::integer = ${t.profileVersion}`,
+    ),
+    check(
+      "office_fee_control_periods_completion_check",
+      sql`(${t.status} = 'completed' AND ${t.completedAt} IS NOT NULL AND ${t.completedBy} IS NOT NULL) OR (${t.status} <> 'completed' AND ${t.completedAt} IS NULL AND ${t.completedBy} IS NULL)`,
+    ),
+  ],
+);
+
+/** Evento operacional e imutável de cada alteração no fechamento mensal. */
+export const officeFeeControlEvents = pgTable(
+  "office_fee_control_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    controlPeriodId: uuid("control_period_id").notNull(),
+    clientId: uuid("client_id").notNull(),
+    eventType: officeFeeControlEventType("event_type").notNull(),
+    stage: officeFeeControlStage("stage"),
+    previousValue: jsonb("previous_value"),
+    newValue: jsonb("new_value"),
+    note: text("note"),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "office_fee_control_events_org_period_fk",
+      columns: [t.orgId, t.controlPeriodId],
+      foreignColumns: [officeFeeControlPeriods.orgId, officeFeeControlPeriods.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "office_fee_control_events_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+    index("office_fee_control_events_org_period_created_idx").on(
+      t.orgId,
+      t.controlPeriodId,
+      t.createdAt,
+    ),
+  ],
+);
+
 export const fiscalClientProfilesRelations = relations(
   fiscalClientProfiles,
   ({ one, many }) => ({
@@ -1776,6 +2022,73 @@ export const fiscalControlEventsRelations = relations(
   }),
 );
 
+export const officeFeeProfilesRelations = relations(
+  officeFeeProfiles,
+  ({ one, many }) => ({
+    client: one(clients, {
+      fields: [officeFeeProfiles.clientId],
+      references: [clients.id],
+    }),
+    events: many(officeFeeProfileEvents),
+    controlPeriods: many(officeFeeControlPeriods),
+  }),
+);
+
+export const officeFeeProfileEventsRelations = relations(
+  officeFeeProfileEvents,
+  ({ one }) => ({
+    profile: one(officeFeeProfiles, {
+      fields: [officeFeeProfileEvents.profileId],
+      references: [officeFeeProfiles.id],
+    }),
+    client: one(clients, {
+      fields: [officeFeeProfileEvents.clientId],
+      references: [clients.id],
+    }),
+    actor: one(user, {
+      fields: [officeFeeProfileEvents.actorId],
+      references: [user.id],
+    }),
+  }),
+);
+
+export const officeFeeControlPeriodsRelations = relations(
+  officeFeeControlPeriods,
+  ({ one, many }) => ({
+    client: one(clients, {
+      fields: [officeFeeControlPeriods.clientId],
+      references: [clients.id],
+    }),
+    profile: one(officeFeeProfiles, {
+      fields: [officeFeeControlPeriods.profileId],
+      references: [officeFeeProfiles.id],
+    }),
+    responsibleUser: one(user, {
+      fields: [officeFeeControlPeriods.responsibleUserId],
+      references: [user.id],
+    }),
+    events: many(officeFeeControlEvents),
+  }),
+);
+
+export const officeFeeControlEventsRelations = relations(
+  officeFeeControlEvents,
+  ({ one }) => ({
+    controlPeriod: one(officeFeeControlPeriods, {
+      fields: [officeFeeControlEvents.controlPeriodId],
+      references: [officeFeeControlPeriods.id],
+    }),
+    client: one(clients, {
+      fields: [officeFeeControlEvents.clientId],
+      references: [clients.id],
+    }),
+    actor: one(user, {
+      fields: [officeFeeControlEvents.actorId],
+      references: [user.id],
+    }),
+  }),
+);
+
 export type FiscalClientProfile = typeof fiscalClientProfiles.$inferSelect;
 export type FiscalClientProfileEvent = typeof fiscalClientProfileEvents.$inferSelect;
 export type FiscalClientAlias = typeof fiscalClientAliases.$inferSelect;
@@ -1783,6 +2096,10 @@ export type FiscalImportBatch = typeof fiscalImportBatches.$inferSelect;
 export type FiscalImportRow = typeof fiscalImportRows.$inferSelect;
 export type FiscalControlPeriod = typeof fiscalControlPeriods.$inferSelect;
 export type FiscalControlEvent = typeof fiscalControlEvents.$inferSelect;
+export type OfficeFeeProfile = typeof officeFeeProfiles.$inferSelect;
+export type OfficeFeeProfileEvent = typeof officeFeeProfileEvents.$inferSelect;
+export type OfficeFeeControlPeriod = typeof officeFeeControlPeriods.$inferSelect;
+export type OfficeFeeControlEvent = typeof officeFeeControlEvents.$inferSelect;
 
 /** Com que frequência a distribuição de lucros é planejada. */
 export const commitmentCadence = pgEnum("commitment_cadence", [

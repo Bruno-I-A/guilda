@@ -8,6 +8,7 @@ import { summarizePortfolio } from "@/domain/fiscal-portfolio";
 import type { ClanMemberView } from "./page";
 import { FiscalControlTab } from "./fiscal-control-tab";
 import { FiscalWorkspaceNav } from "./fiscal-workspace-nav";
+import { OfficeFeeTab } from "./office-fee-tab";
 import {
   PortfolioBoard,
   type PortfolioBucketView,
@@ -28,6 +29,7 @@ export async function PortfolioTab({
   viewerId,
   canManage,
   requestedView,
+  requestedFeeView,
   requestedYear,
   requestedMonth,
 }: {
@@ -37,10 +39,14 @@ export async function PortfolioTab({
   viewerId: string;
   canManage: boolean;
   requestedView?: string;
+  requestedFeeView?: string;
   requestedYear?: string;
   requestedMonth?: string;
 }) {
-  const view = requestedView === "control" ? "control" : "portfolio";
+  const view =
+    requestedView === "control" || requestedView === "fees"
+      ? requestedView
+      : "portfolio";
   if (view === "control") {
     return (
       <div className="grid gap-4">
@@ -51,6 +57,24 @@ export async function PortfolioTab({
           viewerId={viewerId}
           canManage={canManage}
           memberships={memberships}
+          requestedYear={requestedYear}
+          requestedMonth={requestedMonth}
+        />
+      </div>
+    );
+  }
+
+  if (view === "fees") {
+    return (
+      <div className="grid gap-4">
+        <FiscalWorkspaceNav clanId={clanId} active="fees" />
+        <OfficeFeeTab
+          orgId={orgId}
+          clanId={clanId}
+          viewerId={viewerId}
+          canManage={canManage}
+          memberships={memberships}
+          requestedView={requestedFeeView}
           requestedYear={requestedYear}
           requestedMonth={requestedMonth}
         />

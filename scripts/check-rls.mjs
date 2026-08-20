@@ -27,6 +27,10 @@ const NEW_TABLES = [
   "fiscal_import_rows",
   "fiscal_control_periods",
   "fiscal_control_events",
+  "office_fee_profiles",
+  "office_fee_profile_events",
+  "office_fee_control_periods",
+  "office_fee_control_events",
 ];
 
 const APPEND_ONLY_TABLES = [
@@ -34,12 +38,16 @@ const APPEND_ONLY_TABLES = [
   "fiscal_portfolio_events",
   "fiscal_client_profile_events",
   "fiscal_control_events",
+  "office_fee_profile_events",
+  "office_fee_control_events",
 ];
 
 const SPLIT_POLICY_TABLES = new Set([
   "fiscal_portfolio_events",
   "fiscal_client_profile_events",
   "fiscal_control_events",
+  "office_fee_profile_events",
+  "office_fee_control_events",
 ]);
 
 let failures = 0;
@@ -192,6 +200,76 @@ try {
     [control.rows[0].id],
   );
   check("andamento mensal pode ser atualizado", operationalUpdate.rowCount === 1);
+
+  // O controle de honorários tem o mesmo contrato: o retrato da empresa e
+  // da regra mensal não pode mudar, mas a observação operacional continua
+  // editável. O teste roda inteiramente dentro do ROLLBACK desta auditoria.
+  let [officeProfile] = (
+    await client.query(
+      `SELECT id FROM office_fee_profiles
+        WHERE org_id = $1
+        LIMIT 1`,
+      [orgId],
+    )
+  ).rows;
+  if (!officeProfile) {
+    const createdOfficeProfile = await client.query(
+      `INSERT INTO office_fee_profiles (
+         org_id, client_id, billing_method, charges_additional_installment,
+         monthly_fee, created_by, updated_by
+       )
+       SELECT p.org_id, p.client_id, 'asaas', false, 1, $1, $1
+         FROM fiscal_client_profiles AS p
+        WHERE p.org_id = $2
+        LIMIT 1
+       RETURNING id`,
+      [userId, orgId],
+    );
+    [officeProfile] = createdOfficeProfile.rows;
+  }
+  const officeControl = await client.query(
+    `INSERT INTO office_fee_control_periods (
+       org_id, client_id, period_year, period_month,
+       client_name_snapshot, client_cnpj_snapshot,
+       profile_id, profile_version, profile_snapshot, responsible_user_id,
+       invoice_status, additional_installment_status, collection_status,
+       status, created_by, updated_by
+     )
+     SELECT p.org_id, p.client_id, 2100, 11,
+            c.name, c.cnpj,
+            p.id, p.version,
+            jsonb_build_object('version', p.version), NULL,
+            'pending', 'not_applicable', 'pending',
+            'not_started', $1, $1
+       FROM office_fee_profiles AS p
+       INNER JOIN clients AS c ON c.org_id = p.org_id AND c.id = p.client_id
+      WHERE p.id = $2
+     RETURNING id`,
+    [userId, officeProfile.id],
+  );
+  let officeSnapshotBlocked = false;
+  await client.query("SAVEPOINT immutable_office_fee_snapshot_probe");
+  try {
+    await client.query(
+      `UPDATE office_fee_control_periods
+          SET client_name_snapshot = 'nao deve alterar'
+        WHERE id = $1`,
+      [officeControl.rows[0].id],
+    );
+  } catch {
+    officeSnapshotBlocked = true;
+    await client.query("ROLLBACK TO SAVEPOINT immutable_office_fee_snapshot_probe");
+  }
+  await client.query("RELEASE SAVEPOINT immutable_office_fee_snapshot_probe");
+  check("snapshot mensal de honorários e IMUTAVEL", officeSnapshotBlocked);
+
+  const officeOperationalUpdate = await client.query(
+    `UPDATE office_fee_control_periods
+        SET monthly_notes = 'alteracao operacional permitida'
+      WHERE id = $1`,
+    [officeControl.rows[0].id],
+  );
+  check("andamento de honorários pode ser atualizado", officeOperationalUpdate.rowCount === 1);
 
   const campaign = await client.query(
     `INSERT INTO clan_campaigns (

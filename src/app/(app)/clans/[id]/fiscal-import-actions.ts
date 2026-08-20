@@ -227,6 +227,7 @@ export async function previewFiscalSpreadsheet(
       .values({
         orgId: ctx.orgId,
         fileName: file.name.slice(0, 255),
+        kind: "fiscal_profile",
         status: "reconciling",
         totalRows: reconciled.length,
         matchedRows,
@@ -389,7 +390,13 @@ export async function applyFiscalImport(
     const [batch] = await tx
       .select()
       .from(schema.fiscalImportBatches)
-      .where(and(eq(schema.fiscalImportBatches.orgId, ctx.orgId), eq(schema.fiscalImportBatches.id, data.batchId)))
+      .where(
+        and(
+          eq(schema.fiscalImportBatches.orgId, ctx.orgId),
+          eq(schema.fiscalImportBatches.id, data.batchId),
+          eq(schema.fiscalImportBatches.kind, "fiscal_profile"),
+        ),
+      )
       .for("update");
     if (!batch) return err("Lote de importação não encontrado.");
     if (batch.status === "completed") return err("Este lote já foi aplicado.");

@@ -46,6 +46,7 @@ export default async function ClanPage({
       tab?: string;
       distributionYear?: string;
       fiscalView?: string;
+      feeView?: string;
       fiscalYear?: string;
       fiscalMonth?: string;
     } & ClosingsTabParams
@@ -56,6 +57,7 @@ export default async function ClanPage({
     tab,
     distributionYear,
     fiscalView,
+    feeView,
     fiscalYear,
     fiscalMonth,
     ...filters
@@ -198,6 +200,7 @@ export default async function ClanPage({
           viewerId={session.user.id}
           canManage={canManageFiscalPortfolio({ role, leadsThisClan })}
           requestedView={fiscalView}
+          requestedFeeView={feeView}
           requestedYear={fiscalYear}
           requestedMonth={fiscalMonth}
         />
