@@ -35,6 +35,7 @@ import {
   updateClient,
   type ImportClientsResult,
 } from "./actions";
+import { DeleteClientButton } from "./delete-client-dialog";
 
 interface ClientView {
   id: string;
@@ -315,7 +316,13 @@ export function ImportClientsButton() {
   );
 }
 
-export function ClientRowActions({ client }: { client: ClientView }) {
+export function ClientRowActions({
+  client,
+  isAdmin,
+}: {
+  client: ClientView;
+  isAdmin: boolean;
+}) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -358,6 +365,9 @@ export function ClientRowActions({ client }: { client: ClientView }) {
       >
         {client.active ? <Archive aria-hidden /> : <ArchiveRestore aria-hidden />}
       </Button>
+      {isAdmin ? (
+        <DeleteClientButton clientId={client.id} clientName={client.name} />
+      ) : null}
 
       {editOpen ? (
         <ClientFormDialog

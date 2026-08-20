@@ -2,13 +2,14 @@ import { and, asc, desc, eq, ilike, type SQL } from "drizzle-orm";
 import { Building2, Search } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { formatCnpj } from "@/domain/cnpj";
-import { requireOrgSession } from "@/lib/session";
+import { getActiveMember, isAdminRole, requireOrgSession } from "@/lib/session";
 import {
   TAX_REGIME_BADGE_CLASSES,
   TAX_REGIME_LABELS,
@@ -35,6 +36,9 @@ export default async function ClientsPage({
   searchParams: Promise<{ q?: string; regime?: string }>;
 }) {
   const session = await requireOrgSession();
+  const viewer = await getActiveMember();
+  if (!viewer) redirect("/onboarding");
+  const isAdmin = isAdminRole(viewer.role);
   const params = await searchParams;
   const regime = parseRegime(params.regime);
   const q = (params.q ?? "").trim();
@@ -172,6 +176,7 @@ export default async function ClientsPage({
                   cnpj: client.cnpj,
                   active: client.active,
                 }}
+                isAdmin={isAdmin}
               />
             </li>
           ))}
