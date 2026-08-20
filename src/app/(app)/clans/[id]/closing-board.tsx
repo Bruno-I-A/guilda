@@ -18,6 +18,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { ClosingStatus } from "@/lib/closings-ui";
+import { formatBRLCurrency } from "@/lib/currency";
 import { CLOSING_YEAR_XP } from "@/domain/xp";
 import {
   TAX_REGIME_BADGE_CLASSES,
@@ -177,22 +179,22 @@ function ClosingFormDialog({
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="closing-cash-balance">Saldo de caixa</Label>
-                <Input
+                <CurrencyInput
                   id="closing-cash-balance"
                   name="cashBalance"
-                  inputMode="decimal"
                   defaultValue={initial?.cashBalance ?? ""}
-                  placeholder="Ex.: 15.000,00 ou -2.500,00"
+                  placeholder="R$ 15.000,00"
+                  allowNegative
                 />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="closing-period-result">Resultado</Label>
-                <Input
+                <CurrencyInput
                   id="closing-period-result"
                   name="periodResult"
-                  inputMode="decimal"
                   defaultValue={initial?.periodResult ?? ""}
-                  placeholder="Ex.: 8.500,00 ou -1.200,00"
+                  placeholder="R$ 8.500,00"
+                  allowNegative
                 />
               </div>
             </div>
@@ -200,12 +202,11 @@ function ClosingFormDialog({
               <Label htmlFor="closing-shareholder-loan">
                 Empréstimo de sócio
               </Label>
-              <Input
+              <CurrencyInput
                 id="closing-shareholder-loan"
                 name="shareholderLoan"
-                inputMode="decimal"
                 defaultValue={initial?.shareholderLoan ?? ""}
-                placeholder="Ex.: 20.000,00"
+                placeholder="R$ 20.000,00"
               />
             </div>
           </div>
@@ -334,13 +335,6 @@ function formatDateTime(value: string): string {
   }).format(new Date(value));
 }
 
-function formatMoney(value: string): string {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(Number(value));
-}
-
 function ClosingRow({
   closing,
   company,
@@ -391,7 +385,7 @@ function ClosingRow({
                     : "text-emerald-300",
                 )}
               >
-                {formatMoney(closing.cashBalance)}
+                {formatBRLCurrency(closing.cashBalance)}
               </dd>
             </div>
           ) : null}
@@ -406,7 +400,7 @@ function ClosingRow({
                     : "text-emerald-300",
                 )}
               >
-                {formatMoney(closing.periodResult)}
+                {formatBRLCurrency(closing.periodResult)}
               </dd>
             </div>
           ) : null}
@@ -416,7 +410,7 @@ function ClosingRow({
                 Empréstimo de sócio
               </dt>
               <dd className="font-mono font-medium">
-                {formatMoney(closing.shareholderLoan)}
+                {formatBRLCurrency(closing.shareholderLoan)}
               </dd>
             </div>
           ) : null}

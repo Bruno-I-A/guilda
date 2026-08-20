@@ -22,6 +22,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Dialog,
   DialogContent,
@@ -52,6 +53,7 @@ import {
   type CommitmentCadence,
   type CommitmentPeriodCoordinate,
 } from "@/domain/commitments";
+import { formatBRLCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
 import {
@@ -106,17 +108,6 @@ function formatDate(value: string): string {
   return new Date(`${value}T12:00:00Z`).toLocaleDateString("pt-BR", {
     timeZone: "UTC",
   });
-}
-
-function formatMoney(value: string): string {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(Number(value));
-}
-
-function moneyInput(value: string | null): string {
-  return value === null ? "" : Number(value).toFixed(2).replace(".", ",");
 }
 
 function periodOptions(cadence: CommitmentCadence, year: number) {
@@ -212,7 +203,7 @@ function PeriodEditorDialog({
 }) {
   const [pending, startTransition] = useTransition();
   const [dueDate, setDueDate] = useState(period.dueDate);
-  const [amount, setAmount] = useState(moneyInput(period.distributedAmount));
+  const [amount, setAmount] = useState(period.distributedAmount ?? "");
   const [notes, setNotes] = useState(period.notes ?? "");
 
   function submit() {
@@ -259,12 +250,11 @@ function PeriodEditorDialog({
             </div>
             <div className="grid gap-2">
               <Label htmlFor="distribution-amount">Valor distribuído</Label>
-              <Input
+              <CurrencyInput
                 id="distribution-amount"
-                inputMode="decimal"
                 value={amount}
-                onChange={(event) => setAmount(event.target.value)}
-                placeholder="Ex.: 18.500,00"
+                onValueChange={setAmount}
+                placeholder="R$ 18.500,00"
               />
             </div>
           </div>
@@ -386,9 +376,7 @@ function CommitmentEditorDialog({
   onSaved: () => void;
 }) {
   const [pending, startTransition] = useTransition();
-  const [targetAmount, setTargetAmount] = useState(
-    moneyInput(commitment.targetAmount),
-  );
+  const [targetAmount, setTargetAmount] = useState(commitment.targetAmount ?? "");
   const [notes, setNotes] = useState(commitment.notes ?? "");
   const [difficulty, setDifficulty] = useState(String(commitment.difficulty));
 
@@ -423,12 +411,11 @@ function CommitmentEditorDialog({
         <div className="grid gap-4">
           <div className="grid gap-2">
             <Label htmlFor="distribution-target">Meta de distribuição (opcional)</Label>
-            <Input
+            <CurrencyInput
               id="distribution-target"
               value={targetAmount}
-              onChange={(event) => setTargetAmount(event.target.value)}
-              inputMode="decimal"
-              placeholder="Ex.: 200.000,00"
+              onValueChange={setTargetAmount}
+              placeholder="R$ 200.000,00"
               maxLength={20}
             />
             <p className="text-xs text-muted-foreground">
@@ -541,7 +528,7 @@ function PeriodRow({
           </span>
           {period.distributedAmount !== null ? (
             <span className="font-mono text-xs text-emerald-300">
-              {formatMoney(period.distributedAmount)}
+              {formatBRLCurrency(period.distributedAmount)}
             </span>
           ) : period.completedAt ? (
             <span className="text-xs text-amber-300">valor não informado</span>
@@ -791,7 +778,7 @@ export function CommitmentBoard({
                   {commitment.targetAmount !== null ? (
                     <span className="flex shrink-0 items-center gap-1.5 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 font-mono text-sm font-semibold text-emerald-400">
                       <CircleDollarSign className="size-3.5" aria-hidden />
-                      Meta {formatMoney(commitment.targetAmount)}
+                      Meta {formatBRLCurrency(commitment.targetAmount)}
                     </span>
                   ) : commitment.notes ? (
                     <span
@@ -980,12 +967,11 @@ export function CommitmentBoard({
             <RangeFields cadence={cadence} start={start} end={end} onStart={setStart} onEnd={setEnd} />
             <div className="grid gap-2">
               <Label htmlFor="new-distribution-target">Meta de distribuição (opcional)</Label>
-              <Input
+              <CurrencyInput
                 id="new-distribution-target"
                 value={targetAmount}
-                onChange={(event) => setTargetAmount(event.target.value)}
-                inputMode="decimal"
-                placeholder="Ex.: 200.000,00"
+                onValueChange={setTargetAmount}
+                placeholder="R$ 200.000,00"
                 maxLength={20}
               />
             </div>
