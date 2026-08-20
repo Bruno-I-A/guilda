@@ -239,6 +239,20 @@
       "when": 1787222505527,
       "tag": "0033_absent_magdalene",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1787225291677,
+      "tag": "0034_known_obadiah_stane",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1787230000000,
+      "tag": "0035_xp-ledger-task-event-set-null",
+      "breakpoints": true
     }
   ]
 }

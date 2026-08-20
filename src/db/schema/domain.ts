@@ -285,7 +285,9 @@ export const xpLedger = pgTable(
       .notNull()
       .references(() => user.id),
     taskId: uuid("task_id").references(() => tasks.id, { onDelete: "set null" }),
-    taskEventId: uuid("task_event_id"),
+    taskEventId: uuid("task_event_id").references(() => taskEvents.id, {
+      onDelete: "set null",
+    }),
     closingYearId: uuid("closing_year_id").references(
       () => accountingClosingYears.id,
       { onDelete: "set null" },
@@ -295,11 +297,6 @@ export const xpLedger = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    foreignKey({
-      name: "xp_ledger_org_task_event_fk",
-      columns: [t.orgId, t.taskEventId],
-      foreignColumns: [taskEvents.orgId, taskEvents.id],
-    }),
     index("xp_ledger_org_user_idx").on(t.orgId, t.userId),
     uniqueIndex("xp_ledger_task_event_uidx")
       .on(t.taskEventId)
