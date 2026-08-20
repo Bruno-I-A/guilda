@@ -1,0 +1,1 @@
+ALTER TABLE "client_commitments" ADD COLUMN "target_amount" numeric(15, 2);

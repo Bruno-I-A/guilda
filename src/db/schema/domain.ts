@@ -1243,6 +1243,8 @@ export const clientCommitments = pgTable(
     title: varchar("title", { length: 200 }).notNull(),
     /** O combinado: valores, condições, o que observar. */
     notes: text("notes"),
+    /** Meta opcional do planejamento; os valores realizados ficam nos períodos. */
+    targetAmount: numeric("target_amount", { precision: 15, scale: 2 }),
     cadence: commitmentCadence("cadence").notNull(),
     /** Alimenta o XP da missão gerada a cada período (fórmula de sempre). */
     difficulty: smallint("difficulty").notNull().default(2),

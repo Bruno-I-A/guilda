@@ -151,6 +151,7 @@ const createSchema = z.object({
   clientId: z.uuid("Empresa inválida."),
   cadence: z.enum(COMMITMENT_CADENCES, { error: "Escolha a periodicidade." }),
   notes: z.string().trim().max(2000, "Observação muito longa.").optional(),
+  targetAmount: optionalMoneySchema("Meta de distribuição").optional(),
   difficulty: z.number().int().min(1).max(5).default(2),
   ...coordinateFields,
 });
@@ -209,6 +210,7 @@ export async function createCommitment(
           clientId: client.id,
           title: "Distribuição de lucros",
           notes: data.notes || null,
+          targetAmount: data.targetAmount ?? null,
           cadence: data.cadence,
           difficulty: data.difficulty,
           createdBy: ctx.userId,
@@ -303,6 +305,49 @@ export async function setCommitmentActive(
     const updated = await tx
       .update(schema.clientCommitments)
       .set({ active: data.active, updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.clientCommitments.id, data.commitmentId),
+          eq(schema.clientCommitments.orgId, ctx.orgId),
+          eq(schema.clientCommitments.clanId, gate.clanId),
+        ),
+      )
+      .returning({ id: schema.clientCommitments.id });
+    return updated.length > 0 ? { ok: true } : err("Distribuição não encontrada.");
+  });
+
+  if (result.ok) revalidatePath(`/clans/${data.clanId}`);
+  return result;
+}
+
+const updateCommitmentSchema = z.object({
+  clanId: z.uuid("Clã inválido."),
+  commitmentId: z.uuid("Distribuição inválida."),
+  notes: z.string().trim().max(2000, "Observação muito longa."),
+  targetAmount: optionalMoneySchema("Meta de distribuição"),
+  difficulty: z.number().int().min(1).max(5),
+});
+
+export async function updateCommitment(
+  input: z.input<typeof updateCommitmentSchema>,
+): Promise<ActionResult> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  const parsed = updateCommitmentSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+  const data = parsed.data;
+
+  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
+    const gate = await requireDistributionManager(tx, ctx, data.clanId);
+    if (!gate.ok) return gate;
+    const updated = await tx
+      .update(schema.clientCommitments)
+      .set({
+        notes: data.notes || null,
+        targetAmount: data.targetAmount,
+        difficulty: data.difficulty,
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(schema.clientCommitments.id, data.commitmentId),

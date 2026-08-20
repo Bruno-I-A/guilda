@@ -5,6 +5,7 @@ import {
   ArchiveRestore,
   CalendarClock,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
@@ -58,6 +59,7 @@ import {
   createMissionsForPeriods,
   planCommitmentPeriods,
   setCommitmentActive,
+  updateCommitment,
   updateCommitmentPeriod,
   updateDistributionClosingNote,
 } from "./commitment-actions";
@@ -81,7 +83,9 @@ export interface CommitmentView {
   clientId: string;
   clientName: string;
   notes: string | null;
+  targetAmount: string | null;
   cadence: CommitmentCadence;
+  difficulty: number;
   active: boolean;
   latestPeriod: CommitmentPeriodCoordinate | null;
   periods: CommitmentPeriodView[];
@@ -370,6 +374,99 @@ function PlanRangeDialog({
   );
 }
 
+function CommitmentEditorDialog({
+  clanId,
+  commitment,
+  onClose,
+  onSaved,
+}: {
+  clanId: string;
+  commitment: CommitmentView;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [targetAmount, setTargetAmount] = useState(
+    moneyInput(commitment.targetAmount),
+  );
+  const [notes, setNotes] = useState(commitment.notes ?? "");
+  const [difficulty, setDifficulty] = useState(String(commitment.difficulty));
+
+  function submit() {
+    startTransition(async () => {
+      const result = await updateCommitment({
+        clanId,
+        commitmentId: commitment.id,
+        targetAmount,
+        notes,
+        difficulty: Number(difficulty),
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Distribuição atualizada.");
+      onClose();
+      onSaved();
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Editar distribuição</DialogTitle>
+          <DialogDescription>
+            {commitment.clientName} · {CADENCE_LABELS[commitment.cadence]}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          <div className="grid gap-2">
+            <Label htmlFor="distribution-target">Meta de distribuição (opcional)</Label>
+            <Input
+              id="distribution-target"
+              value={targetAmount}
+              onChange={(event) => setTargetAmount(event.target.value)}
+              inputMode="decimal"
+              placeholder="Ex.: 200.000,00"
+              maxLength={20}
+            />
+            <p className="text-xs text-muted-foreground">
+              A meta orienta o planejamento; o valor efetivo continua registrado em cada período.
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="distribution-plan-notes">Combinado geral (opcional)</Label>
+            <Textarea
+              id="distribution-plan-notes"
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              rows={4}
+              maxLength={2000}
+              placeholder="Condições gerais, sócios ou cuidados recorrentes…"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label>Dificuldade das missões futuras</Label>
+            <Select value={difficulty} onValueChange={setDifficulty}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <SelectItem key={value} value={String(value)}>Nível {value}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter className="gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button type="button" disabled={pending} onClick={submit}>Salvar alterações</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function PeriodRow({
   clanId,
   period,
@@ -520,13 +617,18 @@ export function CommitmentBoard({
     index: periodsPerYear("quarterly"),
   });
   const [notes, setNotes] = useState("");
+  const [targetAmount, setTargetAmount] = useState("");
   const [difficulty, setDifficulty] = useState("2");
+  const [expandedCommitments, setExpandedCommitments] = useState<Set<string>>(
+    new Set(),
+  );
   const [selectedPeriods, setSelectedPeriods] = useState<Set<string>>(new Set());
   const [periodEditor, setPeriodEditor] = useState<{
     period: CommitmentPeriodView;
     complete: boolean;
   } | null>(null);
   const [planning, setPlanning] = useState<CommitmentView | null>(null);
+  const [editing, setEditing] = useState<CommitmentView | null>(null);
   const [closingDraft, setClosingDraft] = useState<{
     clientId: string;
     notes: string;
@@ -553,6 +655,7 @@ export function CommitmentBoard({
         clientId,
         cadence,
         notes,
+        targetAmount,
         difficulty: Number(difficulty),
         startYear: start.year,
         startIndex: start.index,
@@ -567,6 +670,7 @@ export function CommitmentBoard({
       setCreateOpen(false);
       setClientId("");
       setNotes("");
+      setTargetAmount("");
       refresh();
     });
   }
@@ -591,6 +695,15 @@ export function CommitmentBoard({
       const next = new Set(current);
       if (selected) next.add(id);
       else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleExpanded(id: string) {
+    setExpandedCommitments((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
@@ -657,66 +770,114 @@ export function CommitmentBoard({
           Nenhuma empresa possui planejamento ativo de distribuição de lucros.
         </p>
       ) : (
-        active.map((commitment) => (
-          <section key={commitment.id} className="panel-cut grid gap-3 rounded-lg border bg-card/50 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div className="min-w-0">
-                <h3 className="font-medium">{commitment.clientName}</h3>
-                {commitment.notes ? (
-                  <p className="mt-0.5 whitespace-pre-wrap text-xs text-muted-foreground">{commitment.notes}</p>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap items-center gap-1">
-                <Badge variant="secondary" className="gap-1">
-                  <Repeat2 className="size-3" aria-hidden /> {CADENCE_LABELS[commitment.cadence]}
-                </Badge>
-                {canManage ? (
-                  <>
-                    <Button type="button" size="sm" variant="outline" onClick={() => setPlanning(commitment)}>
-                      <Plus className="size-3.5" aria-hidden /> Planejar próximas
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="ghost"
-                      disabled={pending}
-                      aria-label={`Arquivar distribuição de ${commitment.clientName}`}
-                      onClick={() => startTransition(async () => {
-                        const result = await setCommitmentActive({ clanId, commitmentId: commitment.id, active: false });
-                        if (!result.ok) toast.error(result.error);
-                        else { toast.info("Planejamento arquivado."); refresh(); }
-                      })}
+        active.map((commitment) => {
+          const expanded = expandedCommitments.has(commitment.id);
+          return (
+            <section key={commitment.id} className="panel-cut overflow-hidden rounded-lg border bg-card/50">
+              <div className="flex items-center gap-1 p-2">
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-expanded={expanded}
+                  aria-controls={`distribution-${commitment.id}`}
+                  onClick={() => toggleExpanded(commitment.id)}
+                >
+                  {expanded ? (
+                    <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                  ) : (
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                  )}
+                  <h3 className="min-w-0 flex-1 truncate font-medium">{commitment.clientName}</h3>
+                  {commitment.targetAmount !== null ? (
+                    <span className="flex shrink-0 items-center gap-1.5 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 font-mono text-sm font-semibold text-emerald-400">
+                      <CircleDollarSign className="size-3.5" aria-hidden />
+                      Meta {formatMoney(commitment.targetAmount)}
+                    </span>
+                  ) : commitment.notes ? (
+                    <span
+                      className="flex max-w-40 shrink-0 items-center gap-1.5 truncate rounded-md border border-emerald-400/25 bg-emerald-400/8 px-2.5 py-1 text-sm font-medium text-emerald-300 sm:max-w-64"
+                      title={commitment.notes}
                     >
-                      <Archive className="size-3.5" aria-hidden />
-                    </Button>
-                  </>
+                      <CircleDollarSign className="size-3.5 shrink-0" aria-hidden />
+                      <span className="truncate">{commitment.notes}</span>
+                    </span>
+                  ) : null}
+                </button>
+                {canManage ? (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={`Editar distribuição de ${commitment.clientName}`}
+                    onClick={() => setEditing(commitment)}
+                  >
+                    <Pencil className="size-3.5" aria-hidden />
+                  </Button>
                 ) : null}
               </div>
-            </div>
 
-            {commitment.periods.length > 0 ? (
-              <ul className="grid gap-1">
-                {commitment.periods.map((period) => (
-                  <PeriodRow
-                    key={period.id}
-                    clanId={clanId}
-                    period={period}
-                    canManage={canManage}
-                    selected={selectedPeriods.has(period.id)}
-                    onSelected={(selected) => toggleSelected(period.id, selected)}
-                    onEdit={() => setPeriodEditor({ period, complete: false })}
-                    onComplete={() => setPeriodEditor({ period, complete: true })}
-                    onSaved={refresh}
-                  />
-                ))}
-              </ul>
-            ) : (
-              <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
-                Nenhum período planejado para {year}.
-              </p>
-            )}
-          </section>
-        ))
+              {expanded ? (
+                <div id={`distribution-${commitment.id}`} className="grid gap-3 border-t p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <Badge variant="secondary" className="gap-1">
+                        <Repeat2 className="size-3" aria-hidden /> {CADENCE_LABELS[commitment.cadence]}
+                      </Badge>
+                      {commitment.notes ? (
+                        <p className="mt-2 whitespace-pre-wrap rounded-md bg-muted/35 px-3 py-2 text-sm text-foreground/85">
+                          {commitment.notes}
+                        </p>
+                      ) : null}
+                    </div>
+                    {canManage ? (
+                      <div className="flex items-center gap-1">
+                        <Button type="button" size="sm" variant="outline" onClick={() => setPlanning(commitment)}>
+                          <Plus className="size-3.5" aria-hidden /> Planejar próximas
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="ghost"
+                          disabled={pending}
+                          aria-label={`Arquivar distribuição de ${commitment.clientName}`}
+                          onClick={() => startTransition(async () => {
+                            const result = await setCommitmentActive({ clanId, commitmentId: commitment.id, active: false });
+                            if (!result.ok) toast.error(result.error);
+                            else { toast.info("Planejamento arquivado."); refresh(); }
+                          })}
+                        >
+                          <Archive className="size-3.5" aria-hidden />
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {commitment.periods.length > 0 ? (
+                    <ul className="grid gap-1">
+                      {commitment.periods.map((period) => (
+                        <PeriodRow
+                          key={period.id}
+                          clanId={clanId}
+                          period={period}
+                          canManage={canManage}
+                          selected={selectedPeriods.has(period.id)}
+                          onSelected={(selected) => toggleSelected(period.id, selected)}
+                          onEdit={() => setPeriodEditor({ period, complete: false })}
+                          onComplete={() => setPeriodEditor({ period, complete: true })}
+                          onSaved={refresh}
+                        />
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
+                      Nenhum período planejado para {year}.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+            </section>
+          );
+        })
       )}
 
       <section className="grid gap-3 rounded-lg border bg-card/35 p-4">
@@ -818,6 +979,17 @@ export function CommitmentBoard({
             </div>
             <RangeFields cadence={cadence} start={start} end={end} onStart={setStart} onEnd={setEnd} />
             <div className="grid gap-2">
+              <Label htmlFor="new-distribution-target">Meta de distribuição (opcional)</Label>
+              <Input
+                id="new-distribution-target"
+                value={targetAmount}
+                onChange={(event) => setTargetAmount(event.target.value)}
+                inputMode="decimal"
+                placeholder="Ex.: 200.000,00"
+                maxLength={20}
+              />
+            </div>
+            <div className="grid gap-2">
               <Label htmlFor="distribution-notes">Combinado geral (opcional)</Label>
               <Textarea id="distribution-notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} maxLength={2000} placeholder="Condições gerais, sócios ou cuidados recorrentes…" />
             </div>
@@ -851,6 +1023,15 @@ export function CommitmentBoard({
           commitment={planning}
           today={today}
           onClose={() => setPlanning(null)}
+          onSaved={refresh}
+        />
+      ) : null}
+      {editing ? (
+        <CommitmentEditorDialog
+          key={editing.id}
+          clanId={clanId}
+          commitment={editing}
+          onClose={() => setEditing(null)}
           onSaved={refresh}
         />
       ) : null}
