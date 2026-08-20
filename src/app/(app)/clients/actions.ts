@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { readSheet } from "read-excel-file/node";
 import { z } from "zod";
@@ -18,6 +18,7 @@ import {
   parseClientImportRows,
   type ClientImportCellValue,
 } from "@/lib/clients-import";
+import { isAdminRole } from "@/lib/session";
 
 /**
  * Server Actions das empresas-cliente (Fase 5a).
@@ -292,4 +293,159 @@ export async function importClientsFromSpreadsheet(
   revalidatePath("/clients");
   revalidatePath("/clans/[id]", "page");
   return { ok: true, data: summary };
+}
+
+const deletionSummarySchema = z.object({ clientId: z.uuid() });
+
+export interface ClientDeletionSummary {
+  clientName: string;
+  taskCount: number;
+  closingCount: number;
+  commitmentCount: number;
+  portfolioHolderName: string | null;
+}
+
+/**
+ * Contagem para o dialog de confirmação — a mesma consulta que fundamenta a
+ * mensagem "vai apagar N missões, M fechamentos, P compromissos" antes do
+ * usuário decidir se confirma. Roda na mesma transação que a leitura do
+ * cliente para não haver corrida entre "mostrar o resumo" e "excluir".
+ */
+export async function getClientDeletionSummary(
+  input: z.input<typeof deletionSummarySchema>,
+): Promise<ActionResult<ClientDeletionSummary>> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  if (!isAdminRole(ctx.role)) {
+    return err("Apenas admin/owner pode excluir uma empresa permanentemente.");
+  }
+
+  const parsed = deletionSummarySchema.safeParse(input);
+  if (!parsed.success) return err("Empresa inválida.");
+
+  const summary = await withOrgTx(ctx.orgId, async (tx) => {
+    const [client] = await tx
+      .select({ id: schema.clients.id, name: schema.clients.name })
+      .from(schema.clients)
+      .where(
+        and(
+          eq(schema.clients.id, parsed.data.clientId),
+          eq(schema.clients.orgId, ctx.orgId),
+        ),
+      );
+    if (!client) return null;
+
+    const [[taskRow], [closingRow], [commitmentRow], [portfolioRow]] = await Promise.all([
+      tx
+        .select({ value: count() })
+        .from(schema.tasks)
+        .where(
+          and(eq(schema.tasks.orgId, ctx.orgId), eq(schema.tasks.clientId, client.id)),
+        ),
+      tx
+        .select({ value: count() })
+        .from(schema.accountingClosings)
+        .where(
+          and(
+            eq(schema.accountingClosings.orgId, ctx.orgId),
+            eq(schema.accountingClosings.clientId, client.id),
+          ),
+        ),
+      tx
+        .select({ value: count() })
+        .from(schema.clientCommitments)
+        .where(
+          and(
+            eq(schema.clientCommitments.orgId, ctx.orgId),
+            eq(schema.clientCommitments.clientId, client.id),
+          ),
+        ),
+      tx
+        .select({ name: schema.user.name })
+        .from(schema.fiscalPortfolios)
+        .innerJoin(schema.user, eq(schema.user.id, schema.fiscalPortfolios.userId))
+        .where(
+          and(
+            eq(schema.fiscalPortfolios.orgId, ctx.orgId),
+            eq(schema.fiscalPortfolios.clientId, client.id),
+          ),
+        )
+        .limit(1),
+    ]);
+
+    return {
+      clientName: client.name,
+      taskCount: taskRow.value,
+      closingCount: closingRow.value,
+      commitmentCount: commitmentRow.value,
+      portfolioHolderName: portfolioRow?.name ?? null,
+    };
+  });
+
+  if (!summary) return err("Empresa não encontrada.");
+  return { ok: true, data: summary };
+}
+
+const deletePermanentlySchema = z.object({
+  clientId: z.uuid(),
+  confirmName: z.string().trim().min(1, "Digite o nome da empresa para confirmar."),
+});
+
+/**
+ * Exclusão física de uma empresa-cliente, em cascata: missões, eventos de
+ * missão, transferências, fechamentos, anos de fechamento, carteira,
+ * histórico de carteira e compromissos somem junto (ON DELETE CASCADE nas
+ * FKs — ver migration 0033). `xp_ledger.task_id`/`closing_year_id` e
+ * `guild_notices.client_id` viram NULL em vez de apagar (ON DELETE SET
+ * NULL): o XP já creditado nunca é tocado, só perde o rastro de onde veio.
+ *
+ * Mais restrito que `setClientActive` (que qualquer membro faz): exige
+ * admin/owner, porque o estrago é permanente. Não exige desativar antes —
+ * digitar o nome exato já é a barreira principal.
+ */
+export async function deleteClientPermanently(
+  input: z.input<typeof deletePermanentlySchema>,
+): Promise<ActionResult> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  if (!isAdminRole(ctx.role)) {
+    return err("Apenas admin/owner pode excluir uma empresa permanentemente.");
+  }
+
+  const parsed = deletePermanentlySchema.safeParse(input);
+  if (!parsed.success) {
+    return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+  }
+
+  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
+    const [client] = await tx
+      .select({ id: schema.clients.id, name: schema.clients.name })
+      .from(schema.clients)
+      .where(
+        and(
+          eq(schema.clients.id, parsed.data.clientId),
+          eq(schema.clients.orgId, ctx.orgId),
+        ),
+      )
+      .for("update");
+    if (!client) return err("Empresa não encontrada.");
+
+    if (parsed.data.confirmName !== client.name) {
+      return err("O nome digitado não confere com o nome da empresa.");
+    }
+
+    await tx
+      .delete(schema.clients)
+      .where(and(eq(schema.clients.id, client.id), eq(schema.clients.orgId, ctx.orgId)));
+
+    return { ok: true };
+  });
+
+  if (result.ok) {
+    revalidatePath("/clients");
+    revalidatePath("/clans/[id]", "page");
+    revalidatePath("/profile");
+    revalidatePath("/leaderboard");
+  }
+  return result;
 }
