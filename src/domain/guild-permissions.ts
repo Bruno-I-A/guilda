@@ -127,3 +127,40 @@ export function canDistributeClanTasks(actor: ClanScopedFacts): boolean {
 export function canManageClanCommitments(actor: ClanScopedFacts): boolean {
   return isAdminRole(actor.role) || actor.leadsThisClan;
 }
+
+export interface CompanyFlowActorFacts extends ClanScopedFacts {
+  /** A pessoa ainda participa ativamente do clã Societário. */
+  isActiveCorporateMember: boolean;
+  /** Responsável societário atual do Fluxo. */
+  isAssignedToFlow: boolean;
+}
+
+/** O dono/admin abre a solicitação que chegou do cliente. */
+export function canCreateCompanyFlow(actor: Pick<CompanyFlowActorFacts, "role">): boolean {
+  return isAdminRole(actor.role);
+}
+
+/** Owner/admin supervisiona sem precisar entrar no clã; equipe societária trabalha nele. */
+export function canViewCompanyFlow(actor: CompanyFlowActorFacts): boolean {
+  return isAdminRole(actor.role) || actor.isActiveCorporateMember;
+}
+
+/** Qualquer integrante do Societário pode assumir uma demanda ainda na fila. */
+export function canClaimCompanyFlow(actor: CompanyFlowActorFacts): boolean {
+  return isAdminRole(actor.role) || actor.isActiveCorporateMember;
+}
+
+/** Só quem assumiu, liderança do Societário ou owner/admin pode devolver o resultado. */
+export function canReturnCompanyFlow(actor: CompanyFlowActorFacts): boolean {
+  return (
+    isAdminRole(actor.role) ||
+    (actor.isActiveCorporateMember && (actor.isAssignedToFlow || actor.leadsThisClan))
+  );
+}
+
+/** A ponte para Informativos continua sendo uma decisão do dono/admin. */
+export function canPrepareCompanyFlowInformative(
+  actor: Pick<CompanyFlowActorFacts, "role">,
+): boolean {
+  return isAdminRole(actor.role);
+}

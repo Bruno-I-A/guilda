@@ -1,10 +1,11 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
-import { canHandleInformatives } from "@/domain/guild-permissions";
+import { companyFlowInformativeText } from "@/domain/company-flow";
+import { canHandleInformatives, isAdminRole } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
 import { informativeDraftPayloadSchema } from "@/lib/ai/informative-schema";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
@@ -13,11 +14,16 @@ import { InformativePanel, type DraftView } from "./informative-panel";
 
 export const metadata: Metadata = { title: "Informativos" };
 
-export default async function InformativosPage() {
+export default async function InformativosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ flowId?: string }>;
+}) {
   const session = await requireOrgSession();
   const viewer = await getActiveMember();
   if (!viewer) redirect("/onboarding");
   const role = viewer.role as OrgRole;
+  const { flowId } = await searchParams;
 
   const { pendingDraft, clans, members, leadsAnyClan } = await withOrgTx(
     session.orgId,
@@ -80,6 +86,35 @@ export default async function InformativosPage() {
   );
 
   const canHandle = canHandleInformatives({ role, leadsAnyClan });
+  const flowForInformative = flowId && isAdminRole(role)
+    ? await withOrgTx(session.orgId, async (tx) => {
+        const [row] = await tx
+          .select({ flow: schema.companyFlows, existingClientName: schema.clients.name })
+          .from(schema.companyFlows)
+          .leftJoin(
+            schema.clients,
+            and(
+              eq(schema.clients.orgId, schema.companyFlows.orgId),
+              eq(schema.clients.id, schema.companyFlows.existingClientId),
+            ),
+          )
+          .where(
+            and(
+              eq(schema.companyFlows.orgId, session.orgId),
+              eq(schema.companyFlows.id, flowId),
+              eq(schema.companyFlows.status, "informative_drafting"),
+              isNull(schema.companyFlows.informativeId),
+            ),
+          );
+        return row ?? null;
+      })
+    : null;
+  const initialFlowText = flowForInformative
+    ? companyFlowInformativeText({
+        ...flowForInformative.flow,
+        existingClientName: flowForInformative.existingClientName ?? null,
+      })
+    : "";
 
   // O payload é JSONB: validar antes de renderizar, nunca confiar na forma.
   let draft: DraftView | null = null;
@@ -135,7 +170,13 @@ export default async function InformativosPage() {
       </div>
 
       {canHandle ? (
-        <InformativePanel draft={draft} clans={clans} members={members} />
+        <InformativePanel
+          draft={draft}
+          clans={clans}
+          members={members}
+          initialSourceText={initialFlowText}
+          flowId={flowForInformative?.flow.id}
+        />
       ) : (
         <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
           Processar informativo é função de líder de clã, admin ou owner.

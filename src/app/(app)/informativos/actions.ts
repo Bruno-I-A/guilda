@@ -7,7 +7,7 @@ import { z } from "zod";
 import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
-import { canHandleInformatives } from "@/domain/guild-permissions";
+import { canHandleInformatives, isAdminRole } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
 import {
   err,
@@ -168,6 +168,8 @@ const analyzeSchema = z.object({
     .max(12_000, "O informativo excede 12.000 caracteres. Envie uma empresa por vez."),
   /** Presente só no fluxo "Novo cliente" — empresa já resolvida no passo 1. */
   resolvedCompany: resolvedCompanySchema.optional(),
+  /** Presente quando a prévia nasceu de um Fluxo devolvido pelo Societário. */
+  flowId: z.uuid("Fluxo inválido.").optional(),
 });
 
 /**
@@ -178,6 +180,7 @@ const analyzeSchema = z.object({
 export async function analyzeInformative(input: {
   sourceText: string;
   resolvedCompany?: ResolvedCompany;
+  flowId?: string;
 }): Promise<ActionResult<{ informativeId: string }>> {
   const gate = await requireInformativeActor();
   if (!gate.ok) return gate;
@@ -210,6 +213,26 @@ export async function analyzeInformative(input: {
     source: "panel",
     connectionId: null,
   });
+
+  const flowId = parsed.data.flowId;
+  if (flowId) {
+    const attached = await withOrgTx(gate.actor.orgId, async (tx) => {
+      if (!isAdminRole(gate.actor.role)) return false;
+      const [flow] = await tx
+        .select({ id: schema.companyFlows.id, status: schema.companyFlows.status, informativeId: schema.companyFlows.informativeId })
+        .from(schema.companyFlows)
+        .where(and(eq(schema.companyFlows.orgId, gate.actor.orgId), eq(schema.companyFlows.id, flowId)))
+        .for("update");
+      if (!flow || flow.status !== "informative_drafting" || flow.informativeId) return false;
+      await tx.update(schema.companyFlows).set({ informativeId: saved.id, updatedAt: new Date() })
+        .where(eq(schema.companyFlows.id, flow.id));
+      return true;
+    });
+    if (!attached) {
+      await cancelInformative(gate.actor, saved.id);
+      return err("Este Fluxo não está disponível para criar um Informativo. Reabra-o no Societário e tente novamente.");
+    }
+  }
 
   revalidatePath("/informativos");
   return { ok: true, data: { informativeId: saved.id } };

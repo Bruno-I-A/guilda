@@ -1,6 +1,7 @@
 import {
   CONTABILIDADE_CLAN_SLUG,
   FISCAL_CLAN_SLUG,
+  SOCIETARIO_CLAN_SLUG,
 } from "@/lib/clans/rules";
 
 /**
@@ -19,6 +20,7 @@ export const CLAN_TABS = [
   { key: "commitments", label: "Distribuição de lucros" },
   { key: "portfolio", label: "Carteira" },
   { key: "closings", label: "Fechamentos" },
+  { key: "flow", label: "Fluxo" },
 ] as const;
 
 export type ClanTab = (typeof CLAN_TABS)[number]["key"];
@@ -28,6 +30,7 @@ const TAB_OWNER_SLUG: Partial<Record<ClanTab, string>> = {
   commitments: CONTABILIDADE_CLAN_SLUG,
   portfolio: FISCAL_CLAN_SLUG,
   closings: CONTABILIDADE_CLAN_SLUG,
+  flow: SOCIETARIO_CLAN_SLUG,
 };
 
 export function clanHasPortfolio(clanSlug: string): boolean {
@@ -36,6 +39,10 @@ export function clanHasPortfolio(clanSlug: string): boolean {
 
 export function clanHasClosings(clanSlug: string): boolean {
   return clanSlug === CONTABILIDADE_CLAN_SLUG;
+}
+
+export function clanHasCompanyFlow(clanSlug: string): boolean {
+  return clanSlug === SOCIETARIO_CLAN_SLUG;
 }
 
 export function clanTabsFor(clanSlug: string) {

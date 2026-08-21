@@ -253,6 +253,25 @@ export async function cancelInformative(
       .update(schema.informatives)
       .set({ status: "cancelled", decidedAt: new Date() })
       .where(eq(schema.informatives.id, row.id));
+    const [flow] = await tx
+      .select({ id: schema.companyFlows.id, status: schema.companyFlows.status })
+      .from(schema.companyFlows)
+      .where(and(eq(schema.companyFlows.orgId, actor.orgId), eq(schema.companyFlows.informativeId, row.id)))
+      .for("update");
+    if (flow && flow.status === "informative_drafting") {
+      await tx
+        .update(schema.companyFlows)
+        .set({ status: "awaiting_owner", informativeId: null, updatedAt: new Date() })
+        .where(eq(schema.companyFlows.id, flow.id));
+      await tx.insert(schema.companyFlowEvents).values({
+        orgId: actor.orgId,
+        flowId: flow.id,
+        eventType: "informative_cancelled",
+        previousValue: { status: flow.status, informativeId: row.id },
+        newValue: { status: "awaiting_owner" },
+        actorId: actor.userId,
+      });
+    }
     return { ok: true, message: "Prévia cancelada. Nenhuma missão foi criada.", taskIds: [] };
   });
 }
@@ -638,6 +657,24 @@ export async function confirmInformative(
         createdTaskIds: taskIds,
       })
       .where(eq(schema.informatives.id, informative.id));
+
+    const [flow] = await tx
+      .select({ id: schema.companyFlows.id, status: schema.companyFlows.status })
+      .from(schema.companyFlows)
+      .where(and(eq(schema.companyFlows.orgId, actor.orgId), eq(schema.companyFlows.informativeId, informative.id)))
+      .for("update");
+    if (flow && flow.status === "informative_drafting") {
+      await tx.update(schema.companyFlows).set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
+        .where(eq(schema.companyFlows.id, flow.id));
+      await tx.insert(schema.companyFlowEvents).values({
+        orgId: actor.orgId,
+        flowId: flow.id,
+        eventType: "informative_confirmed",
+        previousValue: { status: flow.status },
+        newValue: { status: "completed", informativeId: informative.id },
+        actorId: actor.userId,
+      });
+    }
 
     const missionMessage =
       taskIds.length === 0

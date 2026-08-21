@@ -102,7 +102,7 @@ Legado: in_progress → awaiting_approval → completed | rejected
 Pré-requisitos: Node 22+, Docker.
 
 ```bash
-cp .env.example .env          # ajuste BETTER_AUTH_SECRET (openssl rand -base64 32)
+cp .env.example .env          # ajuste BETTER_AUTH_SECRET e FLOW_SECRETS_KEY (openssl rand -base64 32)
 npm install
 npm run db:up                 # Postgres 17 em container (cria o role guilda_app)
 npm run db:migrate            # aplica migrations (como owner)
@@ -131,7 +131,7 @@ npm run e2e:phase3   # gamificação: crédito, níveis, ranking, reversão
 ## Deploy na VPS
 
 ```bash
-cp .env.production.example .env   # DOMAIN, senhas e BETTER_AUTH_SECRET
+cp .env.production.example .env   # DOMAIN, senhas, BETTER_AUTH_SECRET e FLOW_SECRETS_KEY
 docker compose up -d --build --remove-orphans
 ```
 

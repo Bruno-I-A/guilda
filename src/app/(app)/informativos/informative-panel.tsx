@@ -78,14 +78,18 @@ export function InformativePanel({
   draft,
   clans,
   members,
+  initialSourceText = "",
+  flowId,
 }: {
   draft: DraftView | null;
   clans: { id: string; name: string }[];
   members: { userId: string; name: string }[];
+  initialSourceText?: string;
+  flowId?: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [sourceText, setSourceText] = useState("");
+  const [sourceText, setSourceText] = useState(initialSourceText);
   const [decisions, setDecisions] = useState<Record<number, Decision>>({});
   const [wizardOpen, setWizardOpen] = useState(false);
 
@@ -102,7 +106,7 @@ export function InformativePanel({
 
   function handleAnalyze() {
     startTransition(async () => {
-      const result = await analyzeInformative({ sourceText });
+      const result = await analyzeInformative({ sourceText, flowId });
       if (!result.ok) {
         toast.error(result.error);
         return;

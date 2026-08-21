@@ -489,16 +489,78 @@ export async function saveInformativeDraft(input: {
   connectionId: string | null;
 }): Promise<{ id: string }> {
   return withOrgTx(input.actor.orgId, async (tx) => {
-    await tx
-      .update(schema.informatives)
-      .set({ status: "cancelled", decidedAt: new Date() })
+    const pendingDrafts = await tx
+      .select({ id: schema.informatives.id })
+      .from(schema.informatives)
       .where(
         and(
           eq(schema.informatives.orgId, input.actor.orgId),
           eq(schema.informatives.requestedBy, input.actor.userId),
           eq(schema.informatives.status, "pending"),
         ),
-      );
+      )
+      .for("update", { of: schema.informatives });
+
+    const pendingIds = pendingDrafts.map((draft) => draft.id);
+    if (pendingIds.length > 0) {
+      await tx
+        .update(schema.informatives)
+        .set({ status: "cancelled", decidedAt: new Date() })
+        .where(
+          and(
+            eq(schema.informatives.orgId, input.actor.orgId),
+            inArray(schema.informatives.id, pendingIds),
+          ),
+        );
+
+      // Um rascunho que veio do Fluxo não pode deixar a solicitação presa em
+      // "preparando informativo" caso o owner abra outra prévia. O vínculo e
+      // a trilha de auditoria são revertidos na mesma transação do descarte.
+      const attachedFlows = await tx
+        .select({
+          id: schema.companyFlows.id,
+          informativeId: schema.companyFlows.informativeId,
+        })
+        .from(schema.companyFlows)
+        .where(
+          and(
+            eq(schema.companyFlows.orgId, input.actor.orgId),
+            eq(schema.companyFlows.status, "informative_drafting"),
+            inArray(schema.companyFlows.informativeId, pendingIds),
+          ),
+        )
+        .for("update", { of: schema.companyFlows });
+
+      for (const flow of attachedFlows) {
+        await tx
+          .update(schema.companyFlows)
+          .set({
+            status: "awaiting_owner",
+            informativeId: null,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(schema.companyFlows.orgId, input.actor.orgId),
+              eq(schema.companyFlows.id, flow.id),
+              eq(schema.companyFlows.status, "informative_drafting"),
+            ),
+          );
+        await tx.insert(schema.companyFlowEvents).values({
+          orgId: input.actor.orgId,
+          flowId: flow.id,
+          eventType: "informative_cancelled",
+          previousValue: {
+            status: "informative_drafting",
+            informativeId: flow.informativeId,
+          },
+          newValue: { status: "awaiting_owner", informativeId: null },
+          note: "Rascunho substituído por uma nova prévia do mesmo responsável.",
+          actorId: input.actor.userId,
+        });
+      }
+    }
+
     const [created] = await tx
       .insert(schema.informatives)
       .values({

@@ -25,6 +25,7 @@ import { CommitmentsTab } from "./commitments-tab";
 import { MembersTab } from "./members-tab";
 import { MissionsTab } from "./missions-tab";
 import { PortfolioTab } from "./portfolio-tab";
+import { CompanyFlowTab } from "./company-flow-tab";
 
 export const metadata: Metadata = { title: "Clã" };
 
@@ -208,6 +209,16 @@ export default async function ClanPage({
 
       {activeTab === "closings" ? (
         <ClosingsTab orgId={session.orgId} clanId={clan.id} params={filters} />
+      ) : null}
+
+      {activeTab === "flow" ? (
+        <CompanyFlowTab
+          orgId={session.orgId}
+          clanId={clan.id}
+          viewerId={session.user.id}
+          role={role}
+          leadsThisClan={leadsThisClan}
+        />
       ) : null}
     </div>
   );

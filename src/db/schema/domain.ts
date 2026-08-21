@@ -694,6 +694,213 @@ export const informativeSource = pgEnum("informative_source", [
   "panel",
 ]);
 
+/** Pedido físico que o dono encaminha ao Societário antes de virar informativo. */
+export const companyFlowKind = pgEnum("company_flow_kind", [
+  "opening",
+  "amendment",
+  "closure",
+]);
+
+/** Etapas do vai-e-volta dono → Societário → dono → Informativos. */
+export const companyFlowStatus = pgEnum("company_flow_status", [
+  "sent_to_corporate",
+  "in_progress",
+  "awaiting_owner",
+  "informative_drafting",
+  "completed",
+  "cancelled",
+]);
+
+export const companyFlowSource = pgEnum("company_flow_source", [
+  "written",
+  "whatsapp",
+  "phone",
+  "other",
+]);
+
+/** Histórico operacional — só recebe novos eventos, nunca é reescrito. */
+export const companyFlowEventType = pgEnum("company_flow_event_type", [
+  "created",
+  "claimed",
+  "assigned",
+  "returned_to_owner",
+  "informative_prepared",
+  "informative_cancelled",
+  "informative_confirmed",
+  "cancelled",
+]);
+
+export interface CompanyFlowActivity {
+  code?: string | null;
+  description: string;
+}
+
+export interface CompanyFlowQsaMember {
+  name: string;
+  document?: string | null;
+  qualification?: string | null;
+  participation?: string | null;
+}
+
+/**
+ * Fluxo Societário. A senha do Gov.br deliberadamente NÃO mora nesta tabela:
+ * ela fica cifrada e separada em `company_flow_secrets`, fora de eventos,
+ * listagens e informativos.
+ */
+export const companyFlows = pgTable(
+  "company_flows",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    societarioClanId: uuid("societario_clan_id").notNull(),
+    kind: companyFlowKind("kind").notNull(),
+    status: companyFlowStatus("status").notNull().default("sent_to_corporate"),
+    source: companyFlowSource("source").notNull().default("written"),
+    existingClientId: uuid("existing_client_id"),
+    requestedLegalName: varchar("requested_legal_name", { length: 200 }),
+    requestedActivities: jsonb("requested_activities")
+      .$type<CompanyFlowActivity[]>()
+      .notNull()
+      .default([]),
+    clientResponsible: varchar("client_responsible", { length: 160 }),
+    qsa: jsonb("qsa").$type<CompanyFlowQsaMember[]>().notNull().default([]),
+    contactName: varchar("contact_name", { length: 160 }),
+    contactPhone: varchar("contact_phone", { length: 40 }),
+    contactEmail: varchar("contact_email", { length: 200 }),
+    requestDetails: text("request_details"),
+    assignedTo: text("assigned_to").references(() => user.id),
+    resultCnpj: varchar("result_cnpj", { length: 14 }),
+    approvedLegalName: varchar("approved_legal_name", { length: 200 }),
+    approvedActivities: jsonb("approved_activities")
+      .$type<CompanyFlowActivity[]>()
+      .notNull()
+      .default([]),
+    processingNotes: text("processing_notes"),
+    informativeId: uuid("informative_id"),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id),
+    returnedAt: timestamp("returned_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "company_flows_org_societario_clan_fk",
+      columns: [t.orgId, t.societarioClanId],
+      foreignColumns: [clans.orgId, clans.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "company_flows_org_client_fk",
+      columns: [t.orgId, t.existingClientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "company_flows_org_informative_fk",
+      columns: [t.orgId, t.informativeId],
+      foreignColumns: [informatives.orgId, informatives.id],
+    }).onDelete("restrict"),
+    uniqueIndex("company_flows_org_id_uidx").on(t.orgId, t.id),
+    index("company_flows_org_clan_status_idx").on(
+      t.orgId,
+      t.societarioClanId,
+      t.status,
+      t.updatedAt,
+    ),
+    index("company_flows_org_assigned_status_idx").on(
+      t.orgId,
+      t.assignedTo,
+      t.status,
+    ),
+    index("company_flows_org_creator_idx").on(t.orgId, t.createdBy, t.updatedAt),
+    uniqueIndex("company_flows_org_informative_uidx")
+      .on(t.orgId, t.informativeId)
+      .where(sql`${t.informativeId} IS NOT NULL`),
+    check(
+      "company_flows_kind_client_check",
+      sql`(${t.kind} = 'opening' AND ${t.existingClientId} IS NULL) OR (${t.kind} <> 'opening' AND ${t.existingClientId} IS NOT NULL)`,
+    ),
+    check(
+      "company_flows_result_cnpj_check",
+      sql`${t.resultCnpj} IS NULL OR ${t.resultCnpj} ~ '^\\d{14}$'`,
+    ),
+  ],
+);
+
+/** Credencial do Gov.br cifrada com AES-GCM; uma por fluxo, sem histórico. */
+export const companyFlowSecrets = pgTable(
+  "company_flow_secrets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    flowId: uuid("flow_id").notNull(),
+    ciphertext: text("ciphertext").notNull(),
+    iv: varchar("iv", { length: 32 }).notNull(),
+    authTag: varchar("auth_tag", { length: 32 }).notNull(),
+    keyVersion: smallint("key_version").notNull().default(1),
+    updatedBy: text("updated_by")
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "company_flow_secrets_org_flow_fk",
+      columns: [t.orgId, t.flowId],
+      foreignColumns: [companyFlows.orgId, companyFlows.id],
+    }).onDelete("cascade"),
+    uniqueIndex("company_flow_secrets_org_flow_uidx").on(t.orgId, t.flowId),
+    uniqueIndex("company_flow_secrets_org_id_uidx").on(t.orgId, t.id),
+  ],
+);
+
+export const companyFlowEvents = pgTable(
+  "company_flow_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    flowId: uuid("flow_id").notNull(),
+    eventType: companyFlowEventType("event_type").notNull(),
+    previousValue: jsonb("previous_value"),
+    newValue: jsonb("new_value"),
+    note: text("note"),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "company_flow_events_org_flow_fk",
+      columns: [t.orgId, t.flowId],
+      foreignColumns: [companyFlows.orgId, companyFlows.id],
+    }).onDelete("cascade"),
+    index("company_flow_events_org_flow_created_idx").on(
+      t.orgId,
+      t.flowId,
+      t.createdAt,
+    ),
+  ],
+);
+
 
 
 /**

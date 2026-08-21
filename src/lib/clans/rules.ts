@@ -14,6 +14,9 @@ export const FISCAL_CLAN_SLUG = "fiscal";
 /** O clã que trabalha por fechamento anual das empresas. */
 export const CONTABILIDADE_CLAN_SLUG = "contabilidade";
 
+/** O dono encaminha ao Societário e recebe o retorno por esta área. */
+export const SOCIETARIO_CLAN_SLUG = "societario";
+
 export const ACTIVE_ASSIGNED_TASK_STATUSES = [
   "pending",
   "in_progress",

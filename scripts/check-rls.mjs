@@ -31,6 +31,9 @@ const NEW_TABLES = [
   "office_fee_profile_events",
   "office_fee_control_periods",
   "office_fee_control_events",
+  "company_flows",
+  "company_flow_secrets",
+  "company_flow_events",
 ];
 
 const APPEND_ONLY_TABLES = [
@@ -40,6 +43,7 @@ const APPEND_ONLY_TABLES = [
   "fiscal_control_events",
   "office_fee_profile_events",
   "office_fee_control_events",
+  "company_flow_events",
 ];
 
 const SPLIT_POLICY_TABLES = new Set([
@@ -48,6 +52,7 @@ const SPLIT_POLICY_TABLES = new Set([
   "fiscal_control_events",
   "office_fee_profile_events",
   "office_fee_control_events",
+  "company_flow_events",
 ]);
 
 let failures = 0;
