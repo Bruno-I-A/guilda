@@ -70,6 +70,7 @@ export interface CompanyFlowDraftContext {
   existingClientId: string | null;
   legalName: string | null;
   normalizedCnpj: string | null;
+  taxRegime: TaxRegime | null;
 }
 
 export type BuildInformativeDraftResult =
@@ -391,13 +392,15 @@ export async function buildInformativeDraft(
   }
 
   const finalTaxRegime = flowContext
-    ? null
+    ? flowContext.taxRegime
     : resolvedCompany?.taxRegime ?? extracted.data.company.taxRegime;
   // Empresa já resolvida por CNPJ: legalName/CNPJ/regime sempre presentes
   // (o passo 1 da tela exige regime antes de liberar o passo 2) — o único
   // motivo para NÃO criar é já existir um cliente com este CNPJ.
   const createClient = flowContext
-    ? false
+    ? flowContext.kind === "opening" &&
+      !existingClient &&
+      Boolean(finalLegalName && validCnpj && finalTaxRegime)
     : resolvedCompany
       ? !existingClient
       : sourceFormat === "informative" &&
@@ -420,6 +423,16 @@ export async function buildInformativeDraft(
   ) {
     warnings.push(
       "Regime tributário não identificado; a empresa não poderá ser criada automaticamente.",
+    );
+  }
+  if (
+    flowContext &&
+    flowContext.kind === "opening" &&
+    !existingClient &&
+    !finalTaxRegime
+  ) {
+    warnings.push(
+      "Regime tributário ausente no Fluxo; a empresa não poderá ser criada automaticamente.",
     );
   }
   if ((resolvedCompany || flowContext) && existingClient) {
@@ -555,13 +568,14 @@ export async function saveInformativeDraft(input: {
       const attachedFlows = await tx
         .select({
           id: schema.companyFlows.id,
+          status: schema.companyFlows.status,
           informativeId: schema.companyFlows.informativeId,
         })
         .from(schema.companyFlows)
         .where(
           and(
             eq(schema.companyFlows.orgId, input.actor.orgId),
-            eq(schema.companyFlows.status, "informative_drafting"),
+            inArray(schema.companyFlows.status, ["informative_drafting", "completed"]),
             inArray(schema.companyFlows.informativeId, pendingIds),
           ),
         )
@@ -573,13 +587,14 @@ export async function saveInformativeDraft(input: {
           .set({
             status: "awaiting_owner",
             informativeId: null,
+            completedAt: null,
             updatedAt: new Date(),
           })
           .where(
             and(
               eq(schema.companyFlows.orgId, input.actor.orgId),
               eq(schema.companyFlows.id, flow.id),
-              eq(schema.companyFlows.status, "informative_drafting"),
+              inArray(schema.companyFlows.status, ["informative_drafting", "completed"]),
             ),
           );
         await tx.insert(schema.companyFlowEvents).values({
@@ -587,7 +602,7 @@ export async function saveInformativeDraft(input: {
           flowId: flow.id,
           eventType: "informative_cancelled",
           previousValue: {
-            status: "informative_drafting",
+            status: flow.status,
             informativeId: flow.informativeId,
           },
           newValue: { status: "awaiting_owner", informativeId: null },

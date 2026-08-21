@@ -91,6 +91,8 @@ describe("companyFlowNoticeBody", () => {
       legalName: "SCHARRF & CIA LTDA",
       cnpj: "04502526000120",
       activities: [{ description: "Atividades de contabilidade" }],
+      taxRegime: "simples",
+      iptu: "123456",
       socialCapital: "10000.00",
       roomSize: "50 m²",
       address: "Rua Senador Salgado Filho, 551, Centro, GV",
@@ -105,6 +107,8 @@ describe("companyFlowNoticeBody", () => {
     });
 
     expect(body).toContain("Capital social: R$");
+    expect(body).toContain("Regime tributário: Simples Nacional");
+    expect(body).toContain("IPTU: 123456");
     expect(body).toContain("Tamanho da sala: 50 m²");
     expect(body).toContain("CPF/CNPJ: 000.000.000-00");
     expect(body).toContain("Retorno do Societário\nDeferida.");

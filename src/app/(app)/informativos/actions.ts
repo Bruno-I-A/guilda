@@ -211,6 +211,7 @@ export async function analyzeInformative(input: {
           requestedLegalName: schema.companyFlows.requestedLegalName,
           approvedLegalName: schema.companyFlows.approvedLegalName,
           resultCnpj: schema.companyFlows.resultCnpj,
+          taxRegime: schema.companyFlows.taxRegime,
         })
         .from(schema.companyFlows)
         .where(
@@ -231,6 +232,7 @@ export async function analyzeInformative(input: {
       existingClientId: flow.existingClientId,
       legalName: flow.approvedLegalName ?? flow.requestedLegalName,
       normalizedCnpj: flow.resultCnpj,
+      taxRegime: flow.taxRegime,
     };
     sourceForAi = actions;
   }
@@ -271,8 +273,21 @@ export async function analyzeInformative(input: {
         .where(and(eq(schema.companyFlows.orgId, gate.actor.orgId), eq(schema.companyFlows.id, flowId)))
         .for("update");
       if (!flow || flow.status !== "informative_drafting" || flow.informativeId) return false;
-      await tx.update(schema.companyFlows).set({ informativeId: saved.id, updatedAt: new Date() })
+      await tx.update(schema.companyFlows).set({
+        informativeId: saved.id,
+        status: "completed",
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
         .where(eq(schema.companyFlows.id, flow.id));
+      await tx.insert(schema.companyFlowEvents).values({
+        orgId: gate.actor.orgId,
+        flowId: flow.id,
+        eventType: "informative_prepared",
+        previousValue: { status: flow.status },
+        newValue: { status: "completed", informativeId: saved.id },
+        actorId: gate.actor.userId,
+      });
       return true;
     });
     if (!attached) {

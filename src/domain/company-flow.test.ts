@@ -12,6 +12,8 @@ describe("Fluxo Societário", () => {
       existingClientName: null,
       requestedLegalName: "NOME PRETENDIDO LTDA",
       requestedActivities: [{ description: "Comércio" }],
+      taxRegime: "simples",
+      iptu: "123456",
       socialCapital: "30000.00",
       roomSize: "45 m²",
       address: "Rua Exemplo, 100, Porto Alegre/RS",
@@ -31,6 +33,8 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("NOME APROVADO LTDA");
     expect(text).toContain("CNPJ: 12345678000199");
     expect(text).toContain("Atividades aprovadas: Comércio varejista");
+    expect(text).toContain("Regime tributário: Simples Nacional");
+    expect(text).toContain("IPTU: 123456");
     expect(text).toContain("Capital social: R$");
     expect(text).toContain("Tamanho da sala: 45 m²");
     expect(text).toContain("Endereço: Rua Exemplo, 100, Porto Alegre/RS");

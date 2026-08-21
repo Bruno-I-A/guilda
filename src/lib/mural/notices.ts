@@ -3,6 +3,7 @@ import "server-only";
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import type { FlowActivity, FlowQsaMember } from "@/domain/company-flow";
+import { TAX_REGIME_LABELS, type TaxRegime } from "@/lib/clients-ui";
 import { formatBRLCurrency } from "@/lib/currency";
 import { appUrl } from "@/lib/telegram/notification-payload";
 import {
@@ -153,6 +154,8 @@ export function companyFlowNoticeBody(input: {
   legalName: string;
   cnpj: string | null;
   activities: readonly FlowActivity[];
+  taxRegime: TaxRegime | null;
+  iptu: string | null;
   socialCapital: string | null;
   roomSize: string | null;
   address: string | null;
@@ -170,6 +173,8 @@ export function companyFlowNoticeBody(input: {
   if (input.activities.length > 0) {
     lines.push(`Atividades: ${input.activities.map((activity) => activity.description).join("; ")}`);
   }
+  if (input.taxRegime) lines.push(`Regime tributário: ${TAX_REGIME_LABELS[input.taxRegime]}`);
+  if (input.iptu) lines.push(`IPTU: ${input.iptu}`);
   if (input.socialCapital) lines.push(`Capital social: ${formatBRLCurrency(input.socialCapital)}`);
   if (input.roomSize) lines.push(`Tamanho da sala: ${input.roomSize}`);
   if (input.address) lines.push(`Endereço: ${input.address}`);

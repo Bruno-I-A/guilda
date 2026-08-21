@@ -262,10 +262,10 @@ export async function cancelInformative(
       .from(schema.companyFlows)
       .where(and(eq(schema.companyFlows.orgId, actor.orgId), eq(schema.companyFlows.informativeId, row.id)))
       .for("update");
-    if (flow && flow.status === "informative_drafting") {
+    if (flow && (flow.status === "informative_drafting" || flow.status === "completed")) {
       await tx
         .update(schema.companyFlows)
-        .set({ status: "awaiting_owner", informativeId: null, updatedAt: new Date() })
+        .set({ status: "awaiting_owner", informativeId: null, completedAt: null, updatedAt: new Date() })
         .where(eq(schema.companyFlows.id, flow.id));
       await tx.insert(schema.companyFlowEvents).values({
         orgId: actor.orgId,
@@ -649,6 +649,8 @@ export async function confirmInformative(
           legalName: flowLegalName,
           cnpj: flow.resultCnpj,
           activities: flow.approvedActivities.length > 0 ? flow.approvedActivities : flow.requestedActivities,
+          taxRegime: flow.taxRegime,
+          iptu: flow.iptu,
           socialCapital: flow.socialCapital,
           roomSize: flow.roomSize,
           address: flow.address,
@@ -705,9 +707,11 @@ export async function confirmInformative(
       .where(eq(schema.informatives.id, informative.id));
 
     const flow = linkedFlow?.flow;
-    if (flow && flow.status === "informative_drafting") {
-      await tx.update(schema.companyFlows).set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
-        .where(eq(schema.companyFlows.id, flow.id));
+    if (flow && (flow.status === "informative_drafting" || flow.status === "completed")) {
+      if (flow.status === "informative_drafting") {
+        await tx.update(schema.companyFlows).set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
+          .where(eq(schema.companyFlows.id, flow.id));
+      }
       await tx.insert(schema.companyFlowEvents).values({
         orgId: actor.orgId,
         flowId: flow.id,

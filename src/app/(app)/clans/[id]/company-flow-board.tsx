@@ -50,6 +50,7 @@ import {
   type FlowQsaMember,
 } from "@/domain/company-flow";
 import { formatCnpj } from "@/domain/cnpj";
+import { TAX_REGIME_LABELS, TAX_REGIMES, type TaxRegime } from "@/lib/clients-ui";
 import { formatBRLCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
@@ -73,6 +74,8 @@ export interface CompanyFlowView {
   existingClientName: string | null;
   requestedLegalName: string | null;
   requestedActivities: FlowActivity[];
+  taxRegime: TaxRegime | null;
+  iptu: string | null;
   socialCapital: string | null;
   roomSize: string | null;
   address: string | null;
@@ -190,6 +193,8 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
       <p className="hud-label">Solicitação do cliente</p>
       <p><strong>Razão social:</strong> {row.requestedLegalName ?? row.existingClientName ?? "—"}</p>
       {row.requestedActivities.length > 0 ? <p><strong>Atividades:</strong> {row.requestedActivities.map((activity) => activity.description).join("; ")}</p> : null}
+      {row.taxRegime ? <p><strong>Regime tributário:</strong> {TAX_REGIME_LABELS[row.taxRegime]}</p> : null}
+      {row.iptu ? <p><strong>IPTU:</strong> {row.iptu}</p> : null}
       {row.socialCapital ? <p><strong>Capital social:</strong> {formatBRLCurrency(row.socialCapital)}</p> : null}
       {row.roomSize ? <p><strong>Tamanho da sala:</strong> {row.roomSize}</p> : null}
       {row.address ? <p className="whitespace-pre-wrap"><strong>Endereço:</strong> {row.address}</p> : null}
@@ -227,6 +232,8 @@ function NewCompanyFlowDialog({
   const [existingClientId, setExistingClientId] = useState("");
   const [legalName, setLegalName] = useState("");
   const [activities, setActivities] = useState("");
+  const [taxRegime, setTaxRegime] = useState<TaxRegime | "">("");
+  const [iptu, setIptu] = useState("");
   const [socialCapital, setSocialCapital] = useState("");
   const [roomSize, setRoomSize] = useState("");
   const [address, setAddress] = useState("");
@@ -247,6 +254,8 @@ function NewCompanyFlowDialog({
         existingClientId: kind === "opening" ? null : existingClientId || null,
         requestedLegalName: legalName,
         requestedActivities: splitActivities(activities),
+        taxRegime: taxRegime || null,
+        iptu,
         socialCapital,
         roomSize,
         address,
@@ -283,6 +292,8 @@ function NewCompanyFlowDialog({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5"><Label>Tipo</Label><Select value={kind} onValueChange={(value) => setKind(value as CompanyFlowKind)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="opening">Abertura</SelectItem><SelectItem value="amendment">Alteração</SelectItem><SelectItem value="closure">Baixa</SelectItem></SelectContent></Select></div>
             <div className="grid gap-1.5"><Label>Como o pedido chegou</Label><Select value={source} onValueChange={(value) => setSource(value as CompanyFlowSource)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(FLOW_SOURCE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
+            <div className="grid gap-1.5"><Label>Regime tributário{opening ? " *" : ""}</Label><Select value={taxRegime || undefined} onValueChange={(value) => setTaxRegime(value as TaxRegime)}><SelectTrigger><SelectValue placeholder="Selecione o regime" /></SelectTrigger><SelectContent>{TAX_REGIMES.map((value) => <SelectItem key={value} value={value}>{TAX_REGIME_LABELS[value]}</SelectItem>)}</SelectContent></Select></div>
+            <div className="grid gap-1.5"><Label>IPTU</Label><Input value={iptu} onChange={(event) => setIptu(event.target.value)} placeholder="Inscrição ou referência do IPTU" /></div>
           </div>
 
           {opening ? (
@@ -425,9 +436,9 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
           {row.hasGovSecret ? <section className="rounded-md border border-primary/30 bg-primary/5 p-3"><p className="flex items-center gap-1.5 font-medium"><KeyRound className="size-4" aria-hidden /> Acesso Gov.br protegido</p>{revealedSecret ? <p className="mt-2 rounded bg-background px-2 py-1 font-mono text-sm break-all">{revealedSecret}</p> : <Button type="button" className="mt-2" variant="outline" size="sm" disabled={pending || !row.canReturn} onClick={revealSecret}><Eye aria-hidden /> Revelar senha</Button>}</section> : null}
           {row.status === "in_progress" && row.canReturn ? <section className="grid gap-3 border-t pt-4"><div><h3 className="font-medium">Retorno do Societário</h3><p className="text-xs text-muted-foreground">Registre os dados aprovados antes de devolver ao dono.</p></div><div className="grid gap-2 sm:grid-cols-[1fr_auto]"><div className="grid gap-1.5"><Label>CNPJ aprovado</Label><Input value={cnpj} onChange={(event) => setCnpj(event.target.value)} placeholder="00.000.000/0000-00" inputMode="numeric" /></div><Button type="button" className="self-end" variant="outline" disabled={pending || !cnpj.trim()} onClick={lookupCnpj}><Search aria-hidden /> Consultar CNPJ</Button></div><div className="grid gap-1.5"><Label>Razão social aprovada</Label><Input value={approvedName} onChange={(event) => setApprovedName(event.target.value)} /></div><div className="grid gap-1.5"><Label>Atividades aprovadas</Label><Textarea value={approvedActivities} onChange={(event) => setApprovedActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div><div className="grid gap-1.5"><Label>Retorno e observações</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder="O que foi deferido, pendências ou cuidados" /></div><Button type="button" disabled={pending || !notes.trim()} onClick={returnToOwner}><Send aria-hidden /> Devolver ao dono</Button></section> : null}
           {row.status === "awaiting_owner" && row.canPrepareInformative ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Próximo passo</h3><p className="text-xs text-muted-foreground">O texto será pré-preenchido com o retorno aprovado; o dono completa as ações de Fiscal, Contabilidade e RH antes de confirmar.</p><Button type="button" disabled={pending} onClick={prepareInformative}><ClipboardPenLine aria-hidden /> Preparar Informativo</Button></section> : null}
-          {row.status === "informative_drafting" ? <p className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">A prévia está em Informativos. Quando for confirmada, este Fluxo será concluído automaticamente.</p> : null}
+          {row.status === "informative_drafting" ? <p className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">A preparação do Informativo está aberta. O Fluxo será concluído quando a prévia for gerada em Informativos.</p> : null}
           {row.status === "sent_to_corporate" && row.canClaim ? <Button type="button" disabled={pending} onClick={claim}><UserRoundCheck aria-hidden /> Assumir processamento</Button> : null}
-          {row.status === "completed" ? <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-300"><CheckCircle2 className="mr-1 inline size-4" aria-hidden /> Informativo confirmado e Fluxo concluído.</div> : null}
+          {row.status === "completed" ? <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-300"><CheckCircle2 className="mr-1 inline size-4" aria-hidden /> Informativo gerado e Fluxo concluído. A confirmação das missões segue em Informativos.</div> : null}
           {row.history.length > 0 ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Histórico</h3>{row.history.map((event) => <div key={event.id} className="rounded-md bg-muted/35 px-3 py-2 text-xs"><span className="font-medium">{eventLabel(event.eventType)}</span><span className="text-muted-foreground"> · {event.actorName} · {new Date(event.createdAt).toLocaleString("pt-BR")}</span>{event.note ? <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{event.note}</p> : null}</div>)}</section> : null}
         </div>
         <DialogFooter className="gap-2 sm:justify-between">

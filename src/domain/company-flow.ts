@@ -1,4 +1,5 @@
 import { formatBRLCurrency } from "@/lib/currency";
+import { TAX_REGIME_LABELS, type TaxRegime } from "@/lib/clients-ui";
 
 export const COMPANY_FLOW_KINDS = ["opening", "amendment", "closure"] as const;
 export type CompanyFlowKind = (typeof COMPANY_FLOW_KINDS)[number];
@@ -67,6 +68,8 @@ export interface FlowInformativeInput {
   existingClientName: string | null;
   requestedLegalName: string | null;
   requestedActivities: readonly FlowActivity[];
+  taxRegime: TaxRegime | null;
+  iptu: string | null;
   socialCapital: string | null;
   roomSize: string | null;
   address: string | null;
@@ -109,6 +112,8 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
     flow.resultCnpj ? `CNPJ: ${flow.resultCnpj}` : null,
     approvedActivities ? `Atividades aprovadas: ${approvedActivities}` : null,
     !approvedActivities && requestedActivities ? `Atividades solicitadas: ${requestedActivities}` : null,
+    flow.taxRegime ? `Regime tributário: ${TAX_REGIME_LABELS[flow.taxRegime]}` : null,
+    flow.iptu ? `IPTU: ${flow.iptu}` : null,
     flow.socialCapital ? `Capital social: ${formatBRLCurrency(flow.socialCapital)}` : null,
     flow.roomSize ? `Tamanho da sala: ${flow.roomSize}` : null,
     flow.address ? `Endereço: ${flow.address}` : null,

@@ -12,6 +12,7 @@ import {
   companyFlowInformativeText,
 } from "@/domain/company-flow";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
+import { TAX_REGIMES } from "@/lib/clients-ui";
 import {
   canClaimCompanyFlow,
   canCreateCompanyFlow,
@@ -76,6 +77,8 @@ const flowBaseSchema = z.object({
   existingClientId: z.uuid("Empresa inválida.").nullable().optional(),
   requestedLegalName: z.string().trim().max(200).optional(),
   requestedActivities: z.array(activitySchema).max(30).default([]),
+  taxRegime: z.enum(TAX_REGIMES).nullable().optional(),
+  iptu: z.string().trim().max(120).optional(),
   socialCapital: optionalMoneySchema("Capital social").optional(),
   roomSize: z.string().trim().max(100).optional(),
   address: z.string().trim().max(1000).optional(),
@@ -95,6 +98,9 @@ const createFlowSchema = flowBaseSchema.superRefine((data, ctx) => {
     }
     if (data.requestedActivities.length === 0) {
       ctx.addIssue({ code: "custom", path: ["requestedActivities"], message: "Informe ao menos uma atividade." });
+    }
+    if (!data.taxRegime) {
+      ctx.addIssue({ code: "custom", path: ["taxRegime"], message: "Informe o regime tributário." });
     }
     if (data.qsa.length === 0) {
       ctx.addIssue({ code: "custom", path: ["qsa"], message: "Informe ao menos um integrante do QSA." });
@@ -178,6 +184,8 @@ export async function createCompanyFlow(
         existingClientId: data.kind === "opening" ? null : data.existingClientId ?? null,
         requestedLegalName: data.requestedLegalName || null,
         requestedActivities: data.requestedActivities,
+        taxRegime: data.taxRegime ?? null,
+        iptu: data.iptu || null,
         socialCapital: data.socialCapital ?? null,
         roomSize: data.roomSize || null,
         address: data.address || null,
@@ -347,14 +355,6 @@ export async function prepareCompanyFlowInformative(
     if (flow.flow.status !== "informative_drafting") {
       await tx.update(schema.companyFlows).set({ status: "informative_drafting", updatedAt: new Date() })
         .where(eq(schema.companyFlows.id, flow.flow.id));
-      await tx.insert(schema.companyFlowEvents).values({
-        orgId: ctx.orgId,
-        flowId: flow.flow.id,
-        eventType: "informative_prepared",
-        previousValue: { status: flow.flow.status },
-        newValue: { status: "informative_drafting" },
-        actorId: ctx.userId,
-      });
     }
     return { ok: true, data: { sourceText } };
   });

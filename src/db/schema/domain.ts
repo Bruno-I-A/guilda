@@ -764,6 +764,8 @@ export const companyFlows = pgTable(
       .$type<CompanyFlowActivity[]>()
       .notNull()
       .default([]),
+    taxRegime: taxRegime("tax_regime"),
+    iptu: varchar("iptu", { length: 120 }),
     /** Dados físicos e societários solicitados para a abertura. */
     socialCapital: numeric("social_capital", { precision: 15, scale: 2 }),
     roomSize: varchar("room_size", { length: 100 }),
