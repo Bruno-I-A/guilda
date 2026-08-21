@@ -2,6 +2,8 @@ import "server-only";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import type { FlowActivity, FlowQsaMember } from "@/domain/company-flow";
+import { formatBRLCurrency } from "@/lib/currency";
 import { appUrl } from "@/lib/telegram/notification-payload";
 import {
   enqueueTelegramOrgBroadcast,
@@ -138,6 +140,55 @@ export function newClientNoticeBody(input: {
     input.taskCount === 1
       ? "1 missão foi criada a partir deste informativo."
       : `${input.taskCount} missões foram criadas a partir deste informativo.`,
+  );
+  return lines.join("\n");
+}
+
+/**
+ * O Fluxo é a fonte oficial dos dados societários. O aviso aproveita esse
+ * registro diretamente, em vez de depender do texto reduzido enviado à IA.
+ * Credenciais Gov.br nunca entram aqui.
+ */
+export function companyFlowNoticeBody(input: {
+  legalName: string;
+  cnpj: string | null;
+  activities: readonly FlowActivity[];
+  socialCapital: string | null;
+  roomSize: string | null;
+  address: string | null;
+  clientResponsible: string | null;
+  qsa: readonly FlowQsaMember[];
+  contactName: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  requestDetails: string | null;
+  processingNotes: string | null;
+  taskCount: number;
+}): string {
+  const lines = ["Dados da abertura societária", `Razão social: ${input.legalName}`];
+  if (input.cnpj) lines.push(`CNPJ: ${input.cnpj}`);
+  if (input.activities.length > 0) {
+    lines.push(`Atividades: ${input.activities.map((activity) => activity.description).join("; ")}`);
+  }
+  if (input.socialCapital) lines.push(`Capital social: ${formatBRLCurrency(input.socialCapital)}`);
+  if (input.roomSize) lines.push(`Tamanho da sala: ${input.roomSize}`);
+  if (input.address) lines.push(`Endereço: ${input.address}`);
+  if (input.clientResponsible) lines.push(`Responsável: ${input.clientResponsible}`);
+  if (input.qsa.length > 0) {
+    lines.push("", "QSA");
+    for (const member of input.qsa) {
+      lines.push(`• ${[member.name, member.document && `CPF/CNPJ: ${member.document}`, member.qualification, member.participation].filter(Boolean).join(" — ")}`);
+    }
+  }
+  const contact = [input.contactName, input.contactPhone, input.contactEmail].filter(Boolean).join(" · ");
+  if (contact) lines.push(`Contato: ${contact}`);
+  if (input.requestDetails) lines.push("", "Solicitação", input.requestDetails);
+  if (input.processingNotes) lines.push("", "Retorno do Societário", input.processingNotes);
+  lines.push(
+    "",
+    input.taskCount === 1
+      ? "1 missão foi criada a partir deste Fluxo."
+      : `${input.taskCount} missões foram criadas a partir deste Fluxo.`,
   );
   return lines.join("\n");
 }

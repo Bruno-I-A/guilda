@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 
-import { companyFlowInformativeText } from "./company-flow";
+import {
+  companyFlowActionsText,
+  companyFlowInformativeText,
+} from "./company-flow";
 
 describe("Fluxo Societário", () => {
   test("leva os dados aprovados ao informativo sem vazar credencial", () => {
@@ -33,5 +36,15 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("Endereço: Rua Exemplo, 100, Porto Alegre/RS");
     expect(text).not.toContain("Gov.br");
     expect(text).toContain("Fiscal - ...");
+  });
+
+  test("envia à IA somente o bloco de ações do Fluxo", () => {
+    const actions = companyFlowActionsText(
+      "Empresa: Dado cadastral\nCNPJ: 00.000.000/0000-00\n\nAÇÕES\nFiscal - Camila - parametrizar\nRH - Bruno - cadastrar",
+    );
+
+    expect(actions).toBe("Fiscal - Camila - parametrizar\nRH - Bruno - cadastrar");
+    expect(companyFlowActionsText("ACOES:\nFiscal - fazer algo")).toBe("Fiscal - fazer algo");
+    expect(companyFlowActionsText("Empresa: sem marcador")).toBeNull();
   });
 });

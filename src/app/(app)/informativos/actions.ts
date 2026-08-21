@@ -1,10 +1,11 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { type OrgTx, withOrgTx } from "@/db/org-tx";
+import { companyFlowActionsText } from "@/domain/company-flow";
 import * as schema from "@/db/schema";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
 import { canHandleInformatives, isAdminRole } from "@/domain/guild-permissions";
@@ -25,6 +26,7 @@ import {
   buildInformativeDraft,
   saveInformativeDraft,
   type InformativeActor,
+  type CompanyFlowDraftContext,
   type ResolvedCompany,
 } from "@/lib/informatives/draft";
 
@@ -190,12 +192,56 @@ export async function analyzeInformative(input: {
     return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
   }
 
+  let flowContext: CompanyFlowDraftContext | undefined;
+  let sourceForAi = parsed.data.sourceText;
+  const flowId = parsed.data.flowId;
+  if (flowId) {
+    if (!isAdminRole(gate.actor.role)) {
+      return err("Apenas owner ou admin pode preparar o Informativo de um Fluxo.");
+    }
+    const actions = companyFlowActionsText(parsed.data.sourceText);
+    if (!actions) {
+      return err("Mantenha o título AÇÕES e descreva abaixo o que cada setor precisa fazer.");
+    }
+    const flow = await withOrgTx(gate.actor.orgId, async (tx) => {
+      const [row] = await tx
+        .select({
+          kind: schema.companyFlows.kind,
+          existingClientId: schema.companyFlows.existingClientId,
+          requestedLegalName: schema.companyFlows.requestedLegalName,
+          approvedLegalName: schema.companyFlows.approvedLegalName,
+          resultCnpj: schema.companyFlows.resultCnpj,
+        })
+        .from(schema.companyFlows)
+        .where(
+          and(
+            eq(schema.companyFlows.orgId, gate.actor.orgId),
+            eq(schema.companyFlows.id, flowId),
+            eq(schema.companyFlows.status, "informative_drafting"),
+            isNull(schema.companyFlows.informativeId),
+          ),
+        );
+      return row ?? null;
+    });
+    if (!flow) {
+      return err("Este Fluxo não está disponível para gerar uma prévia. Reabra-o no Societário.");
+    }
+    flowContext = {
+      kind: flow.kind,
+      existingClientId: flow.existingClientId,
+      legalName: flow.approvedLegalName ?? flow.requestedLegalName,
+      normalizedCnpj: flow.resultCnpj,
+    };
+    sourceForAi = actions;
+  }
+
   let draft;
   try {
     draft = await buildInformativeDraft(
       gate.actor,
-      parsed.data.sourceText,
+      sourceForAi,
       parsed.data.resolvedCompany,
+      flowContext,
     );
   } catch (error) {
     // Falha de rede/chave de API não deve vazar detalhe interno para a tela.
@@ -209,12 +255,13 @@ export async function analyzeInformative(input: {
     actor: gate.actor,
     payload: draft.payload,
     model: draft.model,
-    sourceText: parsed.data.sourceText,
+    // No Fluxo, persiste somente o bloco enviado à IA; a ficha societária
+    // continua sendo a fonte dos dados cadastrais e sensíveis.
+    sourceText: sourceForAi,
     source: "panel",
     connectionId: null,
   });
 
-  const flowId = parsed.data.flowId;
   if (flowId) {
     const attached = await withOrgTx(gate.actor.orgId, async (tx) => {
       if (!isAdminRole(gate.actor.role)) return false;

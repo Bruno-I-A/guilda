@@ -10,7 +10,11 @@ import {
   type InformativeDraftPayload,
   type InformativeDraftTask,
 } from "@/lib/ai/informative-schema";
-import { newClientNoticeBody, publishGuildNotice } from "@/lib/mural/notices";
+import {
+  companyFlowNoticeBody,
+  newClientNoticeBody,
+  publishGuildNotice,
+} from "@/lib/mural/notices";
 import {
   firstOpenPeriod,
   periodsForCadenceRange,
@@ -617,10 +621,52 @@ export async function confirmInformative(
       }
     }
 
+    // A ficha do Fluxo permanece a fonte dos dados societários — inclusive
+    // para o mural — mesmo que o texto enviado à IA tenha só as ações.
+    const [linkedFlow] = await tx
+      .select({ flow: schema.companyFlows })
+      .from(schema.companyFlows)
+      .where(
+        and(
+          eq(schema.companyFlows.orgId, actor.orgId),
+          eq(schema.companyFlows.informativeId, informative.id),
+        ),
+      )
+      .for("update");
+
     // Aviso de empresa nova na MESMA transação, idempotente pelo índice
     // parcial: reconfirmar o informativo não gera um segundo aviso.
     let noticePublished = false;
-    if (payload.kind === "new_client" && clientId && payload.company.legalName) {
+    const flowLegalName = linkedFlow?.flow.approvedLegalName ?? linkedFlow?.flow.requestedLegalName;
+    if (linkedFlow?.flow.kind === "opening" && flowLegalName) {
+      const flow = linkedFlow.flow;
+      const notice = await publishGuildNotice(tx, {
+        orgId: actor.orgId,
+        authorId: actor.userId,
+        kind: "new_client",
+        title: `Nova empresa: ${flowLegalName}`,
+        body: companyFlowNoticeBody({
+          legalName: flowLegalName,
+          cnpj: flow.resultCnpj,
+          activities: flow.approvedActivities.length > 0 ? flow.approvedActivities : flow.requestedActivities,
+          socialCapital: flow.socialCapital,
+          roomSize: flow.roomSize,
+          address: flow.address,
+          clientResponsible: flow.clientResponsible,
+          qsa: flow.qsa,
+          contactName: flow.contactName,
+          contactPhone: flow.contactPhone,
+          contactEmail: flow.contactEmail,
+          requestDetails: flow.requestDetails,
+          processingNotes: flow.processingNotes,
+          taskCount: taskIds.length,
+        }),
+        clientId,
+        informativeId: informative.id,
+        requiresAck: true,
+      });
+      noticePublished = Boolean(notice);
+    } else if (payload.kind === "new_client" && clientId && payload.company.legalName) {
       const notice = await publishGuildNotice(tx, {
         orgId: actor.orgId,
         authorId: actor.userId,
@@ -658,11 +704,7 @@ export async function confirmInformative(
       })
       .where(eq(schema.informatives.id, informative.id));
 
-    const [flow] = await tx
-      .select({ id: schema.companyFlows.id, status: schema.companyFlows.status })
-      .from(schema.companyFlows)
-      .where(and(eq(schema.companyFlows.orgId, actor.orgId), eq(schema.companyFlows.informativeId, informative.id)))
-      .for("update");
+    const flow = linkedFlow?.flow;
     if (flow && flow.status === "informative_drafting") {
       await tx.update(schema.companyFlows).set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
         .where(eq(schema.companyFlows.id, flow.id));

@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { newClientNoticeBody } from "./notices";
+import { companyFlowNoticeBody, newClientNoticeBody } from "./notices";
 
 function baseInput() {
   return {
@@ -82,5 +82,32 @@ describe("newClientNoticeBody", () => {
         "Enquadramento: Lucro Real\n\n" +
         "0 missões foram criadas a partir deste informativo.",
     );
+  });
+});
+
+describe("companyFlowNoticeBody", () => {
+  test("publica no mural os dados oficiais do Fluxo, sem credencial", () => {
+    const body = companyFlowNoticeBody({
+      legalName: "SCHARRF & CIA LTDA",
+      cnpj: "04502526000120",
+      activities: [{ description: "Atividades de contabilidade" }],
+      socialCapital: "10000.00",
+      roomSize: "50 m²",
+      address: "Rua Senador Salgado Filho, 551, Centro, GV",
+      clientResponsible: "Bruno",
+      qsa: [{ name: "Bruno Klain", document: "000.000.000-00", qualification: "Administrador", participation: "100%" }],
+      contactName: "Bruno",
+      contactPhone: "54984184808",
+      contactEmail: "bruno@example.com",
+      requestDetails: "Abertura da empresa.",
+      processingNotes: "Deferida.",
+      taskCount: 2,
+    });
+
+    expect(body).toContain("Capital social: R$");
+    expect(body).toContain("Tamanho da sala: 50 m²");
+    expect(body).toContain("CPF/CNPJ: 000.000.000-00");
+    expect(body).toContain("Retorno do Societário\nDeferida.");
+    expect(body).not.toContain("Gov.br");
   });
 });

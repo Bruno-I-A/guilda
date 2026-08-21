@@ -178,7 +178,9 @@ export function InformativePanel({
           />
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground">
-              {sourceText.length}/12.000
+              {flowId
+                ? "No Fluxo, somente as linhas após AÇÕES são analisadas; os dados cadastrais ficam protegidos e vão completos ao mural."
+                : `${sourceText.length}/12.000`}
             </span>
             <Button
               onClick={handleAnalyze}

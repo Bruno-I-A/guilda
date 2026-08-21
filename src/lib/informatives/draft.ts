@@ -14,7 +14,7 @@ import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
 import { extractObservationLines } from "@/domain/informative-text";
 import type { OrgRole } from "@/domain/task-state";
 import { resolveClientName } from "@/lib/ai/client-resolution";
-import { extractInformative } from "@/lib/ai/informative";
+import { extractFlowActions, extractInformative } from "@/lib/ai/informative";
 import {
   informativeDraftPayloadSchema,
   type AssigneeSuggestionPayload,
@@ -64,6 +64,14 @@ export interface ResolvedCompany {
   openedAt: string | null;
 }
 
+/** Dados oficiais do Fluxo; nunca precisam seguir para a IA de roteamento. */
+export interface CompanyFlowDraftContext {
+  kind: "opening" | "amendment" | "closure";
+  existingClientId: string | null;
+  legalName: string | null;
+  normalizedCnpj: string | null;
+}
+
 export type BuildInformativeDraftResult =
   | { ok: true; payload: InformativeDraftPayload; model: string }
   | { ok: false; message: string };
@@ -85,6 +93,7 @@ export async function buildInformativeDraft(
   actor: InformativeActor,
   sourceText: string,
   resolvedCompany?: ResolvedCompany,
+  flowContext?: CompanyFlowDraftContext,
 ): Promise<BuildInformativeDraftResult> {
   const [members, clients, activeClanMemberships, activeClans] =
     await Promise.all([
@@ -145,26 +154,34 @@ export async function buildInformativeDraft(
 
   // Com empresa já resolvida, o texto do passo 2 não traz dados de empresa
   // (só "o que precisa ser feito") — a heurística de detecção não se aplica.
-  const sourceFormat = resolvedCompany
+  const sourceFormat = resolvedCompany || flowContext
     ? "informative"
     : isDetailedInformativeMessage(sourceText)
       ? "informative"
       : "business_mission";
-  const extracted = await extractInformative(
-    sourceText,
-    members.map(({ userId, name }) => ({ userId, name })),
-    clients.map(({ name }) => ({ name })),
-    activeClans,
-    `${actor.orgId}:${actor.userId}`,
-    Boolean(resolvedCompany),
-  );
+  const extracted = flowContext
+    ? await extractFlowActions(
+        sourceText,
+        members.map(({ userId, name }) => ({ userId, name })),
+        activeClans,
+        `${actor.orgId}:${actor.userId}`,
+        flowContext.kind === "opening",
+      )
+    : await extractInformative(
+        sourceText,
+        members.map(({ userId, name }) => ({ userId, name })),
+        clients.map(({ name }) => ({ name })),
+        activeClans,
+        `${actor.orgId}:${actor.userId}`,
+        Boolean(resolvedCompany),
+      );
 
   // Com empresa resolvida por CNPJ, o pedido de missão já é certo — é o
   // próprio cadastro do cliente novo. O texto do passo 2 é detalhe
   // complementar, nunca o único sinal de "isto é uma missão": mesmo um texto
   // sem nenhuma linha acionável ainda gera a missão garantida do Fiscal
   // (abaixo), então a checagem da IA não pode bloquear aqui.
-  if (!resolvedCompany && !extracted.data.isMissionRequest) {
+  if (!resolvedCompany && !flowContext && !extracted.data.isMissionRequest) {
     return {
       ok: false,
       message:
@@ -172,7 +189,15 @@ export async function buildInformativeDraft(
     };
   }
 
-  const kind = resolvedCompany ? "new_client" : extracted.data.kind ?? "general_task";
+  const kind = flowContext
+    ? flowContext.kind === "opening"
+      ? "new_client"
+      : flowContext.kind === "amendment"
+        ? "client_change"
+        : "client_closure"
+    : resolvedCompany
+      ? "new_client"
+      : extracted.data.kind ?? "general_task";
   const hasClosingPeriod = extracted.data.tasks.some(
     (task) => task.category === "closing_period",
   );
@@ -182,7 +207,7 @@ export async function buildInformativeDraft(
   const missing = new Set(extracted.data.missingFields);
   // A empresa já é conhecida — a IA não tem como "encontrá-la" num texto que
   // só descreve tarefas, e não faz sentido bloquear por isso.
-  if (resolvedCompany) {
+  if (resolvedCompany || flowContext) {
     missing.delete("company");
   } else if (
     (kind !== "general_task" || hasClosingPeriod || hasAnnualClosing) &&
@@ -193,7 +218,7 @@ export async function buildInformativeDraft(
   // Idem: sem resolvedCompany, zero tarefas extraídas é bloqueio de verdade.
   // Com empresa resolvida, a missão garantida do Fiscal cobre o caso de um
   // texto sem nenhuma linha acionável — não é "faltou dizer o que fazer".
-  if (!resolvedCompany && extracted.data.tasks.length === 0) missing.add("actions");
+  if (!resolvedCompany && !flowContext && extracted.data.tasks.length === 0) missing.add("actions");
   // O destino deixou de ser bloqueio de extração: quem não tem clã nem pessoa
   // vira missão pendente e a decisão acontece na prévia.
   missing.delete("responsible");
@@ -212,19 +237,25 @@ export async function buildInformativeDraft(
     };
   }
 
-  const legalName = resolvedCompany?.legalName ?? extracted.data.company.legalName;
+  const legalName = flowContext?.legalName ?? resolvedCompany?.legalName ?? extracted.data.company.legalName;
   const normalizedCnpj =
+    flowContext?.normalizedCnpj ??
     resolvedCompany?.normalizedCnpj ??
     (extracted.data.company.cnpj ? normalizeCnpj(extracted.data.company.cnpj) : null);
   const validCnpj =
+    flowContext?.normalizedCnpj ??
     resolvedCompany?.normalizedCnpj ??
     (normalizedCnpj && validateCnpj(normalizedCnpj) ? normalizedCnpj : null);
   // Empresa resolvida por CNPJ: casa só por CNPJ, nunca por nome — o objetivo
   // aqui é não duplicar cadastro, não "adivinhar" que é outra empresa parecida.
-  const existingClient = resolvedCompany
-    ? clients.find((client) => client.cnpj === validCnpj) ?? null
-    : (validCnpj ? clients.find((client) => client.cnpj === validCnpj) ?? null : null) ??
-      (legalName ? resolveClientName(legalName, clients) : null);
+  const existingClient = flowContext
+    ? (flowContext.existingClientId
+        ? clients.find((client) => client.id === flowContext.existingClientId) ?? null
+        : null)
+    : resolvedCompany
+      ? clients.find((client) => client.cnpj === validCnpj) ?? null
+      : (validCnpj ? clients.find((client) => client.cnpj === validCnpj) ?? null : null) ??
+        (legalName ? resolveClientName(legalName, clients) : null);
 
   if ((hasClosingPeriod || hasAnnualClosing) && !existingClient) {
     return {
@@ -359,23 +390,28 @@ export async function buildInformativeDraft(
     }
   }
 
-  const finalTaxRegime = resolvedCompany?.taxRegime ?? extracted.data.company.taxRegime;
+  const finalTaxRegime = flowContext
+    ? null
+    : resolvedCompany?.taxRegime ?? extracted.data.company.taxRegime;
   // Empresa já resolvida por CNPJ: legalName/CNPJ/regime sempre presentes
   // (o passo 1 da tela exige regime antes de liberar o passo 2) — o único
   // motivo para NÃO criar é já existir um cliente com este CNPJ.
-  const createClient = resolvedCompany
-    ? !existingClient
-    : sourceFormat === "informative" &&
-      kind === "new_client" &&
-      Boolean(finalLegalName) &&
-      !existingClient &&
-      Boolean(validCnpj && finalTaxRegime);
-  if (!resolvedCompany && sourceFormat === "informative" && kind === "new_client" && !validCnpj) {
+  const createClient = flowContext
+    ? false
+    : resolvedCompany
+      ? !existingClient
+      : sourceFormat === "informative" &&
+        kind === "new_client" &&
+        Boolean(finalLegalName) &&
+        !existingClient &&
+        Boolean(validCnpj && finalTaxRegime);
+  if (!flowContext && !resolvedCompany && sourceFormat === "informative" && kind === "new_client" && !validCnpj) {
     warnings.push(
       "CNPJ ausente ou inválido; a empresa não poderá ser criada automaticamente.",
     );
   }
   if (
+    !flowContext &&
     !resolvedCompany &&
     sourceFormat === "informative" &&
     kind === "new_client" &&
@@ -386,7 +422,7 @@ export async function buildInformativeDraft(
       "Regime tributário não identificado; a empresa não poderá ser criada automaticamente.",
     );
   }
-  if (resolvedCompany && existingClient) {
+  if ((resolvedCompany || flowContext) && existingClient) {
     warnings.push(
       `Este CNPJ já está cadastrado como “${existingClient.name}” — nenhuma empresa nova será criada.`,
     );
@@ -436,7 +472,7 @@ export async function buildInformativeDraft(
   // Decisão 11: o que não é ação vira corpo do aviso no mural, não missão.
   const observations = [
     ...new Set([
-      ...extractObservationLines(sourceText),
+      ...(flowContext ? [] : extractObservationLines(sourceText)),
       ...extracted.data.ignoredNotes,
       // Distribuição sem clã reconhecido não some: vira observação do aviso.
       ...unroutedCommitments,

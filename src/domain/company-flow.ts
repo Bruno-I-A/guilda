@@ -36,6 +36,19 @@ export const COMPANY_FLOW_STATUS_LABELS: Record<CompanyFlowStatus, string> = {
   cancelled: "Cancelado",
 };
 
+/**
+ * O formulário do Informativo continua mostrando o resumo completo do Fluxo
+ * para revisão humana. A IA, porém, só precisa classificar as providências
+ * que vêm depois deste marcador — os dados societários já estão no banco.
+ */
+export function companyFlowActionsText(sourceText: string): string | null {
+  const marker = /(?:^|\n)\s*A(?:Ç|C)(?:Õ|O)ES\s*:?\s*(?:\n|$)/i.exec(sourceText);
+  if (!marker) return null;
+  const start = (marker.index ?? 0) + marker[0].length;
+  const actions = sourceText.slice(start).trim();
+  return actions.length > 0 ? actions : null;
+}
+
 export interface FlowActivity {
   code?: string | null;
   description: string;
