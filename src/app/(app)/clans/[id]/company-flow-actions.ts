@@ -9,7 +9,6 @@ import * as schema from "@/db/schema";
 import {
   COMPANY_FLOW_KINDS,
   COMPANY_FLOW_SOURCES,
-  COMPANY_FLOW_STATUSES,
   companyFlowInformativeText,
 } from "@/domain/company-flow";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
@@ -423,9 +422,3 @@ export async function cancelCompanyFlow(
   if (result.ok) revalidateCompanyFlow(data.clanId);
   return result;
 }
-
-export const companyFlowActionConstants = {
-  kinds: COMPANY_FLOW_KINDS,
-  sources: COMPANY_FLOW_SOURCES,
-  statuses: COMPANY_FLOW_STATUSES,
-} as const;
