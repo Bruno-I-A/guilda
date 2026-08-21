@@ -6,24 +6,27 @@ import * as schema from "@/db/schema";
 import { OfficeFeeControlBoard, type OfficeFeeControlRowView } from "./office-fee-control-board";
 import { OfficeFeeProfileBoard, type OfficeFeeProfileRowView } from "./office-fee-profile-board";
 
-function todayInSaoPaulo(): string {
-  return new Intl.DateTimeFormat("en-CA", {
+function currentPeriodInSaoPaulo(): { year: number; month: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Sao_Paulo",
     year: "numeric",
     month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  }).formatToParts(new Date());
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  if (Number.isInteger(year) && Number.isInteger(month) && month >= 1 && month <= 12) {
+    return { year, month };
+  }
+  throw new Error("Não foi possível identificar a competência atual.");
 }
 
 function parsePeriod(year?: string, month?: string): { year: number; month: number } {
-  const today = todayInSaoPaulo();
-  const fallbackYear = Number(today.slice(0, 4));
-  const fallbackMonth = Number(today.slice(5, 7));
+  const fallback = currentPeriodInSaoPaulo();
   const parsedYear = Number(year);
   const parsedMonth = Number(month);
   return {
-    year: Number.isInteger(parsedYear) && parsedYear >= 2000 && parsedYear <= 2100 ? parsedYear : fallbackYear,
-    month: Number.isInteger(parsedMonth) && parsedMonth >= 1 && parsedMonth <= 12 ? parsedMonth : fallbackMonth,
+    year: Number.isInteger(parsedYear) && parsedYear >= 2000 && parsedYear <= 2100 ? parsedYear : fallback.year,
+    month: Number.isInteger(parsedMonth) && parsedMonth >= 1 && parsedMonth <= 12 ? parsedMonth : fallback.month,
   };
 }
 
