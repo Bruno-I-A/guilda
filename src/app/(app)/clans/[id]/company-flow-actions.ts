@@ -44,6 +44,31 @@ const qsaMemberSchema = z.object({
   participation: z.string().trim().max(40).nullable().optional(),
 });
 
+function optionalMoneySchema(label: string) {
+  return z
+    .union([z.string(), z.number()])
+    .transform((value, ctx) => {
+      const raw = String(value).trim();
+      if (!raw) return null;
+      const normalized = raw.includes(",")
+        ? raw.replace(/\./g, "").replace(",", ".")
+        : raw;
+      if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `${label} deve ter até duas casas decimais.`,
+        });
+        return z.NEVER;
+      }
+      const numericValue = Number(normalized);
+      if (!Number.isFinite(numericValue) || numericValue > 9_999_999_999_999.99) {
+        ctx.addIssue({ code: "custom", message: `${label} está fora do limite permitido.` });
+        return z.NEVER;
+      }
+      return normalized;
+    });
+}
+
 const flowBaseSchema = z.object({
   clanId: z.uuid("Clã inválido."),
   kind: z.enum(COMPANY_FLOW_KINDS),
@@ -51,6 +76,9 @@ const flowBaseSchema = z.object({
   existingClientId: z.uuid("Empresa inválida.").nullable().optional(),
   requestedLegalName: z.string().trim().max(200).optional(),
   requestedActivities: z.array(activitySchema).max(30).default([]),
+  socialCapital: optionalMoneySchema("Capital social").optional(),
+  roomSize: z.string().trim().max(100).optional(),
+  address: z.string().trim().max(1000).optional(),
   clientResponsible: z.string().trim().max(160).optional(),
   qsa: z.array(qsaMemberSchema).max(20).default([]),
   contactName: z.string().trim().max(160).optional(),
@@ -150,6 +178,9 @@ export async function createCompanyFlow(
         existingClientId: data.kind === "opening" ? null : data.existingClientId ?? null,
         requestedLegalName: data.requestedLegalName || null,
         requestedActivities: data.requestedActivities,
+        socialCapital: data.socialCapital ?? null,
+        roomSize: data.roomSize || null,
+        address: data.address || null,
         clientResponsible: data.clientResponsible || null,
         qsa: data.qsa,
         contactName: data.contactName || null,

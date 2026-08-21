@@ -9,6 +9,9 @@ describe("Fluxo Societário", () => {
       existingClientName: null,
       requestedLegalName: "NOME PRETENDIDO LTDA",
       requestedActivities: [{ description: "Comércio" }],
+      socialCapital: "30000.00",
+      roomSize: "45 m²",
+      address: "Rua Exemplo, 100, Porto Alegre/RS",
       clientResponsible: "Maria",
       qsa: [{ name: "Maria", qualification: "Sócia", participation: "100%" }],
       contactName: "Maria",
@@ -25,6 +28,9 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("NOME APROVADO LTDA");
     expect(text).toContain("CNPJ: 12345678000199");
     expect(text).toContain("Atividades aprovadas: Comércio varejista");
+    expect(text).toContain("Capital social: R$");
+    expect(text).toContain("Tamanho da sala: 45 m²");
+    expect(text).toContain("Endereço: Rua Exemplo, 100, Porto Alegre/RS");
     expect(text).not.toContain("Gov.br");
     expect(text).toContain("Fiscal - ...");
   });

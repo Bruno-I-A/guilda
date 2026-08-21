@@ -1,3 +1,5 @@
+import { formatBRLCurrency } from "@/lib/currency";
+
 export const COMPANY_FLOW_KINDS = ["opening", "amendment", "closure"] as const;
 export type CompanyFlowKind = (typeof COMPANY_FLOW_KINDS)[number];
 
@@ -52,6 +54,9 @@ export interface FlowInformativeInput {
   existingClientName: string | null;
   requestedLegalName: string | null;
   requestedActivities: readonly FlowActivity[];
+  socialCapital: string | null;
+  roomSize: string | null;
+  address: string | null;
   clientResponsible: string | null;
   qsa: readonly FlowQsaMember[];
   contactName: string | null;
@@ -91,6 +96,9 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
     flow.resultCnpj ? `CNPJ: ${flow.resultCnpj}` : null,
     approvedActivities ? `Atividades aprovadas: ${approvedActivities}` : null,
     !approvedActivities && requestedActivities ? `Atividades solicitadas: ${requestedActivities}` : null,
+    flow.socialCapital ? `Capital social: ${formatBRLCurrency(flow.socialCapital)}` : null,
+    flow.roomSize ? `Tamanho da sala: ${flow.roomSize}` : null,
+    flow.address ? `Endereço: ${flow.address}` : null,
     flow.clientResponsible ? `Responsável: ${flow.clientResponsible}` : null,
     qsa ? `QSA: ${qsa}` : null,
     [flow.contactName, flow.contactPhone, flow.contactEmail].filter(Boolean).length > 0

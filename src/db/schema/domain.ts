@@ -764,6 +764,10 @@ export const companyFlows = pgTable(
       .$type<CompanyFlowActivity[]>()
       .notNull()
       .default([]),
+    /** Dados físicos e societários solicitados para a abertura. */
+    socialCapital: numeric("social_capital", { precision: 15, scale: 2 }),
+    roomSize: varchar("room_size", { length: 100 }),
+    address: text("address"),
     clientResponsible: varchar("client_responsible", { length: 160 }),
     qsa: jsonb("qsa").$type<CompanyFlowQsaMember[]>().notNull().default([]),
     contactName: varchar("contact_name", { length: 160 }),
