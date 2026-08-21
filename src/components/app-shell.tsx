@@ -2,6 +2,7 @@
 
 import {
   Building2,
+  ChevronRight,
   CircleUser,
   Flag,
   Home,
@@ -67,6 +68,19 @@ const MOBILE_PRIMARY_HREFS = [
   "/mural",
   "/clans",
 ] as const;
+
+/**
+ * No desktop, a navegação deixa de ser uma lista indiferenciada. A barra vira
+ * um mapa de rotas: primeiro o trabalho do dia, depois a operação e, por
+ * fim, os espaços da Guilda. Perfil e ajustes vivem junto da identidade.
+ */
+const DESKTOP_NAV_GROUPS = [
+  { code: "01", label: "Jornada", hrefs: ["/dashboard", "/tasks", "/mural"] },
+  { code: "02", label: "Operação", hrefs: ["/clans", "/informativos", "/clients"] },
+  { code: "03", label: "Guilda", hrefs: ["/leaderboard", "/members"] },
+] as const;
+
+const DESKTOP_ACCOUNT_HREFS = ["/profile", "/settings"] as const;
 
 /**
  * Esconder o item não é a proteção — a própria rota /settings redireciona
@@ -137,7 +151,7 @@ function PendingBadge({ count }: { count: number }) {
   return (
     <span
       aria-label={`${count} aviso(s) aguardando confirmação`}
-      className="inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 font-mono text-[10px] leading-4 text-destructive-foreground"
+      className="inline-flex min-w-5 items-center justify-center border border-destructive/80 bg-destructive px-1 font-mono text-[10px] leading-4 text-destructive-foreground [clip-path:polygon(0.2rem_0,100%_0,100%_calc(100%-0.2rem),calc(100%-0.2rem)_100%,0_100%,0_0.2rem)]"
     >
       {count > 9 ? "9+" : count}
     </span>
@@ -172,53 +186,117 @@ export function AppShell({
   const overflowActive = mobileOverflow.some((item) =>
     pathname.startsWith(item.href),
   );
+  const navByHref = new Map(navItems.map((item) => [item.href, item]));
+  const accountItems = DESKTOP_ACCOUNT_HREFS
+    .map((href) => navByHref.get(href))
+    .filter((item): item is (typeof navItems)[number] => Boolean(item));
 
   return (
     <div className="flex min-h-svh w-full">
       {/* Sidebar — desktop */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 flex-col border-r bg-sidebar md:flex">
-        <div className="flex h-14 items-center gap-2 border-b px-4 font-heading text-lg font-semibold tracking-wider">
-          <GuildSeal className="size-7" />
-          Guilda
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar/95 md:flex">
+        <div className="relative px-5 pt-5 pb-4">
+          <div aria-hidden className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/70 to-transparent" />
+          <Link href="/dashboard" className="flex items-center gap-3" aria-label="Ir para o início">
+            <span className="grid size-10 place-items-center border border-primary/50 bg-primary/10 [clip-path:polygon(0.45rem_0,100%_0,100%_calc(100%-0.45rem),calc(100%-0.45rem)_100%,0_100%,0_0.45rem)]">
+              <GuildSeal className="size-7" />
+            </span>
+            <span className="grid leading-none">
+              <span className="hud-label text-[9px] tracking-[0.28em]">Mesa de comando</span>
+              <span className="mt-1 font-heading text-xl font-semibold tracking-[0.11em]">Guilda</span>
+            </span>
+          </Link>
         </div>
-        <div className="px-4 py-3">
-          <p className="hud-label">Organização</p>
-          <p className="truncate text-sm font-medium">{orgName}</p>
-        </div>
-        <div className="divider-rune mx-4 mb-2" />
-        <nav className="flex flex-1 flex-col gap-1 px-2" aria-label="Principal">
-          {navItems.map(({ href, label, icon: Icon }) => {
-            const active = pathname.startsWith(href);
-            return (
-              <Link
-                key={href}
-                href={href}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "flex items-center gap-3 rounded-md border-l-2 px-3 py-2 text-sm font-medium transition-colors",
-                  active
-                    ? "border-primary bg-accent/60 text-foreground"
-                    : "border-transparent text-muted-foreground hover:bg-accent/40 hover:text-foreground",
-                )}
-              >
-                <Icon className="size-4" aria-hidden />
-                <span className="flex-1">{label}</span>
-                {href === "/mural" ? <PendingBadge count={pendingNotices} /> : null}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="flex items-center justify-between border-t p-3">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{user.name}</p>
-            <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+
+        <div className="mx-4 border border-sidebar-border bg-[linear-gradient(120deg,oklch(0.3_0.04_245_/_35%),transparent_65%)] px-3 py-3 [clip-path:polygon(0.55rem_0,100%_0,100%_calc(100%-0.55rem),calc(100%-0.55rem)_100%,0_100%,0_0.55rem)]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="hud-label text-[9px]">Organização ativa</p>
+              <p className="mt-1 truncate font-heading text-base font-medium tracking-wide">{orgName}</p>
+            </div>
+            <span className="mt-1 size-2 shrink-0 border border-primary/80 bg-primary/40 [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]" aria-label="Organização ativa" />
           </div>
-          <UserMenu user={user} role={role} />
+          <p className="mt-2 border-t border-sidebar-border pt-2 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">ambiente de trabalho</p>
+        </div>
+
+        <nav className="flex flex-1 flex-col overflow-y-auto px-4 py-5" aria-label="Principal">
+          <div className="grid gap-5">
+            {DESKTOP_NAV_GROUPS.map((group) => (
+              <section key={group.code}>
+                <div className="flex items-center gap-2 px-1">
+                  <span className="font-mono text-[10px] text-primary/80">{group.code}</span>
+                  <p className="hud-label text-[9px]">{group.label}</p>
+                  <span className="h-px flex-1 bg-sidebar-border" aria-hidden />
+                </div>
+                <div className="relative mt-2 grid gap-1">
+                  <span aria-hidden className="absolute top-4 bottom-4 left-4 w-px bg-gradient-to-b from-primary/40 via-sidebar-border to-transparent" />
+                  {group.hrefs.map((href) => {
+                    const item = navByHref.get(href);
+                    if (!item) return null;
+                    const { label, icon: Icon } = item;
+                    const active = pathname.startsWith(href);
+                    return (
+                      <Link
+                        key={href}
+                        href={href}
+                        aria-current={active ? "page" : undefined}
+                        className={cn(
+                          "group relative z-10 flex min-h-11 items-center gap-3 border border-transparent py-1 pr-2 pl-1 transition-all",
+                          active
+                            ? "border-primary/45 bg-primary/10 text-foreground [clip-path:polygon(0.5rem_0,100%_0,100%_calc(100%-0.5rem),calc(100%-0.5rem)_100%,0_100%,0_0.5rem)]"
+                            : "text-muted-foreground hover:border-sidebar-border hover:bg-accent/35 hover:text-foreground",
+                        )}
+                      >
+                        <span className={cn("grid size-8 place-items-center border bg-sidebar transition-colors", active ? "border-primary bg-primary text-primary-foreground" : "border-sidebar-border group-hover:border-primary/55")}>
+                          <Icon className="size-4" aria-hidden />
+                        </span>
+                        <span className="min-w-0 flex-1 text-sm font-medium">{label}</span>
+                        {href === "/mural" ? <PendingBadge count={pendingNotices} /> : null}
+                        {active ? <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-primary">agora</span> : <ChevronRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-70" aria-hidden />}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+
+          <div className="mt-auto pt-6">
+            <div className="divider-rune mb-4" />
+            <div className="flex items-center gap-2 px-1">
+              <span className="font-mono text-[10px] text-primary/80">04</span>
+              <p className="hud-label text-[9px]">Conta</p>
+              <span className="h-px flex-1 bg-sidebar-border" aria-hidden />
+            </div>
+            <div className="mt-2 grid gap-1">
+              {accountItems.map(({ href, label, icon: Icon }) => {
+                const active = pathname.startsWith(href);
+                return (
+                  <Link key={href} href={href} aria-current={active ? "page" : undefined} className={cn("flex items-center gap-3 border-l-2 px-2 py-2 text-sm font-medium transition-colors", active ? "border-primary bg-primary/10 text-foreground" : "border-transparent text-muted-foreground hover:bg-accent/35 hover:text-foreground")}>
+                    <Icon className="size-4" aria-hidden />
+                    <span className="flex-1">{label}</span>
+                    {active ? <span className="size-1.5 bg-primary [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]" aria-hidden /> : null}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </nav>
+
+        <div className="border-t border-sidebar-border bg-background/20 px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <UserMenu user={user} role={role} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{user.name}</p>
+              <p className="mt-0.5 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{ROLE_LABELS[role] ?? role}</p>
+            </div>
+            <span className="size-1.5 bg-emerald-400 [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]" aria-label="Conectado" />
+          </div>
         </div>
       </aside>
 
       {/* Conteúdo */}
-      <div className="flex min-w-0 flex-1 flex-col md:pl-56">
+      <div className="flex min-w-0 flex-1 flex-col md:pl-72">
         {/* Header — mobile */}
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background/95 px-4 backdrop-blur md:hidden">
           <div className="flex min-w-0 items-center gap-2 font-semibold">
