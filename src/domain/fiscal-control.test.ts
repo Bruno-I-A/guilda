@@ -4,6 +4,7 @@ import {
   deriveFiscalControlStatus,
   fiscalProfileMissingFields,
   fiscalProfileVersionMatches,
+  initialFiscalControlSteps,
   initialFiscalStepStatus,
 } from "./fiscal-control";
 
@@ -20,6 +21,26 @@ describe("controle fiscal mensal", () => {
     expect(initialFiscalStepStatus("unknown")).toBe("pending");
     expect(initialFiscalStepStatus("not_required")).toBe("not_applicable");
     expect(initialFiscalStepStatus("not_applicable")).toBe("not_applicable");
+  });
+
+  test("não cria pendência de entrada ou saída quando a ficha diz não", () => {
+    expect(
+      initialFiscalControlSteps({
+        movementsApplicability: "not_required",
+        incomingApplicability: "not_required",
+        outgoingApplicability: "not_applicable",
+        guideApplicability: "required",
+        nfsApplicability: "required",
+        deliveryChannel: "e-mail",
+      }),
+    ).toEqual({
+      movements: "not_applicable",
+      incoming: "not_applicable",
+      outgoing: "not_applicable",
+      guide: "pending",
+      delivery: "pending",
+      nfs: "pending",
+    });
   });
 
   test("deriva o status geral das etapas", () => {

@@ -6,7 +6,7 @@ import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import {
   deriveFiscalControlStatus,
-  initialFiscalStepStatus,
+  initialFiscalControlSteps,
 } from "@/domain/fiscal-control";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 
@@ -95,6 +95,7 @@ async function ensureFiscalProfile(
 export interface MaterializeFiscalControlResult {
   created: number;
   existing: number;
+  synchronized: number;
   campaignConflicts: number;
 }
 
@@ -138,6 +139,7 @@ export async function materializeFiscalControl(
 
   let createdCount = 0;
   let existingCount = 0;
+  let synchronizedCount = 0;
   let campaignConflicts = 0;
   for (const row of rows) {
     const profile = await ensureFiscalProfile(tx, {
@@ -146,27 +148,14 @@ export async function materializeFiscalControl(
       actorId: input.actorId,
     });
     const snapshot = fiscalProfileSnapshot(profile);
-    const movementsStatus = initialFiscalStepStatus(
-      profile.movementsApplicability,
-    );
-    const incomingStatus = initialFiscalStepStatus(
-      profile.incomingApplicability,
-    );
-    const outgoingStatus = initialFiscalStepStatus(
-      profile.outgoingApplicability,
-    );
-    const guideStatus = initialFiscalStepStatus(profile.guideApplicability);
-    const nfsStatus = initialFiscalStepStatus(profile.nfsApplicability);
-    const deliveryStatus = profile.deliveryChannel
-      ? "pending" as const
-      : "not_applicable" as const;
+    const steps = initialFiscalControlSteps(profile);
     const status = deriveFiscalControlStatus([
-      movementsStatus,
-      incomingStatus,
-      outgoingStatus,
-      guideStatus,
-      nfsStatus,
-      deliveryStatus,
+      steps.movements,
+      steps.incoming,
+      steps.outgoing,
+      steps.guide,
+      steps.nfs,
+      steps.delivery,
     ]);
     const completedAt = status === "completed" ? new Date() : null;
     const [created] = await tx
@@ -182,12 +171,12 @@ export async function materializeFiscalControl(
         responsibleUserId: row.responsibleUserId,
         taxRegimeSnapshot: row.taxRegime,
         campaignId: input.campaignId ?? null,
-        movementsStatus,
-        incomingStatus,
-        outgoingStatus,
-        guideStatus,
-        nfsStatus,
-        deliveryStatus,
+        movementsStatus: steps.movements,
+        incomingStatus: steps.incoming,
+        outgoingStatus: steps.outgoing,
+        guideStatus: steps.guide,
+        nfsStatus: steps.nfs,
+        deliveryStatus: steps.delivery,
         status,
         completedBy: status === "completed" ? input.actorId : null,
         completedAt,
@@ -206,6 +195,61 @@ export async function materializeFiscalControl(
 
     if (!created) {
       existingCount += 1;
+      const [existing] = await tx
+        .select({
+          id: schema.fiscalControlPeriods.id,
+          status: schema.fiscalControlPeriods.status,
+          profileVersion: schema.fiscalControlPeriods.profileVersion,
+        })
+        .from(schema.fiscalControlPeriods)
+        .where(
+          and(
+            eq(schema.fiscalControlPeriods.orgId, input.orgId),
+            eq(schema.fiscalControlPeriods.clientId, row.clientId),
+            eq(schema.fiscalControlPeriods.periodYear, input.periodYear),
+            eq(schema.fiscalControlPeriods.periodMonth, input.periodMonth),
+          ),
+        )
+        .for("update")
+        .limit(1);
+
+      // A liderança pode corrigir a Ficha antes de o mês começar. Ao
+      // atualizar empresas, a linha ainda não iniciada acompanha a ficha
+      // atual; depois do primeiro andamento, o snapshot permanece histórico.
+      if (
+        existing?.status === "not_started" &&
+        existing.profileVersion !== profile.version
+      ) {
+        await tx
+          .update(schema.fiscalControlPeriods)
+          .set({
+            profileId: profile.id,
+            profileVersion: profile.version,
+            profileSnapshot: snapshot,
+            movementsStatus: steps.movements,
+            incomingStatus: steps.incoming,
+            outgoingStatus: steps.outgoing,
+            guideStatus: steps.guide,
+            nfsStatus: steps.nfs,
+            deliveryStatus: steps.delivery,
+            status,
+            completedBy: status === "completed" ? input.actorId : null,
+            completedAt: status === "completed" ? new Date() : null,
+            updatedBy: input.actorId,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.fiscalControlPeriods.id, existing.id));
+        await tx.insert(schema.fiscalControlEvents).values({
+          orgId: input.orgId,
+          controlPeriodId: existing.id,
+          clientId: row.clientId,
+          eventType: "profile_synced",
+          previousValue: { profileVersion: existing.profileVersion },
+          newValue: { profileVersion: profile.version },
+          actorId: input.actorId,
+        });
+        synchronizedCount += 1;
+      }
       // Campanha criada depois do controle pode adotar a competência, sem
       // tocar nos snapshots operacionais.
       if (input.campaignId) {
@@ -268,6 +312,7 @@ export async function materializeFiscalControl(
   return {
     created: createdCount,
     existing: existingCount,
+    synchronized: synchronizedCount,
     campaignConflicts,
   };
 }

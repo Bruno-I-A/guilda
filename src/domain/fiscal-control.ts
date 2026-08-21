@@ -43,6 +43,29 @@ export function initialFiscalStepStatus(
 }
 
 /**
+ * Materializa as atividades mensais a partir da Ficha Fiscal. Centralizar
+ * esta regra impede que uma empresa marcada como "Não" vire pendência no
+ * controle mensal por acidente.
+ */
+export function initialFiscalControlSteps(profile: {
+  movementsApplicability: FiscalApplicability;
+  incomingApplicability: FiscalApplicability;
+  outgoingApplicability: FiscalApplicability;
+  guideApplicability: FiscalApplicability;
+  nfsApplicability: FiscalApplicability;
+  deliveryChannel: string | null;
+}): Record<FiscalStage, FiscalStepStatus> {
+  return {
+    movements: initialFiscalStepStatus(profile.movementsApplicability),
+    incoming: initialFiscalStepStatus(profile.incomingApplicability),
+    outgoing: initialFiscalStepStatus(profile.outgoingApplicability),
+    guide: initialFiscalStepStatus(profile.guideApplicability),
+    delivery: profile.deliveryChannel?.trim() ? "pending" : "not_applicable",
+    nfs: initialFiscalStepStatus(profile.nfsApplicability),
+  };
+}
+
+/**
  * O status geral é derivado das etapas e não depende de um clique separado.
  * Assim a grade e os resumos nunca contradizem as células.
  */

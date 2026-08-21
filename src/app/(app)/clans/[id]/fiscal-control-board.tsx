@@ -89,7 +89,7 @@ export interface FiscalControlRowView {
   canEdit: boolean;
   history: readonly {
     id: string;
-    eventType: "created" | "campaign_linked" | "step_updated" | "status_updated" | "note_updated" | "completed" | "reopened";
+    eventType: "created" | "profile_synced" | "campaign_linked" | "step_updated" | "status_updated" | "note_updated" | "completed" | "reopened";
     stage: FiscalStage | null;
     actorName: string;
     createdAt: string;
@@ -117,7 +117,7 @@ const STAGES: Array<{
   { key: "incoming", field: "incomingStatus", label: "Entrada" },
   { key: "outgoing", field: "outgoingStatus", label: "Saída" },
   { key: "guide", field: "guideStatus", label: "Guia" },
-  { key: "delivery", field: "deliveryStatus", label: "Entrega" },
+  { key: "delivery", field: "deliveryStatus", label: "Envio" },
   { key: "nfs", field: "nfsStatus", label: "NFS" },
 ];
 
@@ -132,6 +132,7 @@ const STAGE_LABELS: Record<FiscalStage, string> = {
 
 function eventText(event: FiscalControlRowView["history"][number]): string {
   if (event.eventType === "created") return "Competência criada";
+  if (event.eventType === "profile_synced") return "Ficha atualizada antes do início";
   if (event.eventType === "campaign_linked") return "Campanha vinculada";
   if (event.eventType === "completed") return "Controle concluído";
   if (event.eventType === "reopened") return "Controle reaberto";
@@ -210,6 +211,18 @@ function StepButton({
       {pending ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden /> : <Icon className="size-3.5" aria-hidden />}
     </button>
   );
+}
+
+function activityLabel(
+  stage: (typeof STAGES)[number],
+  row: FiscalControlRowView,
+): string {
+  if (stage.key === "delivery") {
+    return row.profileSnapshot.deliveryChannel
+      ? `Envio da guia · ${row.profileSnapshot.deliveryChannel}`
+      : "Envio da guia";
+  }
+  return stage.label;
 }
 
 function ControlDetailsDialog({
@@ -389,7 +402,13 @@ export function FiscalControlBoard({
         toast.error(result.error);
         return;
       }
-      toast.success(`${result.data?.created ?? 0} empresa(s) adicionada(s) ao controle.`);
+      const created = result.data?.created ?? 0;
+      const synchronized = result.data?.synchronized ?? 0;
+      toast.success(
+        synchronized > 0
+          ? `${created} empresa(s) adicionada(s) e ${synchronized} ficha(s) não iniciada(s) atualizada(s).`
+          : `${created} empresa(s) adicionada(s) ao controle.`,
+      );
       router.refresh();
     });
   }
@@ -399,7 +418,7 @@ export function FiscalControlBoard({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-heading text-lg font-medium">Controle Fiscal · {label}</h2>
-          <p className="text-sm text-muted-foreground">A ficha e o responsável foram congelados quando esta competência foi aberta.</p>
+          <p className="text-sm text-muted-foreground">As atividades vêm da Ficha Fiscal. “Atualizar empresas” sincroniza somente linhas ainda não iniciadas; o andamento já iniciado permanece no histórico.</p>
         </div>
         <div className="flex items-center gap-1">
           <Button asChild type="button" variant="outline" size="icon-sm"><Link href={periodHref(clanId, previous.year, previous.month)} aria-label="Competência anterior"><ChevronLeft aria-hidden /></Link></Button>
@@ -447,13 +466,23 @@ export function FiscalControlBoard({
           </div>
 
           <Table>
-            <TableHeader><TableRow><TableHead className="min-w-56">Empresa</TableHead><TableHead>Responsável</TableHead>{STAGES.map((stage) => <TableHead key={stage.key} className="text-center">{stage.label}</TableHead>)}<TableHead>Situação</TableHead><TableHead><span className="sr-only">Detalhes</span></TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead className="min-w-56">Empresa</TableHead><TableHead>Responsável</TableHead><TableHead className="min-w-72">Atividades do período</TableHead><TableHead>Situação</TableHead><TableHead><span className="sr-only">Detalhes</span></TableHead></TableRow></TableHeader>
             <TableBody>
               {visible.map((row) => (
                 <TableRow key={row.id} className={cn(row.status === "blocked" && "bg-destructive/5")}>
                   <TableCell><span className="block max-w-64 truncate font-medium">{row.clientName}</span><span className="text-[11px] text-muted-foreground">{TAX_REGIME_LABELS[row.taxRegime]} · ficha v{row.profileVersion}</span></TableCell>
                   <TableCell>{row.responsibleName ?? <span className="text-destructive">Sem responsável</span>}</TableCell>
-                  {STAGES.map((stage) => <TableCell key={stage.key} className="text-center"><StepButton clanId={clanId} controlId={row.id} stage={stage.key} status={row[stage.field]} disabled={!row.canEdit} /></TableCell>)}
+                  <TableCell>
+                    <div className="flex flex-wrap gap-2">
+                      {STAGES.filter((stage) => row[stage.field] !== "not_applicable").map((stage) => (
+                        <div key={stage.key} className="inline-flex items-center gap-1.5 rounded-md border bg-card/50 px-1.5 py-1">
+                          <span className="text-xs text-muted-foreground">{activityLabel(stage, row)}</span>
+                          <StepButton clanId={clanId} controlId={row.id} stage={stage.key} status={row[stage.field]} disabled={!row.canEdit} />
+                        </div>
+                      ))}
+                      {STAGES.every((stage) => row[stage.field] === "not_applicable") ? <span className="text-xs text-muted-foreground">Sem atividade fiscal nesta competência.</span> : null}
+                    </div>
+                  </TableCell>
                   <TableCell><Badge variant={row.status === "completed" ? "secondary" : row.status === "blocked" ? "destructive" : "outline"}>{STATUS_LABELS[row.status]}</Badge></TableCell>
                   <TableCell><ControlDetailsDialog clanId={clanId} row={row} periodLabel={label} /></TableCell>
                 </TableRow>

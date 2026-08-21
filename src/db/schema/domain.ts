@@ -1288,6 +1288,7 @@ export const fiscalControlStatus = pgEnum("fiscal_control_status", [
 
 export const fiscalControlEventType = pgEnum("fiscal_control_event_type", [
   "created",
+  "profile_synced",
   "campaign_linked",
   "step_updated",
   "status_updated",

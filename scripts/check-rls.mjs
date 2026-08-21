@@ -177,21 +177,46 @@ try {
     [userId],
   );
 
-  let snapshotBlocked = false;
-  await client.query("SAVEPOINT immutable_snapshot_probe");
+  let profileSyncBeforeStartAllowed = false;
+  await client.query("SAVEPOINT profile_sync_before_start_probe");
+  try {
+    const synced = await client.query(
+      `UPDATE fiscal_control_periods
+          SET profile_version = profile_version + 1,
+              profile_snapshot = jsonb_build_object('version', profile_version + 1)
+        WHERE id = $1`,
+      [control.rows[0].id],
+    );
+    profileSyncBeforeStartAllowed = synced.rowCount === 1;
+  } catch {
+    await client.query("ROLLBACK TO SAVEPOINT profile_sync_before_start_probe");
+  }
+  await client.query("RELEASE SAVEPOINT profile_sync_before_start_probe");
+  check("ficha pode sincronizar antes do inicio", profileSyncBeforeStartAllowed);
+
+  await client.query(
+    `UPDATE fiscal_control_periods
+        SET movements_status = 'completed', status = 'in_progress'
+      WHERE id = $1`,
+    [control.rows[0].id],
+  );
+
+  let snapshotBlockedAfterStart = false;
+  await client.query("SAVEPOINT immutable_snapshot_after_start_probe");
   try {
     await client.query(
       `UPDATE fiscal_control_periods
-          SET profile_version = profile_version + 1
+          SET profile_version = profile_version + 1,
+              profile_snapshot = jsonb_build_object('version', profile_version + 1)
         WHERE id = $1`,
       [control.rows[0].id],
     );
   } catch {
-    snapshotBlocked = true;
-    await client.query("ROLLBACK TO SAVEPOINT immutable_snapshot_probe");
+    snapshotBlockedAfterStart = true;
+    await client.query("ROLLBACK TO SAVEPOINT immutable_snapshot_after_start_probe");
   }
-  await client.query("RELEASE SAVEPOINT immutable_snapshot_probe");
-  check("snapshot mensal e IMUTAVEL", snapshotBlocked);
+  await client.query("RELEASE SAVEPOINT immutable_snapshot_after_start_probe");
+  check("snapshot mensal imutavel apos inicio", snapshotBlockedAfterStart);
 
   const operationalUpdate = await client.query(
     `UPDATE fiscal_control_periods

@@ -245,14 +245,14 @@ const openControlSchema = z.object({
 
 export async function openFiscalControlPeriod(
   input: z.input<typeof openControlSchema>,
-): Promise<ActionResult<{ created: number; existing: number }>> {
+): Promise<ActionResult<{ created: number; existing: number; synchronized: number }>> {
   const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
   const parsed = openControlSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Período inválido.");
   const data = parsed.data;
 
-  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<{ created: number; existing: number }>> => {
+  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<{ created: number; existing: number; synchronized: number }>> => {
     const fiscal = await requireFiscalClan(tx, {
       orgId: ctx.orgId,
       clanId: data.clanId,

@@ -142,7 +142,7 @@ export async function createClanCampaign(
               periodMonth: data.periodMonth,
               campaignId: created.id,
             })
-          : { created: 0, existing: 0, campaignConflicts: 0 };
+          : { created: 0, existing: 0, synchronized: 0, campaignConflicts: 0 };
 
       return {
         ok: true,
