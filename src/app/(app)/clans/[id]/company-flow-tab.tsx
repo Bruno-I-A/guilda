@@ -133,6 +133,7 @@ export async function CompanyFlowTab({
     }),
     canPrepareInformative: canPrepareCompanyFlowInformative(actorFacts),
     canCancel: canCreateCompanyFlow(actorFacts),
+    canDelete: canCreateCompanyFlow(actorFacts),
     history: (historyByFlow.get(row.flow.id) ?? []).map((event) => ({
       ...event,
       createdAt: event.createdAt.toISOString(),

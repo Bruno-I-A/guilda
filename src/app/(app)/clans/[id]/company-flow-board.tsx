@@ -3,7 +3,6 @@
 import {
   Building2,
   CheckCircle2,
-  CircleUserRound,
   ClipboardPenLine,
   Eye,
   KeyRound,
@@ -58,6 +57,7 @@ import {
   cancelCompanyFlow,
   claimCompanyFlow,
   createCompanyFlow,
+  deleteCompanyFlow,
   lookupCompanyFlowCnpj,
   prepareCompanyFlowInformative,
   returnCompanyFlowToOwner,
@@ -99,6 +99,7 @@ export interface CompanyFlowView {
   canReturn: boolean;
   canPrepareInformative: boolean;
   canCancel: boolean;
+  canDelete: boolean;
   history: readonly {
     id: string;
     eventType: string;
@@ -399,6 +400,19 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
       router.refresh();
     });
   }
+  function remove() {
+    if (!window.confirm("Excluir definitivamente este Fluxo? A solicitação, o histórico e a senha Gov.br serão apagados. Esta ação não pode ser desfeita.")) return;
+    startTransition(async () => {
+      const result = await deleteCompanyFlow({ clanId, flowId: row.id });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Fluxo excluído definitivamente.");
+      setOpen(false);
+      router.refresh();
+    });
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -416,7 +430,11 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
           {row.status === "completed" ? <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-300"><CheckCircle2 className="mr-1 inline size-4" aria-hidden /> Informativo confirmado e Fluxo concluído.</div> : null}
           {row.history.length > 0 ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Histórico</h3>{row.history.map((event) => <div key={event.id} className="rounded-md bg-muted/35 px-3 py-2 text-xs"><span className="font-medium">{eventLabel(event.eventType)}</span><span className="text-muted-foreground"> · {event.actorName} · {new Date(event.createdAt).toLocaleString("pt-BR")}</span>{event.note ? <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{event.note}</p> : null}</div>)}</section> : null}
         </div>
-        <DialogFooter>{row.canCancel ? <Button type="button" variant="destructive" disabled={pending || row.status === "completed" || row.status === "cancelled"} onClick={cancel}>Cancelar fluxo</Button> : null}</DialogFooter>
+        <DialogFooter className="gap-2 sm:justify-between">
+          <p className="mr-auto text-xs text-muted-foreground">Cancelar preserva o histórico; excluir remove o Fluxo definitivamente.</p>
+          {row.canCancel ? <Button type="button" variant="outline" disabled={pending || row.status === "completed" || row.status === "cancelled"} onClick={cancel}>Cancelar fluxo</Button> : null}
+          {row.canDelete ? <Button type="button" variant="destructive" disabled={pending} onClick={remove}>Excluir definitivamente</Button> : null}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

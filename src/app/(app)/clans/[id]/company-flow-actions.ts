@@ -453,3 +453,81 @@ export async function cancelCompanyFlow(
   if (result.ok) revalidateCompanyFlow(data.clanId);
   return result;
 }
+
+/**
+ * Apaga um Fluxo criado por engano. O banco remove em cascata o histórico e a
+ * credencial Gov.br cifrada. Um informativo ainda pendente é cancelado antes
+ * da exclusão; se ele já foi confirmado, as missões e os avisos continuam
+ * preservados — apenas o Fluxo deixa de aparecer no Societário.
+ */
+export async function deleteCompanyFlow(
+  input: z.input<typeof flowTargetSchema>,
+): Promise<ActionResult> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  const parsed = flowTargetSchema.safeParse(input);
+  if (!parsed.success) return err("Fluxo inválido.");
+  const data = parsed.data;
+
+  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
+    const corporate = await requireCorporateFlowClan(tx, { ...ctx, clanId: data.clanId });
+    if (!corporate || !canCreateCompanyFlow(corporate.facts)) {
+      return err("Apenas owner ou admin pode excluir o Fluxo.");
+    }
+
+    // A confirmação do informativo bloqueia o próprio rascunho antes de ler o
+    // Fluxo. Mantemos essa mesma ordem para não disputar locks em sentidos
+    // opostos quando alguém confirmar e outra pessoa tentar excluir.
+    const [candidate] = await tx
+      .select({ informativeId: schema.companyFlows.informativeId })
+      .from(schema.companyFlows)
+      .where(and(
+        eq(schema.companyFlows.orgId, ctx.orgId),
+        eq(schema.companyFlows.id, data.flowId),
+        eq(schema.companyFlows.societarioClanId, data.clanId),
+      ));
+    if (!candidate) return err("Fluxo não encontrado.");
+
+    let informative: { id: string; status: "pending" | "confirmed" | "cancelled" } | undefined;
+    if (candidate.informativeId) {
+      [informative] = await tx
+        .select({ id: schema.informatives.id, status: schema.informatives.status })
+        .from(schema.informatives)
+        .where(and(
+          eq(schema.informatives.orgId, ctx.orgId),
+          eq(schema.informatives.id, candidate.informativeId),
+      ))
+        .for("update");
+      if (!informative) return err("A prévia de Informativo vinculada a este Fluxo não foi encontrada.");
+    }
+
+    const [flow] = await tx
+      .select()
+      .from(schema.companyFlows)
+      .where(and(
+        eq(schema.companyFlows.orgId, ctx.orgId),
+        eq(schema.companyFlows.id, data.flowId),
+        eq(schema.companyFlows.societarioClanId, data.clanId),
+      ))
+      .for("update");
+    if (!flow) return err("Fluxo não encontrado.");
+    if (flow.informativeId !== candidate.informativeId) {
+      return err("O Fluxo foi atualizado. Atualize a página e tente novamente.");
+    }
+
+    if (informative?.status === "pending") {
+      await tx
+        .update(schema.informatives)
+        .set({ status: "cancelled", decidedAt: new Date() })
+        .where(eq(schema.informatives.id, informative.id));
+    }
+    await tx.delete(schema.companyFlows).where(and(
+      eq(schema.companyFlows.orgId, ctx.orgId),
+      eq(schema.companyFlows.id, flow.id),
+    ));
+    return { ok: true };
+  });
+
+  if (result.ok) revalidateCompanyFlow(data.clanId);
+  return result;
+}
