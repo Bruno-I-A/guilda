@@ -44,6 +44,9 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?defina BETTER_AUTH_SECRET no .env}
       BETTER_AUTH_URL: https://${DOMAIN:?defina DOMAIN no .env}
       NEXT_PUBLIC_APP_URL: https://${DOMAIN:?defina DOMAIN no .env}
+      # Opcional para o restante do app, mas necessário para registrar a
+      # credencial Gov.br cifrada no Fluxo Societário.
+      FLOW_SECRETS_KEY: ${FLOW_SECRETS_KEY:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
