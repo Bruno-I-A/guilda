@@ -10,7 +10,6 @@ import {
   deriveOfficeFeeStatus,
   OFFICE_FEE_STAGES,
   officeFeeProfileVersionMatches,
-  type OfficeFeeBillingMethod,
   type OfficeFeeStage,
 } from "@/domain/office-fee-control";
 import type { FiscalStepStatus } from "@/domain/fiscal-control";
@@ -337,5 +336,3 @@ export async function updateOfficeFeeControl(
   if (result.ok) revalidatePath(`/clans/${data.clanId}`);
   return result;
 }
-
-export type { OfficeFeeBillingMethod };
