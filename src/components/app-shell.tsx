@@ -11,6 +11,8 @@ import {
   ListTodo,
   LogOut,
   MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
   ScrollText,
   Settings,
   Trophy,
@@ -18,7 +20,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 
 import { GuildSeal } from "@/components/guild-crest";
 import { isAdminRole } from "@/domain/guild-permissions";
@@ -81,6 +83,23 @@ const DESKTOP_NAV_GROUPS = [
 ] as const;
 
 const DESKTOP_ACCOUNT_HREFS = ["/profile", "/settings"] as const;
+
+const SIDEBAR_PREFERENCE_KEY = "guilda.sidebar-collapsed";
+const SIDEBAR_PREFERENCE_EVENT = "guilda:sidebar-preference-changed";
+
+function subscribeToSidebarPreference(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener(SIDEBAR_PREFERENCE_EVENT, onStoreChange);
+
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener(SIDEBAR_PREFERENCE_EVENT, onStoreChange);
+  };
+}
+
+function getSidebarPreference() {
+  return window.localStorage.getItem(SIDEBAR_PREFERENCE_KEY) === "true";
+}
 
 /**
  * Esconder o item não é a proteção — a própria rota /settings redireciona
@@ -174,6 +193,16 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [overflowOpen, setOverflowOpen] = useState(false);
+  const sidebarCollapsed = useSyncExternalStore(
+    subscribeToSidebarPreference,
+    getSidebarPreference,
+    () => false,
+  );
+
+  function setSidebarVisibility(collapsed: boolean) {
+    window.localStorage.setItem(SIDEBAR_PREFERENCE_KEY, String(collapsed));
+    window.dispatchEvent(new Event(SIDEBAR_PREFERENCE_EVENT));
+  }
 
   const navItems = useMemo(() => navItemsFor(role), [role]);
   const mobilePrimary = navItems.filter((item) =>
@@ -194,18 +223,36 @@ export function AppShell({
   return (
     <div className="flex min-h-svh w-full">
       {/* Sidebar — desktop */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar/95 md:flex">
+      <aside
+        inert={sidebarCollapsed}
+        aria-hidden={sidebarCollapsed || undefined}
+        className={cn(
+          "fixed inset-y-0 left-0 z-30 hidden w-72 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar/95 transition-transform duration-300 ease-out md:flex",
+          sidebarCollapsed ? "-translate-x-full" : "translate-x-0",
+        )}
+      >
         <div className="relative px-5 pt-5 pb-4">
           <div aria-hidden className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/70 to-transparent" />
-          <Link href="/dashboard" className="flex items-center gap-3" aria-label="Ir para o início">
-            <span className="grid size-10 place-items-center border border-primary/50 bg-primary/10 [clip-path:polygon(0.45rem_0,100%_0,100%_calc(100%-0.45rem),calc(100%-0.45rem)_100%,0_100%,0_0.45rem)]">
-              <GuildSeal className="size-7" />
-            </span>
-            <span className="grid leading-none">
-              <span className="hud-label text-[9px] tracking-[0.28em]">Mesa de comando</span>
-              <span className="mt-1 font-heading text-xl font-semibold tracking-[0.11em]">Guilda</span>
-            </span>
-          </Link>
+          <div className="flex items-start justify-between gap-3">
+            <Link href="/dashboard" className="flex min-w-0 items-center gap-3" aria-label="Ir para o início">
+              <span className="grid size-10 shrink-0 place-items-center border border-primary/50 bg-primary/10 [clip-path:polygon(0.45rem_0,100%_0,100%_calc(100%-0.45rem),calc(100%-0.45rem)_100%,0_100%,0_0.45rem)]">
+                <GuildSeal className="size-7" />
+              </span>
+              <span className="grid min-w-0 leading-none">
+                <span className="hud-label truncate text-[9px] tracking-[0.28em]">Mesa de comando</span>
+                <span className="mt-1 font-heading text-xl font-semibold tracking-[0.11em]">Guilda</span>
+              </span>
+            </Link>
+            <button
+              type="button"
+              onClick={() => setSidebarVisibility(true)}
+              aria-label="Esconder navegação lateral"
+              title="Esconder navegação lateral"
+              className="grid size-8 shrink-0 place-items-center border border-sidebar-border text-muted-foreground transition-colors hover:border-primary/60 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <PanelLeftClose className="size-4" aria-hidden />
+            </button>
+          </div>
         </div>
 
         <div className="mx-4 border border-sidebar-border bg-[linear-gradient(120deg,oklch(0.3_0.04_245_/_35%),transparent_65%)] px-3 py-3 [clip-path:polygon(0.55rem_0,100%_0,100%_calc(100%-0.55rem),calc(100%-0.55rem)_100%,0_100%,0_0.55rem)]">
@@ -219,7 +266,7 @@ export function AppShell({
           <p className="mt-2 border-t border-sidebar-border pt-2 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">ambiente de trabalho</p>
         </div>
 
-        <nav className="flex flex-1 flex-col overflow-y-auto px-4 py-5" aria-label="Principal">
+        <nav className="flex flex-1 flex-col overflow-y-auto px-4 py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Principal">
           <div className="grid gap-5">
             {DESKTOP_NAV_GROUPS.map((group) => (
               <section key={group.code}>
@@ -295,8 +342,28 @@ export function AppShell({
         </div>
       </aside>
 
+      <button
+        type="button"
+        onClick={() => setSidebarVisibility(false)}
+        aria-label="Mostrar navegação lateral"
+        title="Mostrar navegação lateral"
+        className={cn(
+          "fixed top-5 left-0 z-40 hidden size-10 place-items-center border border-l-0 border-sidebar-border bg-sidebar text-muted-foreground shadow-lg transition-all duration-300 hover:border-primary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:grid",
+          sidebarCollapsed
+            ? "translate-x-0 opacity-100"
+            : "-translate-x-full opacity-0 pointer-events-none",
+        )}
+      >
+        <PanelLeftOpen className="size-4" aria-hidden />
+      </button>
+
       {/* Conteúdo */}
-      <div className="flex min-w-0 flex-1 flex-col md:pl-72">
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 flex-col transition-[padding] duration-300 ease-out",
+          sidebarCollapsed ? "md:pl-0" : "md:pl-72",
+        )}
+      >
         {/* Header — mobile */}
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background/95 px-4 backdrop-blur md:hidden">
           <div className="flex min-w-0 items-center gap-2 font-semibold">
