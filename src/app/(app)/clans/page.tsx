@@ -1,34 +1,17 @@
 import { asc, eq } from "drizzle-orm";
-import { AlertTriangle, Crown, Flag, ListTodo, UserRoundX, Users } from "lucide-react";
+import { ArrowUpRight, Flag, Users } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { filterVisibleClans, resolveClanEntry } from "@/domain/clan-access";
 import { isAdminRole } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
-import { initials } from "@/lib/people";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Meu clã" };
-
-const OPEN_STATUSES = new Set([
-  "pending",
-  "in_progress",
-  "awaiting_approval",
-  "rejected",
-]);
 
 export default async function ClansPage() {
   const session = await requireOrgSession();
@@ -37,26 +20,18 @@ export default async function ClansPage() {
   const role = viewer.role as OrgRole;
   const viewerIsAdmin = isAdminRole(role);
 
-  const { clans, orgMemberIds, myClanIds } = await withOrgTx(
+  const { clans, myClanIds } = await withOrgTx(
     session.orgId,
     async (tx) => {
       const clanRows = await tx.query.clans.findMany({
         where: eq(schema.clans.orgId, session.orgId),
         with: {
-          memberships: { with: { user: { columns: { name: true } } } },
-          tasks: {
-            columns: { status: true, assigneeId: true, dueDate: true },
-          },
+          memberships: { columns: { userId: true } },
         },
         orderBy: [asc(schema.clans.name)],
       });
-      const memberRows = await tx
-        .select({ userId: schema.member.userId })
-        .from(schema.member)
-        .where(eq(schema.member.organizationId, session.orgId));
       return {
         clans: clanRows,
-        orgMemberIds: new Set(memberRows.map((row) => row.userId)),
         myClanIds: clanRows
           .filter((clan) =>
             clan.memberships.some(
@@ -77,17 +52,19 @@ export default async function ClansPage() {
   const visible = filterVisibleClans({ role, memberClanIds: myClanIds }, clans);
 
   return (
-    <div className="grid gap-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-wide">
-          <Flag className="size-6 text-primary" aria-hidden />{" "}
-          {viewerIsAdmin ? "Clãs" : "Meus clãs"}
-        </h1>
-        <p className="text-muted-foreground">
-          {viewerIsAdmin
-            ? "As áreas operacionais da Guilda, suas lideranças e missões em aberto."
-            : "Os clãs em que você atua: missões, integrantes e campanhas do mês."}
-        </p>
+    <div className="grid gap-8">
+      <div className="flex items-center gap-3">
+        <span className="grid size-10 place-items-center border border-primary/45 bg-primary/10 [clip-path:polygon(0.45rem_0,100%_0,100%_calc(100%-0.45rem),calc(100%-0.45rem)_100%,0_100%,0_0.45rem)]">
+          <Flag className="size-5 text-primary" aria-hidden />
+        </span>
+        <div>
+          <p className="hud-label text-[10px]">
+            {viewerIsAdmin ? "Áreas de trabalho" : "Seus espaços"}
+          </p>
+          <h1 className="mt-1 font-heading text-3xl font-semibold tracking-wide">
+            {viewerIsAdmin ? "Clãs" : "Meus clãs"}
+          </h1>
+        </div>
       </div>
 
       {entry.outcome === "none" ? (
@@ -104,129 +81,32 @@ export default async function ClansPage() {
           Os clãs ainda não foram preparados para esta Guilda.
         </div>
       ) : (
-        <div className="grid items-start gap-4 lg:grid-cols-2">
-          {visible.map((clan) => {
-            const memberships = clan.memberships
-              .filter((membership) => orgMemberIds.has(membership.userId))
-              .sort((left, right) =>
-                left.user.name.localeCompare(right.user.name, "pt-BR"),
-              );
-            const leaders = memberships.filter((membership) => membership.isLeader);
-            const openTasks = clan.tasks.filter((task) =>
-              OPEN_STATUSES.has(task.status),
-            );
-            const unassigned = openTasks.filter((task) => !task.assigneeId).length;
-            const overdue = openTasks.filter(
-              (task) => task.dueDate && task.dueDate.getTime() < Date.now(),
-            ).length;
-
-            return (
-              <Card key={clan.id} className="panel-cut texture-iron">
-                <CardHeader>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <CardTitle className="text-lg">
-                        <Link
-                          href={`/clans/${clan.id}`}
-                          className="underline-offset-4 hover:underline"
-                        >
-                          {clan.name}
-                        </Link>
-                      </CardTitle>
-                      <CardDescription>
-                        {memberships.length}{" "}
-                        {memberships.length === 1 ? "integrante" : "integrantes"}
-                      </CardDescription>
-                    </div>
-                    <Badge variant={clan.active ? "secondary" : "outline"}>
-                      {clan.active ? "Ativo" : "Inativo"}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="grid gap-4">
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="rounded-lg bg-muted/45 p-2.5">
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <ListTodo className="size-3.5" aria-hidden /> Abertas
-                      </span>
-                      <strong className="mt-1 block font-mono text-lg">
-                        {openTasks.length}
-                      </strong>
-                    </div>
-                    <div className="rounded-lg bg-muted/45 p-2.5">
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <UserRoundX className="size-3.5" aria-hidden /> Sem responsável
-                      </span>
-                      <strong className="mt-1 block font-mono text-lg">
-                        {unassigned}
-                      </strong>
-                    </div>
-                    <div className="rounded-lg bg-muted/45 p-2.5">
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <AlertTriangle className="size-3.5" aria-hidden /> Atrasadas
-                      </span>
-                      <strong className="mt-1 block font-mono text-lg">{overdue}</strong>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <p className="hud-label">Liderança</p>
-                    {leaders.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {leaders.map((leader) => (
-                          <Badge key={leader.id} variant="default" className="gap-1">
-                            <Crown className="size-3" aria-hidden /> {leader.user.name}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="flex items-center gap-1.5 text-sm text-destructive">
-                        <AlertTriangle className="size-4" aria-hidden /> Sem líder
-                        definido
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="grid gap-2">
-                    <p className="hud-label">Integrantes</p>
-                    {memberships.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {memberships.map((membership) => (
-                          <span
-                            key={membership.id}
-                            className="inline-flex items-center gap-1.5 rounded-full border bg-background/50 py-1 pr-2.5 pl-1 text-xs"
-                          >
-                            <Avatar className="size-5">
-                              <AvatarFallback className="text-[8px]">
-                                {initials(membership.user.name)}
-                              </AvatarFallback>
-                            </Avatar>
-                            {membership.user.name}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                        <Users className="size-4" aria-hidden /> Nenhuma pessoa vinculada
-                      </p>
-                    )}
-                  </div>
-
-                  <Link
-                    href={`/clans/${clan.id}`}
-                    className="flex items-center justify-between gap-2 rounded-md border bg-background/40 px-3 py-2 text-sm font-medium hover:bg-accent/40"
-                  >
-                    Abrir o clã
-                    {unassigned > 0 ? (
-                      <span className="font-mono text-xs text-primary">
-                        {unassigned} sem dono
-                      </span>
-                    ) : null}
-                  </Link>
-                </CardContent>
-              </Card>
-            );
-          })}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {visible.map((clan) => (
+            <Link
+              key={clan.id}
+              href={`/clans/${clan.id}`}
+              aria-label={`Abrir clã ${clan.name}`}
+              className="group relative flex min-h-36 flex-col justify-between overflow-hidden border border-border bg-card/75 p-5 transition-all hover:-translate-y-0.5 hover:border-primary/60 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [clip-path:polygon(0.7rem_0,100%_0,100%_calc(100%-0.7rem),calc(100%-0.7rem)_100%,0_100%,0_0.7rem)]"
+            >
+              <span
+                aria-label={clan.active ? "Clã ativo" : "Clã inativo"}
+                className={
+                  clan.active
+                    ? "size-2 bg-primary [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]"
+                    : "size-2 border border-muted-foreground/60 [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]"
+                }
+              />
+              <div className="flex items-end justify-between gap-4">
+                <h2 className="font-heading text-2xl font-medium tracking-wide text-foreground">
+                  {clan.name}
+                </h2>
+                <span className="grid size-9 shrink-0 place-items-center border border-border bg-background/50 text-muted-foreground transition-colors group-hover:border-primary group-hover:bg-primary group-hover:text-primary-foreground">
+                  <ArrowUpRight className="size-4" aria-hidden />
+                </span>
+              </div>
+            </Link>
+          ))}
         </div>
       )}
     </div>
