@@ -284,6 +284,56 @@ export async function returnCompanyFlowToOwner(
   const parsed = returnFlowSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
   const data = parsed.data;
+  const resultCnpj = data.resultCnpj ? normalizeCnpj(data.resultCnpj) : null;
+  let officialLegalName = data.approvedLegalName || null;
+
+  if (resultCnpj) {
+    // A consulta visual apenas auxilia a revisão. A gravação repete a consulta
+    // no servidor para que texto alterado no navegador nunca substitua a razão
+    // social oficial vinculada ao CNPJ.
+    const authorized = await withOrgTx(ctx.orgId, async (tx) => {
+      const corporate = await requireCorporateFlowClan(tx, {
+        ...ctx,
+        clanId: data.clanId,
+      });
+      if (!corporate) return false;
+      const [flow] = await tx
+        .select({
+          assignedTo: schema.companyFlows.assignedTo,
+          status: schema.companyFlows.status,
+        })
+        .from(schema.companyFlows)
+        .where(
+          and(
+            eq(schema.companyFlows.orgId, ctx.orgId),
+            eq(schema.companyFlows.id, data.flowId),
+            eq(schema.companyFlows.societarioClanId, data.clanId),
+          ),
+        );
+      return Boolean(
+        flow &&
+        flow.status === "in_progress" &&
+        canReturnCompanyFlow({
+          ...corporate.facts,
+          isActiveCorporateMember: corporate.activeMember,
+          isAssignedToFlow: flow.assignedTo === ctx.userId,
+        }),
+      );
+    });
+    if (!authorized) {
+      return err("Você não pode devolver este Fluxo.");
+    }
+
+    const officialCompany = await lookupCnpj(resultCnpj);
+    if (!officialCompany.ok) {
+      return err(
+        officialCompany.reason === "not_found"
+          ? "CNPJ não encontrado na Receita. Confira o número antes de devolver."
+          : "Não foi possível confirmar a razão social na Receita agora. Tente novamente.",
+      );
+    }
+    officialLegalName = officialCompany.data.legalName;
+  }
 
   const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
     const corporate = await requireCorporateFlowClan(tx, { ...ctx, clanId: data.clanId });
@@ -298,11 +348,10 @@ export async function returnCompanyFlowToOwner(
     if (flow.status !== "in_progress") return err("Este Fluxo não está em processamento.");
     if (flow.kind === "opening" && !data.resultCnpj) return err("Informe o CNPJ aprovado antes de devolver uma abertura.");
 
-    const resultCnpj = data.resultCnpj ? normalizeCnpj(data.resultCnpj) : null;
     await tx.update(schema.companyFlows).set({
       status: "awaiting_owner",
       resultCnpj,
-      approvedLegalName: data.approvedLegalName || null,
+      approvedLegalName: officialLegalName,
       approvedActivities: data.approvedActivities,
       processingNotes: data.processingNotes,
       returnedAt: new Date(),
@@ -313,7 +362,11 @@ export async function returnCompanyFlowToOwner(
       flowId: flow.id,
       eventType: "returned_to_owner",
       previousValue: { status: flow.status },
-      newValue: { status: "awaiting_owner", resultCnpj },
+      newValue: {
+        status: "awaiting_owner",
+        resultCnpj,
+        approvedLegalName: officialLegalName,
+      },
       note: data.processingNotes,
       actorId: ctx.userId,
     });
