@@ -33,11 +33,13 @@ export async function MissionsTab({
   clanId,
   memberships,
   canDistribute,
+  canQuickComplete,
 }: {
   orgId: string;
   clanId: string;
   memberships: readonly ClanMemberView[];
   canDistribute: boolean;
+  canQuickComplete: boolean;
 }) {
   const { openTasks, suggestedUsers } = await withOrgTx(orgId, async (tx) => {
     const tasks = await tx.query.tasks.findMany({
@@ -198,6 +200,7 @@ export async function MissionsTab({
       <DistributionBoard
         clanId={clanId}
         canDistribute={canDistribute}
+        canQuickComplete={canQuickComplete}
         groups={boardGroups}
         members={members}
       />

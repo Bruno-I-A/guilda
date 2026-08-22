@@ -1,10 +1,12 @@
+export const CUSTOMER_SUCCESS_CLAN_SLUG = "sucesso-do-cliente";
+
 export const DEFAULT_ORGANIZATION_CLANS = [
   { name: "Fiscal", slug: "fiscal" },
   { name: "Contabilidade", slug: "contabilidade" },
   { name: "RH", slug: "rh" },
   { name: "Societário", slug: "societario" },
   { name: "Financeiro", slug: "financeiro" },
-  { name: "Sucesso do Cliente", slug: "sucesso-do-cliente" },
+  { name: "Sucesso do Cliente", slug: CUSTOMER_SUCCESS_CLAN_SLUG },
 ] as const;
 
 export const DEFAULT_PRIMARY_CLAN_SLUG = "contabilidade";

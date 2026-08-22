@@ -695,6 +695,26 @@ export async function confirmInformative(
         requiresAck: true,
       });
       noticePublished = Boolean(notice);
+    } else if (taskIds.length > 0) {
+      const trackingName =
+        flowLegalName ?? payload.company.legalName ?? "Missões geradas";
+      const notice = await publishGuildNotice(tx, {
+        orgId: actor.orgId,
+        authorId: actor.userId,
+        kind: "notice",
+        title: `Informativo: ${trackingName}`,
+        body: [
+          `${taskIds.length} ${taskIds.length === 1 ? "missão foi gerada" : "missões foram geradas"} por este Informativo.`,
+          payload.observations.length > 0
+            ? `Observações:\n${payload.observations.join("\n")}`
+            : null,
+        ]
+          .filter((line): line is string => Boolean(line))
+          .join("\n\n"),
+        clientId,
+        informativeId: informative.id,
+      });
+      noticePublished = Boolean(notice);
     }
 
     await tx

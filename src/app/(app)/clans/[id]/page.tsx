@@ -10,12 +10,14 @@ import * as schema from "@/db/schema";
 import { canViewClan } from "@/domain/clan-access";
 import {
   canDistributeClanTasks,
+  canQuickCompleteUnassignedInformativeTask,
   canManageClanCommitments,
   canManageFiscalPortfolio,
   isAdminRole,
 } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
 import { parseClanTab } from "@/lib/clan-tabs";
+import { CUSTOMER_SUCCESS_CLAN_SLUG } from "@/lib/clans/rules";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 
 import { CampaignsTab } from "./campaigns-tab";
@@ -183,6 +185,15 @@ export default async function ClanPage({
           clanId={clan.id}
           memberships={memberships}
           canDistribute={canDistributeClanTasks({ role, leadsThisClan })}
+          canQuickComplete={canQuickCompleteUnassignedInformativeTask({
+            role,
+            leadsThisClan,
+            isActiveClanMember: memberships.some(
+              (membership) => membership.userId === session.user.id,
+            ),
+            isCustomerSuccessClan:
+              clan.slug === CUSTOMER_SUCCESS_CLAN_SLUG,
+          })}
         />
       ) : null}
 

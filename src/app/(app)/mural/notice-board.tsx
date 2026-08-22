@@ -1,6 +1,17 @@
 "use client";
 
-import { Archive, Building2, Check, Megaphone, Pin, Plus } from "lucide-react";
+import {
+  Archive,
+  Building2,
+  Check,
+  CircleCheckBig,
+  ListChecks,
+  Megaphone,
+  Pin,
+  Plus,
+  UserRoundX,
+} from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -18,8 +29,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
+import type { TaskStatus } from "@/domain/task-state";
 import type { ActionResult } from "@/lib/action-context";
+import { STATUS_BADGE_CLASSES, STATUS_LABELS } from "@/lib/task-ui";
 
 import { acknowledgeNotice, archiveNotice, publishNotice } from "./actions";
 
@@ -38,6 +52,19 @@ export interface NoticeView {
   ackCount: number;
   totalMembers: number;
   pendingNames: string[];
+  missionSummary: {
+    total: number;
+    completed: number;
+    cancelled: number;
+    unassigned: number;
+    items: Array<{
+      id: string;
+      title: string;
+      status: TaskStatus;
+      clanName: string | null;
+      assigneeName: string | null;
+    }>;
+  } | null;
 }
 
 function formatPublished(value: string): string {
@@ -48,6 +75,96 @@ function formatPublished(value: string): string {
     minute: "2-digit",
     timeZone: "America/Sao_Paulo",
   }).format(new Date(value));
+}
+
+function InformativeMissionSummary({
+  summary,
+}: {
+  summary: NonNullable<NoticeView["missionSummary"]>;
+}) {
+  const open = summary.total - summary.completed - summary.cancelled;
+  const progress = summary.total > 0
+    ? Math.round((summary.completed / summary.total) * 100)
+    : 100;
+  const allCompleted = summary.total > 0 && summary.completed === summary.total;
+
+  return (
+    <section className="mt-4 grid gap-3 border-t pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2 text-sm font-medium">
+          <ListChecks className="size-4 text-primary" aria-hidden />
+          Missões deste Informativo
+        </h3>
+        <Badge
+          variant="outline"
+          className={allCompleted
+            ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-300"
+            : "border-primary/30 text-primary"}
+        >
+          {allCompleted ? "Todas concluídas" : `${summary.completed} de ${summary.total} concluídas`}
+        </Badge>
+      </div>
+
+      <Progress value={progress} className="h-2" />
+
+      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+        <span className="rounded-md bg-muted/35 px-2.5 py-2">
+          <strong className="block font-mono text-base">{summary.total}</strong>
+          Geradas
+        </span>
+        <span className="rounded-md bg-muted/35 px-2.5 py-2">
+          <strong className="block font-mono text-base text-emerald-300">{summary.completed}</strong>
+          Concluídas
+        </span>
+        <span className="rounded-md bg-muted/35 px-2.5 py-2">
+          <strong className="block font-mono text-base text-primary">{open}</strong>
+          Em aberto
+        </span>
+        <span className="rounded-md bg-muted/35 px-2.5 py-2">
+          <strong className="flex items-center gap-1 font-mono text-base text-amber-300">
+            {summary.unassigned > 0 ? <UserRoundX className="size-3.5" aria-hidden /> : null}
+            {summary.unassigned}
+          </strong>
+          Sem responsável
+        </span>
+      </div>
+
+      {summary.total === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Este Informativo não gerou missões.
+        </p>
+      ) : (
+        <details className="group rounded-md border bg-background/25">
+          <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground">
+            Ver resumo das {summary.total} {summary.total === 1 ? "missão" : "missões"}
+          </summary>
+          <ul className="divide-y border-t">
+            {summary.items.map((task) => (
+              <li key={task.id}>
+                <Link
+                  href={`/tasks/${task.id}`}
+                  className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm hover:bg-muted/25"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{task.title}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {[task.clanName, task.assigneeName ?? "Sem responsável"]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </span>
+                  <Badge className={STATUS_BADGE_CLASSES[task.status]}>
+                    {task.status === "completed" ? <CircleCheckBig aria-hidden /> : null}
+                    {STATUS_LABELS[task.status]}
+                  </Badge>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
 }
 
 export function NoticeBoard({
@@ -237,6 +354,10 @@ export function NoticeBoard({
                 <p className="mt-3 whitespace-pre-wrap text-sm text-muted-foreground">
                   {notice.body}
                 </p>
+
+                {notice.missionSummary ? (
+                  <InformativeMissionSummary summary={notice.missionSummary} />
+                ) : null}
 
                 {notice.requiresAck ? (
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-3">

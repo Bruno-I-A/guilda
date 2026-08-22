@@ -1,10 +1,12 @@
 "use client";
 
-import { Check, Sparkles, UserRoundCheck } from "lucide-react";
+import { Check, CircleCheckBig, Sparkles, UserRoundCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+
+import { quickCompleteUnassignedInformativeTask } from "@/app/(app)/tasks/actions";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,11 +70,13 @@ function formatDue(value: string | null): string | null {
 export function DistributionBoard({
   clanId,
   canDistribute,
+  canQuickComplete,
   groups,
   members,
 }: {
   clanId: string;
   canDistribute: boolean;
+  canQuickComplete: boolean;
   groups: BoardGroup[];
   members: BoardMember[];
 }) {
@@ -104,6 +108,20 @@ export function DistributionBoard({
           `${data.ambiguous} ficaram para você decidir — sugestão dupla ou pessoa fora do clã.`,
         );
       }
+      router.refresh();
+    });
+  }
+
+  function completeDirectly(taskId: string) {
+    startTransition(async () => {
+      const result = await quickCompleteUnassignedInformativeTask({ taskId, clanId });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(
+        `Missão concluída diretamente. +${result.data?.xpValue ?? 0} XP`,
+      );
       router.refresh();
     });
   }
@@ -288,6 +306,18 @@ export function DistributionBoard({
                           >
                             Enviar
                           </Button>
+                          {canQuickComplete && group.informativeId ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={pending}
+                              className="border-emerald-500/35 text-emerald-300 hover:bg-emerald-500/10 hover:text-emerald-200"
+                              onClick={() => completeDirectly(task.id)}
+                            >
+                              <CircleCheckBig aria-hidden /> Concluir direto
+                            </Button>
+                          ) : null}
                         </div>
                       ) : null}
                     </li>

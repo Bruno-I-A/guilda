@@ -15,6 +15,7 @@ import {
   authorizeTransition,
   type TaskStatus,
 } from "@/domain/task-state";
+import { canQuickCompleteUnassignedInformativeTask } from "@/domain/guild-permissions";
 import {
   err,
   requireMemberContext,
@@ -23,6 +24,11 @@ import {
 import { syncClosingFromTask } from "@/lib/closings/task-sync";
 import { syncCommitmentPeriodFromTask } from "@/lib/commitments/task-sync";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
+import { CUSTOMER_SUCCESS_CLAN_SLUG } from "@/lib/clans/rules";
+import {
+  isActiveClanMember,
+  loadClanScopedFacts,
+} from "@/lib/clans/facts";
 import { createTaskRecord } from "@/lib/tasks/create";
 import { encodeTaskCallback } from "@/lib/telegram/endpoint";
 import {
@@ -476,6 +482,7 @@ async function transitionTask(options: {
     revalidatePath("/clans/[id]", "page");
     revalidatePath("/profile");
     revalidatePath("/leaderboard");
+    revalidatePath("/mural");
   }
   return result;
 }
@@ -487,6 +494,7 @@ function revalidateTaskPaths(taskId: string): void {
   revalidatePath(`/tasks/${taskId}`);
   revalidatePath("/dashboard");
   revalidatePath("/clans");
+  revalidatePath("/mural");
 }
 
 /** Membro ativo assume atomicamente uma missão pendente e sem responsável. */
@@ -787,6 +795,151 @@ async function creditTaskXp(
       reason: "task_completed",
     })
     .onConflictDoNothing();
+}
+
+/**
+ * Atalho da Mesa para rotinas simples vindas de Informativo. A interface não
+ * pede um responsável: quem confirma é registrado atomicamente como executor,
+ * preservando autoria, histórico e crédito de XP. Missões avulsas continuam
+ * obrigadas a seguir o fluxo normal.
+ */
+export async function quickCompleteUnassignedInformativeTask(input: {
+  taskId: string;
+  clanId: string;
+}): Promise<ActionResult<{ xpValue: number }>> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  const parsed = z
+    .object({ taskId: z.uuid(), clanId: z.uuid() })
+    .safeParse(input);
+  if (!parsed.success) return err("Missão inválida.");
+
+  const result = await withOrgTx(
+    ctx.orgId,
+    async (tx): Promise<ActionResult<{ xpValue: number }>> => {
+      const { clan, facts } = await loadClanScopedFacts(
+        tx,
+        ctx.orgId,
+        parsed.data.clanId,
+        ctx.userId,
+        ctx.role,
+      );
+      if (!clan || !clan.active) return err("Clã não encontrado ou inativo.");
+
+      await lockActiveClansForMembershipRead(tx, ctx.orgId);
+      const activeMember = await isActiveClanMember(
+        tx,
+        ctx.orgId,
+        clan.id,
+        ctx.userId,
+      );
+      if (
+        !canQuickCompleteUnassignedInformativeTask({
+          ...facts,
+          isActiveClanMember: activeMember,
+          isCustomerSuccessClan:
+            clan.slug === CUSTOMER_SUCCESS_CLAN_SLUG,
+        })
+      ) {
+        return err(
+          "A conclusão direta está disponível para a liderança ativa do Sucesso do Cliente.",
+        );
+      }
+
+      const [task] = await tx
+        .select()
+        .from(schema.tasks)
+        .where(
+          and(
+            eq(schema.tasks.orgId, ctx.orgId),
+            eq(schema.tasks.id, parsed.data.taskId),
+            eq(schema.tasks.clanId, clan.id),
+          ),
+        )
+        .for("update");
+      if (!task) return err("Missão não encontrada.");
+      if (task.status !== "pending" || task.assigneeId) {
+        return err("A missão já foi assumida ou concluída. Atualize a página.");
+      }
+      if (!task.informativeId) {
+        return err("A conclusão direta só está disponível para missões de Informativo.");
+      }
+
+      const now = new Date();
+      const taskForCompletion: schema.Task = {
+        ...task,
+        assigneeId: ctx.userId,
+        status: "in_progress",
+        updatedAt: now,
+      };
+
+      await tx
+        .update(schema.tasks)
+        .set({
+          assigneeId: ctx.userId,
+          status: "completed",
+          completedAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(eq(schema.tasks.orgId, ctx.orgId), eq(schema.tasks.id, task.id)),
+        );
+      await tx.insert(schema.taskTransfers).values({
+        orgId: ctx.orgId,
+        taskId: task.id,
+        actorId: ctx.userId,
+        fromAssigneeId: null,
+        toAssigneeId: ctx.userId,
+        fromClanId: task.clanId,
+        toClanId: clan.id,
+        note: "Executor registrado pela conclusão direta.",
+      });
+      await tx.insert(schema.taskEvents).values({
+        orgId: ctx.orgId,
+        taskId: task.id,
+        actorId: ctx.userId,
+        fromStatus: "pending",
+        toStatus: "in_progress",
+        note: "Assumida automaticamente pela conclusão direta.",
+      });
+      const [completionEvent] = await tx
+        .insert(schema.taskEvents)
+        .values({
+          orgId: ctx.orgId,
+          taskId: task.id,
+          actorId: ctx.userId,
+          fromStatus: "in_progress",
+          toStatus: "completed",
+          note: "Concluída diretamente na fila do clã.",
+        })
+        .returning({ id: schema.taskEvents.id });
+
+      await creditTaskXp(tx, taskForCompletion, completionEvent.id);
+      await syncClosingFromTask(tx, {
+        task: taskForCompletion,
+        fromStatus: "in_progress",
+        toStatus: "completed",
+        changedAt: now,
+      });
+      await syncCommitmentPeriodFromTask(tx, {
+        task: taskForCompletion,
+        fromStatus: "in_progress",
+        toStatus: "completed",
+        changedAt: now,
+      });
+
+      return { ok: true, data: { xpValue: task.xpValue } };
+    },
+  );
+
+  if (result.ok) {
+    revalidateTaskPaths(parsed.data.taskId);
+    revalidatePath(`/clans/${parsed.data.clanId}`);
+    revalidatePath("/profile");
+    revalidatePath("/leaderboard");
+    revalidatePath("/mural");
+  }
+  return result;
 }
 
 /** Aprova uma entrega legada que já esteja em awaiting_approval. */

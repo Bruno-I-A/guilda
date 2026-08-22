@@ -120,6 +120,27 @@ export function canDistributeClanTasks(actor: ClanScopedFacts): boolean {
   return isAdminRole(actor.role) || actor.leadsThisClan;
 }
 
+export interface QuickCompleteClanTaskFacts extends ClanScopedFacts {
+  /** Quem confirma recebe o registro e o XP, então precisa integrar o clã. */
+  isActiveClanMember: boolean;
+  /** Atalho reservado às rotinas simples do Sucesso do Cliente. */
+  isCustomerSuccessClan: boolean;
+}
+
+/**
+ * Conclusão de uma missão simples ainda sem dono: mantém a régua da Mesa do
+ * Líder, mas exige que quem clicou possa ser registrado como executor.
+ */
+export function canQuickCompleteUnassignedInformativeTask(
+  actor: QuickCompleteClanTaskFacts,
+): boolean {
+  return (
+    actor.isCustomerSuccessClan &&
+    actor.isActiveClanMember &&
+    canDistributeClanTasks(actor)
+  );
+}
+
 /**
  * Distribuição de lucros da empresa (planejar, registrar valor e gerar a
  * missão do período): mesma régua do dia a dia do líder da Contabilidade.

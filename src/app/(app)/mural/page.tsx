@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
@@ -18,7 +18,7 @@ export default async function MuralPage() {
   if (!viewer) redirect("/onboarding");
   const role = viewer.role as OrgRole;
 
-  const { notices, orgMembers, leadsAnyClan } = await withOrgTx(
+  const { notices, orgMembers, leadsAnyClan, informativeTasks } = await withOrgTx(
     session.orgId,
     async (tx) => {
       const noticeRows = await tx.query.guildNotices.findMany({
@@ -59,11 +59,28 @@ export default async function MuralPage() {
           ),
         )
         .limit(1);
+      const informativeIds = noticeRows
+        .map((notice) => notice.informativeId)
+        .filter((id): id is string => Boolean(id));
+      const missionRows = informativeIds.length > 0
+        ? await tx.query.tasks.findMany({
+            where: and(
+              eq(schema.tasks.orgId, session.orgId),
+              inArray(schema.tasks.informativeId, informativeIds),
+            ),
+            with: {
+              clan: { columns: { name: true } },
+              assignee: { columns: { name: true } },
+            },
+            orderBy: [asc(schema.tasks.createdAt)],
+          })
+        : [];
 
       return {
         notices: noticeRows,
         orgMembers: memberRows,
         leadsAnyClan: leadership.length > 0,
+        informativeTasks: missionRows,
       };
     },
   );
@@ -71,6 +88,13 @@ export default async function MuralPage() {
   const facts = { role, leadsAnyClan };
   const canEmphasize = canEmphasizeNotice(facts);
   const nameByUserId = new Map(orgMembers.map((m) => [m.userId, m.name]));
+  const tasksByInformative = new Map<string, typeof informativeTasks>();
+  for (const task of informativeTasks) {
+    if (!task.informativeId) continue;
+    const current = tasksByInformative.get(task.informativeId) ?? [];
+    current.push(task);
+    tasksByInformative.set(task.informativeId, current);
+  }
 
   const views: NoticeView[] = notices.map((notice) => {
     const readerIds = new Set(notice.reads.map((read) => read.userId));
@@ -84,6 +108,21 @@ export default async function MuralPage() {
     const pendingNames = orgMembers
       .filter((member) => !readerIds.has(member.userId))
       .map((member) => member.name);
+    const missionTasks = notice.informativeId
+      ? (tasksByInformative.get(notice.informativeId) ?? [])
+      : [];
+    const completedMissions = missionTasks.filter(
+      (task) => task.status === "completed",
+    ).length;
+    const cancelledMissions = missionTasks.filter(
+      (task) => task.status === "cancelled",
+    ).length;
+    const unassignedMissions = missionTasks.filter(
+      (task) =>
+        !task.assigneeId &&
+        task.status !== "completed" &&
+        task.status !== "cancelled",
+    ).length;
 
     return {
       id: notice.id,
@@ -100,6 +139,21 @@ export default async function MuralPage() {
       ackCount: orgMembers.length - pendingNames.length,
       totalMembers: orgMembers.length,
       pendingNames: canSeeAcks ? pendingNames : [],
+      missionSummary: notice.informativeId
+        ? {
+            total: missionTasks.length,
+            completed: completedMissions,
+            cancelled: cancelledMissions,
+            unassigned: unassignedMissions,
+            items: missionTasks.map((task) => ({
+              id: task.id,
+              title: task.title,
+              status: task.status,
+              clanName: task.clan?.name ?? null,
+              assigneeName: task.assignee?.name ?? null,
+            })),
+          }
+        : null,
     };
   });
 

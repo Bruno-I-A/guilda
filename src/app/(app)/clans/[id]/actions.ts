@@ -131,6 +131,7 @@ export async function assignClanTasks(input: {
     revalidatePath("/clans");
     revalidatePath("/tasks");
     revalidatePath("/dashboard");
+    revalidatePath("/mural");
   }
   return result;
 }
@@ -282,6 +283,7 @@ export async function acceptClanSuggestions(input: {
     revalidatePath("/clans");
     revalidatePath("/tasks");
     revalidatePath("/dashboard");
+    revalidatePath("/mural");
   }
   return result;
 }

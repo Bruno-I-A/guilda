@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   canAppointClanLeader,
   canDistributeClanTasks,
+  canQuickCompleteUnassignedInformativeTask,
   canEmphasizeNotice,
   canHandleInformatives,
   canManageClanMembership,
@@ -185,5 +186,40 @@ describe("operação fiscal — ficha, importação e competência", () => {
         ownsControlSnapshot: false,
       }),
     ).toBe(true);
+  });
+
+  test("conclusão rápida exige poder de distribuição e vínculo com o clã", () => {
+    expect(
+      canQuickCompleteUnassignedInformativeTask({
+        role: "member",
+        leadsThisClan: true,
+        isActiveClanMember: true,
+        isCustomerSuccessClan: true,
+      }),
+    ).toBe(true);
+    expect(
+      canQuickCompleteUnassignedInformativeTask({
+        role: "owner",
+        leadsThisClan: false,
+        isActiveClanMember: false,
+        isCustomerSuccessClan: true,
+      }),
+    ).toBe(false);
+    expect(
+      canQuickCompleteUnassignedInformativeTask({
+        role: "member",
+        leadsThisClan: false,
+        isActiveClanMember: true,
+        isCustomerSuccessClan: true,
+      }),
+    ).toBe(false);
+    expect(
+      canQuickCompleteUnassignedInformativeTask({
+        role: "member",
+        leadsThisClan: true,
+        isActiveClanMember: true,
+        isCustomerSuccessClan: false,
+      }),
+    ).toBe(false);
   });
 });
