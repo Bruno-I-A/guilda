@@ -22,7 +22,11 @@ import {
 } from "@/lib/ai/informative-schema";
 import { resolveMemberName } from "@/lib/ai/member-resolution";
 import { type TaxRegime } from "@/lib/clients-ui";
-import { listActiveClans, listOrgMembers } from "@/lib/org";
+import {
+  listActiveClans,
+  listInformativeRoutingRules,
+  listOrgMembers,
+} from "@/lib/org";
 import { isDetailedInformativeMessage } from "@/lib/telegram/informative-detection";
 import { CONTABILIDADE_CLAN_SLUG } from "@/lib/clans/rules";
 
@@ -96,7 +100,7 @@ export async function buildInformativeDraft(
   resolvedCompany?: ResolvedCompany,
   flowContext?: CompanyFlowDraftContext,
 ): Promise<BuildInformativeDraftResult> {
-  const [members, clients, activeClanMemberships, activeClans] =
+  const [members, clients, activeClanMemberships, activeClans, routingRules] =
     await Promise.all([
       listOrgMembers(actor.orgId),
       withOrgTx(actor.orgId, (tx) =>
@@ -132,6 +136,7 @@ export async function buildInformativeDraft(
           ),
       ),
       listActiveClans(actor.orgId),
+      listInformativeRoutingRules(actor.orgId),
     ]);
 
   const clansByUser = new Map<
@@ -306,6 +311,7 @@ export async function buildInformativeDraft(
       sector: task.sector,
       suggestions,
       clans: routingClans,
+      rules: routingRules,
     });
 
     if (route.outcome === "clan") {
@@ -324,6 +330,18 @@ export async function buildInformativeDraft(
 
     if (route.outcome === "individual") {
       for (const person of route.assignees) {
+        if (route.clan) {
+          tasks.push({
+            ...core,
+            assignmentType: "individual",
+            assigneeId: person.userId,
+            assigneeName: person.name,
+            clanId: route.clan.id,
+            clanName: route.clan.name,
+            suggestions,
+          });
+          continue;
+        }
         const memberships = clansByUser.get(person.userId) ?? [];
         const clanResolution = resolveAssigneeClan(memberships);
         if (!clanResolution.ok) {
@@ -459,7 +477,7 @@ export async function buildInformativeDraft(
   const commitments: InformativeDraftPayload["commitments"] = [];
   const unroutedCommitments: string[] = [];
   for (const commitment of extracted.data.commitments) {
-    const clan = resolveSectorClan(commitment.sector, routingClans);
+    const clan = resolveSectorClan(commitment.sector, routingClans, routingRules);
     if (!clan || clan.slug !== CONTABILIDADE_CLAN_SLUG) {
       unroutedCommitments.push(
         `${commitment.title}${commitment.notes ? ` — ${commitment.notes}` : ""}`.slice(0, 500),

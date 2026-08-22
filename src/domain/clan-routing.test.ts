@@ -6,10 +6,11 @@ import {
   routeInformativeTask,
   stripSectorDecorations,
   type AssigneeSuggestion,
+  type InformativeRoutingRule,
   type RoutingClan,
 } from "./clan-routing";
 
-/** Os cinco clãs fixos da Guilda — nunca criar novos para acomodar setor. */
+/** Clãs legados usados para provar a migração da configuração anterior. */
 const CLANS: RoutingClan[] = [
   { id: "clan-fiscal", name: "Fiscal", slug: "fiscal" },
   { id: "clan-contabil", name: "Contabilidade", slug: "contabilidade" },
@@ -167,6 +168,71 @@ describe("regra de roteamento — as três linhas da tabela", () => {
     expect(route.assignees.map((person) => person.userId)).toEqual([
       "user-eduarda",
     ]);
+  });
+});
+
+describe("roteamento configurável pela organização", () => {
+  const atendimento: RoutingClan = {
+    id: "clan-atendimento",
+    name: "Atendimento",
+    slug: "atendimento",
+  };
+  const rules: InformativeRoutingRule[] = [
+    {
+      sector: "Boas-vindas",
+      normalizedSector: "boas vindas",
+      clanId: atendimento.id,
+      userId: null,
+      userName: null,
+    },
+    {
+      sector: "Certificado digital",
+      normalizedSector: "certificado digital",
+      clanId: atendimento.id,
+      userId: "user-bruno",
+      userName: "Bruno",
+    },
+  ];
+
+  test("um novo clã recebe a parte cadastrada sem regra no código", () => {
+    expect(
+      routeInformativeTask({
+        sector: "BOAS-VINDAS",
+        suggestions: [],
+        clans: [...CLANS, atendimento],
+        rules,
+      }),
+    ).toEqual({ outcome: "clan", clan: atendimento });
+  });
+
+  test("uma parte pode ir direto para pessoa no contexto do clã escolhido", () => {
+    const route = routeInformativeTask({
+      sector: "Certificado Digital",
+      suggestions: [],
+      clans: [...CLANS, atendimento],
+      rules,
+    });
+    expect(route).toEqual({
+      outcome: "individual",
+      clan: atendimento,
+      assignees: [
+        {
+          rawName: "Bruno",
+          userId: "user-bruno",
+          name: "Bruno",
+        },
+      ],
+    });
+  });
+
+  test("lista configurada vazia não reaplica os destinos legados", () => {
+    const route = routeInformativeTask({
+      sector: "FISCAL",
+      suggestions: [],
+      clans: CLANS,
+      rules: [],
+    });
+    expect(route.outcome).toBe("pending");
   });
 });
 

@@ -102,8 +102,8 @@ export async function listOrgMembersWithResolvedClan(
 
 /**
  * Clãs ativos da organização, sempre dentro do contexto RLS.
- * O slug acompanha o nome porque é a chave estável do roteamento
- * setor→clã (ver src/domain/clan-routing.ts).
+ * O slug acompanha o nome para as integrações especiais já existentes. O
+ * roteamento dos Informativos vem de `listInformativeRoutingRules`.
  */
 export async function listActiveClans(orgId: string) {
   return withOrgTx(orgId, (tx) =>
@@ -116,5 +116,38 @@ export async function listActiveClans(orgId: string) {
       .from(schema.clans)
       .where(and(eq(schema.clans.orgId, orgId), eq(schema.clans.active, true)))
       .orderBy(asc(schema.clans.name)),
+  );
+}
+
+/** Regras configuradas que transformam o rótulo de uma linha em destino. */
+export async function listInformativeRoutingRules(orgId: string) {
+  return withOrgTx(orgId, (tx) =>
+    tx
+      .select({
+        sector: schema.clanInformativeRoutes.sector,
+        normalizedSector: schema.clanInformativeRoutes.normalizedSector,
+        clanId: schema.clanInformativeRoutes.clanId,
+        userId: schema.clanInformativeRoutes.userId,
+        userName: schema.user.name,
+      })
+      .from(schema.clanInformativeRoutes)
+      .innerJoin(
+        schema.clans,
+        and(
+          eq(schema.clans.orgId, schema.clanInformativeRoutes.orgId),
+          eq(schema.clans.id, schema.clanInformativeRoutes.clanId),
+        ),
+      )
+      .leftJoin(schema.user, eq(schema.user.id, schema.clanInformativeRoutes.userId))
+      .where(
+        and(
+          eq(schema.clanInformativeRoutes.orgId, orgId),
+          eq(schema.clans.active, true),
+        ),
+      )
+      .orderBy(
+        asc(schema.clanInformativeRoutes.normalizedSector),
+        asc(schema.clanInformativeRoutes.id),
+      ),
   );
 }

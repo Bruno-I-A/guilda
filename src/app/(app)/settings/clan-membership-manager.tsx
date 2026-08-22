@@ -1,6 +1,6 @@
 "use client";
 
-import { Crown, MoreHorizontal, Star, Trash2, UserPlus } from "lucide-react";
+import { Crown, MoreHorizontal, Pencil, Star, Trash2, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -8,11 +8,21 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -26,6 +36,7 @@ import {
   addClanMembership,
   removeClanMembership,
   setClanLeader,
+  setClanMemberFunction,
   setPrimaryClan,
 } from "./clan-actions";
 
@@ -34,6 +45,7 @@ interface MembershipView {
   name: string;
   isLeader: boolean;
   isPrimary: boolean;
+  functionTitle: string | null;
 }
 
 interface OrgMemberView {
@@ -63,6 +75,8 @@ export function ClanMembershipManager({
     [memberships, orgMembers],
   );
   const [selectedUserId, setSelectedUserId] = useState(available[0]?.userId ?? "");
+  const [editingFunction, setEditingFunction] = useState<MembershipView | null>(null);
+  const [functionTitle, setFunctionTitle] = useState("");
   const effectiveSelectedUserId = available.some(
     (member) => member.userId === selectedUserId,
   )
@@ -138,7 +152,10 @@ export function ClanMembershipManager({
               className="flex min-w-0 items-center gap-2 rounded-md bg-muted/35 px-2.5 py-2"
             >
               <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                {membership.name}
+                <span className="block truncate">{membership.name}</span>
+                <span className="block truncate text-[11px] font-normal text-muted-foreground">
+                  {membership.functionTitle ?? "Função não definida"}
+                </span>
               </span>
               {membership.isLeader ? (
                 <Badge variant="default" className="gap-1">
@@ -163,6 +180,14 @@ export function ClanMembershipManager({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setEditingFunction(membership);
+                      setFunctionTitle(membership.functionTitle ?? "");
+                    }}
+                  >
+                    <Pencil aria-hidden /> Definir função
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={() =>
                       run(
@@ -218,6 +243,53 @@ export function ClanMembershipManager({
           ))}
         </ul>
       ) : null}
+
+      <Dialog
+        open={Boolean(editingFunction)}
+        onOpenChange={(open) => {
+          if (!open) setEditingFunction(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Função no clã</DialogTitle>
+            <DialogDescription>
+              Descreve a responsabilidade profissional de {editingFunction?.name} em {clanName}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-1.5">
+            <Label htmlFor={`function-${editingFunction?.userId ?? "member"}`}>Função</Label>
+            <Input
+              id={`function-${editingFunction?.userId ?? "member"}`}
+              value={functionTitle}
+              maxLength={100}
+              placeholder="Ex.: Analista fiscal"
+              onChange={(event) => setFunctionTitle(event.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              disabled={pending || !editingFunction}
+              onClick={() => {
+                if (!editingFunction) return;
+                const target = editingFunction;
+                run(
+                  () => setClanMemberFunction({
+                    clanId,
+                    userId: target.userId,
+                    functionTitle: functionTitle.trim() || null,
+                  }),
+                  "Função atualizada.",
+                );
+                setEditingFunction(null);
+              }}
+            >
+              Salvar função
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import * as schema from "@/db/schema";
 import { withOrgTx } from "@/db/org-tx";
+import { SECTOR_CLAN_SYNONYMS } from "@/domain/clan-routing";
 
 import {
   ACTIVE_ASSIGNED_TASK_STATUSES,
@@ -61,6 +62,27 @@ export async function bootstrapOrganizationClans(
 
     if (defaultClans.length !== DEFAULT_ORGANIZATION_CLANS.length) {
       throw new Error("Não foi possível inicializar todos os clãs da organização.");
+    }
+
+    const clanBySlug = new Map(defaultClans.map((clan) => [clan.slug, clan.id]));
+    const defaultRoutes = Object.entries(SECTOR_CLAN_SYNONYMS).flatMap(
+      ([sector, slug]) => {
+        const clanId = clanBySlug.get(slug);
+        return clanId
+          ? [{ orgId, clanId, sector, normalizedSector: sector }]
+          : [];
+      },
+    );
+    if (defaultRoutes.length > 0) {
+      await tx
+        .insert(schema.clanInformativeRoutes)
+        .values(defaultRoutes)
+        .onConflictDoNothing({
+          target: [
+            schema.clanInformativeRoutes.orgId,
+            schema.clanInformativeRoutes.normalizedSector,
+          ],
+        });
     }
 
     // Garante exatamente um principal mesmo se este bootstrap estiver retomando

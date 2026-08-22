@@ -1,16 +1,24 @@
 /**
  * Roteamento de uma ação de informativo para o seu destino.
  *
- * O mapeamento setor→clã é DETERMINÍSTICO NO SERVIDOR: a IA devolve o setor
- * como texto e esta função pura decide. Clã ganha da pessoa — quando o setor
- * casa com um clã ativo, a missão nasce do clã, sem responsável, e o `Att.`
- * vira sugestão para o líder distribuir.
+ * O mapeamento setor→destino é determinístico no servidor: a IA devolve o
+ * setor como texto e as regras configuradas pela organização decidem. Uma
+ * regra pode apontar para a fila do clã ou para uma pessoa daquele clã.
  */
 
 export interface RoutingClan {
   id: string;
   name: string;
   slug: string;
+}
+
+/** Regra carregada da configuração da organização, nunca escolhida pela IA. */
+export interface InformativeRoutingRule {
+  sector: string;
+  normalizedSector: string;
+  clanId: string;
+  userId: string | null;
+  userName: string | null;
 }
 
 /** Nome citado no `Att.`, já confrontado com o diretório de membros. */
@@ -27,7 +35,12 @@ export interface RecognizedAssignee extends AssigneeSuggestion {
 
 export type InformativeRoute =
   | { outcome: "clan"; clan: RoutingClan }
-  | { outcome: "individual"; assignees: readonly RecognizedAssignee[] }
+  | {
+      outcome: "individual";
+      assignees: readonly RecognizedAssignee[];
+      /** Presente quando a própria regra fixou também o contexto do clã. */
+      clan?: RoutingClan;
+    }
   | { outcome: "pending"; reason: string };
 
 export interface RouteInformativeTaskInput {
@@ -36,13 +49,13 @@ export interface RouteInformativeTaskInput {
   suggestions: readonly AssigneeSuggestion[];
   /** Somente clãs ATIVOS da organização da sessão. */
   clans: readonly RoutingClan[];
+  /** Regras da organização. Lista vazia significa que nada foi configurado. */
+  rules?: readonly InformativeRoutingRule[];
 }
 
 /**
- * Sinônimos de setor por slug de clã. Os cinco clãs são fixos (Fiscal,
- * Contabilidade, RH, Societário, Financeiro); setores fora desta tabela —
- * Certificado Digital, Automação, Servidor, Arquivo, Administrativo —
- * NÃO viram clã: exigem nome na linha.
+ * Configuração inicial das organizações antigas e do bootstrap. O pipeline de
+ * Informativos não consulta esta constante: ele recebe as regras do banco.
  */
 export const SECTOR_CLAN_SYNONYMS: Readonly<Record<string, string>> = {
   // Fiscal
@@ -122,7 +135,8 @@ export function stripSectorDecorations(value: string): string {
 }
 
 /**
- * Resolve o clã de um setor. Segmentos do mesmo rótulo composto
+ * Resolve o clã de um setor. Quando `rules` é informado, somente a
+ * configuração da organização é considerada. Segmentos do mesmo rótulo composto
  * ("FISCAL / EMISSÃO DE NOTAS / INFORMATIVOS") precisam concordar; se
  * apontarem para clãs diferentes o retorno é null e a decisão volta para o
  * humano — nunca adivinhar.
@@ -130,19 +144,26 @@ export function stripSectorDecorations(value: string): string {
 export function resolveSectorClan(
   sector: string | null | undefined,
   clans: readonly RoutingClan[],
+  rules?: readonly InformativeRoutingRule[],
 ): RoutingClan | null {
   if (!sector) return null;
   const cleaned = stripSectorDecorations(sector);
   if (!cleaned) return null;
 
+  const byId = new Map(clans.map((clan) => [clan.id, clan]));
+  const configuredBySector = rules
+    ? new Map(rules.map((rule) => [rule.normalizedSector, rule]))
+    : null;
   const bySlug = new Map(clans.map((clan) => [clan.slug, clan]));
-  const byName = new Map(
-    clans.map((clan) => [normalizeSectorText(clan.name), clan]),
-  );
+  const byName = new Map(clans.map((clan) => [normalizeSectorText(clan.name), clan]));
 
   const matchSegment = (segment: string): RoutingClan | null => {
     const normalized = normalizeSectorText(segment);
     if (!normalized) return null;
+    if (configuredBySector) {
+      const rule = configuredBySector.get(normalized);
+      return rule ? byId.get(rule.clanId) ?? null : null;
+    }
     const byExactName = byName.get(normalized);
     if (byExactName) return byExactName;
     const slug = SECTOR_CLAN_SYNONYMS[normalized];
@@ -162,17 +183,59 @@ export function resolveSectorClan(
   return matches.length === 1 ? matches[0] : null;
 }
 
+/** Resolve a regra completa para distinguir fila do clã de destino pessoal. */
+export function resolveInformativeRoutingRule(
+  sector: string | null | undefined,
+  rules: readonly InformativeRoutingRule[],
+): InformativeRoutingRule | null {
+  if (!sector) return null;
+  const cleaned = stripSectorDecorations(sector);
+  if (!cleaned) return null;
+  const bySector = new Map(rules.map((rule) => [rule.normalizedSector, rule]));
+
+  const whole = bySector.get(normalizeSectorText(cleaned));
+  if (whole) return whole;
+
+  const matches: InformativeRoutingRule[] = [];
+  for (const segment of cleaned.split(/[/|,;]|\s[-–—]\s|[-–—]/)) {
+    const match = bySector.get(normalizeSectorText(segment));
+    if (match && !matches.some((found) => found.clanId === match.clanId && found.userId === match.userId)) {
+      matches.push(match);
+    }
+  }
+  return matches.length === 1 ? matches[0] : null;
+}
+
 /**
- * A tabela de três regras da spec, na ordem:
- *   1. setor casa com clã ativo    → missão do clã, sem responsável;
+ * A tabela de regras, na ordem:
+ *   1. setor casa com regra ativa  → fila do clã ou pessoa configurada;
  *   2. sem clã mas `Att.` casa     → missão individual da(s) pessoa(s);
  *   3. sem clã e sem nome          → pendente de decisão humana.
  */
 export function routeInformativeTask(
   input: RouteInformativeTaskInput,
 ): InformativeRoute {
-  const clan = resolveSectorClan(input.sector, input.clans);
-  if (clan) return { outcome: "clan", clan };
+  if (input.rules) {
+    const configured = resolveInformativeRoutingRule(input.sector, input.rules);
+    if (configured) {
+      const clan = input.clans.find((candidate) => candidate.id === configured.clanId);
+      if (clan && configured.userId && configured.userName) {
+        return {
+          outcome: "individual",
+          clan,
+          assignees: [{
+            rawName: configured.userName,
+            userId: configured.userId,
+            name: configured.userName,
+          }],
+        };
+      }
+      if (clan) return { outcome: "clan", clan };
+    }
+  } else {
+    const clan = resolveSectorClan(input.sector, input.clans);
+    if (clan) return { outcome: "clan", clan };
+  }
 
   const recognized: RecognizedAssignee[] = [];
   for (const suggestion of input.suggestions) {

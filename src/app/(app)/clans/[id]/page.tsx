@@ -33,6 +33,7 @@ export interface ClanMemberView {
   userId: string;
   name: string;
   isLeader: boolean;
+  functionTitle: string | null;
 }
 
 export default async function ClanPage({
@@ -81,6 +82,7 @@ export default async function ClanPage({
         userId: schema.clanMemberships.userId,
         name: schema.user.name,
         isLeader: schema.clanMemberships.isLeader,
+        functionTitle: schema.clanMemberships.functionTitle,
       })
       .from(schema.clanMemberships)
       .innerJoin(schema.user, eq(schema.user.id, schema.clanMemberships.userId))

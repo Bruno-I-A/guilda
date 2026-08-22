@@ -11,6 +11,7 @@ const client = new pg.Client({ connectionString: url });
 await client.connect();
 
 const NEW_TABLES = [
+  "clan_informative_routes",
   "task_assignee_suggestions",
   "guild_notices",
   "guild_notice_reads",

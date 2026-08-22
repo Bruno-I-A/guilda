@@ -39,8 +39,8 @@ export const taskStatus = pgEnum("task_status", [
 ]);
 
 /**
- * Clãs operacionais da Guilda. O slug é a categoria estável usada nas regras
- * de negócio; o nome pode ser apresentado na interface.
+ * Clãs operacionais da Guilda. O slug preserva integrações especiais já
+ * existentes; nome, descrição, composição e roteamento são configuráveis.
  */
 export const clans = pgTable(
   "clans",
@@ -51,6 +51,7 @@ export const clans = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 100 }).notNull(),
     slug: varchar("slug", { length: 60 }).notNull(),
+    description: text("description"),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -76,6 +77,7 @@ export const clanMemberships = pgTable(
       .references(() => user.id),
     isLeader: boolean("is_leader").notNull().default(false),
     isPrimary: boolean("is_primary").notNull().default(false),
+    functionTitle: varchar("function_title", { length: 100 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -99,6 +101,49 @@ export const clanMemberships = pgTable(
       t.clanId,
       t.isLeader,
     ),
+  ],
+);
+
+/**
+ * Regra configurável de roteamento do Informativo.
+ * Cada nome de setor normalizado aponta para a fila do clã (userId nulo) ou
+ * diretamente para uma pessoa que participa daquele clã.
+ */
+export const clanInformativeRoutes = pgTable(
+  "clan_informative_routes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clanId: uuid("clan_id").notNull(),
+    userId: text("user_id").references(() => user.id),
+    sector: varchar("sector", { length: 120 }).notNull(),
+    normalizedSector: varchar("normalized_sector", { length: 120 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "clan_informative_routes_org_clan_fk",
+      columns: [t.orgId, t.clanId],
+      foreignColumns: [clans.orgId, clans.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "clan_informative_routes_membership_fk",
+      columns: [t.orgId, t.clanId, t.userId],
+      foreignColumns: [
+        clanMemberships.orgId,
+        clanMemberships.clanId,
+        clanMemberships.userId,
+      ],
+    }).onDelete("cascade"),
+    uniqueIndex("clan_informative_routes_org_sector_uidx").on(
+      t.orgId,
+      t.normalizedSector,
+    ),
+    index("clan_informative_routes_org_clan_idx").on(t.orgId, t.clanId),
+    index("clan_informative_routes_org_user_idx").on(t.orgId, t.userId),
   ],
 );
 
@@ -336,6 +381,7 @@ export const clansRelations = relations(clans, ({ one, many }) => ({
     references: [organization.id],
   }),
   memberships: many(clanMemberships),
+  informativeRoutes: many(clanInformativeRoutes),
   tasks: many(tasks),
   incomingTransfers: many(taskTransfers, { relationName: "transfer_to_clan" }),
   outgoingTransfers: many(taskTransfers, { relationName: "transfer_from_clan" }),
@@ -838,6 +884,24 @@ export const companyFlows = pgTable(
       sql`${t.resultCnpj} IS NULL OR ${t.resultCnpj} ~ '^\\d{14}$'`,
     ),
   ],
+);
+
+export const clanInformativeRoutesRelations = relations(
+  clanInformativeRoutes,
+  ({ one }) => ({
+    organization: one(organization, {
+      fields: [clanInformativeRoutes.orgId],
+      references: [organization.id],
+    }),
+    clan: one(clans, {
+      fields: [clanInformativeRoutes.clanId],
+      references: [clans.id],
+    }),
+    user: one(user, {
+      fields: [clanInformativeRoutes.userId],
+      references: [user.id],
+    }),
+  }),
 );
 
 /** Credencial do Gov.br cifrada com AES-GCM; uma por fluxo, sem histórico. */

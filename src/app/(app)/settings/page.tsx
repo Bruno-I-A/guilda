@@ -19,6 +19,11 @@ import type { OrgRole } from "@/domain/task-state";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 
 import { ClanMembershipManager } from "./clan-membership-manager";
+import {
+  ClanDetailsDialog,
+  ClanRoutingManager,
+  CreateClanDialog,
+} from "./clan-configuration-manager";
 
 export const metadata: Metadata = { title: "Configurações" };
 
@@ -36,7 +41,12 @@ export default async function SettingsPage() {
   const { clans, orgMembers } = await withOrgTx(session.orgId, async (tx) => {
     const clanRows = await tx.query.clans.findMany({
       where: eq(schema.clans.orgId, session.orgId),
-      with: { memberships: { with: { user: { columns: { name: true } } } } },
+      with: {
+        memberships: { with: { user: { columns: { name: true } } } },
+        informativeRoutes: {
+          with: { user: { columns: { name: true } } },
+        },
+      },
       orderBy: [asc(schema.clans.name)],
     });
     const memberRows = await tx
@@ -60,15 +70,17 @@ export default async function SettingsPage() {
 
   return (
     <div className="grid gap-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-wide">
-          <Settings className="size-6 text-primary" aria-hidden /> Configurações
-        </h1>
-        <p className="text-muted-foreground">
-          Ajustes da Guilda restritos a quem administra. Cada pessoa só enxerga
-          os clãs em que está vinculada — o que você define aqui decide o que
-          ela vê.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-wide">
+            <Settings className="size-6 text-primary" aria-hidden /> Configurações
+          </h1>
+          <p className="max-w-2xl text-muted-foreground">
+            Organize clãs, funções e destinos dos Informativos sem depender de
+            alterações no sistema.
+          </p>
+        </div>
+        <CreateClanDialog />
       </div>
 
       {semClan.length > 0 ? (
@@ -139,6 +151,11 @@ export default async function SettingsPage() {
                             ? " · sem líder"
                             : null}
                         </CardDescription>
+                        {clan.description ? (
+                          <p className="mt-2 max-w-lg text-xs text-muted-foreground">
+                            {clan.description}
+                          </p>
+                        ) : null}
                       </div>
                       <div className="flex shrink-0 gap-1.5">
                         {leaders.length > 0 ? (
@@ -150,10 +167,16 @@ export default async function SettingsPage() {
                         <Badge variant={clan.active ? "secondary" : "outline"}>
                           {clan.active ? "Ativo" : "Inativo"}
                         </Badge>
+                        <ClanDetailsDialog
+                          clanId={clan.id}
+                          name={clan.name}
+                          description={clan.description}
+                          active={clan.active}
+                        />
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="grid gap-4">
                     <ClanMembershipManager
                       clanId={clan.id}
                       clanName={clan.name}
@@ -162,8 +185,26 @@ export default async function SettingsPage() {
                         name: membership.user.name,
                         isLeader: membership.isLeader,
                         isPrimary: membership.isPrimary,
+                        functionTitle: membership.functionTitle,
                       }))}
                       orgMembers={orgMembers}
+                    />
+                    <ClanRoutingManager
+                      clanId={clan.id}
+                      clanName={clan.name}
+                      members={memberships.map((membership) => ({
+                        userId: membership.userId,
+                        name: membership.user.name,
+                        functionTitle: membership.functionTitle,
+                      }))}
+                      initialRules={clan.informativeRoutes
+                        .sort((left, right) =>
+                          left.sector.localeCompare(right.sector, "pt-BR"),
+                        )
+                        .map((route) => ({
+                          sector: route.sector,
+                          userId: route.userId,
+                        }))}
                     />
                   </CardContent>
                 </Card>

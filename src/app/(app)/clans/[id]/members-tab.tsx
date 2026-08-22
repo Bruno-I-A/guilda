@@ -119,6 +119,10 @@ export async function MembersTab({
                     <span className="flex items-center gap-1 text-xs text-primary">
                       <Crown className="size-3" aria-hidden /> Líder do clã
                     </span>
+                  ) : row.functionTitle ? (
+                    <span className="text-xs text-muted-foreground">
+                      {row.functionTitle}
+                    </span>
                   ) : null}
                 </span>
               </span>
