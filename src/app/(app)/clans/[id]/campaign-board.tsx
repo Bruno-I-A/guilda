@@ -269,7 +269,7 @@ export function CampaignBoard({
           <li
             key={campaign.id}
             className={cn(
-              "flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card/50 p-3",
+              "clan-operational-row flex min-h-16 flex-wrap items-center justify-between gap-3 px-4 py-3",
               campaign.status === "cancelled" && "opacity-60",
             )}
           >

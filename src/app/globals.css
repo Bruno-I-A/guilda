@@ -7,7 +7,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-cinzel);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -200,5 +200,44 @@
     transform: translate(-50%, -50%) rotate(45deg);
     background: var(--background);
     border: 1px solid color-mix(in oklab, var(--silver) 55%, transparent);
+  }
+
+  /* Linha operacional: uma aresta de estado, leitura rápida e alvo inteiro. */
+  .clan-operational-row {
+    position: relative;
+    background: color-mix(in oklab, var(--card) 72%, transparent);
+    box-shadow:
+      inset 0 0 0 1px var(--border),
+      inset 3px 0 0 color-mix(in oklab, var(--primary) 70%, transparent);
+    clip-path: polygon(0.45rem 0, 100% 0, 100% calc(100% - 0.45rem), calc(100% - 0.45rem) 100%, 0 100%, 0 0.45rem);
+  }
+
+  .clan-operational-row:hover {
+    background: color-mix(in oklab, var(--accent) 58%, transparent);
+  }
+
+  /* Versão CSS do resumo para os painéis client-side mais densos. */
+  .clan-status-grid {
+    border-block: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    background: color-mix(in oklab, var(--card) 25%, transparent);
+  }
+
+  .clan-status-cell {
+    min-height: 4rem;
+    border-radius: 0;
+    background: transparent;
+    padding: 0.625rem 0.875rem;
+  }
+
+  @media (min-width: 640px) {
+    .clan-status-cell + .clan-status-cell {
+      border-left: 1px solid color-mix(in oklab, var(--border) 65%, transparent);
+    }
+  }
+}
+
+@media (max-width: 767px) {
+  body {
+    background-attachment: scroll;
   }
 }

@@ -67,6 +67,7 @@ import {
   updateCommitmentPeriod,
   updateDistributionClosingNote,
 } from "./commitment-actions";
+import { ClanEmptyState, ClanSectionHeading } from "./clan-ui";
 
 export interface CommitmentPeriodView {
   id: string;
@@ -765,18 +766,18 @@ export function CommitmentBoard({
     <div className="grid gap-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="hud-label">Distribuição de lucros</p>
-          <p className="text-sm text-muted-foreground">
+          <ClanSectionHeading>Distribuição de lucros</ClanSectionHeading>
+          <p className="mt-2 text-sm text-muted-foreground">
             Planeje os períodos, gere missões quando necessário e mantenha o valor distribuído no histórico.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center rounded-lg border bg-muted/40 p-0.5">
-            <Link href={`/clans/${clanId}?tab=commitments&distributionYear=${year - 1}`} className="flex size-8 items-center justify-center rounded-md hover:bg-background" aria-label={`Ver ${year - 1}`}>
+          <div className="flex items-center border-y border-border/80 bg-card/25">
+            <Link href={`/clans/${clanId}?tab=commitments&distributionYear=${year - 1}`} className="flex size-10 items-center justify-center text-muted-foreground hover:bg-muted/40 hover:text-foreground" aria-label={`Ver ${year - 1}`}>
               <ChevronLeft className="size-4" aria-hidden />
             </Link>
             <span className="min-w-16 text-center font-mono text-sm font-semibold">{year}</span>
-            <Link href={`/clans/${clanId}?tab=commitments&distributionYear=${year + 1}`} className="flex size-8 items-center justify-center rounded-md hover:bg-background" aria-label={`Ver ${year + 1}`}>
+            <Link href={`/clans/${clanId}?tab=commitments&distributionYear=${year + 1}`} className="flex size-10 items-center justify-center text-muted-foreground hover:bg-muted/40 hover:text-foreground" aria-label={`Ver ${year + 1}`}>
               <ChevronRight className="size-4" aria-hidden />
             </Link>
           </div>
@@ -809,14 +810,16 @@ export function CommitmentBoard({
       ) : null}
 
       {active.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          Nenhuma empresa possui planejamento ativo de distribuição de lucros.
-        </p>
+        <ClanEmptyState
+          icon={<CircleDollarSign className="size-6" aria-hidden />}
+          title="Nenhuma distribuição planejada"
+          description="Nenhuma empresa possui planejamento ativo de distribuição de lucros."
+        />
       ) : (
         active.map((commitment) => {
           const expanded = expandedCommitments.has(commitment.id);
           return (
-            <section key={commitment.id} className="panel-cut overflow-hidden rounded-lg border bg-card/50">
+            <section key={commitment.id} className="panel-cut overflow-hidden bg-card/50">
               <div className="flex items-center gap-1 p-2">
                 <button
                   type="button"

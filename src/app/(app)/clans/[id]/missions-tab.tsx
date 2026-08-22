@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { AlertTriangle, ListTodo, UserRoundX } from "lucide-react";
+import { ChevronRight, ListChecks } from "lucide-react";
 import Link from "next/link";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -9,6 +9,7 @@ import { initials } from "@/lib/people";
 import { isOverdue } from "@/lib/task-ui";
 
 import type { ClanMemberView } from "./page";
+import { ClanEmptyState, ClanSectionHeading, ClanStatusStrip } from "./clan-ui";
 import {
   DistributionBoard,
   type BoardGroup,
@@ -129,28 +130,70 @@ export async function MissionsTab({
 
   return (
     <div className="grid gap-6">
-      <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-lg bg-muted/45 p-2.5">
-          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <ListTodo className="size-3.5" aria-hidden /> Abertas
-          </span>
-          <strong className="mt-1 block font-mono text-lg">
-            {openTasks.length}
-          </strong>
-        </div>
-        <div className="rounded-lg bg-muted/45 p-2.5">
-          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <UserRoundX className="size-3.5" aria-hidden /> Sem responsável
-          </span>
-          <strong className="mt-1 block font-mono text-lg">{orphans.length}</strong>
-        </div>
-        <div className="rounded-lg bg-muted/45 p-2.5">
-          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <AlertTriangle className="size-3.5" aria-hidden /> Atrasadas
-          </span>
-          <strong className="mt-1 block font-mono text-lg">{overdueCount}</strong>
-        </div>
-      </div>
+      <ClanStatusStrip
+        items={[
+          {
+            label: openTasks.length === 1 ? "missão aberta" : "missões abertas",
+            value: openTasks.length,
+            detail: openTasks.length === 0 ? "nenhum trabalho pendente" : "carga atual do clã",
+          },
+          {
+            label: orphans.length === 0 ? "tudo atribuído" : "sem responsável",
+            value: orphans.length === 0 ? "✓" : orphans.length,
+            detail: orphans.length === 0 ? "fila sob controle" : "aguardando distribuição",
+            tone: orphans.length === 0 ? "positive" : "warning",
+          },
+          {
+            label: overdueCount === 0 ? "tudo em dia" : "atrasadas",
+            value: overdueCount === 0 ? "✓" : overdueCount,
+            detail: overdueCount === 0 ? "nenhum prazo vencido" : "exigem atenção",
+            tone: overdueCount === 0 ? "positive" : "danger",
+          },
+        ]}
+      />
+
+      <section className="grid gap-3">
+        <ClanSectionHeading>Em andamento</ClanSectionHeading>
+        {assigned.length === 0 ? (
+          <ClanEmptyState
+            icon={<ListChecks className="size-6" aria-hidden />}
+            title="Nenhuma missão em andamento"
+            description="As missões assumidas pelo clã aparecem aqui."
+            compact
+          />
+        ) : (
+          <ul className="grid gap-2">
+            {assigned.map((task) => (
+              <li key={task.id}>
+                <Link
+                  href={`/tasks/${task.id}`}
+                  className="clan-operational-row flex min-h-16 items-center justify-between gap-3 px-4 py-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                  <div className="min-w-0">
+                    <span className="block truncate font-medium">
+                    {task.title}
+                    </span>
+                  {task.client ? (
+                    <p className="truncate text-xs text-muted-foreground">
+                      {task.client.name}
+                    </p>
+                  ) : null}
+                  </div>
+                  <span className="flex shrink-0 items-center gap-2 text-sm">
+                  <Avatar className="size-6">
+                      <AvatarFallback className="text-[9px]" aria-hidden>
+                      {initials(task.assignee?.name ?? "?")}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="hidden sm:inline">{task.assignee?.name}</span>
+                    <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <DistributionBoard
         clanId={clanId}
@@ -158,46 +201,6 @@ export async function MissionsTab({
         groups={boardGroups}
         members={members}
       />
-
-      <section className="grid gap-3">
-        <h2 className="hud-label">Em andamento</h2>
-        {assigned.length === 0 ? (
-          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            Nenhuma missão do clã em andamento.
-          </p>
-        ) : (
-          <ul className="grid gap-2">
-            {assigned.map((task) => (
-              <li
-                key={task.id}
-                className="flex items-center justify-between gap-3 rounded-lg border bg-card/50 p-3"
-              >
-                <div className="min-w-0">
-                  <Link
-                    href={`/tasks/${task.id}`}
-                    className="truncate font-medium hover:underline"
-                  >
-                    {task.title}
-                  </Link>
-                  {task.client ? (
-                    <p className="truncate text-xs text-muted-foreground">
-                      {task.client.name}
-                    </p>
-                  ) : null}
-                </div>
-                <span className="flex shrink-0 items-center gap-1.5 text-sm">
-                  <Avatar className="size-6">
-                    <AvatarFallback className="text-[9px]">
-                      {initials(task.assignee?.name ?? "?")}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="hidden sm:inline">{task.assignee?.name}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
     </div>
   );
 }

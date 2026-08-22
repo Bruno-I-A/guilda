@@ -23,6 +23,7 @@ import {
   CompanyClosingBoard,
   type CompanyClosingView,
 } from "./closing-board";
+import { ClanEmptyState, ClanSectionHeading } from "./clan-ui";
 
 type StatusFilter = "all" | "open" | "notes" | "completed";
 
@@ -230,36 +231,42 @@ export async function ClosingsTab({
 
   return (
     <div className="grid gap-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="grid gap-2">
+        <ClanSectionHeading
+          aside={
+            <div className="flex items-center border-y border-border/80 bg-card/25">
+              <Link
+                href={href({ year: year - 1 })}
+                className="flex size-10 items-center justify-center text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                aria-label={`Ver ${year - 1}`}
+              >
+                <ChevronLeft className="size-4" aria-hidden />
+              </Link>
+              <span className="flex h-10 min-w-20 items-center justify-center gap-2 px-2 font-mono text-sm font-semibold">
+                <CalendarRange className="size-4 text-primary" aria-hidden />
+                {year}
+              </span>
+              <Link
+                href={href({ year: year + 1 })}
+                className="flex size-10 items-center justify-center text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                aria-label={`Ver ${year + 1}`}
+              >
+                <ChevronRight className="size-4" aria-hidden />
+              </Link>
+            </div>
+          }
+        >
+          Fechamentos
+        </ClanSectionHeading>
         <p className="max-w-xl text-sm text-muted-foreground">
           Abra uma empresa para registrar períodos fechados, observações e o
           encerramento anual.
         </p>
-        <div className="flex items-center rounded-lg border bg-muted/40 p-0.5">
-          <Link
-            href={href({ year: year - 1 })}
-            className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-            aria-label={`Ver ${year - 1}`}
-          >
-            <ChevronLeft className="size-4" aria-hidden />
-          </Link>
-          <span className="flex h-8 min-w-20 items-center justify-center gap-2 px-2 font-mono text-sm font-semibold">
-            <CalendarRange className="size-4 text-primary" aria-hidden />
-            {year}
-          </span>
-          <Link
-            href={href({ year: year + 1 })}
-            className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-            aria-label={`Ver ${year + 1}`}
-          >
-            <ChevronRight className="size-4" aria-hidden />
-          </Link>
-        </div>
       </div>
 
       <nav
         aria-label="Regime das empresas"
-        className="grid grid-cols-3 rounded-lg border bg-muted/40 p-0.5"
+        className="grid grid-cols-3 border-y border-border/80 bg-card/20"
       >
         {CLOSING_GROUPS.map((item) => (
           <Link
@@ -267,10 +274,10 @@ export async function ClosingsTab({
             href={href({ group: item.key, status: "all", q: "" })}
             aria-current={group === item.key ? "page" : undefined}
             className={cn(
-              "rounded-md px-2 py-2 text-center text-xs font-medium transition-colors sm:text-sm",
+              "relative min-h-11 px-2 py-2 text-center text-xs font-medium transition-colors sm:text-sm",
               group === item.key
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
+                ? "bg-primary/8 text-foreground after:absolute after:inset-x-4 after:bottom-0 after:h-0.5 after:bg-primary"
+                : "text-muted-foreground hover:bg-muted/30 hover:text-foreground",
             )}
           >
             <span className="sm:hidden">{item.shortLabel}</span>
@@ -322,7 +329,7 @@ export async function ClosingsTab({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <nav
           aria-label="Filtrar por situação"
-          className="flex max-w-full overflow-x-auto rounded-lg border bg-muted/40 p-0.5"
+          className="flex max-w-full overflow-x-auto border-y border-border/80 bg-card/20"
         >
           {(
             [
@@ -337,10 +344,10 @@ export async function ClosingsTab({
               href={href({ status: key })}
               aria-current={status === key ? "page" : undefined}
               className={cn(
-                "whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                "relative min-h-10 whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors",
                 status === key
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "bg-primary/8 text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:bg-primary"
+                  : "text-muted-foreground hover:bg-muted/30 hover:text-foreground",
               )}
             >
               {label}
@@ -372,28 +379,27 @@ export async function ClosingsTab({
       {companies.length > 0 ? (
         <CompanyClosingBoard companies={companies} year={year} />
       ) : (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-10 text-center">
-          <Building2 className="size-8 text-muted-foreground" aria-hidden />
-          <p className="font-medium">
-            {allCompanies.length === 0
-              ? "Nenhuma empresa neste grupo"
-              : "Nenhuma empresa com estes filtros"}
-          </p>
-          <p className="max-w-md text-sm text-muted-foreground">
-            {allCompanies.length === 0
-              ? "Cadastre uma empresa para começar."
-              : "Ajuste a busca ou selecione outra situação."}
-          </p>
-          {allCompanies.length === 0 ? (
+        <ClanEmptyState
+          icon={<Building2 className="size-7" aria-hidden />}
+          title={allCompanies.length === 0
+            ? "Nenhuma empresa neste grupo"
+            : "Nenhuma empresa com estes filtros"}
+          description={allCompanies.length === 0
+            ? "Cadastre uma empresa para começar."
+            : "Ajuste a busca ou selecione outra situação."}
+          className="relative"
+        />
+      )}
+      {companies.length === 0 && allCompanies.length === 0 ? (
+        <div className="-mt-12 flex justify-center pb-5">
             <Link
               href="/clients"
               className="font-mono text-xs text-primary hover:underline"
             >
               ir para clientes →
             </Link>
-          ) : null}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

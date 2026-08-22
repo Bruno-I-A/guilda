@@ -14,25 +14,31 @@ export function ClanTabNav({
   active: ClanTab;
 }) {
   return (
-    <nav
-      aria-label="Seções do clã"
-      className="flex w-full overflow-x-auto rounded-lg border bg-muted/40 p-0.5 sm:w-fit"
-    >
-      {clanTabsFor(clanSlug).map(({ key, label }) => (
-        <Link
-          key={key}
-          href={`/clans/${clanId}?tab=${key}`}
-          aria-current={active === key ? "page" : undefined}
-          className={cn(
-            "shrink-0 rounded-md px-4 py-1.5 text-center text-sm font-medium transition-colors",
-            active === key
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {label}
-        </Link>
-      ))}
-    </nav>
+    <div className="relative border-y border-border/80 bg-card/20">
+      <nav
+        aria-label="Seções do clã"
+        className="flex w-full snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {clanTabsFor(clanSlug).map(({ key, label }, index) => (
+          <Link
+            key={key}
+            href={`/clans/${clanId}?tab=${key}`}
+            aria-current={active === key ? "page" : undefined}
+            className={cn(
+              "relative flex min-h-11 shrink-0 snap-start items-center px-4 text-center text-sm font-medium transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+              index > 0 && "border-l border-border/45",
+              active === key
+                ? "bg-primary/8 text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:bg-primary"
+                : "text-muted-foreground hover:bg-muted/30 hover:text-foreground",
+            )}
+          >
+            {active === key ? (
+              <span className="mr-2 size-1.5 rotate-45 border border-primary" aria-hidden />
+            ) : null}
+            {label}
+          </Link>
+        ))}
+      </nav>
+    </div>
   );
 }

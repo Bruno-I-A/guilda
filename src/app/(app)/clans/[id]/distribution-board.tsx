@@ -1,6 +1,6 @@
 "use client";
 
-import { Sparkles, UserRoundCheck } from "lucide-react";
+import { Check, Sparkles, UserRoundCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, useTransition } from "react";
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 
 import { acceptClanSuggestions, assignClanTasks } from "./actions";
+import { ClanEmptyState, ClanSectionHeading } from "./clan-ui";
 
 export interface BoardSuggestion {
   userId: string | null;
@@ -110,21 +111,23 @@ export function DistributionBoard({
   if (groups.length === 0) {
     return (
       <section className="grid gap-3">
-        <h2 className="hud-label">Fila de distribuição</h2>
-        <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          Nenhuma missão esperando dono. Quando um informativo chegar, as missões
-          deste clã aparecem aqui.
-        </p>
+        <ClanSectionHeading>Fila de distribuição</ClanSectionHeading>
+        <ClanEmptyState
+          icon={<Check className="size-5" aria-hidden />}
+          title="Fila em ordem"
+          description="Nenhuma missão está aguardando responsável."
+          compact
+        />
       </section>
     );
   }
 
   return (
     <section className="grid gap-3">
-      <h2 className="hud-label">Fila de distribuição</h2>
+      <ClanSectionHeading>Fila de distribuição</ClanSectionHeading>
 
       {!canDistribute ? (
-        <p className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">
+        <p className="panel-cut panel-cut-sm bg-card/35 p-3 text-center text-xs text-muted-foreground">
           Só o líder deste clã ou um admin distribui as missões. Você pode
           assumir uma missão pela página dela.
         </p>
@@ -138,7 +141,7 @@ export function DistributionBoard({
           );
 
           return (
-            <div key={group.key} className="panel-cut rounded-lg border bg-card/50">
+            <div key={group.key} className="panel-cut overflow-hidden bg-card/50">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
                 <div className="min-w-0">
                   <p className="truncate font-medium">{group.label}</p>

@@ -1,5 +1,5 @@
 import { and, asc, eq } from "drizzle-orm";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Diamond } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -133,27 +133,45 @@ export default async function ClanPage({
   const activeTab = parseClanTab(tab, clan.slug);
 
   return (
-    <div className="grid gap-6">
-      <div className="grid gap-2">
+    <div className="grid gap-5">
+      <header className="relative grid gap-3 border-b border-border/80 pb-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
         {/* Quem tem um clã só chegou aqui direto; a listagem só serve a
             quem tem mais de um, e ao admin. */}
         {(myClanIds.length > 1 || isAdminRole(role)) && (
           <Link
             href="/clans"
-            className="flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+            className="flex min-h-10 w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="size-4" aria-hidden />{" "}
             {isAdminRole(role) ? "Clãs" : "Meus clãs"}
           </Link>
         )}
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="font-heading text-2xl font-semibold tracking-wide">
-            {clan.name}
-          </h1>
-          {leadsThisClan ? <Badge variant="default">Você lidera</Badge> : null}
-          {!clan.active ? <Badge variant="outline">Inativo</Badge> : null}
+          <span className="hud-label hidden items-center gap-2 sm:flex">
+            <Diamond className="size-3 text-primary" aria-hidden /> Área operacional
+          </span>
         </div>
-      </div>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span
+              className="grid size-10 shrink-0 rotate-45 place-items-center border border-primary/50 bg-primary/5"
+              aria-hidden
+            >
+              <span className="size-2.5 border border-primary -rotate-45" />
+            </span>
+            <div className="min-w-0">
+              <p className="hud-label mb-1">Clã</p>
+              <h1 className="truncate font-heading text-2xl font-semibold tracking-wide sm:text-3xl">
+                {clan.name}
+              </h1>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {leadsThisClan ? <Badge variant="default">Liderança</Badge> : null}
+            {!clan.active ? <Badge variant="outline">Inativo</Badge> : null}
+          </div>
+        </div>
+      </header>
 
       <ClanTabNav clanId={clan.id} clanSlug={clan.slug} active={activeTab} />
 

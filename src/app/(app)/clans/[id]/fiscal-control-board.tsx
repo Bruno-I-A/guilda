@@ -441,16 +441,16 @@ export function FiscalControlBoard({
         </div>
       ) : (
         <>
-          <div className="grid gap-2 sm:grid-cols-3">
-            <div className="rounded-lg bg-muted/40 p-3"><span className="text-xs text-muted-foreground">Progresso geral</span><strong className="block font-mono text-lg">{completed}/{rows.length}</strong></div>
-            <div className="rounded-lg bg-muted/40 p-3"><span className="text-xs text-muted-foreground">Bloqueadas</span><strong className={cn("block font-mono text-lg", blocked > 0 && "text-destructive")}>{blocked}</strong></div>
-            <div className="rounded-lg bg-muted/40 p-3"><span className="text-xs text-muted-foreground">Sem responsável</span><strong className="block font-mono text-lg">{rows.filter((row) => !row.responsibleUserId).length}</strong></div>
+          <div className="clan-status-grid grid sm:grid-cols-3">
+            <div className="clan-status-cell"><span className="text-xs text-muted-foreground">Progresso geral</span><strong className="block font-mono text-lg">{completed}/{rows.length}</strong></div>
+            <div className="clan-status-cell"><span className="text-xs text-muted-foreground">Bloqueadas</span><strong className={cn("block font-mono text-lg", blocked > 0 && "text-destructive")}>{blocked}</strong></div>
+            <div className="clan-status-cell"><span className="text-xs text-muted-foreground">Sem responsável</span><strong className="block font-mono text-lg">{rows.filter((row) => !row.responsibleUserId).length}</strong></div>
           </div>
 
           {byResponsible.length > 0 ? (
             <div className="flex gap-2 overflow-x-auto pb-1">
               {byResponsible.map((item) => (
-                <button key={item.userId} type="button" onClick={() => setResponsible(item.userId)} className="shrink-0 rounded-lg border bg-card/50 px-3 py-2 text-left text-xs hover:bg-muted/50">
+                <button key={item.userId} type="button" onClick={() => setResponsible(item.userId)} className="panel-cut panel-cut-sm shrink-0 bg-card/50 px-3 py-2 text-left text-xs hover:bg-muted/50">
                   <span className="block font-medium">{item.name}</span>
                   <span className="font-mono text-muted-foreground">{item.completed}/{item.total}</span>
                 </button>

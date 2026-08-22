@@ -309,14 +309,14 @@ export function PortfolioBoard({
 
   return (
     <div className="grid gap-4">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <div className="rounded-lg bg-muted/45 p-2.5">
+      <div className="clan-status-grid grid grid-cols-2 sm:grid-cols-4">
+        <div className="clan-status-cell">
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <Building2 className="size-3.5" aria-hidden /> Empresas
           </span>
           <strong className="mt-1 block font-mono text-lg">{totalClients}</strong>
         </div>
-        <div className="rounded-lg bg-muted/45 p-2.5">
+        <div className="clan-status-cell">
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <UserRoundX className="size-3.5" aria-hidden /> Sem responsável
           </span>
@@ -330,13 +330,13 @@ export function PortfolioBoard({
             {orphans.length + stranded.length + awaiting.length}
           </strong>
         </div>
-        <div className="rounded-lg bg-muted/45 p-2.5">
+        <div className="clan-status-cell">
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <Users className="size-3.5" aria-hidden /> Na carteira
           </span>
           <strong className="mt-1 block font-mono text-lg">{assignedCount}</strong>
         </div>
-        <div className="rounded-lg bg-muted/45 p-2.5">
+        <div className="clan-status-cell">
           <span className="text-xs text-muted-foreground">Média por pessoa</span>
           <strong className="mt-1 block font-mono text-lg">
             {averagePerMember.toFixed(1)}
@@ -344,7 +344,7 @@ export function PortfolioBoard({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card/40 p-3">
+      <div className="panel-cut panel-cut-sm flex flex-wrap items-center justify-between gap-3 bg-card/40 p-3">
         <div>
           <h2 className="font-medium">Carteira e Fichas Fiscais</h2>
           <p className="text-xs text-muted-foreground">

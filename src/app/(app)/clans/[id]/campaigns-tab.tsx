@@ -9,6 +9,7 @@ import {
   NewCampaignButton,
   type CampaignView,
 } from "./campaign-board";
+import { ClanEmptyState, ClanSectionHeading } from "./clan-ui";
 
 /**
  * Campanhas mensais do clã. No Fiscal, a abertura pode materializar o
@@ -61,24 +62,26 @@ export async function CampaignsTab({
 
   return (
     <div className="grid gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="grid gap-2">
+        <ClanSectionHeading
+          aside={canManage ? <NewCampaignButton clanId={clanId} isFiscal={isFiscal} /> : null}
+        >
+          Campanhas do clã
+        </ClanSectionHeading>
         <p className="max-w-xl text-sm text-muted-foreground">
           O trabalho grande e recorrente do mês. Abra a campanha para declarar
           o que está em jogo e acompanhar em que pé está.
         </p>
-        {canManage ? <NewCampaignButton clanId={clanId} isFiscal={isFiscal} /> : null}
       </div>
 
       {campaigns.length === 0 ? (
-        <div className="grid justify-items-center gap-2 rounded-lg border border-dashed p-10 text-center">
-          <CalendarRange className="size-8 text-muted-foreground" aria-hidden />
-          <p className="font-medium">Nenhuma campanha neste clã ainda</p>
-          <p className="max-w-md text-sm text-muted-foreground">
-            {canManage
-              ? "Abra a campanha do mês — por exemplo, a apuração de agosto."
-              : "Quando a liderança abrir a campanha do mês, ela aparece aqui."}
-          </p>
-        </div>
+        <ClanEmptyState
+          icon={<CalendarRange className="size-7" aria-hidden />}
+          title="Nenhuma campanha neste clã ainda"
+          description={canManage
+            ? "Abra a campanha do mês — por exemplo, a apuração de agosto."
+            : "Quando a liderança abrir a campanha do mês, ela aparece aqui."}
+        />
       ) : (
         <CampaignBoard
           clanId={clanId}
@@ -88,7 +91,7 @@ export async function CampaignsTab({
         />
       )}
 
-      <p className="flex items-start gap-2 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+      <p className="panel-cut panel-cut-sm flex items-start gap-2 bg-card/30 p-3 text-xs text-muted-foreground">
         <Flag className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         {isFiscal
           ? "A campanha abre o controle da competência sem transformar cada célula em missão. Missões ficam reservadas às exceções."
