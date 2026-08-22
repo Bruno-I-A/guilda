@@ -92,7 +92,7 @@ describe("tabela de sinônimos setor→clã", () => {
   test("rótulo composto com segmentos do mesmo clã resolve", () => {
     expect(
       resolveSectorClan("FISCAL / EMISSÃO DE NOTAS / INFORMATIVOS", CLANS)?.id,
-    ).toBe("clan-sucesso");
+    ).toBe("clan-fiscal");
     expect(resolveSectorClan("COBRANÇA / HONORÁRIO", CLANS)?.id).toBe(
       "clan-financeiro",
     );
@@ -304,7 +304,7 @@ describe("informativo real da PICCOLI — formato antigo", () => {
       sector: "1.1 – *FISCAL / EMISSÃO DE NOTAS / INFORMATIVOS",
       names: ["Camila", "Eduarda"],
       expected: "clan",
-      clanId: "clan-sucesso",
+      clanId: "clan-fiscal",
     },
     {
       sector: "2.0 - RH — PRÓ-LABORE",

@@ -61,6 +61,10 @@ export const SECTOR_CLAN_SYNONYMS: Readonly<Record<string, string>> = {
   // Fiscal
   fiscal: "fiscal",
   fiscais: "fiscal",
+  "fiscal emissao de notas informativos": "fiscal",
+  "fiscal emissao de notas": "fiscal",
+  "fiscal emissao de nota": "fiscal",
+  "fiscal emissao de nfe": "fiscal",
   informativo: "fiscal",
   informativos: "fiscal",
   impostos: "fiscal",
@@ -105,10 +109,6 @@ export const SECTOR_CLAN_SYNONYMS: Readonly<Record<string, string>> = {
   "contas a pagar": "financeiro",
   // Sucesso do Cliente
   "sucesso do cliente": "sucesso-do-cliente",
-  "fiscal emissao de notas informativos": "sucesso-do-cliente",
-  "fiscal emissao de notas": "sucesso-do-cliente",
-  "fiscal emissao de nota": "sucesso-do-cliente",
-  "fiscal emissao de nfe": "sucesso-do-cliente",
   "emissao de notas": "sucesso-do-cliente",
   "emissao de nota": "sucesso-do-cliente",
   "emissao de nfe": "sucesso-do-cliente",
