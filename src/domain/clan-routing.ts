@@ -61,12 +61,6 @@ export const SECTOR_CLAN_SYNONYMS: Readonly<Record<string, string>> = {
   // Fiscal
   fiscal: "fiscal",
   fiscais: "fiscal",
-  "emissao de notas": "fiscal",
-  "emissao de nota": "fiscal",
-  "emissao de nfe": "fiscal",
-  "nota fiscal": "fiscal",
-  "notas fiscais": "fiscal",
-  notas: "fiscal",
   informativo: "fiscal",
   informativos: "fiscal",
   impostos: "fiscal",
@@ -109,6 +103,24 @@ export const SECTOR_CLAN_SYNONYMS: Readonly<Record<string, string>> = {
   honorarios: "financeiro",
   "contas a receber": "financeiro",
   "contas a pagar": "financeiro",
+  // Sucesso do Cliente
+  "sucesso do cliente": "sucesso-do-cliente",
+  "fiscal emissao de notas informativos": "sucesso-do-cliente",
+  "fiscal emissao de notas": "sucesso-do-cliente",
+  "fiscal emissao de nota": "sucesso-do-cliente",
+  "fiscal emissao de nfe": "sucesso-do-cliente",
+  "emissao de notas": "sucesso-do-cliente",
+  "emissao de nota": "sucesso-do-cliente",
+  "emissao de nfe": "sucesso-do-cliente",
+  "nota fiscal": "sucesso-do-cliente",
+  "notas fiscais": "sucesso-do-cliente",
+  notas: "sucesso-do-cliente",
+  arquivo: "sucesso-do-cliente",
+  arquivos: "sucesso-do-cliente",
+  "certificado digital": "sucesso-do-cliente",
+  "certificados digitais": "sucesso-do-cliente",
+  automacao: "sucesso-do-cliente",
+  automacoes: "sucesso-do-cliente",
 };
 
 /** Minúsculas, sem acento e sem pontuação — a chave da tabela de sinônimos. */
@@ -193,12 +205,25 @@ export function resolveInformativeRoutingRule(
   if (!cleaned) return null;
   const bySector = new Map(rules.map((rule) => [rule.normalizedSector, rule]));
 
+  const matchConfiguredSegment = (value: string): InformativeRoutingRule | null => {
+    const normalized = normalizeSectorText(value);
+    const exact = bySector.get(normalized);
+    if (exact) return exact;
+
+    // Permite que uma regra estável como "Automação" reconheça variações do
+    // informativo como "AUTOMAÇÃO FABI – ONVIO" sem cadastrar cada ferramenta
+    // ou colaborador no código. A maior chave ganha para evitar generalizações.
+    return rules
+      .filter((rule) => normalized.startsWith(`${rule.normalizedSector} `))
+      .sort((left, right) => right.normalizedSector.length - left.normalizedSector.length)[0] ?? null;
+  };
+
   const whole = bySector.get(normalizeSectorText(cleaned));
   if (whole) return whole;
 
   const matches: InformativeRoutingRule[] = [];
   for (const segment of cleaned.split(/[/|,;]|\s[-–—]\s|[-–—]/)) {
-    const match = bySector.get(normalizeSectorText(segment));
+    const match = matchConfiguredSegment(segment);
     if (match && !matches.some((found) => found.clanId === match.clanId && found.userId === match.userId)) {
       matches.push(match);
     }

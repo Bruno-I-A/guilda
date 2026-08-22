@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  SECTOR_CLAN_SYNONYMS,
   normalizeSectorText,
   resolveSectorClan,
   routeInformativeTask,
@@ -17,7 +18,26 @@ const CLANS: RoutingClan[] = [
   { id: "clan-rh", name: "RH", slug: "rh" },
   { id: "clan-societario", name: "Societário", slug: "societario" },
   { id: "clan-financeiro", name: "Financeiro", slug: "financeiro" },
+  {
+    id: "clan-sucesso",
+    name: "Sucesso do Cliente",
+    slug: "sucesso-do-cliente",
+  },
 ];
+
+const DEFAULT_RULES: InformativeRoutingRule[] = Object.entries(
+  SECTOR_CLAN_SYNONYMS,
+).map(([sector, slug]) => {
+  const clan = CLANS.find((candidate) => candidate.slug === slug);
+  if (!clan) throw new Error(`clã padrão ausente no teste: ${slug}`);
+  return {
+    sector,
+    normalizedSector: sector,
+    clanId: clan.id,
+    userId: null,
+    userName: null,
+  };
+});
 
 function known(rawName: string, userId: string): AssigneeSuggestion {
   return { rawName, userId, name: rawName };
@@ -42,7 +62,10 @@ describe("normalização do setor", () => {
 describe("tabela de sinônimos setor→clã", () => {
   test.each([
     ["CONTABIL", "clan-contabil"],
-    ["EMISSÃO DE NOTAS", "clan-fiscal"],
+    ["EMISSÃO DE NOTAS", "clan-sucesso"],
+    ["CERTIFICADO DIGITAL", "clan-sucesso"],
+    ["AUTOMAÇÕES", "clan-sucesso"],
+    ["ARQUIVO", "clan-sucesso"],
     ["INFORMATIVOS", "clan-fiscal"],
     ["COBRANÇA", "clan-financeiro"],
     ["HONORÁRIO", "clan-financeiro"],
@@ -60,19 +83,16 @@ describe("tabela de sinônimos setor→clã", () => {
   });
 
   test.each([
-    "CERTIFICADO DIGITAL",
-    "AUTOMAÇÃO",
     "SERVIDOR",
-    "ARQUIVO",
     "Administrativo",
-  ])("%s não vira clã — os clãs continuam sendo cinco", (sector) => {
+  ])("%s permanece sem clã padrão", (sector) => {
     expect(resolveSectorClan(sector, CLANS)).toBeNull();
   });
 
   test("rótulo composto com segmentos do mesmo clã resolve", () => {
     expect(
       resolveSectorClan("FISCAL / EMISSÃO DE NOTAS / INFORMATIVOS", CLANS)?.id,
-    ).toBe("clan-fiscal");
+    ).toBe("clan-sucesso");
     expect(resolveSectorClan("COBRANÇA / HONORÁRIO", CLANS)?.id).toBe(
       "clan-financeiro",
     );
@@ -106,7 +126,7 @@ describe("regra de roteamento — as três linhas da tabela", () => {
 
   test("2. sem clã mas com nome reconhecido: missão individual", () => {
     const route = routeInformativeTask({
-      sector: "CERTIFICADO DIGITAL",
+      sector: "SERVIDOR",
       suggestions: [known("Bruno", "user-bruno")],
       clans: CLANS,
     });
@@ -126,7 +146,7 @@ describe("regra de roteamento — as três linhas da tabela", () => {
 
   test("nomes múltiplos sem clã geram uma missão por pessoa reconhecida", () => {
     const route = routeInformativeTask({
-      sector: "ARQUIVO",
+      sector: "ADMINISTRATIVO",
       suggestions: [known("Rafa", "user-rafa"), known("Bruno", "user-bruno")],
       clans: CLANS,
     });
@@ -148,7 +168,7 @@ describe("regra de roteamento — as três linhas da tabela", () => {
 
   test("nome desconhecido sem clã fica pendente e preserva o nome citado", () => {
     const route = routeInformativeTask({
-      sector: "AUTOMAÇÃO",
+      sector: "WHATSAPP",
       suggestions: [unknown("Jurandir")],
       clans: CLANS,
     });
@@ -159,7 +179,7 @@ describe("regra de roteamento — as três linhas da tabela", () => {
 
   test("nome desconhecido junto de um reconhecido não bloqueia a missão", () => {
     const route = routeInformativeTask({
-      sector: "ARQUIVO",
+      sector: "ADMINISTRATIVO",
       suggestions: [unknown("Jurandir"), known("Eduarda", "user-eduarda")],
       clans: CLANS,
     });
@@ -205,6 +225,24 @@ describe("roteamento configurável pela organização", () => {
     ).toEqual({ outcome: "clan", clan: atendimento });
   });
 
+  test("uma parte configurada reconhece o complemento operacional do setor", () => {
+    const automationRules: InformativeRoutingRule[] = [{
+      sector: "Automação",
+      normalizedSector: "automacao",
+      clanId: atendimento.id,
+      userId: null,
+      userName: null,
+    }];
+    expect(
+      routeInformativeTask({
+        sector: "AUTOMAÇÃO FABI – ONVIO",
+        suggestions: [],
+        clans: [...CLANS, atendimento],
+        rules: automationRules,
+      }),
+    ).toEqual({ outcome: "clan", clan: atendimento });
+  });
+
   test("uma parte pode ir direto para pessoa no contexto do clã escolhido", () => {
     const route = routeInformativeTask({
       sector: "Certificado Digital",
@@ -238,7 +276,8 @@ describe("roteamento configurável pela organização", () => {
 
 /**
  * Informativo real da PICCOLI AGRO (2026-08-17), no formato antigo do
- * WhatsApp. O resultado esperado é o da spec: 5 para clã, 5 direto, 1 pendente.
+ * WhatsApp. Com Sucesso do Cliente, as rotinas de atendimento deixam de ser
+ * atribuições avulsas e passam a uma fila operacional configurada.
  */
 describe("informativo real da PICCOLI — formato antigo", () => {
   const PEOPLE: Record<string, string> = {
@@ -265,7 +304,7 @@ describe("informativo real da PICCOLI — formato antigo", () => {
       sector: "1.1 – *FISCAL / EMISSÃO DE NOTAS / INFORMATIVOS",
       names: ["Camila", "Eduarda"],
       expected: "clan",
-      clanId: "clan-fiscal",
+      clanId: "clan-sucesso",
     },
     {
       sector: "2.0 - RH — PRÓ-LABORE",
@@ -294,20 +333,28 @@ describe("informativo real da PICCOLI — formato antigo", () => {
     {
       sector: "4.0 – CERTIFICADO DIGITAL",
       names: ["Bruno"],
-      expected: "individual",
+      expected: "clan",
+      clanId: "clan-sucesso",
     },
     {
       sector: "6.0 – AUTOMAÇÃO FABI – ONVIO",
       names: ["Fabi"],
-      expected: "individual",
+      expected: "clan",
+      clanId: "clan-sucesso",
     },
     {
       sector: "6.0 – AUTOMAÇÃO – VERI",
       names: ["Bruno"],
-      expected: "individual",
+      expected: "clan",
+      clanId: "clan-sucesso",
     },
     { sector: "7.0 - SERVIDOR", names: ["Bruno"], expected: "individual" },
-    { sector: "8.0 – ARQUIVO", names: ["Eduarda"], expected: "individual" },
+    {
+      sector: "8.0 – ARQUIVO",
+      names: ["Eduarda"],
+      expected: "clan",
+      clanId: "clan-sucesso",
+    },
     {
       sector: "9.0 – WHATSAPP / BOAS-VINDAS",
       names: [],
@@ -320,6 +367,7 @@ describe("informativo real da PICCOLI — formato antigo", () => {
       sector,
       suggestions: suggest(...names),
       clans: CLANS,
+      rules: DEFAULT_RULES,
     });
     expect(route.outcome).toBe(expected);
     if (route.outcome === "clan" && clanId) {
@@ -327,23 +375,24 @@ describe("informativo real da PICCOLI — formato antigo", () => {
     }
   });
 
-  test("o informativo inteiro dá 5 de clã, 5 diretas e 1 pendente", () => {
+  test("o informativo inteiro dá 9 de clã, 1 direta e 1 pendente", () => {
     const outcomes = LINES.map(
       ({ sector, names }) =>
         routeInformativeTask({
           sector,
           suggestions: suggest(...names),
           clans: CLANS,
+          rules: DEFAULT_RULES,
         }).outcome,
     );
-    expect(outcomes.filter((outcome) => outcome === "clan")).toHaveLength(5);
-    expect(outcomes.filter((outcome) => outcome === "individual")).toHaveLength(5);
+    expect(outcomes.filter((outcome) => outcome === "clan")).toHaveLength(9);
+    expect(outcomes.filter((outcome) => outcome === "individual")).toHaveLength(1);
     expect(outcomes.filter((outcome) => outcome === "pending")).toHaveLength(1);
   });
 
-  test("nenhuma linha do informativo é roteada para fora dos cinco clãs", () => {
+  test("nenhuma linha do informativo é roteada para fora dos clãs padrão", () => {
     for (const { sector } of LINES) {
-      const clan = resolveSectorClan(sector, CLANS);
+      const clan = resolveSectorClan(sector, CLANS, DEFAULT_RULES);
       if (clan) expect(CLANS).toContain(clan);
     }
   });
@@ -363,24 +412,25 @@ describe("informativo da PICCOLI — formato novo", () => {
     ["RH", [], "clan"],
     ["Contabilidade", [], "clan"],
     ["Financeiro", ["Camila"], "clan"],
-    ["Certificado digital", ["Bruno"], "individual"],
-    ["Automação", ["Fabi"], "individual"],
-    ["Automação", ["Bruno"], "individual"],
+    ["Certificado digital", ["Bruno"], "clan"],
+    ["Automação", ["Fabi"], "clan"],
+    ["Automação", ["Bruno"], "clan"],
     ["Servidor", ["Bruno"], "individual"],
-    ["Arquivo", ["Eduarda"], "individual"],
+    ["Arquivo", ["Eduarda"], "clan"],
     ["Administrativo", ["Eduarda"], "individual"],
   ];
 
-  test("5 para clã, 6 diretas e nenhuma pendente", () => {
+  test("9 para clã, 2 diretas e nenhuma pendente", () => {
     const outcomes = LINES.map(([sector, names]) =>
       routeInformativeTask({
         sector,
         suggestions: names.map((name) => known(name, PEOPLE[name])),
         clans: CLANS,
+        rules: DEFAULT_RULES,
       }).outcome,
     );
-    expect(outcomes.filter((outcome) => outcome === "clan")).toHaveLength(5);
-    expect(outcomes.filter((outcome) => outcome === "individual")).toHaveLength(6);
+    expect(outcomes.filter((outcome) => outcome === "clan")).toHaveLength(9);
+    expect(outcomes.filter((outcome) => outcome === "individual")).toHaveLength(2);
     expect(outcomes.filter((outcome) => outcome === "pending")).toHaveLength(0);
   });
 });

@@ -4,6 +4,7 @@ export const DEFAULT_ORGANIZATION_CLANS = [
   { name: "RH", slug: "rh" },
   { name: "Societário", slug: "societario" },
   { name: "Financeiro", slug: "financeiro" },
+  { name: "Sucesso do Cliente", slug: "sucesso-do-cliente" },
 ] as const;
 
 export const DEFAULT_PRIMARY_CLAN_SLUG = "contabilidade";

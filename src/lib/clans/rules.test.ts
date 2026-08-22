@@ -9,13 +9,14 @@ import {
 } from "./rules";
 
 describe("bootstrap padrão de clãs", () => {
-  it("mantém os cinco slugs estáveis e somente Contabilidade como principal", () => {
+  it("mantém os seis slugs estáveis e somente Contabilidade como principal", () => {
     expect(DEFAULT_ORGANIZATION_CLANS).toEqual([
       { name: "Fiscal", slug: "fiscal" },
       { name: "Contabilidade", slug: "contabilidade" },
       { name: "RH", slug: "rh" },
       { name: "Societário", slug: "societario" },
       { name: "Financeiro", slug: "financeiro" },
+      { name: "Sucesso do Cliente", slug: "sucesso-do-cliente" },
     ]);
     expect(
       DEFAULT_ORGANIZATION_CLANS.filter(
@@ -24,7 +25,7 @@ describe("bootstrap padrão de clãs", () => {
     ).toHaveLength(1);
   });
 
-  it("vincula o criador como líder dos cinco e marca um único principal", () => {
+  it("vincula o criador como líder dos seis e marca um único principal", () => {
     const rows = buildDefaultLeaderMemberships(
       "org-1",
       "owner-1",
@@ -34,7 +35,7 @@ describe("bootstrap padrão de clãs", () => {
       })),
     );
 
-    expect(rows).toHaveLength(5);
+    expect(rows).toHaveLength(6);
     expect(rows.every((row) => row.isLeader)).toBe(true);
     expect(rows.every((row) => row.orgId === "org-1")).toBe(true);
     expect(rows.every((row) => row.userId === "owner-1")).toBe(true);
