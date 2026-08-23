@@ -38,6 +38,16 @@ export const COMPANY_FLOW_STATUS_LABELS: Record<CompanyFlowStatus, string> = {
   cancelled: "Cancelado",
 };
 
+/** Título do aviso no mural para distinguir uma baixa dos demais informativos. */
+export function companyFlowInformativeNoticeTitle(
+  kind: CompanyFlowKind | null | undefined,
+  companyName: string,
+): string {
+  return kind === "closure"
+    ? `Informativo de baixa: ${companyName}`
+    : `Informativo: ${companyName}`;
+}
+
 /**
  * O formulário do Informativo continua mostrando o resumo completo do Fluxo
  * para revisão humana. A IA, porém, só precisa classificar as providências

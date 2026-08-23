@@ -23,6 +23,7 @@ import {
 } from "@/lib/action-context";
 import { syncClosingFromTask } from "@/lib/closings/task-sync";
 import { syncCommitmentPeriodFromTask } from "@/lib/commitments/task-sync";
+import { deactivateClosureClientWhenTasksFinish } from "@/lib/informatives/closure-completion";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 import { CUSTOMER_SUCCESS_CLAN_SLUG } from "@/lib/clans/rules";
 import {
@@ -423,6 +424,12 @@ async function transitionTask(options: {
       toStatus: options.to,
       changedAt: now,
     });
+    if (options.to === "completed") {
+      await deactivateClosureClientWhenTasksFinish(tx, {
+        orgId: ctx.orgId,
+        informativeId: task.informativeId,
+      });
+    }
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;
     if (options.to === "awaiting_approval") {
@@ -483,6 +490,7 @@ async function transitionTask(options: {
     revalidatePath("/profile");
     revalidatePath("/leaderboard");
     revalidatePath("/mural");
+    revalidatePath("/clients");
   }
   return result;
 }
@@ -927,6 +935,10 @@ export async function quickCompleteUnassignedInformativeTask(input: {
         toStatus: "completed",
         changedAt: now,
       });
+      await deactivateClosureClientWhenTasksFinish(tx, {
+        orgId: ctx.orgId,
+        informativeId: task.informativeId,
+      });
 
       return { ok: true, data: { xpValue: task.xpValue } };
     },
@@ -938,6 +950,7 @@ export async function quickCompleteUnassignedInformativeTask(input: {
     revalidatePath("/profile");
     revalidatePath("/leaderboard");
     revalidatePath("/mural");
+    revalidatePath("/clients");
   }
   return result;
 }

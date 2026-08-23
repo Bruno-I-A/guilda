@@ -4,6 +4,7 @@ import {
   amendmentClientRegistrationUpdate,
   companyFlowActionsText,
   companyFlowInformativeText,
+  companyFlowInformativeNoticeTitle,
 } from "./company-flow";
 
 describe("Fluxo Societário", () => {
@@ -140,6 +141,15 @@ describe("Fluxo Societário", () => {
     expect(actions).toBe("Fiscal - Camila - parametrizar\nRH - Bruno - cadastrar");
     expect(companyFlowActionsText("ACOES:\nFiscal - fazer algo")).toBe("Fiscal - fazer algo");
     expect(companyFlowActionsText("Empresa: sem marcador")).toBeNull();
+  });
+
+  test("identifica no mural o informativo de baixa", () => {
+    expect(companyFlowInformativeNoticeTitle("closure", "ALDUIR")).toBe(
+      "Informativo de baixa: ALDUIR",
+    );
+    expect(companyFlowInformativeNoticeTitle("amendment", "ALDUIR")).toBe(
+      "Informativo: ALDUIR",
+    );
   });
 
   test("reflete razão social e regime no cadastro apenas após uma alteração", () => {

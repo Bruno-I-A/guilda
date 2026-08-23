@@ -21,7 +21,11 @@ import {
   periodsPerYear,
 } from "@/domain/commitments";
 import { createTaskRecord } from "@/lib/tasks/create";
-import { amendmentClientRegistrationUpdate } from "@/domain/company-flow";
+import {
+  amendmentClientRegistrationUpdate,
+  companyFlowInformativeNoticeTitle,
+} from "@/domain/company-flow";
+import { deactivateClosureClientWhenTasksFinish } from "./closure-completion";
 
 import type { InformativeActor } from "./draft";
 
@@ -703,7 +707,7 @@ export async function confirmInformative(
         orgId: actor.orgId,
         authorId: actor.userId,
         kind: "notice",
-        title: `Informativo: ${trackingName}`,
+        title: companyFlowInformativeNoticeTitle(linkedFlow?.flow.kind, trackingName),
         body: [
           `${taskIds.length} ${taskIds.length === 1 ? "missão foi gerada" : "missões foram geradas"} por este Informativo.`,
           payload.observations.length > 0
@@ -728,6 +732,12 @@ export async function confirmInformative(
       .where(eq(schema.informatives.id, informative.id));
 
     const flow = linkedFlow?.flow;
+    if (taskIds.length === 0) {
+      await deactivateClosureClientWhenTasksFinish(tx, {
+        orgId: actor.orgId,
+        informativeId: informative.id,
+      });
+    }
     const registrationUpdate = flow
       ? amendmentClientRegistrationUpdate(flow)
       : null;
