@@ -707,7 +707,10 @@ export async function confirmInformative(
         orgId: actor.orgId,
         authorId: actor.userId,
         kind: "notice",
-        title: companyFlowInformativeNoticeTitle(linkedFlow?.flow.kind, trackingName),
+        title: companyFlowInformativeNoticeTitle(
+          linkedFlow?.flow.kind ?? (payload.kind === "client_closure" ? "closure" : null),
+          trackingName,
+        ),
         body: [
           `${taskIds.length} ${taskIds.length === 1 ? "missão foi gerada" : "missões foram geradas"} por este Informativo.`,
           payload.observations.length > 0

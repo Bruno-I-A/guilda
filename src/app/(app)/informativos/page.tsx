@@ -25,7 +25,7 @@ export default async function InformativosPage({
   const role = viewer.role as OrgRole;
   const { flowId } = await searchParams;
 
-  const { pendingDraft, clans, members, leadsAnyClan } = await withOrgTx(
+  const { pendingDraft, clans, members, clients, leadsAnyClan } = await withOrgTx(
     session.orgId,
     async (tx) => {
       const draftRow = await tx
@@ -56,6 +56,11 @@ export default async function InformativosPage({
         .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
         .where(eq(schema.member.organizationId, session.orgId))
         .orderBy(asc(schema.user.name));
+      const clientRows = await tx
+        .select({ id: schema.clients.id, name: schema.clients.name, cnpj: schema.clients.cnpj, taxRegime: schema.clients.taxRegime })
+        .from(schema.clients)
+        .where(and(eq(schema.clients.orgId, session.orgId), eq(schema.clients.active, true)))
+        .orderBy(asc(schema.clients.name));
       const leadership = await tx
         .select({ id: schema.clanMemberships.id })
         .from(schema.clanMemberships)
@@ -80,6 +85,7 @@ export default async function InformativosPage({
         pendingDraft: draftRow[0] ?? null,
         clans: clanRows,
         members: memberRows,
+        clients: clientRows,
         leadsAnyClan: leadership.length > 0,
       };
     },
@@ -181,6 +187,7 @@ export default async function InformativosPage({
           draft={draft}
           clans={clans}
           members={members}
+          clients={clients}
           initialSourceText={initialFlowText}
           flowId={flowForInformative?.flow.id}
         />

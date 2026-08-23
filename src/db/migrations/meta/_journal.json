@@ -379,6 +379,13 @@
       "when": 1787605200000,
       "tag": "0053_company_flow_closure_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1787608800000,
+      "tag": "0054_remove_company_flow_closure_mode",
+      "breakpoints": true
     }
   ]
 }

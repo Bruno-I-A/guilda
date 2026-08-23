@@ -32,6 +32,7 @@ import {
   confirmInformativeDraft,
 } from "./actions";
 import { NewClientWizard } from "./new-client-wizard";
+import { AccountantChangeWizard } from "./accountant-change-wizard";
 
 export interface DraftTaskView {
   index: number;
@@ -78,12 +79,14 @@ export function InformativePanel({
   draft,
   clans,
   members,
+  clients,
   initialSourceText = "",
   flowId,
 }: {
   draft: DraftView | null;
   clans: { id: string; name: string }[];
   members: { userId: string; name: string }[];
+  clients: { id: string; name: string; cnpj: string | null; taxRegime: "simples" | "presumido" | "association" | "real" }[];
   initialSourceText?: string;
   flowId?: string;
 }) {
@@ -92,6 +95,7 @@ export function InformativePanel({
   const [sourceText, setSourceText] = useState(initialSourceText);
   const [decisions, setDecisions] = useState<Record<number, Decision>>({});
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [accountantChangeOpen, setAccountantChangeOpen] = useState(false);
 
   const pendingTasks = draft?.tasks.filter((t) => t.assignmentType === "pending") ?? [];
   const undecided = pendingTasks.filter((task) => !decisions[task.index]);
@@ -159,9 +163,12 @@ export function InformativePanel({
     <div className="grid gap-5">
       {wizardOpen ? (
         <NewClientWizard onDone={() => setWizardOpen(false)} />
+      ) : accountantChangeOpen ? (
+        <AccountantChangeWizard clients={clients} onDone={() => setAccountantChangeOpen(false)} />
       ) : (
         <div className="grid gap-2">
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {!flowId ? <Button variant="outline" size="sm" onClick={() => setAccountantChangeOpen(true)}>Baixa por desligamento</Button> : null}
             <Button variant="outline" size="sm" onClick={() => setWizardOpen(true)}>
               <Building2 className="size-4" aria-hidden /> Novo cliente
             </Button>

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   amendmentClientRegistrationUpdate,
+  accountantChangeInformativeText,
   companyFlowActionsText,
   companyFlowInformativeText,
   companyFlowInformativeNoticeTitle,
@@ -11,8 +12,6 @@ describe("Fluxo Societário", () => {
   test("leva os dados aprovados ao informativo sem vazar credencial", () => {
     const text = companyFlowInformativeText({
       kind: "opening",
-      closureMode: "company_closure",
-      closureResponsibilityUntil: null,
       existingClientName: null,
       existingClientCnpj: null,
       existingClientTaxRegime: null,
@@ -55,8 +54,6 @@ describe("Fluxo Societário", () => {
   test("leva a solicitação completa de alteração ao informativo e cria ação para o Societário", () => {
     const text = companyFlowInformativeText({
       kind: "amendment",
-      closureMode: "company_closure",
-      closureResponsibilityUntil: null,
       existingClientName: "EMPRESA ATUAL LTDA",
       existingClientCnpj: "12345678000195",
       existingClientTaxRegime: "simples",
@@ -97,8 +94,6 @@ describe("Fluxo Societário", () => {
   test("prepara a baixa no modelo operacional padrão", () => {
     const text = companyFlowInformativeText({
       kind: "closure",
-      closureMode: "company_closure",
-      closureResponsibilityUntil: null,
       existingClientName: "MARA G BORSATTI & CIA LTDA",
       existingClientCnpj: "12543850000115",
       existingClientTaxRegime: "simples",
@@ -140,34 +135,13 @@ describe("Fluxo Societário", () => {
   });
 
   test("prepara o desligamento por alteração de contador com as missões próprias", () => {
-    const text = companyFlowInformativeText({
-      kind: "closure",
-      closureMode: "accountant_change",
-      closureResponsibilityUntil: "2026-03-31",
-      existingClientName: "SUELEN TALIAN SIMÕES",
-      existingClientCnpj: "33843378000106",
-      existingClientTaxRegime: "simples",
-      requestedLegalName: null,
-      requestedActivities: [],
-      removedActivities: [],
-      taxRegime: null,
-      iptu: null,
-      socialCapital: null,
-      roomSize: null,
+    const text = accountantChangeInformativeText({
+      companyName: "SUELEN TALIAN SIMÕES",
+      cnpj: "33843378000106",
+      taxRegime: "simples",
       address: "GETULIO VARGAS",
-      clientResponsible: null,
-      qsa: [],
-      contactName: null,
-      contactPhone: null,
-      contactEmail: null,
-      requestDetails: "Empresa solicitou desligamento com aviso prévio.",
-      resultCnpj: null,
-      approvedLegalName: null,
-      approvedActivities: [],
-      approvedTaxRegime: null,
-      approvedAddress: null,
-      approvedQsa: [],
-      processingNotes: "Baixa concluída pelo Societário.",
+      responsibilityUntil: "2026-03-31",
+      observations: "Empresa solicitou desligamento com aviso prévio.",
     });
 
     expect(text).toContain("INFORMATIVO DE BAIXA DE CLIENTE POR DESLIGAMENTO");

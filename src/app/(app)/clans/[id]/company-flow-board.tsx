@@ -41,10 +41,8 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  COMPANY_FLOW_CLOSURE_MODE_LABELS,
   COMPANY_FLOW_KIND_LABELS,
   COMPANY_FLOW_STATUS_LABELS,
-  type CompanyFlowClosureMode,
   type CompanyFlowKind,
   type CompanyFlowSource,
   type CompanyFlowStatus,
@@ -70,8 +68,6 @@ import {
 export interface CompanyFlowView {
   id: string;
   kind: CompanyFlowKind;
-  closureMode: CompanyFlowClosureMode;
-  closureResponsibilityUntil: string | null;
   status: CompanyFlowStatus;
   source: CompanyFlowSource;
   existingClientId: string | null;
@@ -215,8 +211,6 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
     <section className="grid gap-2 rounded-md border bg-muted/20 p-3">
       <p className="hud-label">Solicitação do cliente</p>
       <p><strong>{row.approvedLegalName ? "Razão social oficial:" : "Razão social:"}</strong> {officialLegalName ?? row.requestedLegalName ?? "—"}</p>
-      {row.kind === "closure" ? <p><strong>Modalidade:</strong> {COMPANY_FLOW_CLOSURE_MODE_LABELS[row.closureMode]}</p> : null}
-      {row.kind === "closure" && row.closureResponsibilityUntil ? <p><strong>Responsabilidade até:</strong> {new Date(`${row.closureResponsibilityUntil}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "UTC" })}</p> : null}
       {row.kind === "amendment" && row.requestedLegalName ? <p><strong>Nova razão social:</strong> {row.requestedLegalName}</p> : null}
       {requestedNameDiffers ? (
         <p className="text-xs text-muted-foreground">
@@ -260,8 +254,6 @@ function NewCompanyFlowDialog({
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [kind, setKind] = useState<CompanyFlowKind>("opening");
-  const [closureMode, setClosureMode] = useState<CompanyFlowClosureMode>("company_closure");
-  const [closureResponsibilityUntil, setClosureResponsibilityUntil] = useState("");
   const [existingClientId, setExistingClientId] = useState("");
   const [companySearch, setCompanySearch] = useState("");
   const [companyPickerOpen, setCompanyPickerOpen] = useState(false);
@@ -304,8 +296,6 @@ function NewCompanyFlowDialog({
       const result = await createCompanyFlow({
         clanId,
         kind,
-        closureMode,
-        closureResponsibilityUntil: closureResponsibilityUntil || null,
         source: "written",
         existingClientId: kind === "opening" ? null : existingClientId || null,
         requestedLegalName: legalName,
@@ -398,8 +388,6 @@ function NewCompanyFlowDialog({
             {opening ? <div className="grid gap-1.5"><Label>Regime tributário *</Label><Select value={taxRegime || undefined} onValueChange={(value) => setTaxRegime(value as TaxRegime)}><SelectTrigger><SelectValue placeholder="Selecione o regime" /></SelectTrigger><SelectContent>{TAX_REGIMES.map((value) => <SelectItem key={value} value={value}>{TAX_REGIME_LABELS[value]}</SelectItem>)}</SelectContent></Select></div> : null}
             {opening ? <div className="grid gap-1.5"><Label>IPTU</Label><Input value={iptu} onChange={(event) => setIptu(event.target.value)} placeholder="Inscrição ou referência do IPTU" /></div> : null}
           </div>
-
-          {closing ? <section className="grid gap-3 rounded-md border bg-muted/20 p-3"><div className="grid gap-1.5"><Label>Modalidade da baixa</Label><Select value={closureMode} onValueChange={(value) => setClosureMode(value as CompanyFlowClosureMode)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="company_closure">Baixa definitiva da empresa</SelectItem><SelectItem value="accountant_change">Desligamento / alteração de contador</SelectItem></SelectContent></Select></div>{closureMode === "accountant_change" ? <div className="grid gap-1.5"><Label>Responsabilidade do escritório até *</Label><Input type="date" value={closureResponsibilityUntil} onChange={(event) => setClosureResponsibilityUntil(event.target.value)} /></div> : null}</section> : null}
 
           {opening ? (
             <>

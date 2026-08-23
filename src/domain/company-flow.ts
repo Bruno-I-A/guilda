@@ -5,14 +5,6 @@ import { formatCnpj } from "./cnpj";
 export const COMPANY_FLOW_KINDS = ["opening", "amendment", "closure"] as const;
 export type CompanyFlowKind = (typeof COMPANY_FLOW_KINDS)[number];
 
-export const COMPANY_FLOW_CLOSURE_MODES = ["company_closure", "accountant_change"] as const;
-export type CompanyFlowClosureMode = (typeof COMPANY_FLOW_CLOSURE_MODES)[number];
-
-export const COMPANY_FLOW_CLOSURE_MODE_LABELS: Record<CompanyFlowClosureMode, string> = {
-  company_closure: "Baixa definitiva da empresa",
-  accountant_change: "Desligamento / alteração de contador",
-};
-
 export const COMPANY_FLOW_STATUSES = [
   "sent_to_corporate",
   "in_progress",
@@ -85,8 +77,6 @@ export interface FlowQsaMember {
 /** Dados seguros para transformar o retorno do Societário em um rascunho. */
 export interface FlowInformativeInput {
   kind: CompanyFlowKind;
-  closureMode: CompanyFlowClosureMode;
-  closureResponsibilityUntil: string | null;
   existingClientName: string | null;
   existingClientCnpj: string | null;
   existingClientTaxRegime: TaxRegime | null;
@@ -163,35 +153,6 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
   if (flow.kind === "closure") {
     const closureTaxRegime = flow.existingClientTaxRegime ?? taxRegime;
     const closureCnpj = flow.existingClientCnpj ?? flow.resultCnpj;
-    const responsibilityUntil = flow.closureResponsibilityUntil
-      ? formatFlowDate(flow.closureResponsibilityUntil)
-      : "NÃO INFORMADO";
-    const responsibilityCompetence = flow.closureResponsibilityUntil
-      ? flow.closureResponsibilityUntil.slice(5, 7) + "/" + flow.closureResponsibilityUntil.slice(0, 4)
-      : "NÃO INFORMADA";
-
-    if (flow.closureMode === "accountant_change") {
-      return [
-        "INFORMATIVO DE BAIXA DE CLIENTE POR DESLIGAMENTO",
-        "BAIXA DE CLIENTE – código (681)",
-        `RAZÃO SOCIAL – ${company}`,
-        `CNPJ/CPF/CEI – ${closureCnpj ? formatCnpj(closureCnpj) : "NÃO INFORMADO"}`,
-        `ENDEREÇO – ${address ?? "NÃO INFORMADO"}`,
-        `ENQUADRAMENTO – ${closureTaxRegime ? TAX_REGIME_LABELS[closureTaxRegime].toUpperCase() : "NÃO INFORMADO"}`,
-        "",
-        `NOSSA RESPONSABILIDADE – ATÉ ${responsibilityUntil}`,
-        "",
-        "OBSERVAÇÕES:",
-        flow.requestDetails || "—",
-        "",
-        "AÇÕES",
-        `CONTABIL – Encerramento até ${responsibilityUntil} para entrega do balancete à nova contabilidade.`,
-        `FISCAL – Gerar até competência ${responsibilityCompetence}.`,
-        `RH – Gerar até competência ${responsibilityCompetence}.`,
-        "PROTOCOLO DE ENTREGA – Jeni – Encaminhar para o e-mail do cliente a documentação que servirá como protocolo de entrega.",
-      ].join("\n");
-    }
-
     return [
       "INFORMATIVO DE BAIXA DE CLIENTE",
       "BAIXA DE CLIENTE – código (487)",
@@ -245,6 +206,40 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
   ]
     .filter((line): line is string => line !== null)
     .join("\n");
+}
+
+export interface AccountantChangeInformativeInput {
+  companyName: string;
+  cnpj: string | null;
+  taxRegime: TaxRegime;
+  address: string | null;
+  responsibilityUntil: string;
+  observations: string | null;
+}
+
+/** Modelo direto de desligamento — não passa pelo Fluxo Societário. */
+export function accountantChangeInformativeText(input: AccountantChangeInformativeInput): string {
+  const responsibilityUntil = formatFlowDate(input.responsibilityUntil);
+  const competence = `${input.responsibilityUntil.slice(5, 7)}/${input.responsibilityUntil.slice(0, 4)}`;
+  return [
+    "INFORMATIVO DE BAIXA DE CLIENTE POR DESLIGAMENTO",
+    "BAIXA DE CLIENTE – código (681)",
+    `RAZÃO SOCIAL – ${input.companyName}`,
+    `CNPJ/CPF/CEI – ${input.cnpj ? formatCnpj(input.cnpj) : "NÃO INFORMADO"}`,
+    `ENDEREÇO – ${input.address?.trim() || "NÃO INFORMADO"}`,
+    `ENQUADRAMENTO – ${TAX_REGIME_LABELS[input.taxRegime].toUpperCase()}`,
+    "",
+    `NOSSA RESPONSABILIDADE – ATÉ ${responsibilityUntil}`,
+    "",
+    "OBSERVAÇÕES:",
+    input.observations?.trim() || "—",
+    "",
+    "AÇÕES",
+    `CONTABIL – Encerramento até ${responsibilityUntil} para entrega do balancete à nova contabilidade.`,
+    `FISCAL – Gerar até competência ${competence}.`,
+    `RH – Gerar até competência ${competence}.`,
+    "PROTOCOLO DE ENTREGA – Jeni – Encaminhar para o e-mail do cliente a documentação que servirá como protocolo de entrega.",
+  ].join("\n");
 }
 
 function formatFlowDate(value: string): string {

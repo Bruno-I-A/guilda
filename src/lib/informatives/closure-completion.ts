@@ -4,6 +4,7 @@ import { and, eq, ne } from "drizzle-orm";
 
 import { type OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { informativeDraftPayloadSchema } from "@/lib/ai/informative-schema";
 
 /**
  * A baixa mantém a empresa ativa enquanto existem missões pendentes. O lock
@@ -27,7 +28,23 @@ export async function deactivateClosureClientWhenTasksFinish(
       ),
     )
     .for("update");
-  if (!flow?.existingClientId) return false;
+  let clientId = flow?.existingClientId ?? null;
+  if (!clientId) {
+    const [informative] = await tx
+      .select({ payload: schema.informatives.payload })
+      .from(schema.informatives)
+      .where(
+        and(
+          eq(schema.informatives.orgId, input.orgId),
+          eq(schema.informatives.id, input.informativeId),
+        ),
+      )
+      .for("update");
+    const payload = informativeDraftPayloadSchema.safeParse(informative?.payload);
+    if (!payload.success || payload.data.kind !== "client_closure") return false;
+    clientId = payload.data.company.clientId;
+  }
+  if (!clientId) return false;
 
   const [client] = await tx
     .select({ id: schema.clients.id, active: schema.clients.active })
@@ -35,7 +52,7 @@ export async function deactivateClosureClientWhenTasksFinish(
     .where(
       and(
         eq(schema.clients.orgId, input.orgId),
-        eq(schema.clients.id, flow.existingClientId),
+        eq(schema.clients.id, clientId),
       ),
     )
     .for("update");
