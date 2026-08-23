@@ -324,6 +324,7 @@ function NewCompanyFlowDialog({
   }
 
   const opening = kind === "opening";
+  const closing = kind === "closure";
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -384,8 +385,8 @@ function NewCompanyFlowDialog({
                 </div>
               </div>
             )}
-            {kind !== "amendment" ? <div className="grid gap-1.5"><Label>Regime tributário{opening ? " *" : ""}</Label><Select value={taxRegime || undefined} onValueChange={(value) => setTaxRegime(value as TaxRegime)}><SelectTrigger><SelectValue placeholder="Selecione o regime" /></SelectTrigger><SelectContent>{TAX_REGIMES.map((value) => <SelectItem key={value} value={value}>{TAX_REGIME_LABELS[value]}</SelectItem>)}</SelectContent></Select></div> : null}
-            {kind !== "amendment" ? <div className="grid gap-1.5"><Label>IPTU</Label><Input value={iptu} onChange={(event) => setIptu(event.target.value)} placeholder="Inscrição ou referência do IPTU" /></div> : null}
+            {opening ? <div className="grid gap-1.5"><Label>Regime tributário *</Label><Select value={taxRegime || undefined} onValueChange={(value) => setTaxRegime(value as TaxRegime)}><SelectTrigger><SelectValue placeholder="Selecione o regime" /></SelectTrigger><SelectContent>{TAX_REGIMES.map((value) => <SelectItem key={value} value={value}>{TAX_REGIME_LABELS[value]}</SelectItem>)}</SelectContent></Select></div> : null}
+            {opening ? <div className="grid gap-1.5"><Label>IPTU</Label><Input value={iptu} onChange={(event) => setIptu(event.target.value)} placeholder="Inscrição ou referência do IPTU" /></div> : null}
           </div>
 
           {opening ? (
@@ -427,13 +428,14 @@ function NewCompanyFlowDialog({
             </section>
           ) : null}
 
-          {kind !== "amendment" ? <><div className="grid gap-3 sm:grid-cols-2">
+          {opening ? <><div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5"><Label>Contato</Label><Input value={contactName} onChange={(event) => setContactName(event.target.value)} placeholder="Nome do contato" /></div>
             <div className="grid gap-1.5"><Label>Telefone</Label><Input value={contactPhone} onChange={(event) => setContactPhone(event.target.value)} placeholder="(00) 00000-0000" /></div>
             <div className="grid gap-1.5"><Label>E-mail</Label><Input type="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} placeholder="contato@empresa.com" /></div>
           </div>
           <div className="grid gap-1.5"><Label>{detailLabel}</Label><Textarea value={details} onChange={(event) => setDetails(event.target.value)} rows={4} placeholder={detailPlaceholder} /></div></> : null}
-          <div className="grid gap-1.5 rounded-md border border-primary/30 bg-primary/5 p-3"><Label htmlFor="gov-password" className="flex items-center gap-1.5"><ShieldCheck className="size-4" aria-hidden /> Senha Gov.br (opcional)</Label><Input id="gov-password" type="password" autoComplete="new-password" value={govPassword} onChange={(event) => setGovPassword(event.target.value)} placeholder="Fica cifrada e não entra no histórico" /><p className="text-xs text-muted-foreground">Somente o dono, o responsável societário e a liderança do Societário podem revelar esta senha.</p></div>
+          {closing ? <div className="grid gap-1.5"><Label>Observações da baixa</Label><Textarea value={details} onChange={(event) => setDetails(event.target.value)} rows={6} placeholder="Descreva a data da baixa, cobrança, recibo e demais observações" /></div> : null}
+          {closing ? null : <div className="grid gap-1.5 rounded-md border border-primary/30 bg-primary/5 p-3"><Label htmlFor="gov-password" className="flex items-center gap-1.5"><ShieldCheck className="size-4" aria-hidden /> Senha Gov.br (opcional)</Label><Input id="gov-password" type="password" autoComplete="new-password" value={govPassword} onChange={(event) => setGovPassword(event.target.value)} placeholder="Fica cifrada e não entra no histórico" /><p className="text-xs text-muted-foreground">Somente o dono, o responsável societário e a liderança do Societário podem revelar esta senha.</p></div>}
         </div>
         <DialogFooter><Button type="button" disabled={pending} onClick={submit}>{pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Send aria-hidden />} Enviar ao Societário</Button></DialogFooter>
       </DialogContent>

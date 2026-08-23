@@ -11,6 +11,8 @@ describe("Fluxo Societário", () => {
     const text = companyFlowInformativeText({
       kind: "opening",
       existingClientName: null,
+      existingClientCnpj: null,
+      existingClientTaxRegime: null,
       requestedLegalName: "NOME PRETENDIDO LTDA",
       requestedActivities: [{ description: "Comércio" }],
       removedActivities: [],
@@ -51,6 +53,8 @@ describe("Fluxo Societário", () => {
     const text = companyFlowInformativeText({
       kind: "amendment",
       existingClientName: "EMPRESA ATUAL LTDA",
+      existingClientCnpj: "12345678000195",
+      existingClientTaxRegime: "simples",
       requestedLegalName: "EMPRESA RENOMEADA LTDA",
       requestedActivities: [{ description: "Comércio eletrônico" }],
       removedActivities: [{ description: "Comércio atacadista" }],
@@ -83,6 +87,44 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("QSA: Entrada — Ana — Sócia administradora — 100%");
     expect(text).toContain("Societário - Atualizar alvará, Inscrição Estadual");
     expect(text).not.toContain("CNPJ:");
+  });
+
+  test("prepara a baixa no modelo operacional padrão", () => {
+    const text = companyFlowInformativeText({
+      kind: "closure",
+      existingClientName: "MARA G BORSATTI & CIA LTDA",
+      existingClientCnpj: "12543850000115",
+      existingClientTaxRegime: "simples",
+      requestedLegalName: null,
+      requestedActivities: [],
+      removedActivities: [],
+      taxRegime: null,
+      iptu: null,
+      socialCapital: null,
+      roomSize: null,
+      address: null,
+      clientResponsible: null,
+      qsa: [],
+      contactName: null,
+      contactPhone: null,
+      contactEmail: null,
+      requestDetails: "EMPRESA BAIXADA 30/06/2026\nCOBRANÇA – RECIBO",
+      resultCnpj: null,
+      approvedLegalName: null,
+      approvedActivities: [],
+      approvedTaxRegime: null,
+      approvedAddress: null,
+      approvedQsa: [],
+      processingNotes: "Baixa concluída pelo Societário.",
+    });
+
+    expect(text).toContain("INFORMATIVO DE BAIXA DE CLIENTE");
+    expect(text).toContain("BAIXA DE CLIENTE – código (487)");
+    expect(text).toContain("CNPJ/CPF/CEI – 12.543.850/0001-15");
+    expect(text).toContain("ENQUADRAMENTO – SIMPLES NACIONAL");
+    expect(text).toContain("OBSERVAÇÕES:\nEMPRESA BAIXADA 30/06/2026");
+    expect(text).toContain("CONTABIL – Rafa/Bruno – Finalizar lançamentos até a data da baixa");
+    expect(text).toContain("ONVIO – Fabi – Retirar cliente do ONVIO também.");
   });
 
   test("envia à IA somente o bloco de ações do Fluxo", () => {

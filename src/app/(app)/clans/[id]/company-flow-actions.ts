@@ -404,7 +404,12 @@ export async function prepareCompanyFlowInformative(
     if (!corporate) return err("Clã Societário não encontrado.");
     if (!canPrepareCompanyFlowInformative(corporate.facts)) return err("Apenas owner ou admin pode preparar o Informativo.");
     const [flow] = await tx
-      .select({ flow: schema.companyFlows, clientName: schema.clients.name })
+      .select({
+        flow: schema.companyFlows,
+        clientName: schema.clients.name,
+        clientCnpj: schema.clients.cnpj,
+        clientTaxRegime: schema.clients.taxRegime,
+      })
       .from(schema.companyFlows)
       .leftJoin(schema.clients, and(eq(schema.clients.orgId, schema.companyFlows.orgId), eq(schema.clients.id, schema.companyFlows.existingClientId)))
       .where(and(eq(schema.companyFlows.orgId, ctx.orgId), eq(schema.companyFlows.id, data.flowId), eq(schema.companyFlows.societarioClanId, data.clanId)))
@@ -418,6 +423,8 @@ export async function prepareCompanyFlowInformative(
     const sourceText = companyFlowInformativeText({
       ...flow.flow,
       existingClientName: flow.clientName ?? null,
+      existingClientCnpj: flow.clientCnpj ?? null,
+      existingClientTaxRegime: flow.clientTaxRegime ?? null,
     });
     if (flow.flow.status !== "informative_drafting") {
       await tx.update(schema.companyFlows).set({ status: "informative_drafting", updatedAt: new Date() })

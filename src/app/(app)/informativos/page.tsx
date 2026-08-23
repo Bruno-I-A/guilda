@@ -89,7 +89,12 @@ export default async function InformativosPage({
   const flowForInformative = flowId && isAdminRole(role)
     ? await withOrgTx(session.orgId, async (tx) => {
         const [row] = await tx
-          .select({ flow: schema.companyFlows, existingClientName: schema.clients.name })
+          .select({
+            flow: schema.companyFlows,
+            existingClientName: schema.clients.name,
+            existingClientCnpj: schema.clients.cnpj,
+            existingClientTaxRegime: schema.clients.taxRegime,
+          })
           .from(schema.companyFlows)
           .leftJoin(
             schema.clients,
@@ -113,6 +118,8 @@ export default async function InformativosPage({
     ? companyFlowInformativeText({
         ...flowForInformative.flow,
         existingClientName: flowForInformative.existingClientName ?? null,
+        existingClientCnpj: flowForInformative.existingClientCnpj ?? null,
+        existingClientTaxRegime: flowForInformative.existingClientTaxRegime ?? null,
       })
     : "";
 

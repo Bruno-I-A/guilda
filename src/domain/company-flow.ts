@@ -1,5 +1,6 @@
 import { formatBRLCurrency } from "@/lib/currency";
 import { TAX_REGIME_LABELS, type TaxRegime } from "@/lib/clients-ui";
+import { formatCnpj } from "./cnpj";
 
 export const COMPANY_FLOW_KINDS = ["opening", "amendment", "closure"] as const;
 export type CompanyFlowKind = (typeof COMPANY_FLOW_KINDS)[number];
@@ -67,6 +68,8 @@ export interface FlowQsaMember {
 export interface FlowInformativeInput {
   kind: CompanyFlowKind;
   existingClientName: string | null;
+  existingClientCnpj: string | null;
+  existingClientTaxRegime: TaxRegime | null;
   requestedLegalName: string | null;
   requestedActivities: readonly FlowActivity[];
   removedActivities: readonly FlowActivity[];
@@ -136,6 +139,32 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
     .join("; ");
   const taxRegime = flow.approvedTaxRegime ?? flow.taxRegime;
   const address = flow.approvedAddress ?? flow.address;
+
+  if (flow.kind === "closure") {
+    const closureTaxRegime = flow.existingClientTaxRegime ?? taxRegime;
+    const closureCnpj = flow.existingClientCnpj ?? flow.resultCnpj;
+    return [
+      "INFORMATIVO DE BAIXA DE CLIENTE",
+      "BAIXA DE CLIENTE – código (487)",
+      `RAZÃO SOCIAL – ${company}`,
+      `CNPJ/CPF/CEI – ${closureCnpj ? formatCnpj(closureCnpj) : "NÃO INFORMADO"}`,
+      `ENDEREÇO – ${address ?? "NÃO INFORMADO"}`,
+      `ENQUADRAMENTO – ${closureTaxRegime ? TAX_REGIME_LABELS[closureTaxRegime].toUpperCase() : "NÃO INFORMADO"}`,
+      "",
+      "OBSERVAÇÕES:",
+      flow.requestDetails || "—",
+      "",
+      "AÇÕES",
+      "CONTABIL – Rafa/Bruno – Finalizar lançamentos até a data da baixa",
+      "FISCAL – Fabi/Jessica – Finalizar todos os informativos da empresa até a data da baixa",
+      "RH – Carol/Jenifer – Baixar o pró-labore (efetuado)",
+      "ATENDIMENTO – Jessica",
+      "ATENDIMENTO – Separar toda a documentação, confeccionar o Protocolo de entrega, combinar a entrega com a cliente e cobrar a baixa.",
+      "E-AUDITORIA – Fabi – Retirar do sistema",
+      "SERVIDOR – Bruno – Recortar a pasta do cliente e mover para #BAIXADAS, dentro da pasta Geral dos clientes.",
+      "ONVIO – Fabi – Retirar cliente do ONVIO também.",
+    ].join("\n");
+  }
 
   return [
     `INFORMATIVO — ${kind}`,
