@@ -269,6 +269,9 @@ const returnFlowSchema = flowTargetSchema.extend({
   resultCnpj: z.string().trim().optional(),
   approvedLegalName: z.string().trim().max(200).optional(),
   approvedActivities: z.array(activitySchema).max(30).default([]),
+  approvedTaxRegime: z.enum(TAX_REGIMES).nullable().optional(),
+  approvedAddress: z.string().trim().max(1000).optional(),
+  approvedQsa: z.array(qsaMemberSchema).max(20).default([]),
   processingNotes: z.string().trim().min(2, "Descreva o retorno do Societário.").max(5000),
 }).superRefine((data, ctx) => {
   if (data.resultCnpj && !validateCnpj(normalizeCnpj(data.resultCnpj))) {
@@ -348,11 +351,16 @@ export async function returnCompanyFlowToOwner(
     if (flow.status !== "in_progress") return err("Este Fluxo não está em processamento.");
     if (flow.kind === "opening" && !data.resultCnpj) return err("Informe o CNPJ aprovado antes de devolver uma abertura.");
 
+    const amendment = flow.kind === "amendment";
+
     await tx.update(schema.companyFlows).set({
       status: "awaiting_owner",
-      resultCnpj,
-      approvedLegalName: officialLegalName,
+      resultCnpj: amendment ? flow.resultCnpj : resultCnpj,
+      approvedLegalName: amendment ? data.approvedLegalName || null : officialLegalName,
       approvedActivities: data.approvedActivities,
+      approvedTaxRegime: amendment ? data.approvedTaxRegime ?? null : null,
+      approvedAddress: amendment ? data.approvedAddress || null : null,
+      approvedQsa: amendment ? data.approvedQsa : [],
       processingNotes: data.processingNotes,
       returnedAt: new Date(),
       updatedAt: new Date(),
@@ -364,8 +372,11 @@ export async function returnCompanyFlowToOwner(
       previousValue: { status: flow.status },
       newValue: {
         status: "awaiting_owner",
-        resultCnpj,
-        approvedLegalName: officialLegalName,
+        resultCnpj: amendment ? flow.resultCnpj : resultCnpj,
+        approvedLegalName: amendment ? data.approvedLegalName || null : officialLegalName,
+        approvedTaxRegime: amendment ? data.approvedTaxRegime ?? null : null,
+        approvedAddress: amendment ? data.approvedAddress || null : null,
+        approvedQsa: amendment ? data.approvedQsa : [],
       },
       note: data.processingNotes,
       actorId: ctx.userId,

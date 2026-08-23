@@ -90,6 +90,9 @@ export interface CompanyFlowView {
   resultCnpj: string | null;
   approvedLegalName: string | null;
   approvedActivities: FlowActivity[];
+  approvedTaxRegime: TaxRegime | null;
+  approvedAddress: string | null;
+  approvedQsa: FlowQsaMember[];
   processingNotes: string | null;
   informativeId: string | null;
   createdByName: string;
@@ -189,6 +192,9 @@ function QsaFields({
 
 function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
   const officialLegalName = row.approvedLegalName ?? row.existingClientName;
+  const taxRegime = row.approvedTaxRegime ?? row.taxRegime;
+  const address = row.approvedAddress ?? row.address;
+  const qsa = row.approvedQsa.length > 0 ? row.approvedQsa : row.qsa;
   const requestedNameDiffers = Boolean(
     row.approvedLegalName &&
     row.requestedLegalName &&
@@ -207,17 +213,17 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
         </p>
       ) : null}
       {row.requestedActivities.length > 0 ? <p><strong>Atividades:</strong> {row.requestedActivities.map((activity) => activity.description).join("; ")}</p> : null}
-      {row.taxRegime ? <p><strong>Regime tributário:</strong> {TAX_REGIME_LABELS[row.taxRegime]}</p> : null}
+      {taxRegime ? <p><strong>Regime tributário:</strong> {TAX_REGIME_LABELS[taxRegime]}</p> : null}
       {row.iptu ? <p><strong>IPTU:</strong> {row.iptu}</p> : null}
       {row.socialCapital ? <p><strong>Capital social:</strong> {formatBRLCurrency(row.socialCapital)}</p> : null}
       {row.roomSize ? <p><strong>Tamanho da sala:</strong> {row.roomSize}</p> : null}
-      {row.address ? <p className="whitespace-pre-wrap"><strong>Endereço:</strong> {row.address}</p> : null}
+      {address ? <p className="whitespace-pre-wrap"><strong>Endereço:</strong> {address}</p> : null}
       {row.clientResponsible ? <p><strong>Responsável:</strong> {row.clientResponsible}</p> : null}
-      {row.qsa.length > 0 ? (
+      {qsa.length > 0 ? (
         <div>
-          <strong>QSA:</strong>
+          <strong>{row.approvedQsa.length > 0 ? "QSA atualizado:" : "QSA:"}</strong>
           <ul className="mt-1 grid gap-1 pl-4">
-            {row.qsa.map((member, index) => (
+            {qsa.map((member, index) => (
               <li key={`${member.name}-${index}`} className="list-disc">
                 {[member.name, member.document && `CPF/CNPJ: ${member.document}`, member.qualification, member.participation].filter(Boolean).join(" — ")}
               </li>
@@ -408,8 +414,12 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
   const [cnpj, setCnpj] = useState(row.resultCnpj ?? "");
   const [approvedName, setApprovedName] = useState(row.approvedLegalName ?? "");
   const [approvedActivities, setApprovedActivities] = useState(row.approvedActivities.map((activity) => activity.description).join("\n"));
+  const [approvedTaxRegime, setApprovedTaxRegime] = useState<TaxRegime | "">(row.approvedTaxRegime ?? "");
+  const [approvedAddress, setApprovedAddress] = useState(row.approvedAddress ?? "");
+  const [approvedQsa, setApprovedQsa] = useState<FlowQsaMember[]>(row.approvedQsa);
   const [notes, setNotes] = useState(row.processingNotes ?? "");
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
+  const amendment = row.kind === "amendment";
 
   function claim() {
     startTransition(async () => {
@@ -441,7 +451,17 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
   }
   function returnToOwner() {
     startTransition(async () => {
-      const result = await returnCompanyFlowToOwner({ clanId, flowId: row.id, resultCnpj: cnpj, approvedLegalName: approvedName, approvedActivities: splitActivities(approvedActivities), processingNotes: notes });
+      const result = await returnCompanyFlowToOwner({
+        clanId,
+        flowId: row.id,
+        resultCnpj: amendment ? undefined : cnpj,
+        approvedLegalName: approvedName,
+        approvedActivities: amendment ? [] : splitActivities(approvedActivities),
+        approvedTaxRegime: amendment ? approvedTaxRegime || null : null,
+        approvedAddress: amendment ? approvedAddress : "",
+        approvedQsa: amendment ? approvedQsa : [],
+        processingNotes: notes,
+      });
       if (!result.ok) {
         toast.error(result.error);
         return;
@@ -509,7 +529,32 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
           <div className="flex flex-wrap gap-2"><Badge variant="outline" className={STATUS_CLASS[row.status]}>{COMPANY_FLOW_STATUS_LABELS[row.status]}</Badge><Badge variant="outline">Origem: {FLOW_SOURCE_LABELS[row.source]}</Badge>{row.assignedName ? <Badge variant="outline">Societário: {row.assignedName}</Badge> : null}</div>
           <FlowRequestSummary row={row} />
           {row.hasGovSecret ? <section className="rounded-md border border-primary/30 bg-primary/5 p-3"><p className="flex items-center gap-1.5 font-medium"><KeyRound className="size-4" aria-hidden /> Acesso Gov.br protegido</p>{revealedSecret ? <p className="mt-2 rounded bg-background px-2 py-1 font-mono text-sm break-all">{revealedSecret}</p> : <Button type="button" className="mt-2" variant="outline" size="sm" disabled={pending || !row.canReturn} onClick={revealSecret}><Eye aria-hidden /> Revelar senha</Button>}</section> : null}
-          {row.status === "in_progress" && row.canReturn ? <section className="grid gap-3 border-t pt-4"><div><h3 className="font-medium">Retorno do Societário</h3><p className="text-xs text-muted-foreground">Registre os dados aprovados antes de devolver ao dono.</p></div><div className="grid gap-2 sm:grid-cols-[1fr_auto]"><div className="grid gap-1.5"><Label>CNPJ aprovado</Label><Input value={cnpj} onChange={(event) => setCnpj(event.target.value)} placeholder="00.000.000/0000-00" inputMode="numeric" /></div><Button type="button" className="self-end" variant="outline" disabled={pending || !cnpj.trim()} onClick={lookupCnpj}><Search aria-hidden /> Consultar CNPJ</Button></div><div className="grid gap-1.5"><Label>Razão social oficial (Receita)</Label><Input value={approvedName} readOnly placeholder="Consulte o CNPJ para preencher" /><p className="text-xs text-muted-foreground">Este nome é conferido novamente pelo CNPJ ao devolver o Fluxo.</p></div><div className="grid gap-1.5"><Label>Atividades aprovadas</Label><Textarea value={approvedActivities} onChange={(event) => setApprovedActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div><div className="grid gap-1.5"><Label>Retorno e observações</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder="O que foi deferido, pendências ou cuidados" /></div><Button type="button" disabled={pending || !notes.trim()} onClick={returnToOwner}><Send aria-hidden /> Devolver ao dono</Button></section> : null}
+          {row.status === "in_progress" && row.canReturn ? (
+            <section className="grid gap-3 border-t pt-4">
+              <div>
+                <h3 className="font-medium">{amendment ? "Retorno da alteração" : "Retorno do Societário"}</h3>
+                <p className="text-xs text-muted-foreground">{amendment ? "Registre apenas os dados que foram alterados antes de devolver ao dono." : "Registre os dados aprovados antes de devolver ao dono."}</p>
+              </div>
+              {amendment ? (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-1.5"><Label>Nova razão social</Label><Input value={approvedName} onChange={(event) => setApprovedName(event.target.value)} placeholder="Preencha somente se a razão social mudou" /></div>
+                    <div className="grid gap-1.5"><Label>Regime tributário atualizado</Label><Select value={approvedTaxRegime || "unchanged"} onValueChange={(value) => setApprovedTaxRegime(value === "unchanged" ? "" : value as TaxRegime)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unchanged">Sem alteração</SelectItem>{TAX_REGIMES.map((value) => <SelectItem key={value} value={value}>{TAX_REGIME_LABELS[value]}</SelectItem>)}</SelectContent></Select></div>
+                  </div>
+                  <div className="grid gap-1.5"><Label>Novo endereço</Label><Textarea value={approvedAddress} onChange={(event) => setApprovedAddress(event.target.value)} rows={3} placeholder="Preencha somente se o endereço mudou" /></div>
+                  <QsaFields value={approvedQsa} onChange={setApprovedQsa} />
+                </>
+              ) : (
+                <>
+                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]"><div className="grid gap-1.5"><Label>CNPJ aprovado</Label><Input value={cnpj} onChange={(event) => setCnpj(event.target.value)} placeholder="00.000.000/0000-00" inputMode="numeric" /></div><Button type="button" className="self-end" variant="outline" disabled={pending || !cnpj.trim()} onClick={lookupCnpj}><Search aria-hidden /> Consultar CNPJ</Button></div>
+                  <div className="grid gap-1.5"><Label>Razão social oficial (Receita)</Label><Input value={approvedName} readOnly placeholder="Consulte o CNPJ para preencher" /><p className="text-xs text-muted-foreground">Este nome é conferido novamente pelo CNPJ ao devolver o Fluxo.</p></div>
+                  <div className="grid gap-1.5"><Label>Atividades aprovadas</Label><Textarea value={approvedActivities} onChange={(event) => setApprovedActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div>
+                </>
+              )}
+              <div className="grid gap-1.5"><Label>Retorno e observações</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder="O que foi deferido, pendências ou cuidados" /></div>
+              <Button type="button" disabled={pending || !notes.trim()} onClick={returnToOwner}><Send aria-hidden /> Devolver ao dono</Button>
+            </section>
+          ) : null}
           {row.status === "awaiting_owner" && row.canPrepareInformative ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Próximo passo</h3><p className="text-xs text-muted-foreground">O texto será pré-preenchido com o retorno aprovado; o dono completa as ações de Fiscal, Contabilidade e RH antes de confirmar.</p><Button type="button" disabled={pending} onClick={prepareInformative}><ClipboardPenLine aria-hidden /> Preparar Informativo</Button></section> : null}
           {row.status === "informative_drafting" ? <p className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">A preparação do Informativo está aberta. O Fluxo será concluído quando a prévia for gerada em Informativos.</p> : null}
           {row.status === "sent_to_corporate" && row.canClaim ? <Button type="button" disabled={pending} onClick={claim}><UserRoundCheck aria-hidden /> Assumir processamento</Button> : null}

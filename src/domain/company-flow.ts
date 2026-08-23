@@ -82,6 +82,9 @@ export interface FlowInformativeInput {
   resultCnpj: string | null;
   approvedLegalName: string | null;
   approvedActivities: readonly FlowActivity[];
+  approvedTaxRegime: TaxRegime | null;
+  approvedAddress: string | null;
+  approvedQsa: readonly FlowQsaMember[];
   processingNotes: string | null;
 }
 
@@ -100,10 +103,12 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
     .map((item) => item.description)
     .filter(Boolean)
     .join("; ");
-  const qsa = flow.qsa
+  const qsa = (flow.approvedQsa.length > 0 ? flow.approvedQsa : flow.qsa)
     .map((member) => [member.name, member.qualification, member.participation].filter(Boolean).join(" — "))
     .filter(Boolean)
     .join("; ");
+  const taxRegime = flow.approvedTaxRegime ?? flow.taxRegime;
+  const address = flow.approvedAddress ?? flow.address;
 
   return [
     `INFORMATIVO — ${kind}`,
@@ -112,13 +117,13 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
     flow.resultCnpj ? `CNPJ: ${flow.resultCnpj}` : null,
     approvedActivities ? `Atividades aprovadas: ${approvedActivities}` : null,
     !approvedActivities && requestedActivities ? `Atividades solicitadas: ${requestedActivities}` : null,
-    flow.taxRegime ? `Regime tributário: ${TAX_REGIME_LABELS[flow.taxRegime]}` : null,
+    taxRegime ? `Regime tributário: ${TAX_REGIME_LABELS[taxRegime]}` : null,
     flow.iptu ? `IPTU: ${flow.iptu}` : null,
     flow.socialCapital ? `Capital social: ${formatBRLCurrency(flow.socialCapital)}` : null,
     flow.roomSize ? `Tamanho da sala: ${flow.roomSize}` : null,
-    flow.address ? `Endereço: ${flow.address}` : null,
+    address ? `Endereço: ${address}` : null,
     flow.clientResponsible ? `Responsável: ${flow.clientResponsible}` : null,
-    qsa ? `QSA: ${qsa}` : null,
+    qsa ? `${flow.approvedQsa.length > 0 ? "QSA atualizado" : "QSA"}: ${qsa}` : null,
     [flow.contactName, flow.contactPhone, flow.contactEmail].filter(Boolean).length > 0
       ? `Contato: ${[flow.contactName, flow.contactPhone, flow.contactEmail].filter(Boolean).join(" · ")}`
       : null,

@@ -829,6 +829,13 @@ export const companyFlows = pgTable(
       .$type<CompanyFlowActivity[]>()
       .notNull()
       .default([]),
+    /** Dados efetivamente alterados, preenchidos pelo Societário. */
+    approvedTaxRegime: taxRegime("approved_tax_regime"),
+    approvedAddress: text("approved_address"),
+    approvedQsa: jsonb("approved_qsa")
+      .$type<CompanyFlowQsaMember[]>()
+      .notNull()
+      .default([]),
     processingNotes: text("processing_notes"),
     informativeId: uuid("informative_id"),
     createdBy: text("created_by")
