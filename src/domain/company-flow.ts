@@ -48,6 +48,14 @@ export function companyFlowInformativeNoticeTitle(
     : `Informativo: ${companyName}`;
 }
 
+export function accountantChangeNoticeTitle(companyName: string): string {
+  return `Desligamento de cliente: ${companyName} — troca de contabilidade`;
+}
+
+export function isAccountantChangeInformative(sourceText: string): boolean {
+  return /^INFORMATIVO DE BAIXA DE CLIENTE POR DESLIGAMENTO\s*$/im.test(sourceText);
+}
+
 /**
  * O formulário do Informativo continua mostrando o resumo completo do Fluxo
  * para revisão humana. A IA, porém, só precisa classificar as providências
@@ -235,10 +243,10 @@ export function accountantChangeInformativeText(input: AccountantChangeInformati
     input.observations?.trim() || "—",
     "",
     "AÇÕES",
-    `CONTABIL – Encerramento até ${responsibilityUntil} para entrega do balancete à nova contabilidade.`,
+    `CONTABILIDADE – Encerramento até ${responsibilityUntil} para entrega do balancete à nova contabilidade.`,
     `FISCAL – Gerar até competência ${competence}.`,
     `RH – Gerar até competência ${competence}.`,
-    "PROTOCOLO DE ENTREGA – Jeni – Encaminhar para o e-mail do cliente a documentação que servirá como protocolo de entrega.",
+    "SUCESSO DO CLIENTE – Encaminhar para o e-mail do cliente a documentação que servirá como protocolo de entrega.",
   ].join("\n");
 }
 

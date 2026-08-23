@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   amendmentClientRegistrationUpdate,
   accountantChangeInformativeText,
+  accountantChangeNoticeTitle,
   companyFlowActionsText,
   companyFlowInformativeText,
   companyFlowInformativeNoticeTitle,
@@ -147,10 +148,10 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("INFORMATIVO DE BAIXA DE CLIENTE POR DESLIGAMENTO");
     expect(text).toContain("BAIXA DE CLIENTE – código (681)");
     expect(text).toContain("NOSSA RESPONSABILIDADE – ATÉ 31/03/2026");
-    expect(text).toContain("CONTABIL – Encerramento até 31/03/2026");
+    expect(text).toContain("CONTABILIDADE – Encerramento até 31/03/2026");
     expect(text).toContain("FISCAL – Gerar até competência 03/2026.");
     expect(text).toContain("RH – Gerar até competência 03/2026.");
-    expect(text).toContain("PROTOCOLO DE ENTREGA – Jeni");
+    expect(text).toContain("SUCESSO DO CLIENTE – Encaminhar para o e-mail do cliente");
     expect(text).not.toContain("SOCIETÁRIO – Baixar o Alvará.");
   });
 
@@ -170,6 +171,12 @@ describe("Fluxo Societário", () => {
     );
     expect(companyFlowInformativeNoticeTitle("amendment", "ALDUIR")).toBe(
       "Informativo: ALDUIR",
+    );
+  });
+
+  test("identifica no mural o desligamento por troca de contabilidade", () => {
+    expect(accountantChangeNoticeTitle("ADONIRAN")).toBe(
+      "Desligamento de cliente: ADONIRAN — troca de contabilidade",
     );
   });
 

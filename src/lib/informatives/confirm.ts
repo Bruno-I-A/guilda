@@ -23,7 +23,9 @@ import {
 import { createTaskRecord } from "@/lib/tasks/create";
 import {
   amendmentClientRegistrationUpdate,
+  accountantChangeNoticeTitle,
   companyFlowInformativeNoticeTitle,
+  isAccountantChangeInformative,
 } from "@/domain/company-flow";
 import { deactivateClosureClientWhenTasksFinish } from "./closure-completion";
 
@@ -643,6 +645,10 @@ export async function confirmInformative(
     // parcial: reconfirmar o informativo não gera um segundo aviso.
     let noticePublished = false;
     const flowLegalName = linkedFlow?.flow.approvedLegalName ?? linkedFlow?.flow.requestedLegalName;
+    const directAccountantChange =
+      !linkedFlow &&
+      payload.kind === "client_closure" &&
+      isAccountantChangeInformative(informative.sourceText);
     if (linkedFlow?.flow.kind === "opening" && flowLegalName) {
       const flow = linkedFlow.flow;
       const notice = await publishGuildNotice(tx, {
@@ -695,6 +701,27 @@ export async function confirmInformative(
           observations: payload.observations,
           taskCount: taskIds.length,
         }),
+        clientId,
+        informativeId: informative.id,
+        requiresAck: true,
+      });
+      noticePublished = Boolean(notice);
+    } else if (directAccountantChange) {
+      const trackingName = payload.company.legalName ?? "Empresa não informada";
+      const notice = await publishGuildNotice(tx, {
+        orgId: actor.orgId,
+        authorId: actor.userId,
+        kind: "notice",
+        title: accountantChangeNoticeTitle(trackingName),
+        body: [
+          "Desligamento de cliente por troca de contabilidade.",
+          `${taskIds.length} ${taskIds.length === 1 ? "missão foi gerada" : "missões foram geradas"} para concluir a transição.`,
+          payload.observations.length > 0
+            ? `Observações:\n${payload.observations.join("\n")}`
+            : null,
+        ]
+          .filter((line): line is string => Boolean(line))
+          .join("\n\n"),
         clientId,
         informativeId: informative.id,
         requiresAck: true,
