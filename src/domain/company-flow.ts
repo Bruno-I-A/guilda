@@ -60,6 +60,7 @@ export interface FlowQsaMember {
   document?: string | null;
   qualification?: string | null;
   participation?: string | null;
+  changeType?: "entered" | "left" | "updated" | null;
 }
 
 /** Dados seguros para transformar o retorno do Societário em um rascunho. */
@@ -68,6 +69,7 @@ export interface FlowInformativeInput {
   existingClientName: string | null;
   requestedLegalName: string | null;
   requestedActivities: readonly FlowActivity[];
+  removedActivities: readonly FlowActivity[];
   taxRegime: TaxRegime | null;
   iptu: string | null;
   socialCapital: string | null;
@@ -93,7 +95,9 @@ export interface FlowInformativeInput {
  * necessária ao processamento societário e não deve circular pelo escritório.
  */
 export function companyFlowInformativeText(flow: FlowInformativeInput): string {
-  const company = flow.approvedLegalName ?? flow.requestedLegalName ?? flow.existingClientName ?? "Empresa não informada";
+  const company = flow.kind === "opening"
+    ? flow.approvedLegalName ?? flow.requestedLegalName ?? flow.existingClientName ?? "Empresa não informada"
+    : flow.existingClientName ?? flow.approvedLegalName ?? flow.requestedLegalName ?? "Empresa não informada";
   const kind = COMPANY_FLOW_KIND_LABELS[flow.kind].toUpperCase();
   const requestedActivities = flow.requestedActivities
     .map((item) => item.description)
@@ -103,8 +107,17 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
     .map((item) => item.description)
     .filter(Boolean)
     .join("; ");
+  const removedActivities = flow.removedActivities
+    .map((item) => item.description)
+    .filter(Boolean)
+    .join("; ");
   const qsa = (flow.approvedQsa.length > 0 ? flow.approvedQsa : flow.qsa)
-    .map((member) => [member.name, member.qualification, member.participation].filter(Boolean).join(" — "))
+    .map((member) => [
+      member.changeType === "entered" ? "Entrada" : member.changeType === "left" ? "Saída" : member.changeType === "updated" ? "Atualização" : null,
+      member.name,
+      member.qualification,
+      member.participation,
+    ].filter(Boolean).join(" — "))
     .filter(Boolean)
     .join("; ");
   const taxRegime = flow.approvedTaxRegime ?? flow.taxRegime;
@@ -115,13 +128,15 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
     "",
     `Empresa: ${company}`,
     flow.resultCnpj ? `CNPJ: ${flow.resultCnpj}` : null,
+    flow.kind === "amendment" && flow.requestedLegalName ? `Nova razão social: ${flow.requestedLegalName}` : null,
     approvedActivities ? `Atividades aprovadas: ${approvedActivities}` : null,
-    !approvedActivities && requestedActivities ? `Atividades solicitadas: ${requestedActivities}` : null,
-    taxRegime ? `Regime tributário: ${TAX_REGIME_LABELS[taxRegime]}` : null,
+    !approvedActivities && requestedActivities ? `${flow.kind === "amendment" ? "Atividades a incluir" : "Atividades solicitadas"}: ${requestedActivities}` : null,
+    removedActivities ? `Atividades a retirar: ${removedActivities}` : null,
+    taxRegime ? `${flow.kind === "amendment" ? "Novo regime tributário" : "Regime tributário"}: ${TAX_REGIME_LABELS[taxRegime]}` : null,
     flow.iptu ? `IPTU: ${flow.iptu}` : null,
-    flow.socialCapital ? `Capital social: ${formatBRLCurrency(flow.socialCapital)}` : null,
+    flow.socialCapital ? `${flow.kind === "amendment" ? "Novo capital social" : "Capital social"}: ${formatBRLCurrency(flow.socialCapital)}` : null,
     flow.roomSize ? `Tamanho da sala: ${flow.roomSize}` : null,
-    address ? `Endereço: ${address}` : null,
+    address ? `${flow.kind === "amendment" ? "Novo endereço" : "Endereço"}: ${address}` : null,
     flow.clientResponsible ? `Responsável: ${flow.clientResponsible}` : null,
     qsa ? `${flow.approvedQsa.length > 0 ? "QSA atualizado" : "QSA"}: ${qsa}` : null,
     [flow.contactName, flow.contactPhone, flow.contactEmail].filter(Boolean).length > 0
@@ -131,9 +146,11 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
     flow.processingNotes ? `Retorno do Societário: ${flow.processingNotes}` : null,
     "",
     "AÇÕES",
-    "Fiscal - ...",
-    "Contabilidade - ...",
-    "RH - ...",
+    flow.kind === "amendment"
+      ? "Societário - Atualizar alvará, Inscrição Estadual e demais cadastros externos aplicáveis à alteração."
+      : "Fiscal - ...",
+    flow.kind === "amendment" ? null : "Contabilidade - ...",
+    flow.kind === "amendment" ? null : "RH - ...",
   ]
     .filter((line): line is string => line !== null)
     .join("\n");

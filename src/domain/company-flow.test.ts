@@ -12,6 +12,7 @@ describe("Fluxo Societário", () => {
       existingClientName: null,
       requestedLegalName: "NOME PRETENDIDO LTDA",
       requestedActivities: [{ description: "Comércio" }],
+      removedActivities: [],
       taxRegime: "simples",
       iptu: "123456",
       socialCapital: "30000.00",
@@ -45,36 +46,41 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("Fiscal - ...");
   });
 
-  test("leva os dados estruturados de alteração ao informativo sem consultar CNPJ", () => {
+  test("leva a solicitação completa de alteração ao informativo e cria ação para o Societário", () => {
     const text = companyFlowInformativeText({
       kind: "amendment",
       existingClientName: "EMPRESA ATUAL LTDA",
-      requestedLegalName: null,
-      requestedActivities: [],
-      taxRegime: "simples",
-      iptu: null,
-      socialCapital: null,
+      requestedLegalName: "EMPRESA RENOMEADA LTDA",
+      requestedActivities: [{ description: "Comércio eletrônico" }],
+      removedActivities: [{ description: "Comércio atacadista" }],
+      taxRegime: "presumido",
+      iptu: "123.456.789",
+      socialCapital: "50000.00",
       roomSize: null,
-      address: null,
+      address: "Rua Nova, 200, São Paulo/SP",
       clientResponsible: null,
-      qsa: [],
+      qsa: [{ name: "Ana", changeType: "entered", qualification: "Sócia administradora", participation: "100%" }],
       contactName: null,
       contactPhone: null,
       contactEmail: null,
       requestDetails: "Alterar endereço e quadro societário.",
       resultCnpj: null,
-      approvedLegalName: "EMPRESA RENOMEADA LTDA",
+      approvedLegalName: null,
       approvedActivities: [],
-      approvedTaxRegime: "presumido",
-      approvedAddress: "Rua Nova, 200, São Paulo/SP",
-      approvedQsa: [{ name: "Ana", qualification: "Sócia administradora", participation: "100%" }],
+      approvedTaxRegime: null,
+      approvedAddress: null,
+      approvedQsa: [],
       processingNotes: "Alteração deferida pela Junta.",
     });
 
-    expect(text).toContain("EMPRESA RENOMEADA LTDA");
-    expect(text).toContain("Regime tributário: Lucro Presumido");
-    expect(text).toContain("Endereço: Rua Nova, 200, São Paulo/SP");
-    expect(text).toContain("QSA atualizado: Ana — Sócia administradora — 100%");
+    expect(text).toContain("Empresa: EMPRESA ATUAL LTDA");
+    expect(text).toContain("Nova razão social: EMPRESA RENOMEADA LTDA");
+    expect(text).toContain("Atividades a incluir: Comércio eletrônico");
+    expect(text).toContain("Atividades a retirar: Comércio atacadista");
+    expect(text).toContain("Novo regime tributário: Lucro Presumido");
+    expect(text).toContain("Novo endereço: Rua Nova, 200, São Paulo/SP");
+    expect(text).toContain("QSA: Entrada — Ana — Sócia administradora — 100%");
+    expect(text).toContain("Societário - Atualizar alvará, Inscrição Estadual");
     expect(text).not.toContain("CNPJ:");
   });
 

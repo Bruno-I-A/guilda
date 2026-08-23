@@ -786,6 +786,7 @@ export interface CompanyFlowQsaMember {
   document?: string | null;
   qualification?: string | null;
   participation?: string | null;
+  changeType?: "entered" | "left" | "updated" | null;
 }
 
 /**
@@ -807,6 +808,10 @@ export const companyFlows = pgTable(
     existingClientId: uuid("existing_client_id"),
     requestedLegalName: varchar("requested_legal_name", { length: 200 }),
     requestedActivities: jsonb("requested_activities")
+      .$type<CompanyFlowActivity[]>()
+      .notNull()
+      .default([]),
+    removedActivities: jsonb("removed_activities")
       .$type<CompanyFlowActivity[]>()
       .notNull()
       .default([]),
