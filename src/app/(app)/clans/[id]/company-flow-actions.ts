@@ -354,16 +354,16 @@ export async function returnCompanyFlowToOwner(
     if (flow.status !== "in_progress") return err("Este Fluxo não está em processamento.");
     if (flow.kind === "opening" && !data.resultCnpj) return err("Informe o CNPJ aprovado antes de devolver uma abertura.");
 
-    const amendment = flow.kind === "amendment";
+    const simpleConfirmation = flow.kind === "amendment" || flow.kind === "closure";
 
     await tx.update(schema.companyFlows).set({
       status: "awaiting_owner",
-      resultCnpj: amendment ? flow.resultCnpj : resultCnpj,
-      approvedLegalName: amendment ? flow.approvedLegalName : officialLegalName,
+      resultCnpj: simpleConfirmation ? flow.resultCnpj : resultCnpj,
+      approvedLegalName: simpleConfirmation ? flow.approvedLegalName : officialLegalName,
       approvedActivities: data.approvedActivities,
-      approvedTaxRegime: amendment ? flow.approvedTaxRegime : null,
-      approvedAddress: amendment ? flow.approvedAddress : null,
-      approvedQsa: amendment ? flow.approvedQsa : [],
+      approvedTaxRegime: simpleConfirmation ? flow.approvedTaxRegime : null,
+      approvedAddress: simpleConfirmation ? flow.approvedAddress : null,
+      approvedQsa: simpleConfirmation ? flow.approvedQsa : [],
       processingNotes: data.processingNotes,
       returnedAt: new Date(),
       updatedAt: new Date(),
@@ -375,11 +375,11 @@ export async function returnCompanyFlowToOwner(
       previousValue: { status: flow.status },
       newValue: {
         status: "awaiting_owner",
-        resultCnpj: amendment ? flow.resultCnpj : resultCnpj,
-        approvedLegalName: amendment ? flow.approvedLegalName : officialLegalName,
-        approvedTaxRegime: amendment ? flow.approvedTaxRegime : null,
-        approvedAddress: amendment ? flow.approvedAddress : null,
-        approvedQsa: amendment ? flow.approvedQsa : [],
+        resultCnpj: simpleConfirmation ? flow.resultCnpj : resultCnpj,
+        approvedLegalName: simpleConfirmation ? flow.approvedLegalName : officialLegalName,
+        approvedTaxRegime: simpleConfirmation ? flow.approvedTaxRegime : null,
+        approvedAddress: simpleConfirmation ? flow.approvedAddress : null,
+        approvedQsa: simpleConfirmation ? flow.approvedQsa : [],
       },
       note: data.processingNotes,
       actorId: ctx.userId,

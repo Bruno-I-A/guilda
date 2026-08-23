@@ -453,6 +453,8 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
   const [notes, setNotes] = useState(row.processingNotes ?? "");
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
   const amendment = row.kind === "amendment";
+  const closure = row.kind === "closure";
+  const simpleConfirmation = amendment || closure;
   const companyName = amendment
     ? row.existingClientName ?? row.approvedLegalName ?? row.requestedLegalName ?? "Empresa"
     : row.approvedLegalName ?? row.requestedLegalName ?? row.existingClientName ?? "Empresa";
@@ -490,13 +492,13 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
       const result = await returnCompanyFlowToOwner({
         clanId,
         flowId: row.id,
-        resultCnpj: amendment ? undefined : cnpj,
-        approvedLegalName: amendment ? undefined : approvedName,
-        approvedActivities: amendment ? [] : splitActivities(approvedActivities),
+        resultCnpj: simpleConfirmation ? undefined : cnpj,
+        approvedLegalName: simpleConfirmation ? undefined : approvedName,
+        approvedActivities: simpleConfirmation ? [] : splitActivities(approvedActivities),
         approvedTaxRegime: null,
         approvedAddress: "",
         approvedQsa: [],
-        processingNotes: amendment ? "Alteração concluída pelo Societário." : notes,
+        processingNotes: amendment ? "Alteração concluída pelo Societário." : closure ? "Baixa concluída pelo Societário." : notes,
       });
       if (!result.ok) {
         toast.error(result.error);
@@ -568,11 +570,11 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
           {row.status === "in_progress" && row.canReturn ? (
             <section className="grid gap-3 border-t pt-4">
               <div>
-                <h3 className="font-medium">{amendment ? "Confirmação da alteração" : "Retorno do Societário"}</h3>
-                <p className="text-xs text-muted-foreground">{amendment ? "Confirme quando a alteração societária estiver concluída. O dono seguirá para o Informativo." : "Registre os dados aprovados antes de devolver ao dono."}</p>
+                <h3 className="font-medium">{amendment ? "Confirmação da alteração" : closure ? "Confirmação da baixa" : "Retorno do Societário"}</h3>
+                <p className="text-xs text-muted-foreground">{simpleConfirmation ? "Confirme quando o processo estiver concluído. O dono seguirá para o Informativo." : "Registre os dados aprovados antes de devolver ao dono."}</p>
               </div>
-              {amendment ? (
-                <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">Todos os dados da solicitação já foram revisados nesta ficha. Esta confirmação registra que a alteração foi concluída pelo Societário.</div>
+              {simpleConfirmation ? (
+                <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">{amendment ? "Todos os dados da solicitação já foram revisados nesta ficha. Esta confirmação registra que a alteração foi concluída pelo Societário." : "Esta confirmação registra que a baixa foi concluída pelo Societário."}</div>
               ) : (
                 <>
                   <div className="grid gap-2 sm:grid-cols-[1fr_auto]"><div className="grid gap-1.5"><Label>CNPJ aprovado</Label><Input value={cnpj} onChange={(event) => setCnpj(event.target.value)} placeholder="00.000.000/0000-00" inputMode="numeric" /></div><Button type="button" className="self-end" variant="outline" disabled={pending || !cnpj.trim()} onClick={lookupCnpj}><Search aria-hidden /> Consultar CNPJ</Button></div>
@@ -580,8 +582,8 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
                   <div className="grid gap-1.5"><Label>Atividades aprovadas</Label><Textarea value={approvedActivities} onChange={(event) => setApprovedActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div>
                 </>
               )}
-              {amendment ? null : <div className="grid gap-1.5"><Label>Retorno e observações</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder="O que foi deferido, pendências ou cuidados" /></div>}
-              <Button type="button" disabled={pending || (!amendment && !notes.trim())} onClick={returnToOwner}><Send aria-hidden /> {amendment ? "Confirmar alteração e devolver ao dono" : "Devolver ao dono"}</Button>
+              {simpleConfirmation ? null : <div className="grid gap-1.5"><Label>Retorno e observações</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder="O que foi deferido, pendências ou cuidados" /></div>}
+              <Button type="button" disabled={pending || (!simpleConfirmation && !notes.trim())} onClick={returnToOwner}><Send aria-hidden /> {amendment ? "Confirmar alteração e devolver ao dono" : closure ? "Confirmar baixa e devolver ao dono" : "Devolver ao dono"}</Button>
             </section>
           ) : null}
           {row.status === "awaiting_owner" && row.canPrepareInformative ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Próximo passo</h3><p className="text-xs text-muted-foreground">O texto será pré-preenchido com o retorno aprovado; o dono completa as ações de Fiscal, Contabilidade e RH antes de confirmar.</p><Button type="button" disabled={pending} onClick={prepareInformative}><ClipboardPenLine aria-hidden /> Preparar Informativo</Button></section> : null}
