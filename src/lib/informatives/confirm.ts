@@ -771,7 +771,7 @@ export async function confirmInformative(
             orgId: actor.orgId,
             controlPeriodId: period.id,
             clientId: updatedClient.id,
-            eventType: "profile_synced",
+            eventType: "profile_synced" as const,
             newValue: { taxRegime: registrationUpdate.taxRegime },
             note: "Regime tributário atualizado por Alteração Societária confirmada.",
             actorId: actor.userId,
