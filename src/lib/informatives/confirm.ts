@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 
 import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -21,6 +21,7 @@ import {
   periodsPerYear,
 } from "@/domain/commitments";
 import { createTaskRecord } from "@/lib/tasks/create";
+import { amendmentClientRegistrationUpdate } from "@/domain/company-flow";
 
 import type { InformativeActor } from "./draft";
 
@@ -727,6 +728,58 @@ export async function confirmInformative(
       .where(eq(schema.informatives.id, informative.id));
 
     const flow = linkedFlow?.flow;
+    const registrationUpdate = flow
+      ? amendmentClientRegistrationUpdate(flow)
+      : null;
+    let updatedClientRegistration = false;
+    let synchronizedFiscalPeriods = 0;
+    if (flow?.existingClientId && registrationUpdate) {
+      const [updatedClient] = await tx
+        .update(schema.clients)
+        .set(registrationUpdate)
+        .where(
+          and(
+            eq(schema.clients.orgId, actor.orgId),
+            eq(schema.clients.id, flow.existingClientId),
+          ),
+        )
+        .returning({ id: schema.clients.id });
+      updatedClientRegistration = Boolean(updatedClient);
+
+      // Fechamentos leem diretamente o cadastro da empresa. No Fiscal, as
+      // competências ainda não iniciadas guardam um snapshot: atualizamos só
+      // essas linhas para preservar o histórico de meses já trabalhados.
+      if (updatedClient && registrationUpdate.taxRegime) {
+        const updatedPeriods = await tx
+          .update(schema.fiscalControlPeriods)
+          .set({
+            taxRegimeSnapshot: registrationUpdate.taxRegime,
+            updatedBy: actor.userId,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(schema.fiscalControlPeriods.orgId, actor.orgId),
+              eq(schema.fiscalControlPeriods.clientId, updatedClient.id),
+              eq(schema.fiscalControlPeriods.status, "not_started"),
+              ne(schema.fiscalControlPeriods.taxRegimeSnapshot, registrationUpdate.taxRegime),
+            ),
+          )
+          .returning({ id: schema.fiscalControlPeriods.id });
+        if (updatedPeriods.length > 0) {
+          await tx.insert(schema.fiscalControlEvents).values(updatedPeriods.map((period) => ({
+            orgId: actor.orgId,
+            controlPeriodId: period.id,
+            clientId: updatedClient.id,
+            eventType: "profile_synced",
+            newValue: { taxRegime: registrationUpdate.taxRegime },
+            note: "Regime tributário atualizado por Alteração Societária confirmada.",
+            actorId: actor.userId,
+          })));
+          synchronizedFiscalPeriods = updatedPeriods.length;
+        }
+      }
+    }
     if (flow && (flow.status === "informative_drafting" || flow.status === "completed")) {
       if (flow.status === "informative_drafting") {
         await tx.update(schema.companyFlows).set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
@@ -737,7 +790,12 @@ export async function confirmInformative(
         flowId: flow.id,
         eventType: "informative_confirmed",
         previousValue: { status: flow.status },
-        newValue: { status: "completed", informativeId: informative.id },
+        newValue: {
+          status: "completed",
+          informativeId: informative.id,
+          clientRegistrationUpdated: updatedClientRegistration,
+          synchronizedFiscalPeriods,
+        },
         actorId: actor.userId,
       });
     }
@@ -752,13 +810,16 @@ export async function confirmInformative(
       ? ` ${periodClosingIds.size} período(s) pendente(s) adicionado(s) aos fechamentos.`
       : "";
     const clientMessage = createdClient ? " Empresa cadastrada no painel." : "";
+    const registrationMessage = updatedClientRegistration
+      ? ` Cadastro da empresa atualizado${synchronizedFiscalPeriods > 0 ? ` e ${synchronizedFiscalPeriods} competência(s) fiscal(is) não iniciada(s) sincronizada(s)` : ""}.`
+      : "";
     const commitmentMessage = createdCommitments
       ? ` ${createdCommitments} planejamento(s) de distribuição de lucros criado(s).`
       : "";
     const noticeMessage = noticePublished ? " Aviso publicado no mural." : "";
     return {
       ok: true,
-      message: `${missionMessage}${closingMessage}${clientMessage}${commitmentMessage}${noticeMessage}`,
+      message: `${missionMessage}${closingMessage}${clientMessage}${registrationMessage}${commitmentMessage}${noticeMessage}`,
       taskIds,
     };
   });

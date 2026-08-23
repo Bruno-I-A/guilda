@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  amendmentClientRegistrationUpdate,
   companyFlowActionsText,
   companyFlowInformativeText,
 } from "./company-flow";
@@ -92,5 +93,18 @@ describe("Fluxo Societário", () => {
     expect(actions).toBe("Fiscal - Camila - parametrizar\nRH - Bruno - cadastrar");
     expect(companyFlowActionsText("ACOES:\nFiscal - fazer algo")).toBe("Fiscal - fazer algo");
     expect(companyFlowActionsText("Empresa: sem marcador")).toBeNull();
+  });
+
+  test("reflete razão social e regime no cadastro apenas após uma alteração", () => {
+    expect(amendmentClientRegistrationUpdate({
+      kind: "amendment",
+      requestedLegalName: "  NOME NOVO LTDA  ",
+      taxRegime: "presumido",
+    })).toEqual({ name: "NOME NOVO LTDA", taxRegime: "presumido" });
+    expect(amendmentClientRegistrationUpdate({
+      kind: "opening",
+      requestedLegalName: "EMPRESA NOVA LTDA",
+      taxRegime: "simples",
+    })).toBeNull();
   });
 });

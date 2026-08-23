@@ -90,6 +90,20 @@ export interface FlowInformativeInput {
   processingNotes: string | null;
 }
 
+/** Dados de cadastro que uma Alteração concluída deve refletir na empresa. */
+export function amendmentClientRegistrationUpdate(input: Pick<
+  FlowInformativeInput,
+  "kind" | "requestedLegalName" | "taxRegime"
+>): { name?: string; taxRegime?: TaxRegime } | null {
+  if (input.kind !== "amendment") return null;
+  const name = input.requestedLegalName?.trim();
+  if (!name && !input.taxRegime) return null;
+  return {
+    ...(name ? { name } : {}),
+    ...(input.taxRegime ? { taxRegime: input.taxRegime } : {}),
+  };
+}
+
 /**
  * Texto inicial do Informativos. Nunca inclui a credencial Gov.br: ela só é
  * necessária ao processamento societário e não deve circular pelo escritório.
