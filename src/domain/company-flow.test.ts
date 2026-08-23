@@ -127,7 +127,9 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("CONTABIL – Rafa/Bruno – Finalizar lançamentos até a data da baixa");
     expect(text).toContain("SUCESSO DO CLIENTE – Separar toda a documentação");
     expect(text).not.toContain("ATENDIMENTO – Jessica");
-    expect(text).toContain("ONVIO – Fabi – Retirar cliente do ONVIO também.");
+    expect(text).toContain("SUCESSO DO CLIENTE – Retirar empresa do E-Auditoria.");
+    expect(text).toContain("SUCESSO DO CLIENTE – Retirar empresa do Onvio.");
+    expect(text).not.toContain("SERVIDOR");
   });
 
   test("envia à IA somente o bloco de ações do Fluxo", () => {

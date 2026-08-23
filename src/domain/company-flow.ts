@@ -160,9 +160,8 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
       "FISCAL – Fabi/Jessica – Finalizar todos os informativos da empresa até a data da baixa",
       "RH – Carol/Jenifer – Baixar o pró-labore (efetuado)",
       "SUCESSO DO CLIENTE – Separar toda a documentação, confeccionar o Protocolo de entrega, combinar a entrega com a cliente e cobrar a baixa.",
-      "E-AUDITORIA – Fabi – Retirar do sistema",
-      "SERVIDOR – Bruno – Recortar a pasta do cliente e mover para #BAIXADAS, dentro da pasta Geral dos clientes.",
-      "ONVIO – Fabi – Retirar cliente do ONVIO também.",
+      "SUCESSO DO CLIENTE – Retirar empresa do E-Auditoria.",
+      "SUCESSO DO CLIENTE – Retirar empresa do Onvio.",
     ].join("\n");
   }
 
