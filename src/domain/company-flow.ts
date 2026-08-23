@@ -155,6 +155,7 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
       flow.requestDetails || "—",
       "",
       "AÇÕES",
+      "SOCIETÁRIO – Baixar o Alvará.",
       "CONTABIL – Rafa/Bruno – Finalizar lançamentos até a data da baixa",
       "FISCAL – Fabi/Jessica – Finalizar todos os informativos da empresa até a data da baixa",
       "RH – Carol/Jenifer – Baixar o pró-labore (efetuado)",

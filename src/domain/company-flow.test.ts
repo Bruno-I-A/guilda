@@ -123,6 +123,7 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("CNPJ/CPF/CEI – 12.543.850/0001-15");
     expect(text).toContain("ENQUADRAMENTO – SIMPLES NACIONAL");
     expect(text).toContain("OBSERVAÇÕES:\nEMPRESA BAIXADA 30/06/2026");
+    expect(text).toContain("SOCIETÁRIO – Baixar o Alvará.");
     expect(text).toContain("CONTABIL – Rafa/Bruno – Finalizar lançamentos até a data da baixa");
     expect(text).toContain("ONVIO – Fabi – Retirar cliente do ONVIO também.");
   });
