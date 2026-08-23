@@ -747,6 +747,12 @@ export const companyFlowKind = pgEnum("company_flow_kind", [
   "closure",
 ]);
 
+/** Modalidade da baixa; só afeta fluxos cujo tipo é `closure`. */
+export const companyFlowClosureMode = pgEnum("company_flow_closure_mode", [
+  "company_closure",
+  "accountant_change",
+]);
+
 /** Etapas do vai-e-volta dono → Societário → dono → Informativos. */
 export const companyFlowStatus = pgEnum("company_flow_status", [
   "sent_to_corporate",
@@ -803,6 +809,10 @@ export const companyFlows = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     societarioClanId: uuid("societario_clan_id").notNull(),
     kind: companyFlowKind("kind").notNull(),
+    closureMode: companyFlowClosureMode("closure_mode")
+      .notNull()
+      .default("company_closure"),
+    closureResponsibilityUntil: date("closure_responsibility_until", { mode: "string" }),
     status: companyFlowStatus("status").notNull().default("sent_to_corporate"),
     source: companyFlowSource("source").notNull().default("written"),
     existingClientId: uuid("existing_client_id"),

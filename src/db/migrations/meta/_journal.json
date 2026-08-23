@@ -372,6 +372,13 @@
       "when": 1787601600000,
       "tag": "0052_amendment_request_details",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1787605200000,
+      "tag": "0053_company_flow_closure_mode",
+      "breakpoints": true
     }
   ]
 }

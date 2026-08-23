@@ -8,6 +8,7 @@ import { withOrgTx, type OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import {
   COMPANY_FLOW_KINDS,
+  COMPANY_FLOW_CLOSURE_MODES,
   COMPANY_FLOW_SOURCES,
   companyFlowInformativeText,
 } from "@/domain/company-flow";
@@ -74,6 +75,8 @@ function optionalMoneySchema(label: string) {
 const flowBaseSchema = z.object({
   clanId: z.uuid("Clã inválido."),
   kind: z.enum(COMPANY_FLOW_KINDS),
+  closureMode: z.enum(COMPANY_FLOW_CLOSURE_MODES).default("company_closure"),
+  closureResponsibilityUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data de responsabilidade inválida.").nullable().optional(),
   source: z.enum(COMPANY_FLOW_SOURCES),
   existingClientId: z.uuid("Empresa inválida.").nullable().optional(),
   requestedLegalName: z.string().trim().max(200).optional(),
@@ -109,6 +112,9 @@ const createFlowSchema = flowBaseSchema.superRefine((data, ctx) => {
     }
   } else if (!data.existingClientId) {
     ctx.addIssue({ code: "custom", path: ["existingClientId"], message: "Escolha a empresa que será alterada ou baixada." });
+  }
+  if (data.kind === "closure" && data.closureMode === "accountant_change" && !data.closureResponsibilityUntil) {
+    ctx.addIssue({ code: "custom", path: ["closureResponsibilityUntil"], message: "Informe até quando permanece nossa responsabilidade." });
   }
 });
 
@@ -182,6 +188,10 @@ export async function createCompanyFlow(
         orgId: ctx.orgId,
         societarioClanId: data.clanId,
         kind: data.kind,
+        closureMode: data.kind === "closure" ? data.closureMode : "company_closure",
+        closureResponsibilityUntil: data.kind === "closure" && data.closureMode === "accountant_change"
+          ? data.closureResponsibilityUntil ?? null
+          : null,
         source: data.source,
         existingClientId: data.kind === "opening" ? null : data.existingClientId ?? null,
         requestedLegalName: data.requestedLegalName || null,
@@ -214,7 +224,7 @@ export async function createCompanyFlow(
       orgId: ctx.orgId,
       flowId: flow.id,
       eventType: "created",
-      newValue: { kind: data.kind, source: data.source, hasGovSecret: Boolean(encryptedSecret) },
+      newValue: { kind: data.kind, closureMode: data.closureMode, source: data.source, hasGovSecret: Boolean(encryptedSecret) },
       actorId: ctx.userId,
     });
     return { ok: true, data: { flowId: flow.id } };
