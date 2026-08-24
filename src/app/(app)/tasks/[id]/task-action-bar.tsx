@@ -71,6 +71,7 @@ export function TaskActionBar({
   can,
   transferCandidates,
   restrictTransferToTaskClan,
+  returnTo,
 }: {
   task: TaskView;
   can: {
@@ -88,6 +89,8 @@ export function TaskActionBar({
   };
   transferCandidates: TransferCandidate[];
   restrictTransferToTaskClan: boolean;
+  /** Lista de origem, incluindo os filtros ativos. */
+  returnTo: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -132,7 +135,7 @@ export function TaskActionBar({
       toast.success("Missão excluída.");
       // A página desta missão deixa de existir — refresh() a manteria
       // montada; a lista é o único lugar para onde faz sentido voltar.
-      router.push("/tasks");
+      router.push(returnTo);
     });
   }
 

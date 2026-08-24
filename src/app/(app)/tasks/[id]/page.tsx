@@ -35,16 +35,33 @@ import { TaskActionBar } from "./task-action-bar";
 
 export const metadata: Metadata = { title: "Missão" };
 
+function returnToTasks(value: string | string[] | undefined): string {
+  const returnTo = Array.isArray(value) ? value[0] : value;
+  if (!returnTo) return "/tasks";
+
+  try {
+    const parsed = new URL(returnTo, "https://guilda.local");
+    return parsed.origin === "https://guilda.local" && parsed.pathname === "/tasks"
+      ? `${parsed.pathname}${parsed.search}`
+      : "/tasks";
+  } catch {
+    return "/tasks";
+  }
+}
+
 export default async function TaskDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ returnTo?: string | string[] }>;
 }) {
   const session = await requireOrgSession();
   const member = await getActiveMember();
   if (!member) redirect("/onboarding");
 
   const { id } = await params;
+  const taskListHref = returnToTasks((await searchParams).returnTo);
   if (!z.uuid().safeParse(id).success) notFound();
 
   const { task, viewerClanMembership, candidateMemberships } = await withOrgTx(
@@ -252,7 +269,7 @@ export default async function TaskDetailPage({
     <div className="grid gap-5">
       <div>
         <Link
-          href="/tasks"
+          href={taskListHref}
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" aria-hidden /> Missões
@@ -317,6 +334,7 @@ export default async function TaskDetailPage({
         can={can}
         transferCandidates={transferCandidates}
         restrictTransferToTaskClan={!isAdmin}
+        returnTo={taskListHref}
       />
 
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">

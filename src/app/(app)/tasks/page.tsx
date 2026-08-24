@@ -121,6 +121,13 @@ export default async function TasksPage({
   const personId = members.some((member) => member.userId === requestedPersonId)
     ? requestedPersonId
     : undefined;
+  const filters = new URLSearchParams();
+  if (scope !== "mine") filters.set("scope", scope);
+  if (scope === "clan" && clanId) filters.set("clan", clanId);
+  if (scope === "person" && personId) filters.set("person", personId);
+  if (status !== "all") filters.set("status", status);
+  if (due !== "all") filters.set("due", due);
+  const filteredTasksHref = filters.size > 0 ? `/tasks?${filters}` : "/tasks";
 
   const conditions: SQL[] = [eq(schema.tasks.orgId, session.orgId)];
   if (scope === "mine") {
@@ -214,7 +221,7 @@ export default async function TasksPage({
             return (
               <li key={task.id}>
                 <Link
-                  href={`/tasks/${task.id}`}
+                  href={`/tasks/${task.id}?returnTo=${encodeURIComponent(filteredTasksHref)}`}
                   className={cn(
                     "panel-cut panel-cut-sm flex flex-col gap-1.5 border-l-2 px-4 py-3 transition-colors hover:bg-accent/40",
                     overdue ? "border-l-destructive" : STATUS_RAIL_CLASSES[task.status],
