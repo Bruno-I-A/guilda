@@ -28,6 +28,14 @@ describe("abas específicas de cada clã", () => {
     expect(keys("rh")).not.toContain("portfolio");
   });
 
+  test("Parcelamentos e Honorários ficam no menu principal do Fiscal", () => {
+    expect(keys("fiscal")).toEqual(
+      expect.arrayContaining(["portfolio", "installments", "fees"]),
+    );
+    expect(keys("contabilidade")).not.toContain("installments");
+    expect(keys("rh")).not.toContain("fees");
+  });
+
   test("Fechamentos só existe na Contabilidade", () => {
     expect(clanHasClosings("contabilidade")).toBe(true);
     expect(keys("contabilidade")).toContain("closings");
@@ -62,6 +70,8 @@ describe("aba pedida na URL", () => {
   test("aba válida do clã é respeitada", () => {
     expect(parseClanTab("closings", "contabilidade")).toBe("closings");
     expect(parseClanTab("portfolio", "fiscal")).toBe("portfolio");
+    expect(parseClanTab("installments", "fiscal")).toBe("installments");
+    expect(parseClanTab("fees", "fiscal")).toBe("fees");
     expect(parseClanTab("members", "rh")).toBe("members");
   });
 

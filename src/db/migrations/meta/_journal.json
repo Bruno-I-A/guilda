@@ -393,6 +393,13 @@
       "when": 1787612400000,
       "tag": "0055_fiscal_installments",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1787616000000,
+      "tag": "0056_installment_progress",
+      "breakpoints": true
     }
   ]
 }

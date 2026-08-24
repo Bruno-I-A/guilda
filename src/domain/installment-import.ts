@@ -9,6 +9,31 @@ export interface ParsedInstallmentImportRow {
   installmentNumber: string | null;
 }
 
+export interface InstallmentProgress {
+  paidInstallments: number;
+  totalInstallments: number | null;
+}
+
+/** Interpreta "10/13" como pagas/total; "13" significa total ainda não pago. */
+export function parseInstallmentProgress(value: string | null): InstallmentProgress {
+  if (!value) return { paidInstallments: 0, totalInstallments: null };
+  const fraction = value.match(/(\d+)\s*\/\s*(\d+)/);
+  if (fraction) {
+    const paid = Number(fraction[1]);
+    const total = Number(fraction[2]);
+    if (Number.isInteger(total) && total >= 1) {
+      return {
+        paidInstallments: Math.min(Math.max(paid, 0), total),
+        totalInstallments: total,
+      };
+    }
+  }
+  const total = Number(value.trim());
+  return Number.isInteger(total) && total >= 1
+    ? { paidInstallments: 0, totalInstallments: total }
+    : { paidInstallments: 0, totalInstallments: null };
+}
+
 export interface InstallmentSpreadsheetRow {
   rowNumber: number;
   parsed: ParsedInstallmentImportRow;

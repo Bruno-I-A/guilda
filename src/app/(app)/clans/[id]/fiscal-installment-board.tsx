@@ -1,8 +1,11 @@
 "use client";
 
 import {
+  CalendarCheck,
+  Check,
   FilePenLine,
   FileSpreadsheet,
+  Minus,
   Plus,
   Search,
   Trash2,
@@ -24,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -44,9 +48,11 @@ import { cn } from "@/lib/utils";
 
 import {
   applyInstallmentImport,
+  changeFiscalInstallmentPaid,
   deleteFiscalInstallment,
   previewInstallmentImport,
   saveFiscalInstallment,
+  setFiscalInstallmentGenerated,
   type InstallmentImportPreview,
 } from "./fiscal-installment-actions";
 
@@ -59,6 +65,10 @@ export interface FiscalInstallmentRowView {
   notes: string | null;
   deliveryMethod: string | null;
   installmentNumber: string | null;
+  paidInstallments: number;
+  totalInstallments: number | null;
+  generatedThisMonth: boolean;
+  generatedAt: string | null;
   updatedAt: string;
 }
 
@@ -87,14 +97,24 @@ function InstallmentFormDialog({
   const [installmentType, setInstallmentType] = useState(row?.installmentType ?? "");
   const [notes, setNotes] = useState(row?.notes ?? "");
   const [deliveryMethod, setDeliveryMethod] = useState(row?.deliveryMethod ?? "");
-  const [installmentNumber, setInstallmentNumber] = useState(row?.installmentNumber ?? "");
+  const [paidInstallments, setPaidInstallments] = useState(String(row?.paidInstallments ?? 0));
+  const [totalInstallments, setTotalInstallments] = useState(
+    row?.totalInstallments === null || row?.totalInstallments === undefined
+      ? ""
+      : String(row.totalInstallments),
+  );
 
   function reset() {
     setClientId(row?.clientId ?? "");
     setInstallmentType(row?.installmentType ?? "");
     setNotes(row?.notes ?? "");
     setDeliveryMethod(row?.deliveryMethod ?? "");
-    setInstallmentNumber(row?.installmentNumber ?? "");
+    setPaidInstallments(String(row?.paidInstallments ?? 0));
+    setTotalInstallments(
+      row?.totalInstallments === null || row?.totalInstallments === undefined
+        ? ""
+        : String(row.totalInstallments),
+    );
   }
 
   function save() {
@@ -106,7 +126,9 @@ function InstallmentFormDialog({
         installmentType,
         notes,
         deliveryMethod,
-        installmentNumber,
+        installmentNumber: row?.installmentNumber ?? "",
+        paidInstallments: Number(paidInstallments),
+        totalInstallments: totalInstallments ? Number(totalInstallments) : null,
       });
       if (!result.ok) {
         toast.error(result.error);
@@ -174,15 +196,28 @@ function InstallmentFormDialog({
                 onChange={(event) => setDeliveryMethod(event.target.value)}
               />
             </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor={`${row?.id ?? "new"}-installment-number`}>Nº de parcelas</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+              <Label htmlFor={`${row?.id ?? "new"}-paid-installments`}>Pagas</Label>
               <Input
-                id={`${row?.id ?? "new"}-installment-number`}
-                value={installmentNumber}
-                maxLength={120}
-                placeholder="Ex.: 2/13, 9/28 ou 80/150"
-                onChange={(event) => setInstallmentNumber(event.target.value)}
+                id={`${row?.id ?? "new"}-paid-installments`}
+                type="number"
+                min={0}
+                value={paidInstallments}
+                onChange={(event) => setPaidInstallments(event.target.value)}
               />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor={`${row?.id ?? "new"}-total-installments`}>Total</Label>
+                <Input
+                  id={`${row?.id ?? "new"}-total-installments`}
+                  type="number"
+                  min={1}
+                  value={totalInstallments}
+                  placeholder="Ex.: 13"
+                  onChange={(event) => setTotalInstallments(event.target.value)}
+                />
+              </div>
             </div>
           </div>
           <div className="grid gap-1.5">
@@ -200,7 +235,17 @@ function InstallmentFormDialog({
         <DialogFooter>
           <Button
             type="button"
-            disabled={pending || !clientId || installmentType.trim().length < 2}
+            disabled={
+              pending ||
+              !clientId ||
+              installmentType.trim().length < 2 ||
+              !Number.isInteger(Number(paidInstallments)) ||
+              Number(paidInstallments) < 0 ||
+              (totalInstallments !== "" &&
+                (!Number.isInteger(Number(totalInstallments)) ||
+                  Number(totalInstallments) < 1 ||
+                  Number(paidInstallments) > Number(totalInstallments)))
+            }
             onClick={save}
           >
             Salvar parcelamento
@@ -303,6 +348,8 @@ function InstallmentImportDialog({ clanId }: { clanId: string }) {
           notes: row.notes ?? "",
           deliveryMethod: row.deliveryMethod ?? "",
           installmentNumber: row.installmentNumber ?? "",
+          paidInstallments: row.paidInstallments,
+          totalInstallments: row.totalInstallments,
         })),
       });
       if (!result.ok) {
@@ -426,26 +473,204 @@ function InstallmentImportDialog({ clanId }: { clanId: string }) {
   );
 }
 
+function InstallmentCard({
+  clanId,
+  canManage,
+  clients,
+  row,
+  periodYear,
+  periodMonth,
+}: {
+  clanId: string;
+  canManage: boolean;
+  clients: readonly ClientOption[];
+  row: FiscalInstallmentRowView;
+  periodYear: number;
+  periodMonth: number;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const periodLabel = `${String(periodMonth).padStart(2, "0")}/${periodYear}`;
+  const progress = row.totalInstallments
+    ? Math.round((row.paidInstallments / row.totalInstallments) * 100)
+    : 0;
+
+  function changePaid(direction: "increase" | "decrease") {
+    startTransition(async () => {
+      const result = await changeFiscalInstallmentPaid({
+        clanId,
+        installmentId: row.id,
+        direction,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
+  function toggleGenerated() {
+    startTransition(async () => {
+      const result = await setFiscalInstallmentGenerated({
+        clanId,
+        installmentId: row.id,
+        periodYear,
+        periodMonth,
+        generated: !row.generatedThisMonth,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(
+        row.generatedThisMonth
+          ? `Geração de ${periodLabel} desmarcada.`
+          : `Parcela de ${periodLabel} marcada como gerada.`,
+      );
+      router.refresh();
+    });
+  }
+
+  return (
+    <article
+      className={cn(
+        "grid gap-4 rounded-lg border bg-card/35 p-4 transition-colors",
+        row.generatedThisMonth && "border-emerald-400/30 bg-emerald-400/[0.035]",
+        !row.clientActive && "opacity-60",
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-heading text-base font-medium">{row.clientName}</h3>
+            {!row.clientActive ? <Badge variant="outline">Inativa</Badge> : null}
+            {row.generatedThisMonth ? (
+              <Badge className="border-emerald-400/30 bg-emerald-400/10 text-emerald-300">
+                <Check aria-hidden /> Gerada em {periodLabel}
+              </Badge>
+            ) : (
+              <Badge variant="outline">Pendente em {periodLabel}</Badge>
+            )}
+          </div>
+          <p className="mt-1 text-sm font-medium text-primary">{row.installmentType}</p>
+        </div>
+        {canManage ? (
+          <div className="flex items-center gap-1">
+            <InstallmentFormDialog clanId={clanId} clients={clients} row={row} />
+            <DeleteInstallmentDialog clanId={clanId} row={row} />
+          </div>
+        ) : null}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <div className="min-w-0 rounded-md bg-muted/25 p-3">
+            <span className="hud-label">Caminho / observações</span>
+            <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">
+              {row.notes ?? "Nenhuma observação cadastrada."}
+            </p>
+          </div>
+          <div className="min-w-0 rounded-md bg-muted/25 p-3">
+            <span className="hud-label">Forma de entrega</span>
+            <p className="mt-1 break-words text-sm">
+              {row.deliveryMethod ?? "Não informada"}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 rounded-md border border-border/70 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <span className="hud-label">Parcelas pagas</span>
+              <p className="mt-1 font-mono text-lg font-semibold">
+                {row.paidInstallments}
+                <span className="text-sm font-normal text-muted-foreground">
+                  {row.totalInstallments ? ` de ${row.totalInstallments}` : " pagas"}
+                </span>
+              </p>
+            </div>
+            {canManage ? (
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  disabled={pending || row.paidInstallments === 0}
+                  aria-label="Diminuir uma parcela paga"
+                  onClick={() => changePaid("decrease")}
+                >
+                  <Minus aria-hidden />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  disabled={
+                    pending ||
+                    (row.totalInstallments !== null &&
+                      row.paidInstallments >= row.totalInstallments)
+                  }
+                  aria-label="Adicionar uma parcela paga"
+                  onClick={() => changePaid("increase")}
+                >
+                  <Plus aria-hidden />
+                </Button>
+              </div>
+            ) : null}
+          </div>
+          {row.totalInstallments ? <Progress value={progress} /> : null}
+          {canManage ? (
+            <Button
+              type="button"
+              variant={row.generatedThisMonth ? "outline" : "default"}
+              size="sm"
+              disabled={pending}
+              onClick={toggleGenerated}
+            >
+              <CalendarCheck aria-hidden />
+              {row.generatedThisMonth
+                ? `Desmarcar geração de ${periodLabel}`
+                : `Marcar gerada em ${periodLabel}`}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export function FiscalInstallmentBoard({
   clanId,
   canManage,
   rows,
   clients,
+  periodYear,
+  periodMonth,
 }: {
   clanId: string;
   canManage: boolean;
   rows: readonly FiscalInstallmentRowView[];
   clients: readonly ClientOption[];
+  periodYear: number;
+  periodMonth: number;
 }) {
   const [query, setQuery] = useState("");
+  const [generationFilter, setGenerationFilter] = useState("all");
   const needle = normalize(query.trim());
   const visible = useMemo(
-    () => rows.filter((row) => !needle || normalize(
-      `${row.clientName} ${row.installmentType} ${row.notes ?? ""} ${row.deliveryMethod ?? ""} ${row.installmentNumber ?? ""}`,
-    ).includes(needle)),
-    [needle, rows],
+    () => rows.filter((row) => {
+      if (generationFilter === "generated" && !row.generatedThisMonth) return false;
+      if (generationFilter === "pending" && row.generatedThisMonth) return false;
+      return !needle || normalize(
+        `${row.clientName} ${row.installmentType} ${row.notes ?? ""} ${row.deliveryMethod ?? ""} ${row.paidInstallments} ${row.totalInstallments ?? ""}`,
+      ).includes(needle);
+    }),
+    [generationFilter, needle, rows],
   );
   const companyCount = new Set(rows.map((row) => row.clientId)).size;
+  const generatedCount = rows.filter((row) => row.generatedThisMonth).length;
+  const periodLabel = `${String(periodMonth).padStart(2, "0")}/${periodYear}`;
 
   return (
     <div className="grid gap-4">
@@ -453,7 +678,7 @@ export function FiscalInstallmentBoard({
         <div>
           <h2 className="font-heading text-lg font-medium">Controle de parcelamentos</h2>
           <p className="text-sm text-muted-foreground">
-            Base permanente com tipo, observações, entrega e número de parcelas.
+            Acompanhe o progresso das parcelas e o que já foi gerado em cada mês.
           </p>
           <p className="mt-1 text-xs text-amber-300/80">
             Não registre senhas ou códigos de acesso nas observações; este campo
@@ -467,7 +692,7 @@ export function FiscalInstallmentBoard({
           </div>
         ) : null}
       </div>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-lg bg-muted/40 p-3">
           <span className="text-xs text-muted-foreground">Parcelamentos</span>
           <strong className="block font-mono text-lg">{rows.length}</strong>
@@ -476,15 +701,35 @@ export function FiscalInstallmentBoard({
           <span className="text-xs text-muted-foreground">Empresas</span>
           <strong className="block font-mono text-lg">{companyCount}</strong>
         </div>
+        <div className="rounded-lg bg-emerald-400/5 p-3">
+          <span className="text-xs text-muted-foreground">Geradas em {periodLabel}</span>
+          <strong className="block font-mono text-lg text-emerald-300">{generatedCount}</strong>
+        </div>
+        <div className="rounded-lg bg-amber-400/5 p-3">
+          <span className="text-xs text-muted-foreground">Pendentes em {periodLabel}</span>
+          <strong className="block font-mono text-lg text-amber-300">{rows.length - generatedCount}</strong>
+        </div>
       </div>
-      <div className="relative">
-        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-        <Input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Buscar empresa, parcelamento, entrega ou observação"
-          className="pl-9"
-        />
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_13rem]">
+        <div className="relative">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar empresa, parcelamento, entrega ou observação"
+            className="pl-9"
+          />
+        </div>
+        <Select value={generationFilter} onValueChange={setGenerationFilter}>
+          <SelectTrigger className="w-full" aria-label="Filtrar geração do mês">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas em {periodLabel}</SelectItem>
+            <SelectItem value="pending">Pendentes no mês</SelectItem>
+            <SelectItem value="generated">Já geradas no mês</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       {rows.length === 0 ? (
         <div className="grid justify-items-center gap-2 rounded-lg border border-dashed p-10 text-center">
@@ -495,41 +740,18 @@ export function FiscalInstallmentBoard({
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="min-w-52">Empresa</TableHead>
-                <TableHead className="min-w-56">Tipo de parcelamento</TableHead>
-                <TableHead className="min-w-80">Caminho / OBS</TableHead>
-                <TableHead className="min-w-40">Forma de entrega</TableHead>
-                <TableHead className="min-w-28">Nº de parcelas</TableHead>
-                {canManage ? <TableHead><span className="sr-only">Ações</span></TableHead> : null}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visible.map((row) => (
-                <TableRow key={row.id} className={cn(!row.clientActive && "opacity-60")}>
-                  <TableCell>
-                    <span className="font-medium">{row.clientName}</span>
-                    {!row.clientActive ? <Badge variant="outline" className="ml-2 text-[10px]">inativa</Badge> : null}
-                  </TableCell>
-                  <TableCell>{row.installmentType}</TableCell>
-                  <TableCell className="whitespace-pre-wrap text-xs text-muted-foreground">{row.notes ?? "—"}</TableCell>
-                  <TableCell>{row.deliveryMethod ?? "—"}</TableCell>
-                  <TableCell className="font-mono">{row.installmentNumber ?? "—"}</TableCell>
-                  {canManage ? (
-                    <TableCell>
-                      <div className="flex items-center justify-end gap-1">
-                        <InstallmentFormDialog clanId={clanId} clients={clients} row={row} />
-                        <DeleteInstallmentDialog clanId={clanId} row={row} />
-                      </div>
-                    </TableCell>
-                  ) : null}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <div className="grid gap-3">
+          {visible.map((row) => (
+            <InstallmentCard
+              key={row.id}
+              clanId={clanId}
+              canManage={canManage}
+              clients={clients}
+              row={row}
+              periodYear={periodYear}
+              periodMonth={periodMonth}
+            />
+          ))}
         </div>
       )}
       {visible.length === 0 && rows.length > 0 ? (

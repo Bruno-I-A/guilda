@@ -28,6 +28,8 @@ import { MembersTab } from "./members-tab";
 import { MissionsTab } from "./missions-tab";
 import { PortfolioTab } from "./portfolio-tab";
 import { CompanyFlowTab } from "./company-flow-tab";
+import { FiscalInstallmentTab } from "./fiscal-installment-tab";
+import { OfficeFeeTab } from "./office-fee-tab";
 
 export const metadata: Metadata = { title: "Clã" };
 
@@ -232,7 +234,27 @@ export default async function ClanPage({
           viewerId={session.user.id}
           canManage={canManageFiscalPortfolio({ role, leadsThisClan })}
           requestedView={fiscalView}
-          requestedFeeView={feeView}
+          requestedYear={fiscalYear}
+          requestedMonth={fiscalMonth}
+        />
+      ) : null}
+
+      {activeTab === "installments" ? (
+        <FiscalInstallmentTab
+          orgId={session.orgId}
+          clanId={clan.id}
+          canManage={canManageFiscalPortfolio({ role, leadsThisClan })}
+        />
+      ) : null}
+
+      {activeTab === "fees" ? (
+        <OfficeFeeTab
+          orgId={session.orgId}
+          clanId={clan.id}
+          viewerId={session.user.id}
+          canManage={canManageFiscalPortfolio({ role, leadsThisClan })}
+          memberships={memberships}
+          requestedView={feeView}
           requestedYear={fiscalYear}
           requestedMonth={fiscalMonth}
         />

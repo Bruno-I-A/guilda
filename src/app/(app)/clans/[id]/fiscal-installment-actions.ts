@@ -12,7 +12,10 @@ import {
   reconcileCompanyName,
 } from "@/domain/fiscal-import";
 import { canManageFiscalOperations } from "@/domain/guild-permissions";
-import { parseInstallmentSpreadsheetRows } from "@/domain/installment-import";
+import {
+  parseInstallmentProgress,
+  parseInstallmentSpreadsheetRows,
+} from "@/domain/installment-import";
 import {
   err,
   requireMemberContext,
@@ -60,9 +63,14 @@ const installmentFieldsSchema = z.object({
   notes: nullableText(5000),
   deliveryMethod: nullableText(240),
   installmentNumber: nullableText(120),
-});
+  paidInstallments: z.number().int().min(0).max(100_000),
+  totalInstallments: z.number().int().min(1).max(100_000).nullable(),
+}).refine(
+  (value) => value.totalInstallments === null || value.paidInstallments <= value.totalInstallments,
+  { message: "As parcelas pagas não podem superar o total." },
+);
 
-const saveSchema = installmentFieldsSchema.extend({
+const saveSchema = installmentFieldsSchema.safeExtend({
   clanId: z.uuid("Clã inválido."),
   installmentId: z.uuid("Parcelamento inválido.").nullable(),
 });
@@ -100,7 +108,11 @@ export async function saveFiscalInstallment(
           installmentType: data.installmentType,
           notes: data.notes,
           deliveryMethod: data.deliveryMethod,
-          installmentNumber: data.installmentNumber,
+          paidInstallments: data.paidInstallments,
+          totalInstallments: data.totalInstallments,
+          installmentNumber: data.totalInstallments
+            ? `${data.paidInstallments}/${data.totalInstallments}`
+            : data.installmentNumber,
           updatedBy: ctx.userId,
           updatedAt: new Date(),
         })
@@ -123,7 +135,11 @@ export async function saveFiscalInstallment(
         installmentType: data.installmentType,
         notes: data.notes,
         deliveryMethod: data.deliveryMethod,
-        installmentNumber: data.installmentNumber,
+        paidInstallments: data.paidInstallments,
+        totalInstallments: data.totalInstallments,
+        installmentNumber: data.totalInstallments
+          ? `${data.paidInstallments}/${data.totalInstallments}`
+          : data.installmentNumber,
         createdBy: ctx.userId,
         updatedBy: ctx.userId,
       })
@@ -170,6 +186,133 @@ export async function deleteFiscalInstallment(
   return result;
 }
 
+const progressSchema = z.object({
+  clanId: z.uuid("Clã inválido."),
+  installmentId: z.uuid("Parcelamento inválido."),
+  direction: z.enum(["increase", "decrease"]),
+});
+
+export async function changeFiscalInstallmentPaid(
+  input: z.input<typeof progressSchema>,
+): Promise<ActionResult<{ paidInstallments: number }>> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  const parsed = progressSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+  const data = parsed.data;
+
+  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<{ paidInstallments: number }>> => {
+    if (!(await canManageInstallments(tx, ctx, data.clanId))) {
+      return err("Apenas a liderança do Fiscal ou um admin pode alterar o progresso.");
+    }
+    const [installment] = await tx
+      .select({
+        paidInstallments: schema.fiscalInstallments.paidInstallments,
+        totalInstallments: schema.fiscalInstallments.totalInstallments,
+      })
+      .from(schema.fiscalInstallments)
+      .where(
+        and(
+          eq(schema.fiscalInstallments.orgId, ctx.orgId),
+          eq(schema.fiscalInstallments.id, data.installmentId),
+        ),
+      )
+      .for("update");
+    if (!installment) return err("Parcelamento não encontrado.");
+
+    const delta = data.direction === "increase" ? 1 : -1;
+    const next = Math.max(
+      0,
+      Math.min(
+        installment.paidInstallments + delta,
+        installment.totalInstallments ?? Number.MAX_SAFE_INTEGER,
+      ),
+    );
+    await tx
+      .update(schema.fiscalInstallments)
+      .set({
+        paidInstallments: next,
+        installmentNumber: installment.totalInstallments
+          ? `${next}/${installment.totalInstallments}`
+          : undefined,
+        updatedBy: ctx.userId,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.fiscalInstallments.orgId, ctx.orgId),
+          eq(schema.fiscalInstallments.id, data.installmentId),
+        ),
+      );
+    return { ok: true, data: { paidInstallments: next } };
+  });
+
+  if (result.ok) revalidatePath(`/clans/${data.clanId}`);
+  return result;
+}
+
+const generatedSchema = z.object({
+  clanId: z.uuid("Clã inválido."),
+  installmentId: z.uuid("Parcelamento inválido."),
+  periodYear: z.number().int().min(2000).max(2100),
+  periodMonth: z.number().int().min(1).max(12),
+  generated: z.boolean(),
+});
+
+export async function setFiscalInstallmentGenerated(
+  input: z.input<typeof generatedSchema>,
+): Promise<ActionResult> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  const parsed = generatedSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+  const data = parsed.data;
+
+  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
+    if (!(await canManageInstallments(tx, ctx, data.clanId))) {
+      return err("Apenas a liderança do Fiscal ou um admin pode marcar parcelas geradas.");
+    }
+    const [installment] = await tx
+      .select({ id: schema.fiscalInstallments.id })
+      .from(schema.fiscalInstallments)
+      .where(
+        and(
+          eq(schema.fiscalInstallments.orgId, ctx.orgId),
+          eq(schema.fiscalInstallments.id, data.installmentId),
+        ),
+      );
+    if (!installment) return err("Parcelamento não encontrado.");
+
+    if (data.generated) {
+      await tx
+        .insert(schema.fiscalInstallmentIssuances)
+        .values({
+          orgId: ctx.orgId,
+          installmentId: data.installmentId,
+          periodYear: data.periodYear,
+          periodMonth: data.periodMonth,
+          generatedBy: ctx.userId,
+        })
+        .onConflictDoNothing();
+    } else {
+      await tx
+        .delete(schema.fiscalInstallmentIssuances)
+        .where(
+          and(
+            eq(schema.fiscalInstallmentIssuances.orgId, ctx.orgId),
+            eq(schema.fiscalInstallmentIssuances.installmentId, data.installmentId),
+            eq(schema.fiscalInstallmentIssuances.periodYear, data.periodYear),
+            eq(schema.fiscalInstallmentIssuances.periodMonth, data.periodMonth),
+          ),
+        );
+    }
+    return { ok: true };
+  });
+
+  if (result.ok) revalidatePath(`/clans/${data.clanId}`);
+  return result;
+}
+
 export interface InstallmentImportPreview {
   fileName: string;
   clients: readonly { id: string; name: string }[];
@@ -183,6 +326,8 @@ export interface InstallmentImportPreview {
     notes: string | null;
     deliveryMethod: string | null;
     installmentNumber: string | null;
+    paidInstallments: number;
+    totalInstallments: number | null;
   }[];
   rejectedRows: readonly { rowNumber: number; message: string }[];
   skippedRows: number;
@@ -265,6 +410,7 @@ export async function previewInstallmentImport(
             notes: row.parsed.notes,
             deliveryMethod: row.parsed.deliveryMethod,
             installmentNumber: row.parsed.installmentNumber,
+            ...parseInstallmentProgress(row.parsed.installmentNumber),
           };
         }),
         rejectedRows: parsedSheet.rejectedRows,
@@ -278,7 +424,7 @@ const applyImportSchema = z.object({
   clanId: z.uuid("Clã inválido."),
   rows: z
     .array(
-      installmentFieldsSchema.extend({
+      installmentFieldsSchema.safeExtend({
         rowNumber: z.number().int().min(1),
         sourceName: z.string().trim().min(1).max(240),
       }),
@@ -323,6 +469,8 @@ export async function applyInstallmentImport(
         notes: row.notes,
         deliveryMethod: row.deliveryMethod,
         installmentNumber: row.installmentNumber,
+        paidInstallments: row.paidInstallments,
+        totalInstallments: row.totalInstallments,
         createdBy: ctx.userId,
         updatedBy: ctx.userId,
       })),

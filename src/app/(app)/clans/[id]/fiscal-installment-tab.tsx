@@ -8,6 +8,20 @@ import {
   type FiscalInstallmentRowView,
 } from "./fiscal-installment-board";
 
+function currentPeriodInSaoPaulo(): { year: number; month: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  if (Number.isInteger(year) && Number.isInteger(month) && month >= 1 && month <= 12) {
+    return { year, month };
+  }
+  throw new Error("Não foi possível identificar a competência atual.");
+}
+
 export async function FiscalInstallmentTab({
   orgId,
   clanId,
@@ -17,6 +31,7 @@ export async function FiscalInstallmentTab({
   clanId: string;
   canManage: boolean;
 }) {
+  const period = currentPeriodInSaoPaulo();
   const { rows, clients } = await withOrgTx(orgId, async (tx) => {
     const rows = await tx
       .select({
@@ -28,6 +43,9 @@ export async function FiscalInstallmentTab({
         notes: schema.fiscalInstallments.notes,
         deliveryMethod: schema.fiscalInstallments.deliveryMethod,
         installmentNumber: schema.fiscalInstallments.installmentNumber,
+        paidInstallments: schema.fiscalInstallments.paidInstallments,
+        totalInstallments: schema.fiscalInstallments.totalInstallments,
+        generatedAt: schema.fiscalInstallmentIssuances.generatedAt,
         updatedAt: schema.fiscalInstallments.updatedAt,
       })
       .from(schema.fiscalInstallments)
@@ -36,6 +54,15 @@ export async function FiscalInstallmentTab({
         and(
           eq(schema.clients.orgId, schema.fiscalInstallments.orgId),
           eq(schema.clients.id, schema.fiscalInstallments.clientId),
+        ),
+      )
+      .leftJoin(
+        schema.fiscalInstallmentIssuances,
+        and(
+          eq(schema.fiscalInstallmentIssuances.orgId, schema.fiscalInstallments.orgId),
+          eq(schema.fiscalInstallmentIssuances.installmentId, schema.fiscalInstallments.id),
+          eq(schema.fiscalInstallmentIssuances.periodYear, period.year),
+          eq(schema.fiscalInstallmentIssuances.periodMonth, period.month),
         ),
       )
       .where(eq(schema.fiscalInstallments.orgId, orgId))
@@ -50,6 +77,8 @@ export async function FiscalInstallmentTab({
 
   const views: FiscalInstallmentRowView[] = rows.map((row) => ({
     ...row,
+    generatedThisMonth: Boolean(row.generatedAt),
+    generatedAt: row.generatedAt?.toISOString() ?? null,
     updatedAt: row.updatedAt.toISOString(),
   }));
 
@@ -59,6 +88,8 @@ export async function FiscalInstallmentTab({
       canManage={canManage}
       rows={views}
       clients={clients}
+      periodYear={period.year}
+      periodMonth={period.month}
     />
   );
 }

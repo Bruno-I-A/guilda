@@ -1801,6 +1801,10 @@ export const fiscalInstallments = pgTable(
     installmentType: varchar("installment_type", { length: 240 }).notNull(),
     notes: text("notes"),
     deliveryMethod: varchar("delivery_method", { length: 240 }),
+    paidInstallments: integer("paid_installments").notNull().default(0),
+    totalInstallments: integer("total_installments"),
+    // Mantém o texto original de importações antigas quando não for possível
+    // interpretar o formato como progresso numérico.
     installmentNumber: varchar("installment_number", { length: 120 }),
     createdBy: text("created_by")
       .notNull()
@@ -1823,6 +1827,50 @@ export const fiscalInstallments = pgTable(
     check(
       "fiscal_installments_type_check",
       sql`length(btrim(${t.installmentType})) > 0`,
+    ),
+    check(
+      "fiscal_installments_progress_check",
+      sql`${t.paidInstallments} >= 0 AND (${t.totalInstallments} IS NULL OR (${t.totalInstallments} >= 1 AND ${t.paidInstallments} <= ${t.totalInstallments}))`,
+    ),
+  ],
+);
+
+/** Uma marcação por mês informa que a parcela daquele período foi gerada. */
+export const fiscalInstallmentIssuances = pgTable(
+  "fiscal_installment_issuances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    installmentId: uuid("installment_id").notNull(),
+    periodYear: smallint("period_year").notNull(),
+    periodMonth: smallint("period_month").notNull(),
+    generatedBy: text("generated_by")
+      .notNull()
+      .references(() => user.id),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "fiscal_installment_issuances_org_installment_fk",
+      columns: [t.orgId, t.installmentId],
+      foreignColumns: [fiscalInstallments.orgId, fiscalInstallments.id],
+    }).onDelete("cascade"),
+    uniqueIndex("fiscal_installment_issuances_org_period_uidx").on(
+      t.orgId,
+      t.installmentId,
+      t.periodYear,
+      t.periodMonth,
+    ),
+    index("fiscal_installment_issuances_org_period_idx").on(
+      t.orgId,
+      t.periodYear,
+      t.periodMonth,
+    ),
+    check(
+      "fiscal_installment_issuances_period_check",
+      sql`${t.periodYear} BETWEEN 2000 AND 2100 AND ${t.periodMonth} BETWEEN 1 AND 12`,
     ),
   ],
 );
@@ -2282,7 +2330,7 @@ export const fiscalClientAliasesRelations = relations(
 
 export const fiscalInstallmentsRelations = relations(
   fiscalInstallments,
-  ({ one }) => ({
+  ({ one, many }) => ({
     client: one(clients, {
       fields: [fiscalInstallments.clientId],
       references: [clients.id],
@@ -2296,6 +2344,21 @@ export const fiscalInstallmentsRelations = relations(
       fields: [fiscalInstallments.updatedBy],
       references: [user.id],
       relationName: "fiscal_installment_updater",
+    }),
+    issuances: many(fiscalInstallmentIssuances),
+  }),
+);
+
+export const fiscalInstallmentIssuancesRelations = relations(
+  fiscalInstallmentIssuances,
+  ({ one }) => ({
+    installment: one(fiscalInstallments, {
+      fields: [fiscalInstallmentIssuances.installmentId],
+      references: [fiscalInstallments.id],
+    }),
+    generatedByUser: one(user, {
+      fields: [fiscalInstallmentIssuances.generatedBy],
+      references: [user.id],
     }),
   }),
 );
@@ -2444,6 +2507,7 @@ export type FiscalClientProfile = typeof fiscalClientProfiles.$inferSelect;
 export type FiscalClientProfileEvent = typeof fiscalClientProfileEvents.$inferSelect;
 export type FiscalClientAlias = typeof fiscalClientAliases.$inferSelect;
 export type FiscalInstallment = typeof fiscalInstallments.$inferSelect;
+export type FiscalInstallmentIssuance = typeof fiscalInstallmentIssuances.$inferSelect;
 export type FiscalImportBatch = typeof fiscalImportBatches.$inferSelect;
 export type FiscalImportRow = typeof fiscalImportRows.$inferSelect;
 export type FiscalControlPeriod = typeof fiscalControlPeriods.$inferSelect;

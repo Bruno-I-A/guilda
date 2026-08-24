@@ -1,6 +1,27 @@
 import { describe, expect, test } from "vitest";
 
-import { parseInstallmentSpreadsheetRows } from "./installment-import";
+import {
+  parseInstallmentProgress,
+  parseInstallmentSpreadsheetRows,
+} from "./installment-import";
+
+describe("progresso do parcelamento", () => {
+  test.each([
+    ["10/13", { paidInstallments: 10, totalInstallments: 13 }],
+    ["09/32 E 10", { paidInstallments: 9, totalInstallments: 32 }],
+    ["80", { paidInstallments: 0, totalInstallments: 80 }],
+    [null, { paidInstallments: 0, totalInstallments: null }],
+  ])("interpreta %j", (value, expected) => {
+    expect(parseInstallmentProgress(value)).toEqual(expected);
+  });
+
+  test("não permite progresso maior que o total", () => {
+    expect(parseInstallmentProgress("15/12")).toEqual({
+      paidInstallments: 12,
+      totalInstallments: 12,
+    });
+  });
+});
 
 describe("importação da planilha de parcelamentos", () => {
   test("identifica as cinco colunas e mantém empresas repetidas", () => {

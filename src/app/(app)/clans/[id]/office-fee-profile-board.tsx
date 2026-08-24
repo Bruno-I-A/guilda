@@ -40,7 +40,7 @@ function normalize(value: string): string {
 }
 
 function feeHref(clanId: string, view: "base" | "control"): string {
-  return `/clans/${clanId}?tab=portfolio&fiscalView=fees${view === "control" ? "&feeView=control" : ""}`;
+  return `/clans/${clanId}?tab=fees${view === "control" ? "&feeView=control" : ""}`;
 }
 
 export function OfficeFeeProfileBoard({

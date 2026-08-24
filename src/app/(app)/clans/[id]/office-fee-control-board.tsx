@@ -95,7 +95,7 @@ function adjacentPeriod(year: number, month: number, delta: number) {
 }
 
 function periodHref(clanId: string, year: number, month: number): string {
-  return `/clans/${clanId}?tab=portfolio&fiscalView=fees&feeView=control&fiscalYear=${year}&fiscalMonth=${month}`;
+  return `/clans/${clanId}?tab=fees&feeView=control&fiscalYear=${year}&fiscalMonth=${month}`;
 }
 
 function eventText(event: OfficeFeeControlRowView["history"][number]): string {
