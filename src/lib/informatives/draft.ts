@@ -90,6 +90,40 @@ function currentYearInSaoPaulo(): number {
   );
 }
 
+function normalizeObservationText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * A IA pode, ocasionalmente, repetir em `ignoredNotes` a mesma linha que
+ * acabou de transformar em missão. A prévia deve mostrar cada providência uma
+ * única vez: missão ou observação, nunca os dois.
+ */
+export function removeMissionDuplicatedObservations(
+  observations: readonly string[],
+  tasks: readonly Pick<InformativeDraftPayload["tasks"][number], "sourceSection">[],
+): string[] {
+  const taskSources = tasks
+    .map((task) => normalizeObservationText(task.sourceSection))
+    .filter((source) => source.length >= 16);
+  const seen = new Set<string>();
+
+  return observations.filter((observation) => {
+    const normalized = normalizeObservationText(observation);
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+
+    return !taskSources.some(
+      (source) => normalized === source || (normalized.length >= 16 && source.includes(normalized)),
+    );
+  });
+}
+
 /**
  * Extrai o informativo, resolve nomes e ROTEIA cada ação pelo setor.
  * Nenhuma missão é criada aqui: o resultado é só a prévia.
@@ -501,14 +535,15 @@ export async function buildInformativeDraft(
       : null;
 
   // Decisão 11: o que não é ação vira corpo do aviso no mural, não missão.
-  const observations = [
-    ...new Set([
+  const observations = removeMissionDuplicatedObservations(
+    [
       ...(flowContext ? [] : extractObservationLines(sourceText)),
       ...extracted.data.ignoredNotes,
       // Distribuição sem clã reconhecido não some: vira observação do aviso.
       ...unroutedCommitments,
-    ]),
-  ].slice(0, 30);
+    ],
+    tasks,
+  ).slice(0, 30);
 
   const payload = informativeDraftPayloadSchema.parse({
     ...extracted.data,

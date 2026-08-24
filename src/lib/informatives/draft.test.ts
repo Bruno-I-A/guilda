@@ -11,7 +11,10 @@ vi.mock("@/lib/org", () => ({
 
 import type { InformativeDraftPayload } from "@/lib/ai/informative-schema";
 
-import { draftIsBlocked } from "./draft";
+import {
+  draftIsBlocked,
+  removeMissionDuplicatedObservations,
+} from "./draft";
 
 const CLAN_ID = "123e4567-e89b-12d3-a456-426614174000";
 
@@ -111,5 +114,32 @@ describe("draftIsBlocked", () => {
     expect(
       draftIsBlocked(payload({ tasks: [pendingTask], createClient: true })),
     ).toBe(true);
+  });
+});
+
+describe("removeMissionDuplicatedObservations", () => {
+  test("não repete no mural a linha que já virou missão", () => {
+    const sourceSection =
+      "CONTABILIDADE – Encerramento até 31/08/2026 para entrega do balancete à nova contabilidade.";
+
+    expect(
+      removeMissionDuplicatedObservations(
+        [
+          sourceSection,
+          "COBRANÇA – ASSAS",
+          "cobranca - assas",
+        ],
+        [{ sourceSection }],
+      ),
+    ).toEqual(["COBRANÇA – ASSAS"]);
+  });
+
+  test("mantém observação diferente mesmo quando há missões", () => {
+    expect(
+      removeMissionDuplicatedObservations(
+        ["Cobrança será feita pelo Asaas."],
+        [clanTask],
+      ),
+    ).toEqual(["Cobrança será feita pelo Asaas."]);
   });
 });
