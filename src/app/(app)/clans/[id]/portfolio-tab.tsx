@@ -7,6 +7,7 @@ import { summarizePortfolio } from "@/domain/fiscal-portfolio";
 
 import type { ClanMemberView } from "./page";
 import { FiscalControlTab } from "./fiscal-control-tab";
+import { FiscalInstallmentTab } from "./fiscal-installment-tab";
 import { FiscalWorkspaceNav } from "./fiscal-workspace-nav";
 import { OfficeFeeTab } from "./office-fee-tab";
 import {
@@ -44,7 +45,9 @@ export async function PortfolioTab({
   requestedMonth?: string;
 }) {
   const view =
-    requestedView === "control" || requestedView === "fees"
+    requestedView === "control" ||
+    requestedView === "installments" ||
+    requestedView === "fees"
       ? requestedView
       : "portfolio";
   if (view === "control") {
@@ -59,6 +62,19 @@ export async function PortfolioTab({
           memberships={memberships}
           requestedYear={requestedYear}
           requestedMonth={requestedMonth}
+        />
+      </div>
+    );
+  }
+
+  if (view === "installments") {
+    return (
+      <div className="grid gap-4">
+        <FiscalWorkspaceNav clanId={clanId} active="installments" />
+        <FiscalInstallmentTab
+          orgId={orgId}
+          clanId={clanId}
+          canManage={canManage}
         />
       </div>
     );

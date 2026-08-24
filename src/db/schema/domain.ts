@@ -1786,6 +1786,47 @@ export const fiscalClientAliases = pgTable(
   ],
 );
 
+/**
+ * Parcelamentos acompanhados pelo Fiscal. Não há unicidade por empresa:
+ * cada cliente pode manter vários parcelamentos de tipos diferentes.
+ */
+export const fiscalInstallments = pgTable(
+  "fiscal_installments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    installmentType: varchar("installment_type", { length: 240 }).notNull(),
+    notes: text("notes"),
+    deliveryMethod: varchar("delivery_method", { length: 240 }),
+    installmentNumber: varchar("installment_number", { length: 120 }),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id),
+    updatedBy: text("updated_by")
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "fiscal_installments_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+    uniqueIndex("fiscal_installments_org_id_uidx").on(t.orgId, t.id),
+    index("fiscal_installments_org_client_idx").on(t.orgId, t.clientId),
+    index("fiscal_installments_org_updated_idx").on(t.orgId, t.updatedAt),
+    check(
+      "fiscal_installments_type_check",
+      sql`length(btrim(${t.installmentType})) > 0`,
+    ),
+  ],
+);
+
 /** Um arquivo de planilha submetido ao processo assistido de conciliação. */
 export const fiscalImportBatches = pgTable(
   "fiscal_import_batches",
@@ -2239,6 +2280,26 @@ export const fiscalClientAliasesRelations = relations(
   }),
 );
 
+export const fiscalInstallmentsRelations = relations(
+  fiscalInstallments,
+  ({ one }) => ({
+    client: one(clients, {
+      fields: [fiscalInstallments.clientId],
+      references: [clients.id],
+    }),
+    creator: one(user, {
+      fields: [fiscalInstallments.createdBy],
+      references: [user.id],
+      relationName: "fiscal_installment_creator",
+    }),
+    updater: one(user, {
+      fields: [fiscalInstallments.updatedBy],
+      references: [user.id],
+      relationName: "fiscal_installment_updater",
+    }),
+  }),
+);
+
 export const fiscalImportBatchesRelations = relations(
   fiscalImportBatches,
   ({ one, many }) => ({
@@ -2382,6 +2443,7 @@ export const officeFeeControlEventsRelations = relations(
 export type FiscalClientProfile = typeof fiscalClientProfiles.$inferSelect;
 export type FiscalClientProfileEvent = typeof fiscalClientProfileEvents.$inferSelect;
 export type FiscalClientAlias = typeof fiscalClientAliases.$inferSelect;
+export type FiscalInstallment = typeof fiscalInstallments.$inferSelect;
 export type FiscalImportBatch = typeof fiscalImportBatches.$inferSelect;
 export type FiscalImportRow = typeof fiscalImportRows.$inferSelect;
 export type FiscalControlPeriod = typeof fiscalControlPeriods.$inferSelect;
