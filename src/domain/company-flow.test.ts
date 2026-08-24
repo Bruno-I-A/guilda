@@ -143,6 +143,8 @@ describe("Fluxo Societário", () => {
       address: "GETULIO VARGAS",
       responsibilityUntil: "2026-03-31",
       observations: "Empresa solicitou desligamento com aviso prévio.",
+      additionalActions:
+        "FISCAL – Regularizar pendência específica.\nSucesso do Cliente – Confirmar recebimento dos documentos.",
     });
 
     expect(text).toContain("INFORMATIVO DE BAIXA DE CLIENTE POR DESLIGAMENTO");
@@ -152,6 +154,8 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("FISCAL – Gerar até competência 03/2026.");
     expect(text).toContain("RH – Gerar até competência 03/2026.");
     expect(text).toContain("SUCESSO DO CLIENTE – Encaminhar para o e-mail do cliente");
+    expect(text).toContain("FISCAL – Regularizar pendência específica.");
+    expect(text).toContain("Sucesso do Cliente – Confirmar recebimento dos documentos.");
     expect(text).not.toContain("SOCIETÁRIO – Baixar o Alvará.");
   });
 

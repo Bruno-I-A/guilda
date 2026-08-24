@@ -223,6 +223,8 @@ export interface AccountantChangeInformativeInput {
   address: string | null;
   responsibilityUntil: string;
   observations: string | null;
+  /** Linhas extras no formato "SETOR – ação", incluídas no bloco AÇÕES. */
+  additionalActions?: string | null;
 }
 
 /** Modelo direto de desligamento — não passa pelo Fluxo Societário. */
@@ -247,6 +249,10 @@ export function accountantChangeInformativeText(input: AccountantChangeInformati
     `FISCAL – Gerar até competência ${competence}.`,
     `RH – Gerar até competência ${competence}.`,
     "SUCESSO DO CLIENTE – Encaminhar para o e-mail do cliente a documentação que servirá como protocolo de entrega.",
+    ...((input.additionalActions ?? "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)),
   ].join("\n");
 }
 

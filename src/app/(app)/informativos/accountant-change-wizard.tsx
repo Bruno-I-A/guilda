@@ -40,6 +40,7 @@ export function AccountantChangeWizard({
   const [responsibilityUntil, setResponsibilityUntil] = useState("");
   const [address, setAddress] = useState("");
   const [observations, setObservations] = useState("");
+  const [additionalActions, setAdditionalActions] = useState("");
   const selected = clients.find((client) => client.id === selectedId) ?? null;
   const matches = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("pt-BR");
@@ -59,6 +60,7 @@ export function AccountantChangeWizard({
           address,
           responsibilityUntil,
           observations,
+          additionalActions,
         }),
       });
       if (!result.ok) {
@@ -89,6 +91,20 @@ export function AccountantChangeWizard({
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="grid gap-1.5"><Label htmlFor="accountant-change-responsibility">Responsabilidade do escritório até *</Label><Input id="accountant-change-responsibility" type="date" value={responsibilityUntil} onChange={(event) => setResponsibilityUntil(event.target.value)} /></div>
         <div className="grid gap-1.5"><Label htmlFor="accountant-change-address">Endereço</Label><Input id="accountant-change-address" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Ex.: Getúlio Vargas" /></div>
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor="accountant-change-actions">Missões adicionais</Label>
+        <Textarea
+          id="accountant-change-actions"
+          value={additionalActions}
+          onChange={(event) => setAdditionalActions(event.target.value)}
+          rows={4}
+          placeholder={"Uma missão por linha, no formato:\nFiscal – Entregar a obrigação pendente\nSucesso do Cliente – Confirmar o recebimento dos documentos"}
+        />
+        <p className="text-xs text-muted-foreground">
+          As quatro missões de desligamento são apenas sugestões. Inclua aqui
+          qualquer providência extra; você confere os destinos na prévia.
+        </p>
       </div>
       <div className="grid gap-1.5"><Label htmlFor="accountant-change-observations">Motivo e observações</Label><Textarea id="accountant-change-observations" value={observations} onChange={(event) => setObservations(event.target.value)} rows={5} placeholder="Aviso prévio, cobrança, transferência de dados e demais observações" /></div>
       <div className="flex items-center justify-between gap-2"><Button variant="ghost" size="sm" onClick={onDone} disabled={pending}><ArrowLeft className="size-4" aria-hidden /> Voltar</Button><Button onClick={analyze} disabled={pending || !selected || !responsibilityUntil}><ScanText className="size-4" aria-hidden /> Gerar prévia</Button></div>
