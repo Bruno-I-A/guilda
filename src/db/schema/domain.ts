@@ -1846,6 +1846,9 @@ export const fiscalInstallmentIssuances = pgTable(
     installmentId: uuid("installment_id").notNull(),
     periodYear: smallint("period_year").notNull(),
     periodMonth: smallint("period_month").notNull(),
+    // Só desfaz o avanço automático ao desmarcar se esta própria geração o
+    // tiver criado. Marcações anteriores à automação permanecem seguras.
+    advancedPaid: boolean("advanced_paid").notNull().default(false),
     generatedBy: text("generated_by")
       .notNull()
       .references(() => user.id),

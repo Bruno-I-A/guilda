@@ -3,6 +3,8 @@
 import {
   CalendarCheck,
   Check,
+  ChevronLeft,
+  ChevronRight,
   FilePenLine,
   FileSpreadsheet,
   Minus,
@@ -73,6 +75,21 @@ export interface FiscalInstallmentRowView {
 }
 
 type ClientOption = { id: string; name: string };
+
+const MONTH_NAMES = [
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
+] as const;
 
 function normalize(value: string): string {
   return value
@@ -525,8 +542,8 @@ function InstallmentCard({
       }
       toast.success(
         row.generatedThisMonth
-          ? `Geração de ${periodLabel} desmarcada.`
-          : `Parcela de ${periodLabel} marcada como gerada.`,
+          ? `Geração de ${periodLabel} desmarcada; avanço automático desfeito quando aplicável.`
+          : `Parcela de ${periodLabel} gerada e progresso atualizado.`,
       );
       router.refresh();
     });
@@ -631,7 +648,7 @@ function InstallmentCard({
               <CalendarCheck aria-hidden />
               {row.generatedThisMonth
                 ? `Desmarcar geração de ${periodLabel}`
-                : `Marcar gerada em ${periodLabel}`}
+                : `Confirmar geração de ${periodLabel}`}
             </Button>
           ) : null}
         </div>
@@ -647,6 +664,8 @@ export function FiscalInstallmentBoard({
   clients,
   periodYear,
   periodMonth,
+  currentYear,
+  currentMonth,
 }: {
   clanId: string;
   canManage: boolean;
@@ -654,7 +673,11 @@ export function FiscalInstallmentBoard({
   clients: readonly ClientOption[];
   periodYear: number;
   periodMonth: number;
+  currentYear: number;
+  currentMonth: number;
 }) {
+  const router = useRouter();
+  const [periodPending, startPeriodTransition] = useTransition();
   const [query, setQuery] = useState("");
   const [generationFilter, setGenerationFilter] = useState("all");
   const needle = normalize(query.trim());
@@ -671,6 +694,26 @@ export function FiscalInstallmentBoard({
   const companyCount = new Set(rows.map((row) => row.clientId)).size;
   const generatedCount = rows.filter((row) => row.generatedThisMonth).length;
   const periodLabel = `${String(periodMonth).padStart(2, "0")}/${periodYear}`;
+  const years = Array.from(
+    new Set([
+      ...Array.from({ length: 9 }, (_, index) => currentYear - 5 + index),
+      periodYear,
+    ]),
+  ).sort((left, right) => left - right);
+
+  function navigateToPeriod(year: number, month: number) {
+    startPeriodTransition(() => {
+      router.push(
+        `/clans/${clanId}?tab=installments&fiscalYear=${year}&fiscalMonth=${month}`,
+        { scroll: false },
+      );
+    });
+  }
+
+  function movePeriod(offset: number) {
+    const date = new Date(Date.UTC(periodYear, periodMonth - 1 + offset, 1));
+    navigateToPeriod(date.getUTCFullYear(), date.getUTCMonth() + 1);
+  }
 
   return (
     <div className="grid gap-4">
@@ -679,6 +722,9 @@ export function FiscalInstallmentBoard({
           <h2 className="font-heading text-lg font-medium">Controle de parcelamentos</h2>
           <p className="text-sm text-muted-foreground">
             Acompanhe o progresso das parcelas e o que já foi gerado em cada mês.
+          </p>
+          <p className="mt-1 text-xs text-primary/80">
+            Confirmar a geração acrescenta automaticamente uma parcela paga.
           </p>
           <p className="mt-1 text-xs text-amber-300/80">
             Não registre senhas ou códigos de acesso nas observações; este campo
@@ -691,6 +737,75 @@ export function FiscalInstallmentBoard({
             <InstallmentFormDialog clanId={clanId} clients={clients} />
           </div>
         ) : null}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card/25 p-3">
+        <div>
+          <span className="hud-label">Competência consultada</span>
+          <p className="mt-1 font-heading text-lg font-medium">
+            {MONTH_NAMES[periodMonth - 1]} de {periodYear}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            disabled={periodPending}
+            aria-label="Competência anterior"
+            onClick={() => movePeriod(-1)}
+          >
+            <ChevronLeft aria-hidden />
+          </Button>
+          <Select
+            value={String(periodMonth)}
+            disabled={periodPending}
+            onValueChange={(value) => navigateToPeriod(periodYear, Number(value))}
+          >
+            <SelectTrigger className="w-36" aria-label="Mês da competência">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {MONTH_NAMES.map((month, index) => (
+                <SelectItem key={month} value={String(index + 1)}>{month}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={String(periodYear)}
+            disabled={periodPending}
+            onValueChange={(value) => navigateToPeriod(Number(value), periodMonth)}
+          >
+            <SelectTrigger className="w-24" aria-label="Ano da competência">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {years.map((year) => (
+                <SelectItem key={year} value={String(year)}>{year}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            disabled={periodPending}
+            aria-label="Próxima competência"
+            onClick={() => movePeriod(1)}
+          >
+            <ChevronRight aria-hidden />
+          </Button>
+          {periodYear !== currentYear || periodMonth !== currentMonth ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={periodPending}
+              onClick={() => navigateToPeriod(currentYear, currentMonth)}
+            >
+              Mês atual
+            </Button>
+          ) : null}
+        </div>
       </div>
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-lg bg-muted/40 p-3">

@@ -273,29 +273,58 @@ export async function setFiscalInstallmentGenerated(
       return err("Apenas a liderança do Fiscal ou um admin pode marcar parcelas geradas.");
     }
     const [installment] = await tx
-      .select({ id: schema.fiscalInstallments.id })
+      .select({
+        id: schema.fiscalInstallments.id,
+        paidInstallments: schema.fiscalInstallments.paidInstallments,
+        totalInstallments: schema.fiscalInstallments.totalInstallments,
+      })
       .from(schema.fiscalInstallments)
       .where(
         and(
           eq(schema.fiscalInstallments.orgId, ctx.orgId),
           eq(schema.fiscalInstallments.id, data.installmentId),
         ),
-      );
+      )
+      .for("update");
     if (!installment) return err("Parcelamento não encontrado.");
 
     if (data.generated) {
-      await tx
+      const canAdvance =
+        installment.totalInstallments === null ||
+        installment.paidInstallments < installment.totalInstallments;
+      const inserted = await tx
         .insert(schema.fiscalInstallmentIssuances)
         .values({
           orgId: ctx.orgId,
           installmentId: data.installmentId,
           periodYear: data.periodYear,
           periodMonth: data.periodMonth,
+          advancedPaid: canAdvance,
           generatedBy: ctx.userId,
         })
-        .onConflictDoNothing();
+        .onConflictDoNothing()
+        .returning({ id: schema.fiscalInstallmentIssuances.id });
+      if (inserted.length > 0 && canAdvance) {
+        const next = installment.paidInstallments + 1;
+        await tx
+          .update(schema.fiscalInstallments)
+          .set({
+            paidInstallments: next,
+            installmentNumber: installment.totalInstallments
+              ? `${next}/${installment.totalInstallments}`
+              : undefined,
+            updatedBy: ctx.userId,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(schema.fiscalInstallments.orgId, ctx.orgId),
+              eq(schema.fiscalInstallments.id, data.installmentId),
+            ),
+          );
+      }
     } else {
-      await tx
+      const removed = await tx
         .delete(schema.fiscalInstallmentIssuances)
         .where(
           and(
@@ -304,7 +333,27 @@ export async function setFiscalInstallmentGenerated(
             eq(schema.fiscalInstallmentIssuances.periodYear, data.periodYear),
             eq(schema.fiscalInstallmentIssuances.periodMonth, data.periodMonth),
           ),
-        );
+        )
+        .returning({ advancedPaid: schema.fiscalInstallmentIssuances.advancedPaid });
+      if (removed[0]?.advancedPaid && installment.paidInstallments > 0) {
+        const next = installment.paidInstallments - 1;
+        await tx
+          .update(schema.fiscalInstallments)
+          .set({
+            paidInstallments: next,
+            installmentNumber: installment.totalInstallments
+              ? `${next}/${installment.totalInstallments}`
+              : undefined,
+            updatedBy: ctx.userId,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(schema.fiscalInstallments.orgId, ctx.orgId),
+              eq(schema.fiscalInstallments.id, data.installmentId),
+            ),
+          );
+      }
     }
     return { ok: true };
   });

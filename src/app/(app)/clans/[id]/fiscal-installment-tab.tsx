@@ -22,16 +22,40 @@ function currentPeriodInSaoPaulo(): { year: number; month: number } {
   throw new Error("Não foi possível identificar a competência atual.");
 }
 
+function parsePeriod(
+  requestedYear: string | undefined,
+  requestedMonth: string | undefined,
+  current: { year: number; month: number },
+): { year: number; month: number } {
+  const year = Number(requestedYear);
+  const month = Number(requestedMonth);
+  return {
+    year:
+      Number.isInteger(year) && year >= 2000 && year <= 2100
+        ? year
+        : current.year,
+    month:
+      Number.isInteger(month) && month >= 1 && month <= 12
+        ? month
+        : current.month,
+  };
+}
+
 export async function FiscalInstallmentTab({
   orgId,
   clanId,
   canManage,
+  requestedYear,
+  requestedMonth,
 }: {
   orgId: string;
   clanId: string;
   canManage: boolean;
+  requestedYear?: string;
+  requestedMonth?: string;
 }) {
-  const period = currentPeriodInSaoPaulo();
+  const currentPeriod = currentPeriodInSaoPaulo();
+  const period = parsePeriod(requestedYear, requestedMonth, currentPeriod);
   const { rows, clients } = await withOrgTx(orgId, async (tx) => {
     const rows = await tx
       .select({
@@ -90,6 +114,8 @@ export async function FiscalInstallmentTab({
       clients={clients}
       periodYear={period.year}
       periodMonth={period.month}
+      currentYear={currentPeriod.year}
+      currentMonth={currentPeriod.month}
     />
   );
 }
