@@ -16,6 +16,7 @@ export type DashboardShortcutIcon =
   | "installments"
   | "fees"
   | "closings"
+  | "company-data"
   | "flow";
 
 export interface DashboardShortcutOption {
@@ -85,6 +86,7 @@ const TAB_DESCRIPTION: Record<ClanTab, string> = {
   installments: "Controle dos parcelamentos",
   fees: "Controle mensal de honorários",
   closings: "Fechamentos da Contabilidade",
+  "company-data": "Consulta cadastral por CNPJ",
   flow: "Fluxos de abertura, alteração e baixa",
 };
 

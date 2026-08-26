@@ -22,6 +22,7 @@ export const CLAN_TABS = [
   { key: "installments", label: "Parcelamentos" },
   { key: "fees", label: "Honorários" },
   { key: "closings", label: "Fechamentos" },
+  { key: "company-data", label: "Dados da empresa" },
   { key: "flow", label: "Fluxo" },
 ] as const;
 
@@ -34,6 +35,7 @@ const TAB_OWNER_SLUG: Partial<Record<ClanTab, string>> = {
   installments: FISCAL_CLAN_SLUG,
   fees: FISCAL_CLAN_SLUG,
   closings: CONTABILIDADE_CLAN_SLUG,
+  "company-data": SOCIETARIO_CLAN_SLUG,
   flow: SOCIETARIO_CLAN_SLUG,
 };
 

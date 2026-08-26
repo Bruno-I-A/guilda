@@ -7,6 +7,7 @@ import { mapBrasilApiResponse } from "./cnpj-lookup";
 function rawResponse(overrides: Record<string, unknown> = {}) {
   return {
     razao_social: "EMPRESA DE CONTABILIDADE LTDA",
+    nome_fantasia: "CONTABILIDADE TESTE",
     data_inicio_atividade: "2015-05-20",
     cnae_fiscal: 6920601,
     cnae_fiscal_descricao: "Atividades de contabilidade",
@@ -14,7 +15,34 @@ function rawResponse(overrides: Record<string, unknown> = {}) {
       { codigo: 6201501, descricao: "Desenvolvimento de programas de computador" },
     ],
     opcao_pelo_simples: true,
+    opcao_pelo_mei: false,
     descricao_situacao_cadastral: "ATIVA",
+    data_situacao_cadastral: "2015-05-20",
+    porte: "MICRO EMPRESA",
+    natureza_juridica: "Sociedade Empresária Limitada",
+    capital_social: 10000,
+    descricao_identificador_matriz_filial: "MATRIZ",
+    email: "contato@empresa.com.br",
+    ddd_telefone_1: "54999998888",
+    ddd_telefone_2: "5433332222",
+    logradouro: "RUA TESTE",
+    numero: "123",
+    complemento: "SALA 1",
+    bairro: "CENTRO",
+    municipio: "PASSO FUNDO",
+    uf: "RS",
+    cep: "99000000",
+    qsa: [
+      {
+        nome_socio: "MARIA TESTE",
+        cnpj_cpf_do_socio: "***123456**",
+        qualificacao_socio: "Sócio-Administrador",
+        data_entrada_sociedade: "2015-05-20",
+      },
+    ],
+    regime_tributario: [
+      { ano: 2025, forma_de_tributacao: "SIMPLES NACIONAL" },
+    ],
     ...overrides,
   };
 }
@@ -24,6 +52,7 @@ describe("mapBrasilApiResponse", () => {
     const data = mapBrasilApiResponse(rawResponse());
     expect(data).toEqual({
       legalName: "EMPRESA DE CONTABILIDADE LTDA",
+      tradeName: "CONTABILIDADE TESTE",
       cnaeCode: "6920601",
       cnaeDescription: "Atividades de contabilidade",
       secondaryCnaes: [
@@ -31,7 +60,33 @@ describe("mapBrasilApiResponse", () => {
       ],
       openedAt: "2015-05-20",
       isSimplesOptant: true,
+      isMeiOptant: false,
       cadastralSituation: "ATIVA",
+      cadastralSituationDate: "2015-05-20",
+      companySize: "MICRO EMPRESA",
+      legalNature: "Sociedade Empresária Limitada",
+      shareCapital: "10000.00",
+      headquartersType: "MATRIZ",
+      email: "contato@empresa.com.br",
+      phones: ["54999998888", "5433332222"],
+      address: {
+        street: "RUA TESTE",
+        number: "123",
+        complement: "SALA 1",
+        district: "CENTRO",
+        city: "PASSO FUNDO",
+        state: "RS",
+        zipCode: "99000000",
+      },
+      qsa: [
+        {
+          name: "MARIA TESTE",
+          document: "***123456**",
+          qualification: "Sócio-Administrador",
+          joinedAt: "2015-05-20",
+        },
+      ],
+      taxRegimes: [{ year: 2025, form: "SIMPLES NACIONAL" }],
     });
   });
 

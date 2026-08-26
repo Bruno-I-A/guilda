@@ -49,6 +49,14 @@ describe("abas específicas de cada clã", () => {
     expect(keys("rh")).not.toContain("commitments");
   });
 
+  test("Dados da empresa e Fluxo só existem no Societário", () => {
+    expect(keys("societario")).toEqual(
+      expect.arrayContaining(["company-data", "flow"]),
+    );
+    expect(keys("fiscal")).not.toContain("company-data");
+    expect(keys("contabilidade")).not.toContain("flow");
+  });
+
   test("cada área recebe somente as ferramentas do seu trabalho", () => {
     expect(keys("fiscal")).toContain("portfolio");
     expect(keys("fiscal")).not.toContain("closings");
@@ -73,6 +81,7 @@ describe("aba pedida na URL", () => {
     expect(parseClanTab("installments", "fiscal")).toBe("installments");
     expect(parseClanTab("fees", "fiscal")).toBe("fees");
     expect(parseClanTab("members", "rh")).toBe("members");
+    expect(parseClanTab("company-data", "societario")).toBe("company-data");
   });
 
   // O que impede ?tab=closings de renderizar fechamento num clã que não é o

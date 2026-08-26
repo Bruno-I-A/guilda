@@ -70,6 +70,7 @@ const SHORTCUT_ICONS: Record<DashboardShortcutIcon, LucideIcon> = {
   installments: ReceiptText,
   fees: WalletCards,
   closings: CalendarRange,
+  "company-data": Building2,
   flow: Workflow,
 };
 

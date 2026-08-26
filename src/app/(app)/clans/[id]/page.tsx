@@ -27,6 +27,7 @@ import { CommitmentsTab } from "./commitments-tab";
 import { MembersTab } from "./members-tab";
 import { MissionsTab } from "./missions-tab";
 import { PortfolioTab } from "./portfolio-tab";
+import { CompanyDataTab } from "./company-data-tab";
 import { CompanyFlowTab } from "./company-flow-tab";
 import { FiscalInstallmentTab } from "./fiscal-installment-tab";
 import { OfficeFeeTab } from "./office-fee-tab";
@@ -274,6 +275,10 @@ export default async function ClanPage({
           role={role}
           leadsThisClan={leadsThisClan}
         />
+      ) : null}
+
+      {activeTab === "company-data" ? (
+        <CompanyDataTab clanId={clan.id} />
       ) : null}
     </div>
   );

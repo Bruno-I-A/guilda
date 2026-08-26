@@ -2,6 +2,7 @@
 
 import {
   Archive,
+  Check,
   CheckCircle2,
   Clock3,
   ClipboardPenLine,
@@ -177,6 +178,29 @@ function splitActivities(value: string): FlowActivity[] {
     .map((description) => ({ description }));
 }
 
+type AmendmentField =
+  | "legalName"
+  | "taxRegime"
+  | "activities"
+  | "address"
+  | "socialCapital"
+  | "qsa"
+  | "contact";
+
+const AMENDMENT_FIELDS: readonly {
+  key: AmendmentField;
+  label: string;
+  description: string;
+}[] = [
+  { key: "legalName", label: "Razão social", description: "Novo nome empresarial" },
+  { key: "taxRegime", label: "Regime tributário", description: "Troca de enquadramento" },
+  { key: "activities", label: "Atividades", description: "Adicionar ou retirar CNAEs" },
+  { key: "address", label: "Endereço", description: "Novo endereço e IPTU" },
+  { key: "socialCapital", label: "Capital social", description: "Alteração do valor" },
+  { key: "qsa", label: "QSA", description: "Entrada, saída ou participação" },
+  { key: "contact", label: "Contato", description: "Nome, telefone ou e-mail" },
+];
+
 function eventLabel(eventType: string): string {
   const labels: Record<string, string> = {
     created: "Fluxo enviado ao Societário",
@@ -317,6 +341,7 @@ function NewCompanyFlowDialog({
   const [billingAmount, setBillingAmount] = useState("");
   const [billingDescription, setBillingDescription] = useState("");
   const [govPassword, setGovPassword] = useState("");
+  const [amendmentFields, setAmendmentFields] = useState<AmendmentField[]>([]);
 
   const matchingClients = useMemo(() => {
     const query = companySearch.trim().toLocaleLowerCase("pt-BR");
@@ -336,6 +361,18 @@ function NewCompanyFlowDialog({
     : kind === "closure"
       ? "Descreva os dados e o motivo da baixa"
       : "Descreva o pedido recebido do cliente";
+  const opening = kind === "opening";
+  const amendment = kind === "amendment";
+  const closing = kind === "closure";
+  const amendmentHas = (field: AmendmentField) => amendmentFields.includes(field);
+
+  function toggleAmendmentField(field: AmendmentField) {
+    setAmendmentFields((current) =>
+      current.includes(field)
+        ? current.filter((item) => item !== field)
+        : [...current, field],
+    );
+  }
 
   function submit() {
     startTransition(async () => {
@@ -344,22 +381,38 @@ function NewCompanyFlowDialog({
         kind,
         source: "written",
         existingClientId: kind === "opening" ? null : existingClientId || null,
-        requestedLegalName: legalName,
-        requestedActivities: splitActivities(activities),
-        removedActivities: splitActivities(removedActivities),
-        taxRegime: taxRegime || null,
-        iptu,
-        socialCapital,
-        roomSize,
-        address,
-        qsa,
-        contactName,
-        contactPhone,
-        contactEmail,
+        requestedLegalName:
+          opening || (amendment && amendmentHas("legalName")) ? legalName : "",
+        requestedActivities:
+          opening || (amendment && amendmentHas("activities"))
+            ? splitActivities(activities)
+            : [],
+        removedActivities:
+          amendment && amendmentHas("activities")
+            ? splitActivities(removedActivities)
+            : [],
+        taxRegime:
+          opening || (amendment && amendmentHas("taxRegime"))
+            ? taxRegime || null
+            : null,
+        iptu: opening || (amendment && amendmentHas("address")) ? iptu : "",
+        socialCapital:
+          opening || (amendment && amendmentHas("socialCapital"))
+            ? socialCapital
+            : "",
+        roomSize: opening ? roomSize : "",
+        address: opening || (amendment && amendmentHas("address")) ? address : "",
+        qsa: opening || (amendment && amendmentHas("qsa")) ? qsa : [],
+        contactName:
+          opening || (amendment && amendmentHas("contact")) ? contactName : "",
+        contactPhone:
+          opening || (amendment && amendmentHas("contact")) ? contactPhone : "",
+        contactEmail:
+          opening || (amendment && amendmentHas("contact")) ? contactEmail : "",
         requestDetails: details,
         billingAmount: opening ? "" : billingAmount,
         billingDescription: opening ? "" : billingDescription,
-        govPassword: govPassword || undefined,
+        govPassword: closing ? undefined : govPassword || undefined,
       });
       if (!result.ok) {
         toast.error(result.error);
@@ -371,8 +424,6 @@ function NewCompanyFlowDialog({
     });
   }
 
-  const opening = kind === "opening";
-  const closing = kind === "closure";
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -452,26 +503,43 @@ function NewCompanyFlowDialog({
 
           {kind === "amendment" ? (
             <section className="grid gap-4 rounded-md border bg-muted/20 p-3">
-              <div><h3 className="font-medium">Dados a alterar</h3><p className="text-xs text-muted-foreground">Preencha apenas os itens que mudarão na empresa.</p></div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="grid gap-1.5"><Label>Nova razão social</Label><Input value={legalName} onChange={(event) => setLegalName(event.target.value)} placeholder="Preencha se a razão social mudar" /></div>
-                <div className="grid gap-1.5"><Label>Novo regime tributário</Label><Select value={taxRegime || "unchanged"} onValueChange={(value) => setTaxRegime(value === "unchanged" ? "" : value as TaxRegime)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unchanged">Sem alteração</SelectItem>{TAX_REGIMES.map((value) => <SelectItem key={value} value={value}>{TAX_REGIME_LABELS[value]}</SelectItem>)}</SelectContent></Select></div>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div><h3 className="font-medium">O que será alterado?</h3><p className="text-xs text-muted-foreground">Selecione os itens para abrir somente os campos necessários.</p></div>
+                {amendmentFields.length > 0 ? <Badge variant="outline">{amendmentFields.length} selecionado{amendmentFields.length === 1 ? "" : "s"}</Badge> : null}
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="grid gap-1.5"><Label>Atividades a adicionar</Label><Textarea value={activities} onChange={(event) => setActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div>
-                <div className="grid gap-1.5"><Label>Atividades a retirar</Label><Textarea value={removedActivities} onChange={(event) => setRemovedActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {AMENDMENT_FIELDS.map((field) => {
+                  const selected = amendmentHas(field.key);
+                  return (
+                    <button
+                      key={field.key}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={selected}
+                      className={cn(
+                        "flex min-h-16 items-center gap-3 rounded-md border p-3 text-left transition-colors",
+                        selected
+                          ? "border-primary/60 bg-primary/10"
+                          : "bg-card/35 hover:border-primary/35 hover:bg-muted/35",
+                      )}
+                      onClick={() => toggleAmendmentField(field.key)}
+                    >
+                      <span className={cn("grid size-5 shrink-0 place-items-center rounded-sm border", selected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40")}>
+                        {selected ? <Check className="size-3.5" aria-hidden /> : null}
+                      </span>
+                      <span><strong className="block text-sm">{field.label}</strong><span className="text-xs text-muted-foreground">{field.description}</span></span>
+                    </button>
+                  );
+                })}
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="grid gap-1.5"><Label>Novo endereço</Label><Textarea value={address} onChange={(event) => setAddress(event.target.value)} rows={3} placeholder="Rua, número, complemento, bairro, cidade/UF e CEP" /></div>
-                <div className="grid gap-1.5"><Label>IPTU do novo endereço</Label><Input value={iptu} onChange={(event) => setIptu(event.target.value)} placeholder="Inscrição ou referência do IPTU" /></div>
-              </div>
-              <div className="grid gap-1.5"><Label>Novo capital social</Label><CurrencyInput value={socialCapital} onValueChange={setSocialCapital} placeholder="R$ 0,00" /></div>
-              <QsaFields value={qsa} onChange={setQsa} showChangeType />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="grid gap-1.5"><Label>Contato</Label><Input value={contactName} onChange={(event) => setContactName(event.target.value)} placeholder="Nome do contato" /></div>
-                <div className="grid gap-1.5"><Label>Telefone</Label><Input value={contactPhone} onChange={(event) => setContactPhone(event.target.value)} placeholder="(00) 00000-0000" /></div>
-                <div className="grid gap-1.5 sm:col-span-2"><Label>E-mail</Label><Input type="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} placeholder="contato@empresa.com" /></div>
-              </div>
+
+              {amendmentHas("legalName") ? <div className="grid gap-1.5"><Label>Nova razão social</Label><Input value={legalName} onChange={(event) => setLegalName(event.target.value)} placeholder="Digite a nova razão social" /></div> : null}
+              {amendmentHas("taxRegime") ? <div className="grid gap-1.5"><Label>Novo regime tributário</Label><Select value={taxRegime || undefined} onValueChange={(value) => setTaxRegime(value as TaxRegime)}><SelectTrigger><SelectValue placeholder="Selecione o novo regime" /></SelectTrigger><SelectContent>{TAX_REGIMES.map((value) => <SelectItem key={value} value={value}>{TAX_REGIME_LABELS[value]}</SelectItem>)}</SelectContent></Select></div> : null}
+              {amendmentHas("activities") ? <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-1.5"><Label>Atividades a adicionar</Label><Textarea value={activities} onChange={(event) => setActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div><div className="grid gap-1.5"><Label>Atividades a retirar</Label><Textarea value={removedActivities} onChange={(event) => setRemovedActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div></div> : null}
+              {amendmentHas("address") ? <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-1.5"><Label>Novo endereço</Label><Textarea value={address} onChange={(event) => setAddress(event.target.value)} rows={3} placeholder="Rua, número, complemento, bairro, cidade/UF e CEP" /></div><div className="grid gap-1.5"><Label>IPTU do novo endereço</Label><Input value={iptu} onChange={(event) => setIptu(event.target.value)} placeholder="Inscrição ou referência do IPTU" /></div></div> : null}
+              {amendmentHas("socialCapital") ? <div className="grid gap-1.5"><Label>Novo capital social</Label><CurrencyInput value={socialCapital} onValueChange={setSocialCapital} placeholder="R$ 0,00" /></div> : null}
+              {amendmentHas("qsa") ? <QsaFields value={qsa} onChange={setQsa} showChangeType /> : null}
+              {amendmentHas("contact") ? <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-1.5"><Label>Contato</Label><Input value={contactName} onChange={(event) => setContactName(event.target.value)} placeholder="Nome do contato" /></div><div className="grid gap-1.5"><Label>Telefone</Label><Input value={contactPhone} onChange={(event) => setContactPhone(event.target.value)} placeholder="(00) 00000-0000" /></div><div className="grid gap-1.5 sm:col-span-2"><Label>E-mail</Label><Input type="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} placeholder="contato@empresa.com" /></div></div> : null}
               <div className="grid gap-1.5"><Label>Observações</Label><Textarea value={details} onChange={(event) => setDetails(event.target.value)} rows={5} placeholder="Descreva informações, cuidados ou outras alterações solicitadas" /></div>
             </section>
           ) : null}
