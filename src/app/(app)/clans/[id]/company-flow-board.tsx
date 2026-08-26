@@ -269,6 +269,16 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
   const taxRegime = row.approvedTaxRegime ?? row.taxRegime;
   const address = row.approvedAddress ?? row.address;
   const qsa = row.approvedQsa.length > 0 ? row.approvedQsa : row.qsa;
+  const contactValues = [row.contactName, row.contactPhone, row.contactEmail].filter(Boolean);
+  const amendmentChangeCount = [
+    Boolean(row.requestedLegalName),
+    row.requestedActivities.length > 0 || row.removedActivities.length > 0,
+    Boolean(taxRegime),
+    Boolean(address || row.iptu),
+    Boolean(row.socialCapital),
+    qsa.length > 0,
+    contactValues.length > 0,
+  ].filter(Boolean).length;
   const requestedNameDiffers = Boolean(
     row.approvedLegalName &&
     row.requestedLegalName &&
@@ -277,23 +287,157 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
     }) !== 0,
   );
 
+  if (row.kind === "amendment") {
+    return (
+      <section className="grid gap-3 rounded-md border border-primary/45 bg-primary/5 p-3">
+        <div className="flex flex-wrap items-start justify-between gap-2 border-b border-primary/20 pb-3">
+          <div>
+            <p className="hud-label text-primary">Solicitação do cliente</p>
+            <h3 className="mt-1 text-base font-semibold">Alterações solicitadas</h3>
+          </div>
+          <Badge className="border-primary/40 bg-primary/15 text-primary" variant="outline">
+            {amendmentChangeCount} tipo{amendmentChangeCount === 1 ? "" : "s"} de alteração
+          </Badge>
+        </div>
+
+        <div className="rounded-md border bg-background/45 px-3 py-2">
+          <span className="hud-label">Empresa atual</span>
+          <p className="mt-1 font-semibold">{officialLegalName ?? "—"}</p>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          {row.requestedLegalName ? (
+            <div className="rounded-md border border-primary/30 bg-background/65 p-3 sm:col-span-2">
+              <Badge className="mb-2">Razão social</Badge>
+              <div className="grid items-center gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+                <div>
+                  <span className="text-[10px] font-medium tracking-wider text-muted-foreground uppercase">Atual</span>
+                  <p className="mt-0.5">{row.existingClientName ?? "Não informada"}</p>
+                </div>
+                <span className="hidden text-lg text-primary sm:block" aria-hidden>→</span>
+                <div>
+                  <span className="text-[10px] font-medium tracking-wider text-primary uppercase">Nova razão social</span>
+                  <p className="mt-0.5 font-semibold text-primary">{row.requestedLegalName}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {taxRegime ? (
+            <div className="rounded-md border border-primary/30 bg-background/65 p-3">
+              <Badge className="mb-2">Regime tributário</Badge>
+              <p className="text-[10px] font-medium tracking-wider text-primary uppercase">Novo regime</p>
+              <p className="mt-1 font-semibold">{TAX_REGIME_LABELS[taxRegime]}</p>
+            </div>
+          ) : null}
+
+          {row.socialCapital ? (
+            <div className="rounded-md border border-primary/30 bg-background/65 p-3">
+              <Badge className="mb-2">Capital social</Badge>
+              <p className="text-[10px] font-medium tracking-wider text-primary uppercase">Novo valor</p>
+              <p className="mt-1 font-semibold">{formatBRLCurrency(row.socialCapital)}</p>
+            </div>
+          ) : null}
+
+          {row.requestedActivities.length > 0 || row.removedActivities.length > 0 ? (
+            <div className="grid gap-2 rounded-md border border-primary/30 bg-background/65 p-3 sm:col-span-2">
+              <Badge className="w-fit">Atividades econômicas</Badge>
+              {row.requestedActivities.length > 0 ? (
+                <div>
+                  <p className="text-[10px] font-medium tracking-wider text-emerald-300 uppercase">Adicionar</p>
+                  <ul className="mt-1 grid gap-1">
+                    {row.requestedActivities.map((activity, index) => (
+                      <li key={`${activity.description}-${index}`} className="rounded bg-emerald-500/5 px-2 py-1.5">+ {activity.description}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {row.removedActivities.length > 0 ? (
+                <div>
+                  <p className="text-[10px] font-medium tracking-wider text-red-300 uppercase">Retirar</p>
+                  <ul className="mt-1 grid gap-1">
+                    {row.removedActivities.map((activity, index) => (
+                      <li key={`${activity.description}-${index}`} className="rounded bg-red-500/5 px-2 py-1.5">− {activity.description}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {address || row.iptu ? (
+            <div className="rounded-md border border-primary/30 bg-background/65 p-3 sm:col-span-2">
+              <Badge className="mb-2">Endereço</Badge>
+              {address ? <><p className="text-[10px] font-medium tracking-wider text-primary uppercase">Novo endereço</p><p className="mt-1 whitespace-pre-wrap font-medium">{address}</p></> : null}
+              {row.iptu ? <p className="mt-2 text-xs text-muted-foreground"><strong className="text-foreground">IPTU:</strong> {row.iptu}</p> : null}
+            </div>
+          ) : null}
+
+          {qsa.length > 0 ? (
+            <div className="grid gap-2 rounded-md border border-primary/30 bg-background/65 p-3 sm:col-span-2">
+              <Badge className="w-fit">Quadro societário</Badge>
+              {qsa.map((member, index) => (
+                <div key={`${member.name}-${index}`} className="rounded-md bg-muted/25 p-2.5">
+                  <p className="font-semibold">
+                    {member.changeType === "entered" ? "Entrada" : member.changeType === "left" ? "Saída" : "Alteração"} · {member.name}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {[member.document && `CPF/CNPJ: ${member.document}`, member.qualification, member.participation && `Participação: ${member.participation}`].filter(Boolean).join(" · ") || "Sem dados complementares"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {contactValues.length > 0 ? (
+            <div className="rounded-md border border-primary/30 bg-background/65 p-3 sm:col-span-2">
+              <Badge className="mb-2">Contato</Badge>
+              <p className="text-[10px] font-medium tracking-wider text-primary uppercase">Novos dados de contato</p>
+              <div className="mt-1 grid gap-1 sm:grid-cols-3">
+                {row.contactName ? <p><strong>Nome:</strong> {row.contactName}</p> : null}
+                {row.contactPhone ? <p><strong>Telefone:</strong> {row.contactPhone}</p> : null}
+                {row.contactEmail ? <p><strong>E-mail:</strong> {row.contactEmail}</p> : null}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {amendmentChangeCount === 0 ? (
+          <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">A alteração foi registrada somente nas observações abaixo.</p>
+        ) : null}
+        {row.requestDetails ? (
+          <div className="rounded-md border bg-background/35 p-3">
+            <strong>Observações:</strong>
+            <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{row.requestDetails}</p>
+          </div>
+        ) : null}
+        {row.billingAmount && row.billingDescription ? (
+          <div className="rounded-md border border-gold/30 bg-gold/5 p-3">
+            <strong>Cobrança do serviço:</strong> {formatBRLCurrency(row.billingAmount)}
+            <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{row.billingDescription}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Será enviada ao Financeiro na confirmação do Informativo.</p>
+          </div>
+        ) : null}
+      </section>
+    );
+  }
+
   return (
     <section className="grid gap-2 rounded-md border bg-muted/20 p-3">
       <p className="hud-label">Solicitação do cliente</p>
       <p><strong>{row.approvedLegalName ? "Razão social oficial:" : "Razão social:"}</strong> {officialLegalName ?? row.requestedLegalName ?? "—"}</p>
-      {row.kind === "amendment" && row.requestedLegalName ? <p><strong>Nova razão social:</strong> {row.requestedLegalName}</p> : null}
       {requestedNameDiffers ? (
         <p className="text-xs text-muted-foreground">
           <strong>Nome solicitado inicialmente:</strong> {row.requestedLegalName}
         </p>
       ) : null}
-      {row.requestedActivities.length > 0 ? <p><strong>{row.kind === "amendment" ? "Atividades a incluir:" : "Atividades:"}</strong> {row.requestedActivities.map((activity) => activity.description).join("; ")}</p> : null}
+      {row.requestedActivities.length > 0 ? <p><strong>Atividades:</strong> {row.requestedActivities.map((activity) => activity.description).join("; ")}</p> : null}
       {row.removedActivities.length > 0 ? <p><strong>Atividades a retirar:</strong> {row.removedActivities.map((activity) => activity.description).join("; ")}</p> : null}
-      {taxRegime ? <p><strong>{row.kind === "amendment" ? "Novo regime tributário:" : "Regime tributário:"}</strong> {TAX_REGIME_LABELS[taxRegime]}</p> : null}
+      {taxRegime ? <p><strong>Regime tributário:</strong> {TAX_REGIME_LABELS[taxRegime]}</p> : null}
       {row.iptu ? <p><strong>IPTU:</strong> {row.iptu}</p> : null}
-      {row.socialCapital ? <p><strong>{row.kind === "amendment" ? "Novo capital social:" : "Capital social:"}</strong> {formatBRLCurrency(row.socialCapital)}</p> : null}
+      {row.socialCapital ? <p><strong>Capital social:</strong> {formatBRLCurrency(row.socialCapital)}</p> : null}
       {row.roomSize ? <p><strong>Tamanho da sala:</strong> {row.roomSize}</p> : null}
-      {address ? <p className="whitespace-pre-wrap"><strong>{row.kind === "amendment" ? "Novo endereço:" : "Endereço:"}</strong> {address}</p> : null}
+      {address ? <p className="whitespace-pre-wrap"><strong>Endereço:</strong> {address}</p> : null}
       {row.clientResponsible ? <p><strong>Responsável:</strong> {row.clientResponsible}</p> : null}
       {qsa.length > 0 ? (
         <div>
@@ -307,7 +451,7 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
           </ul>
         </div>
       ) : null}
-      {[row.contactName, row.contactPhone, row.contactEmail].filter(Boolean).length > 0 ? <p><strong>Contato:</strong> {[row.contactName, row.contactPhone, row.contactEmail].filter(Boolean).join(" · ")}</p> : null}
+      {contactValues.length > 0 ? <p><strong>Contato:</strong> {contactValues.join(" · ")}</p> : null}
       {row.requestDetails ? <p className="whitespace-pre-wrap"><strong>Detalhes:</strong> {row.requestDetails}</p> : null}
       {row.billingAmount && row.billingDescription ? (
         <div className="mt-1 rounded-md border border-gold/30 bg-gold/5 p-3">
@@ -800,7 +944,7 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
                 <p className="text-xs text-muted-foreground">{simpleConfirmation ? "Confirme quando o processo estiver concluído. O dono seguirá para o Informativo." : "Registre os dados aprovados antes de devolver ao dono."}</p>
               </div>
               {simpleConfirmation ? (
-                <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">{amendment ? "Todos os dados da solicitação já foram revisados nesta ficha. Esta confirmação registra que a alteração foi concluída pelo Societário." : "Esta confirmação registra que a baixa foi concluída pelo Societário."}</div>
+                <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">{amendment ? "Confira as alterações destacadas acima. Ao confirmar, você registra que todos esses itens foram concluídos pelo Societário." : "Esta confirmação registra que a baixa foi concluída pelo Societário."}</div>
               ) : (
                 <>
                   <div className="grid gap-2 sm:grid-cols-[1fr_auto]"><div className="grid gap-1.5"><Label>CNPJ aprovado</Label><Input value={cnpj} onChange={(event) => setCnpj(event.target.value)} placeholder="00.000.000/0000-00" inputMode="numeric" /></div><Button type="button" className="self-end" variant="outline" disabled={pending || !cnpj.trim()} onClick={lookupCnpj}><Search aria-hidden /> Consultar CNPJ</Button></div>
