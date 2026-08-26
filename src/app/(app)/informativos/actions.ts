@@ -213,6 +213,8 @@ export async function analyzeInformative(input: {
           resultCnpj: schema.companyFlows.resultCnpj,
           taxRegime: schema.companyFlows.taxRegime,
           approvedTaxRegime: schema.companyFlows.approvedTaxRegime,
+          billingAmount: schema.companyFlows.billingAmount,
+          billingDescription: schema.companyFlows.billingDescription,
         })
         .from(schema.companyFlows)
         .where(
@@ -234,6 +236,8 @@ export async function analyzeInformative(input: {
       legalName: flow.approvedLegalName ?? flow.requestedLegalName,
       normalizedCnpj: flow.resultCnpj,
       taxRegime: flow.approvedTaxRegime ?? flow.taxRegime,
+      billingAmount: flow.billingAmount,
+      billingDescription: flow.billingDescription,
     };
     sourceForAi = actions;
   }

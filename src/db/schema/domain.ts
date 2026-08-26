@@ -860,6 +860,9 @@ export const companyFlows = pgTable(
     contactPhone: varchar("contact_phone", { length: 40 }),
     contactEmail: varchar("contact_email", { length: 200 }),
     requestDetails: text("request_details"),
+    /** Cobrança do serviço de alteração/baixa, destinada ao Financeiro. */
+    billingAmount: numeric("billing_amount", { precision: 15, scale: 2 }),
+    billingDescription: text("billing_description"),
     assignedTo: text("assigned_to").references(() => user.id),
     resultCnpj: varchar("result_cnpj", { length: 14 }),
     approvedLegalName: varchar("approved_legal_name", { length: 200 }),
@@ -927,6 +930,14 @@ export const companyFlows = pgTable(
     check(
       "company_flows_result_cnpj_check",
       sql`${t.resultCnpj} IS NULL OR ${t.resultCnpj} ~ '^\\d{14}$'`,
+    ),
+    check(
+      "company_flows_billing_pair_check",
+      sql`(${t.billingAmount} IS NULL AND ${t.billingDescription} IS NULL) OR (${t.billingAmount} IS NOT NULL AND ${t.billingDescription} IS NOT NULL AND ${t.billingAmount} > 0 AND length(btrim(${t.billingDescription})) > 0)`,
+    ),
+    check(
+      "company_flows_billing_kind_check",
+      sql`${t.kind} <> 'opening' OR (${t.billingAmount} IS NULL AND ${t.billingDescription} IS NULL)`,
     ),
   ],
 );

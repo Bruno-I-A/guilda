@@ -88,6 +88,8 @@ export interface CompanyFlowView {
   contactPhone: string | null;
   contactEmail: string | null;
   requestDetails: string | null;
+  billingAmount: string | null;
+  billingDescription: string | null;
   assignedTo: string | null;
   assignedName: string | null;
   resultCnpj: string | null;
@@ -274,6 +276,13 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
       ) : null}
       {[row.contactName, row.contactPhone, row.contactEmail].filter(Boolean).length > 0 ? <p><strong>Contato:</strong> {[row.contactName, row.contactPhone, row.contactEmail].filter(Boolean).join(" · ")}</p> : null}
       {row.requestDetails ? <p className="whitespace-pre-wrap"><strong>Detalhes:</strong> {row.requestDetails}</p> : null}
+      {row.billingAmount && row.billingDescription ? (
+        <div className="mt-1 rounded-md border border-gold/30 bg-gold/5 p-3">
+          <strong>Cobrança do serviço:</strong> {formatBRLCurrency(row.billingAmount)}
+          <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{row.billingDescription}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Será enviada ao Financeiro na confirmação do Informativo.</p>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -305,6 +314,8 @@ function NewCompanyFlowDialog({
   const [contactPhone, setContactPhone] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [details, setDetails] = useState("");
+  const [billingAmount, setBillingAmount] = useState("");
+  const [billingDescription, setBillingDescription] = useState("");
   const [govPassword, setGovPassword] = useState("");
 
   const matchingClients = useMemo(() => {
@@ -346,6 +357,8 @@ function NewCompanyFlowDialog({
         contactPhone,
         contactEmail,
         requestDetails: details,
+        billingAmount: opening ? "" : billingAmount,
+        billingDescription: opening ? "" : billingDescription,
         govPassword: govPassword || undefined,
       });
       if (!result.ok) {
@@ -469,7 +482,25 @@ function NewCompanyFlowDialog({
             <div className="grid gap-1.5"><Label>E-mail</Label><Input type="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} placeholder="contato@empresa.com" /></div>
           </div>
           <div className="grid gap-1.5"><Label>{detailLabel}</Label><Textarea value={details} onChange={(event) => setDetails(event.target.value)} rows={4} placeholder={detailPlaceholder} /></div></> : null}
-          {closing ? <div className="grid gap-1.5"><Label>Observações da baixa</Label><Textarea value={details} onChange={(event) => setDetails(event.target.value)} rows={6} placeholder="Descreva a data da baixa, cobrança, recibo e demais observações" /></div> : null}
+          {closing ? <div className="grid gap-1.5"><Label>Observações da baixa</Label><Textarea value={details} onChange={(event) => setDetails(event.target.value)} rows={6} placeholder="Descreva a data da baixa, recibo e demais observações" /></div> : null}
+          {!opening ? (
+            <section className="grid gap-3 rounded-md border border-gold/30 bg-gold/5 p-3">
+              <div>
+                <h3 className="font-medium">Cobrança do serviço</h3>
+                <p className="text-xs text-muted-foreground">Opcional. Preenchendo os dois campos, o Informativo gerará uma missão para o Financeiro.</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-[14rem_minmax(0,1fr)]">
+                <div className="grid gap-1.5">
+                  <Label>Valor cobrado</Label>
+                  <CurrencyInput value={billingAmount} onValueChange={setBillingAmount} placeholder="R$ 0,00" />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>Descrição da cobrança</Label>
+                  <Input value={billingDescription} onChange={(event) => setBillingDescription(event.target.value)} placeholder="Ex.: Honorários pela alteração contratual" />
+                </div>
+              </div>
+            </section>
+          ) : null}
           {closing ? null : <div className="grid gap-1.5 rounded-md border border-primary/30 bg-primary/5 p-3"><Label htmlFor="gov-password" className="flex items-center gap-1.5"><ShieldCheck className="size-4" aria-hidden /> Senha Gov.br (opcional)</Label><Input id="gov-password" type="password" autoComplete="new-password" value={govPassword} onChange={(event) => setGovPassword(event.target.value)} placeholder="Fica cifrada e não entra no histórico" /><p className="text-xs text-muted-foreground">Somente o dono, o responsável societário e a liderança do Societário podem revelar esta senha.</p></div>}
         </div>
         <DialogFooter><Button type="button" disabled={pending} onClick={submit}>{pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Send aria-hidden />} Enviar ao Societário</Button></DialogFooter>

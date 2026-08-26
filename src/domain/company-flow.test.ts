@@ -7,6 +7,7 @@ import {
   accountantChangeNoticeTitle,
   companyFlowAmendmentChanges,
   companyFlowAmendmentNoticeBody,
+  companyFlowBillingAction,
   companyFlowActionsText,
   companyFlowInformativeText,
   companyFlowInformativeNoticeTitle,
@@ -277,6 +278,63 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("SUCESSO DO CLIENTE – Retirar empresa do E-Auditoria.");
     expect(text).toContain("SUCESSO DO CLIENTE – Retirar empresa do Onvio.");
     expect(text).not.toContain("SERVIDOR");
+  });
+
+  test("prepara a cobrança de alteração e baixa para o Financeiro", () => {
+    expect(companyFlowBillingAction({
+      kind: "amendment",
+      billingAmount: "850.00",
+      billingDescription: "Alteração contratual e taxas.",
+    })).toEqual({
+      title: "Realizar cobrança de R$ 850,00",
+      description:
+        "Realizar a cobrança de R$ 850,00.\n\nDescrição informada no Fluxo: Alteração contratual e taxas.",
+      sourceSection:
+        "FINANCEIRO – Cobrar R$ 850,00 – Alteração contratual e taxas.",
+    });
+    expect(companyFlowBillingAction({
+      kind: "opening",
+      billingAmount: "850.00",
+      billingDescription: "Abertura.",
+    })).toBeNull();
+    expect(companyFlowBillingAction({
+      kind: "closure",
+      billingAmount: null,
+      billingDescription: null,
+    })).toBeNull();
+
+    const text = companyFlowInformativeText({
+      kind: "closure",
+      existingClientName: "EMPRESA BAIXADA LTDA",
+      existingClientCnpj: null,
+      existingClientTaxRegime: "simples",
+      requestedLegalName: null,
+      requestedActivities: [],
+      removedActivities: [],
+      taxRegime: null,
+      iptu: null,
+      socialCapital: null,
+      roomSize: null,
+      address: null,
+      clientResponsible: null,
+      qsa: [],
+      contactName: null,
+      contactPhone: null,
+      contactEmail: null,
+      requestDetails: "Baixa concluída.",
+      billingAmount: "850.00",
+      billingDescription: "Baixa empresarial e taxas.",
+      resultCnpj: null,
+      approvedLegalName: null,
+      approvedActivities: [],
+      approvedTaxRegime: null,
+      approvedAddress: null,
+      approvedQsa: [],
+      processingNotes: null,
+    });
+    expect(text).toContain("COBRANÇA DO SERVIÇO – R$ 850,00");
+    expect(text).toContain("DESCRIÇÃO – Baixa empresarial e taxas.");
+    expect(companyFlowActionsText(text)).not.toContain("FINANCEIRO");
   });
 
   test("prepara o desligamento por alteração de contador com as missões próprias", () => {

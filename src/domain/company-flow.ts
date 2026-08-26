@@ -104,6 +104,8 @@ export interface FlowInformativeInput {
   contactPhone: string | null;
   contactEmail: string | null;
   requestDetails: string | null;
+  billingAmount?: string | null;
+  billingDescription?: string | null;
   resultCnpj: string | null;
   approvedLegalName: string | null;
   approvedActivities: readonly FlowActivity[];
@@ -111,6 +113,33 @@ export interface FlowInformativeInput {
   approvedAddress: string | null;
   approvedQsa: readonly FlowQsaMember[];
   processingNotes: string | null;
+}
+
+export interface CompanyFlowBillingAction {
+  title: string;
+  description: string;
+  sourceSection: string;
+}
+
+function formatCompanyFlowBillingAmount(value: string | null | undefined): string {
+  // Intl usa espaço não separável depois de "R$"; no informativo e no título
+  // da missão precisamos de texto simples para pesquisa, cópia e Telegram.
+  return formatBRLCurrency(value).replace(/\u00a0/g, " ");
+}
+
+/** Missão financeira canônica; nasce dos campos do banco, sem depender da IA. */
+export function companyFlowBillingAction(
+  flow: Pick<FlowInformativeInput, "kind" | "billingAmount" | "billingDescription">,
+): CompanyFlowBillingAction | null {
+  if (flow.kind === "opening") return null;
+  const description = flow.billingDescription?.trim();
+  const formattedAmount = formatCompanyFlowBillingAmount(flow.billingAmount);
+  if (!description || !formattedAmount) return null;
+  return {
+    title: `Realizar cobrança de ${formattedAmount}`,
+    description: `Realizar a cobrança de ${formattedAmount}.\n\nDescrição informada no Fluxo: ${description}`,
+    sourceSection: `FINANCEIRO – Cobrar ${formattedAmount} – ${description}`,
+  };
 }
 
 export interface AmendmentChangeSummary {
@@ -234,6 +263,11 @@ export function companyFlowAmendmentNoticeBody(
     flow.requestDetails ? "" : null,
     flow.requestDetails ? "Observações da solicitação:" : null,
     flow.requestDetails,
+    flow.billingAmount && flow.billingDescription ? "" : null,
+    flow.billingAmount && flow.billingDescription ? "Cobrança do serviço:" : null,
+    flow.billingAmount && flow.billingDescription
+      ? `${formatCompanyFlowBillingAmount(flow.billingAmount)} — ${flow.billingDescription}`
+      : null,
     "",
     taskCount === 1
       ? "1 missão foi criada a partir desta alteração."
@@ -303,6 +337,13 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
       "",
       "OBSERVAÇÕES:",
       flow.requestDetails || "—",
+      flow.billingAmount && flow.billingDescription ? "" : null,
+      flow.billingAmount && flow.billingDescription
+        ? `COBRANÇA DO SERVIÇO – ${formatCompanyFlowBillingAmount(flow.billingAmount)}`
+        : null,
+      flow.billingAmount && flow.billingDescription
+        ? `DESCRIÇÃO – ${flow.billingDescription}`
+        : null,
       "",
       "AÇÕES",
       "SOCIETÁRIO – Baixar o Alvará.",
@@ -336,6 +377,12 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
       : null,
     flow.requestDetails ? `Solicitação: ${flow.requestDetails}` : null,
     flow.processingNotes ? `Retorno do Societário: ${flow.processingNotes}` : null,
+    flow.billingAmount && flow.billingDescription
+      ? `Cobrança do serviço: ${formatCompanyFlowBillingAmount(flow.billingAmount)}`
+      : null,
+    flow.billingAmount && flow.billingDescription
+      ? `Descrição da cobrança: ${flow.billingDescription}`
+      : null,
     "",
     "AÇÕES",
     flow.kind === "amendment"

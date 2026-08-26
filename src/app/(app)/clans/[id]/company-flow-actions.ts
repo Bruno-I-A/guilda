@@ -90,6 +90,8 @@ const flowBaseSchema = z.object({
   contactPhone: z.string().trim().max(40).optional(),
   contactEmail: z.string().trim().email("E-mail de contato inválido.").max(200).or(z.literal("")).optional(),
   requestDetails: z.string().trim().max(5000).optional(),
+  billingAmount: optionalMoneySchema("Valor cobrado").optional(),
+  billingDescription: z.string().trim().max(1000).optional(),
   govPassword: z.string().min(1).max(500).optional(),
 });
 
@@ -109,6 +111,29 @@ const createFlowSchema = flowBaseSchema.superRefine((data, ctx) => {
     }
   } else if (!data.existingClientId) {
     ctx.addIssue({ code: "custom", path: ["existingClientId"], message: "Escolha a empresa que será alterada ou baixada." });
+  }
+  const hasBillingAmount = Boolean(data.billingAmount);
+  const hasBillingDescription = Boolean(data.billingDescription?.trim());
+  if (hasBillingAmount !== hasBillingDescription) {
+    ctx.addIssue({
+      code: "custom",
+      path: hasBillingAmount ? ["billingDescription"] : ["billingAmount"],
+      message: "Informe o valor e a descrição da cobrança.",
+    });
+  }
+  if (data.billingAmount && Number(data.billingAmount) <= 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["billingAmount"],
+      message: "O valor cobrado deve ser maior que zero.",
+    });
+  }
+  if (data.kind === "opening" && (hasBillingAmount || hasBillingDescription)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["billingAmount"],
+      message: "A cobrança deste Fluxo está disponível somente para alterações e baixas.",
+    });
   }
 });
 
@@ -198,6 +223,8 @@ export async function createCompanyFlow(
         contactPhone: data.contactPhone || null,
         contactEmail: data.contactEmail || null,
         requestDetails: data.requestDetails || null,
+        billingAmount: data.kind === "opening" ? null : data.billingAmount ?? null,
+        billingDescription: data.kind === "opening" ? null : data.billingDescription || null,
         createdBy: ctx.userId,
       })
       .returning({ id: schema.companyFlows.id });

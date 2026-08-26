@@ -11,6 +11,7 @@ import {
 } from "@/domain/clan-routing";
 import { resolveAssigneeClan } from "@/domain/clans";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
+import { companyFlowBillingAction } from "@/domain/company-flow";
 import { extractObservationLines } from "@/domain/informative-text";
 import type { OrgRole } from "@/domain/task-state";
 import { resolveClientName } from "@/lib/ai/client-resolution";
@@ -75,6 +76,8 @@ export interface CompanyFlowDraftContext {
   legalName: string | null;
   normalizedCnpj: string | null;
   taxRegime: TaxRegime | null;
+  billingAmount: string | null;
+  billingDescription: string | null;
 }
 
 export type BuildInformativeDraftResult =
@@ -412,6 +415,55 @@ export async function buildInformativeDraft(
       reason: route.reason,
       suggestions,
     });
+  }
+
+  // A cobrança é um dado estruturado do Fluxo, portanto a missão não depende
+  // de a IA interpretar o texto e não corre o risco de ser omitida ou duplicada.
+  if (flowContext) {
+    const billing = companyFlowBillingAction(flowContext);
+    if (billing) {
+      const financeClan =
+        resolveSectorClan("Financeiro", routingClans, routingRules) ??
+        routingClans.find((clan) => clan.slug === "financeiro") ??
+        null;
+      const core = {
+        category: "general" as const,
+        title: billing.title,
+        description:
+          `${billing.description}\n\nTrecho da solicitação:\n${billing.sourceSection}`.slice(
+            0,
+            5000,
+          ),
+        priority: 2 as const,
+        difficulty: 1,
+        dueDate: null,
+        closingYear: null,
+        sourceSection: billing.sourceSection,
+        sector: "Financeiro",
+        suggestions: [],
+      };
+
+      tasks.push(
+        financeClan
+          ? {
+              ...core,
+              assignmentType: "clan",
+              assigneeId: null,
+              assigneeName: null,
+              clanId: financeClan.id,
+              clanName: financeClan.name,
+            }
+          : {
+              ...core,
+              assignmentType: "pending",
+              assigneeId: null,
+              assigneeName: null,
+              clanId: null,
+              clanName: null,
+              reason: "O clã Financeiro não está ativo ou não foi localizado.",
+            },
+      );
+    }
   }
 
   const warnings = [...extracted.data.warnings];
