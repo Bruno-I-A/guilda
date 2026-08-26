@@ -768,6 +768,7 @@ export async function confirmInformative(
         }, taskIds.length),
         clientId,
         informativeId: informative.id,
+        requiresAck: true,
       });
       noticePublished = Boolean(notice);
     } else if (directAccountantChange) {
@@ -791,7 +792,7 @@ export async function confirmInformative(
         requiresAck: true,
       });
       noticePublished = Boolean(notice);
-    } else if (taskIds.length > 0) {
+    } else {
       const trackingName =
         flowLegalName ?? payload.company.legalName ?? "Missões geradas";
       const notice = await publishGuildNotice(tx, {
@@ -812,6 +813,7 @@ export async function confirmInformative(
           .join("\n\n"),
         clientId,
         informativeId: informative.id,
+        requiresAck: true,
       });
       noticePublished = Boolean(notice);
     }

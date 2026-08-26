@@ -414,6 +414,13 @@
       "when": 1787623200000,
       "tag": "0058_allow_pending_fiscal_tax_regime_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1787709600000,
+      "tag": "0059_informative_notice_ack",
+      "breakpoints": true
     }
   ]
 }

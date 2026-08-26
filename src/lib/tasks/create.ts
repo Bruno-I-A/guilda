@@ -33,6 +33,16 @@ export type CreateTaskRecordInput = {
   dueDate?: Date | null;
 };
 
+/**
+ * O Informativo já publica um único aviso no Mural e no Telegram. As missões
+ * que compõem esse pacote não devem repetir o mesmo aviso uma a uma.
+ */
+export function shouldNotifyTaskCreation(
+  informativeId: string | null | undefined,
+): boolean {
+  return !informativeId;
+}
+
 /** Núcleo transacional compartilhado pela UI e pela confirmação via Telegram. */
 export async function createTaskRecord(
   tx: OrgTx,
@@ -116,7 +126,7 @@ export async function createTaskRecord(
     toStatus: "pending",
   });
 
-  if (input.assigneeId) {
+  if (shouldNotifyTaskCreation(input.informativeId) && input.assigneeId) {
     await enqueueTelegramNotificationIfEnabled(tx, {
       orgId: input.orgId,
       userId: input.assigneeId,
@@ -140,7 +150,7 @@ export async function createTaskRecord(
         ]],
       ),
     });
-  } else if (input.clanId) {
+  } else if (shouldNotifyTaskCreation(input.informativeId) && input.clanId) {
     const leaders = await tx
       .select({ userId: schema.clanMemberships.userId })
       .from(schema.clanMemberships)

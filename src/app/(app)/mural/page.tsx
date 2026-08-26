@@ -162,8 +162,8 @@ export default async function MuralPage() {
       <div>
         <h1 className="font-heading text-2xl font-semibold tracking-wide">Mural</h1>
         <p className="text-muted-foreground">
-          Avisos da Guilda inteira. Empresa nova entra aqui sozinha, junto com os
-          combinados que não viram missão.
+          Avisos da Guilda inteira. Informativos entram aqui com confirmação de
+          leitura e o acompanhamento das missões geradas.
         </p>
       </div>
 

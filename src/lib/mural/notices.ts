@@ -38,9 +38,10 @@ export function noticeUrl(noticeId: string, baseUrl?: string): string {
 }
 
 /**
- * Insere o aviso e, quando ele exige ciência, enfileira a notificação para
- * a Guilda inteira. Aviso sem `requiresAck` NÃO notifica — senão o mural
- * vira spam e as pessoas param de ler o que importa.
+ * Insere o aviso e, quando ele exige ciência, enfileira uma única notificação
+ * para cada integrante da Guilda. As missões de um Informativo não disparam
+ * notificações individuais de criação; este aviso representa o pacote todo.
+ * Aviso sem `requiresAck` NÃO notifica — senão o mural vira spam.
  *
  * Devolve `null` quando o aviso já existia (conflito do índice parcial).
  */
