@@ -270,6 +270,8 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("OBSERVAÇÕES:\nEMPRESA BAIXADA 30/06/2026");
     expect(text).toContain("SOCIETÁRIO – Baixar o Alvará.");
     expect(text).toContain("CONTABIL – Rafa/Bruno – Finalizar lançamentos até a data da baixa");
+    expect(text).toContain("RH – Carol/Jenifer – Baixar o pró-labore.");
+    expect(text).not.toContain("(efetuado)");
     expect(text).toContain("SUCESSO DO CLIENTE – Separar toda a documentação");
     expect(text).not.toContain("ATENDIMENTO – Jessica");
     expect(text).toContain("SUCESSO DO CLIENTE – Retirar empresa do E-Auditoria.");

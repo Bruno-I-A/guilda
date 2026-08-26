@@ -308,7 +308,7 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
       "SOCIETÁRIO – Baixar o Alvará.",
       "CONTABIL – Rafa/Bruno – Finalizar lançamentos até a data da baixa",
       "FISCAL – Fabi/Jessica – Finalizar todos os informativos da empresa até a data da baixa",
-      "RH – Carol/Jenifer – Baixar o pró-labore (efetuado)",
+      "RH – Carol/Jenifer – Baixar o pró-labore.",
       "SUCESSO DO CLIENTE – Separar toda a documentação, confeccionar o Protocolo de entrega, combinar a entrega com a cliente e cobrar a baixa.",
       "SUCESSO DO CLIENTE – Retirar empresa do E-Auditoria.",
       "SUCESSO DO CLIENTE – Retirar empresa do Onvio.",
