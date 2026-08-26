@@ -1,5 +1,6 @@
 import {
   and,
+  asc,
   count,
   desc,
   eq,
@@ -18,7 +19,13 @@ import { LevelEmblem } from "@/components/level-emblem";
 import { XpBar } from "@/components/xp-bar";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { filterVisibleClans } from "@/domain/clan-access";
+import type { OrgRole } from "@/domain/task-state";
 import { levelProgress } from "@/domain/xp";
+import {
+  dashboardShortcutOptions,
+  resolveDashboardShortcuts,
+} from "@/lib/dashboard-shortcuts";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 import {
   formatDueDate,
@@ -29,6 +36,8 @@ import {
 import { getUserXpTotal } from "@/lib/xp-queries";
 import { cn } from "@/lib/utils";
 
+import { DashboardShortcuts } from "./dashboard-shortcuts";
+
 export const metadata: Metadata = { title: "Início" };
 
 export default async function DashboardPage() {
@@ -37,7 +46,15 @@ export default async function DashboardPage() {
   if (!member) {
     redirect("/onboarding");
   }
-  const { memberCount, myTasks, clanTasks, hasClanLeadership } = await withOrgTx(
+  const {
+    memberCount,
+    myTasks,
+    clanTasks,
+    hasClanLeadership,
+    availableClans,
+    memberClanIds,
+    shortcutRows,
+  } = await withOrgTx(
     session.orgId,
     async (tx) => {
       const memberships = await tx
@@ -62,6 +79,25 @@ export default async function DashboardPage() {
           ),
         );
       const clanIds = memberships.map((membership) => membership.clanId);
+
+      const [clansForNavigation, savedShortcuts] = await Promise.all([
+        tx
+          .select({ id: schema.clans.id, name: schema.clans.name, slug: schema.clans.slug })
+          .from(schema.clans)
+          .where(and(eq(schema.clans.orgId, session.orgId), eq(schema.clans.active, true)))
+          .orderBy(asc(schema.clans.name)),
+        tx
+          .select({
+            target: schema.dashboardShortcuts.target,
+            label: schema.dashboardShortcuts.label,
+          })
+          .from(schema.dashboardShortcuts)
+          .where(and(
+            eq(schema.dashboardShortcuts.orgId, session.orgId),
+            eq(schema.dashboardShortcuts.userId, session.user.id),
+          ))
+          .orderBy(asc(schema.dashboardShortcuts.sortOrder)),
+      ]);
 
       const [guildStats] = await tx
         .select({ memberCount: count() })
@@ -118,6 +154,9 @@ export default async function DashboardPage() {
         myTasks: mine,
         clanTasks: clans,
         hasClanLeadership: memberships.some((membership) => membership.isLeader),
+        availableClans: clansForNavigation,
+        memberClanIds: clanIds,
+        shortcutRows: savedShortcuts,
       };
     },
   );
@@ -143,6 +182,15 @@ export default async function DashboardPage() {
   const totalXp = await getUserXpTotal(session.orgId, session.user.id);
   const progress = levelProgress(totalXp);
   const firstName = session.user.name.split(" ")[0];
+  const visibleClans = filterVisibleClans(
+    {
+      role: member.role as OrgRole,
+      memberClanIds,
+    },
+    availableClans,
+  );
+  const shortcutOptions = dashboardShortcutOptions(visibleClans);
+  const shortcuts = resolveDashboardShortcuts(shortcutRows, shortcutOptions);
 
   return (
     <div className="grid gap-6">
@@ -186,6 +234,8 @@ export default async function DashboardPage() {
           </div>
         </div>
       </section>
+
+      <DashboardShortcuts shortcuts={shortcuts} options={shortcutOptions} />
 
       <section className="grid gap-3">
         <div className="flex items-center gap-3">

@@ -1,8 +1,9 @@
 "use client";
 
 import {
-  Building2,
+  Archive,
   CheckCircle2,
+  Clock3,
   ClipboardPenLine,
   Eye,
   KeyRound,
@@ -12,6 +13,7 @@ import {
   Send,
   ShieldCheck,
   UserRoundCheck,
+  Workflow,
   XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -131,6 +133,39 @@ const STATUS_CLASS: Record<CompanyFlowStatus, string> = {
   completed: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
   cancelled: "border-muted-foreground/30 text-muted-foreground",
 };
+
+const OPEN_FLOW_STATUSES: readonly CompanyFlowStatus[] = [
+  "sent_to_corporate",
+  "in_progress",
+  "awaiting_owner",
+  "informative_drafting",
+];
+
+const HISTORY_FLOW_STATUSES: readonly CompanyFlowStatus[] = [
+  "completed",
+  "cancelled",
+];
+
+function flowStageDescription(row: CompanyFlowView): string {
+  switch (row.status) {
+    case "sent_to_corporate":
+      return "Aguardando o Societário assumir";
+    case "in_progress":
+      return row.assignedName
+        ? `Em processamento por ${row.assignedName}`
+        : "Em processamento no Societário";
+    case "awaiting_owner":
+      return "Retornado ao dono para preparar o Informativo";
+    case "informative_drafting":
+      return "Informativo em preparação";
+    case "completed":
+      return row.completedAt
+        ? `Concluído em ${new Date(row.completedAt).toLocaleDateString("pt-BR")}`
+        : "Fluxo concluído";
+    case "cancelled":
+      return "Fluxo cancelado";
+  }
+}
 
 function splitActivities(value: string): FlowActivity[] {
   return value
@@ -328,7 +363,7 @@ function NewCompanyFlowDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button type="button"><Plus aria-hidden /> Novo fluxo</Button>
+        <Button type="button" size="lg" className="shadow-sm"><Plus aria-hidden /> Criar novo fluxo</Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
@@ -615,18 +650,148 @@ export function CompanyFlowBoard({
 }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<CompanyFlowStatus | "all">("all");
-  const visible = useMemo(() => rows.filter((row) => {
-    const haystack = `${row.requestedLegalName ?? ""} ${row.approvedLegalName ?? ""} ${row.existingClientName ?? ""} ${row.resultCnpj ?? ""}`.toLocaleLowerCase("pt-BR");
-    return (!query.trim() || haystack.includes(query.trim().toLocaleLowerCase("pt-BR"))) && (status === "all" || row.status === status);
-  }), [query, rows, status]);
-  const active = rows.filter((row) => !["completed", "cancelled"].includes(row.status)).length;
+  const [view, setView] = useState<"open" | "history">("open");
+  const openRows = useMemo(
+    () => rows.filter((row) => OPEN_FLOW_STATUSES.includes(row.status)),
+    [rows],
+  );
+  const historyRows = useMemo(
+    () => rows.filter((row) => HISTORY_FLOW_STATUSES.includes(row.status)),
+    [rows],
+  );
+  const statusOptions = view === "open" ? OPEN_FLOW_STATUSES : HISTORY_FLOW_STATUSES;
+  const visible = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase("pt-BR");
+    const source = view === "open" ? openRows : historyRows;
+    return source.filter((row) => {
+      const haystack = `${row.requestedLegalName ?? ""} ${row.approvedLegalName ?? ""} ${row.existingClientName ?? ""} ${row.resultCnpj ?? ""}`.toLocaleLowerCase("pt-BR");
+      return (
+        (!normalizedQuery || haystack.includes(normalizedQuery)) &&
+        (status === "all" || row.status === status)
+      );
+    });
+  }, [historyRows, openRows, query, status, view]);
+
+  function changeView(next: "open" | "history") {
+    setView(next);
+    setStatus("all");
+    setQuery("");
+  }
 
   return (
-    <div className="grid gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="font-heading text-lg font-medium">Fluxo Societário</h2><p className="text-sm text-muted-foreground">O pedido entra pelo dono, o Societário processa e devolve os dados oficiais para o Informativos.</p></div>{canCreate ? <NewCompanyFlowDialog clanId={clanId} clients={clients} /> : null}</div>
-      <div className="grid gap-2 sm:grid-cols-3"><div className="rounded-lg bg-muted/40 p-3"><span className="text-xs text-muted-foreground">Em aberto</span><strong className="block font-mono text-lg">{active}</strong></div><div className="rounded-lg bg-muted/40 p-3"><span className="text-xs text-muted-foreground">No Societário</span><strong className="block font-mono text-lg">{rows.filter((row) => row.status === "in_progress").length}</strong></div><div className="rounded-lg bg-muted/40 p-3"><span className="text-xs text-muted-foreground">Aguardando dono</span><strong className="block font-mono text-lg">{rows.filter((row) => row.status === "awaiting_owner").length}</strong></div></div>
-      <div className="grid gap-2 md:grid-cols-[minmax(12rem,1fr)_15rem]"><div className="relative"><Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden /><Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar empresa, razão social ou CNPJ" /></div><Select value={status} onValueChange={(value) => setStatus(value as CompanyFlowStatus | "all")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todas as situações</SelectItem>{Object.entries(COMPANY_FLOW_STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
-      <div className="grid gap-3">{visible.map((row) => <article key={row.id} className={cn("panel-cut grid gap-3 rounded-lg border bg-card/50 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center", row.status === "cancelled" && "opacity-70")}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Badge variant="outline">{COMPANY_FLOW_KIND_LABELS[row.kind]}</Badge><Badge variant="outline" className={STATUS_CLASS[row.status]}>{COMPANY_FLOW_STATUS_LABELS[row.status]}</Badge></div><h3 className="mt-2 truncate font-medium">{row.approvedLegalName ?? row.requestedLegalName ?? row.existingClientName ?? "Empresa"}</h3><p className="mt-1 text-xs text-muted-foreground">{row.resultCnpj ? formatCnpj(row.resultCnpj) : FLOW_SOURCE_LABELS[row.source]} · {row.assignedName ? `Societário: ${row.assignedName}` : "Sem responsável societário"}</p>{row.processingNotes ? <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{row.processingNotes}</p> : null}</div><FlowDetailDialog clanId={clanId} row={row} /></article>)}{visible.length === 0 ? <div className="grid justify-items-center gap-2 rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground"><Building2 className="size-7" aria-hidden />Nenhum Fluxo encontrado.</div> : null}</div>
+    <div className="grid gap-5">
+      <section className="panel-cut flex flex-col gap-5 border-l-2 border-l-primary bg-card/50 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="grid size-11 shrink-0 place-items-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
+            <Workflow className="size-5" aria-hidden />
+          </span>
+          <div>
+            <p className="hud-label mb-1">Central de solicitações</p>
+            <h2 className="font-heading text-xl font-medium">Fluxo Societário</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              Crie pedidos de abertura, alteração e baixa. A tela principal mostra somente o que ainda precisa de ação.
+            </p>
+          </div>
+        </div>
+        {canCreate ? <NewCompanyFlowDialog clanId={clanId} clients={clients} /> : null}
+      </section>
+
+      <div className="flex w-fit rounded-lg border bg-muted/25 p-1" role="tablist" aria-label="Visão dos fluxos">
+        <Button
+          type="button"
+          variant={view === "open" ? "secondary" : "ghost"}
+          aria-pressed={view === "open"}
+          onClick={() => changeView("open")}
+        >
+          <Clock3 aria-hidden /> Em andamento
+          <span className="rounded-full bg-background/60 px-1.5 font-mono text-[10px]">{openRows.length}</span>
+        </Button>
+        <Button
+          type="button"
+          variant={view === "history" ? "secondary" : "ghost"}
+          aria-pressed={view === "history"}
+          onClick={() => changeView("history")}
+        >
+          <Archive aria-hidden /> Concluídos
+          <span className="rounded-full bg-background/60 px-1.5 font-mono text-[10px]">{historyRows.length}</span>
+        </Button>
+      </div>
+
+      {view === "open" ? (
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="rounded-lg border bg-card/35 p-3">
+            <span className="text-xs text-muted-foreground">Aguardando atendimento</span>
+            <strong className="mt-1 block font-mono text-xl">{openRows.filter((row) => row.status === "sent_to_corporate").length}</strong>
+          </div>
+          <div className="rounded-lg border bg-card/35 p-3">
+            <span className="text-xs text-muted-foreground">Em processamento</span>
+            <strong className="mt-1 block font-mono text-xl">{openRows.filter((row) => row.status === "in_progress").length}</strong>
+          </div>
+          <div className="rounded-lg border bg-card/35 p-3">
+            <span className="text-xs text-muted-foreground">Com o dono / Informativo</span>
+            <strong className="mt-1 block font-mono text-xl">{openRows.filter((row) => ["awaiting_owner", "informative_drafting"].includes(row.status)).length}</strong>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <h3 className="font-medium">Histórico de fluxos</h3>
+          <p className="text-sm text-muted-foreground">Consulte processos concluídos ou cancelados sem misturá-los ao trabalho do dia.</p>
+        </div>
+      )}
+
+      <div className="grid gap-2 md:grid-cols-[minmax(12rem,1fr)_15rem]">
+        <div className="relative">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Buscar nos fluxos ${view === "open" ? "em andamento" : "concluídos"}`} />
+        </div>
+        <Select value={status} onValueChange={(value) => setStatus(value as CompanyFlowStatus | "all")}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas as situações</SelectItem>
+            {statusOptions.map((value) => <SelectItem key={value} value={value}>{COMPANY_FLOW_STATUS_LABELS[value]}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="grid gap-2">
+        {visible.map((row) => (
+          <article
+            key={row.id}
+            className={cn(
+              "panel-cut grid gap-3 border-l-2 border-l-primary/45 bg-card/45 p-4 transition-colors hover:bg-accent/25 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center",
+              row.status === "cancelled" && "border-l-muted-foreground/40 opacity-70",
+            )}
+          >
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">{COMPANY_FLOW_KIND_LABELS[row.kind]}</Badge>
+                <Badge variant="outline" className={STATUS_CLASS[row.status]}>{COMPANY_FLOW_STATUS_LABELS[row.status]}</Badge>
+              </div>
+              <h3 className="mt-2 truncate text-base font-medium">{row.approvedLegalName ?? row.requestedLegalName ?? row.existingClientName ?? "Empresa"}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{flowStageDescription(row)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {row.resultCnpj ? formatCnpj(row.resultCnpj) : `Origem: ${FLOW_SOURCE_LABELS[row.source]}`}
+                {` · Atualizado ${new Date(row.updatedAt).toLocaleDateString("pt-BR")}`}
+              </p>
+              {row.processingNotes ? <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{row.processingNotes}</p> : null}
+            </div>
+            <FlowDetailDialog clanId={clanId} row={row} />
+          </article>
+        ))}
+        {visible.length === 0 ? (
+          <div className="grid min-h-44 justify-items-center content-center gap-2 rounded-lg border border-dashed p-8 text-center">
+            {view === "open" ? <CheckCircle2 className="size-8 text-emerald-400" aria-hidden /> : <Archive className="size-8 text-muted-foreground" aria-hidden />}
+            <p className="font-medium">{view === "open" ? "Nenhum fluxo em andamento" : "Nenhum fluxo no histórico"}</p>
+            <p className="max-w-md text-sm text-muted-foreground">
+              {query || status !== "all"
+                ? "Tente limpar a busca ou mudar o filtro."
+                : view === "open"
+                  ? "Quando um novo pedido for criado, ele aparecerá aqui."
+                  : "Os fluxos concluídos e cancelados aparecerão nesta área."}
+            </p>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

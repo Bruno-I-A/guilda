@@ -104,6 +104,39 @@ export const clanMemberships = pgTable(
   ],
 );
 
+/** Atalhos pessoais exibidos no início; cada usuário organiza os seus. */
+export const dashboardShortcuts = pgTable(
+  "dashboard_shortcuts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    target: varchar("target", { length: 180 }).notNull(),
+    label: varchar("label", { length: 80 }).notNull(),
+    sortOrder: smallint("sort_order").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("dashboard_shortcuts_org_user_target_uidx").on(
+      t.orgId,
+      t.userId,
+      t.target,
+    ),
+    index("dashboard_shortcuts_org_user_order_idx").on(
+      t.orgId,
+      t.userId,
+      t.sortOrder,
+    ),
+    check("dashboard_shortcuts_label_check", sql`length(btrim(${t.label})) > 0`),
+    check("dashboard_shortcuts_sort_order_check", sql`${t.sortOrder} >= 0`),
+  ],
+);
+
 /**
  * Regra configurável de roteamento do Informativo.
  * Cada nome de setor normalizado aponta para a fila do clã (userId nulo) ou
