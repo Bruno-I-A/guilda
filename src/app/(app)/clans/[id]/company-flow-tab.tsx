@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -28,8 +28,8 @@ export async function CompanyFlowTab({
   role: "owner" | "admin" | "member";
   leadsThisClan: boolean;
 }) {
-  const { flows, events, clients, viewerIsCorporateMember } = await withOrgTx(orgId, async (tx) => {
-    const [flows, clients, viewerIsCorporateMember] = await Promise.all([
+  const { flows, events, viewerIsCorporateMember } = await withOrgTx(orgId, async (tx) => {
+    const [flows, viewerIsCorporateMember] = await Promise.all([
       tx
         .select({
           flow: schema.companyFlows,
@@ -61,11 +61,6 @@ export async function CompanyFlowTab({
           ),
         )
         .orderBy(desc(schema.companyFlows.updatedAt)),
-      tx
-        .select({ id: schema.clients.id, name: schema.clients.name })
-        .from(schema.clients)
-        .where(and(eq(schema.clients.orgId, orgId), eq(schema.clients.active, true)))
-        .orderBy(asc(schema.clients.name)),
       isActiveClanMember(tx, orgId, clanId, viewerId),
     ]);
 
@@ -97,7 +92,6 @@ export async function CompanyFlowTab({
     return {
       flows: flows.map((row) => ({ ...row, createdByName: namesById.get(row.flow.createdBy) ?? "Pessoa removida" })),
       events,
-      clients,
       viewerIsCorporateMember,
     };
   });
@@ -144,7 +138,6 @@ export async function CompanyFlowTab({
     <CompanyFlowBoard
       clanId={clanId}
       canCreate={canCreateCompanyFlow(actorFacts)}
-      clients={clients}
       rows={rows}
     />
   );

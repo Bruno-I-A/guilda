@@ -27,6 +27,7 @@ import {
 import { isActiveClanMember, loadClanScopedFacts } from "@/lib/clans/facts";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 import { SOCIETARIO_CLAN_SLUG } from "@/lib/clans/rules";
+import { resolveClientName } from "@/lib/ai/client-resolution";
 import {
   decryptFlowSecret,
   encryptFlowSecret,
@@ -175,6 +176,12 @@ export interface CompanyDataLookupView extends CnpjLookupData {
   normalizedCnpj: string;
 }
 
+export interface CompanyFlowClientLookupView {
+  company: CompanyDataLookupView;
+  client: { id: string; name: string } | null;
+  matchedBy: "cnpj" | "name" | null;
+}
+
 /** Consulta avulsa da área Societária. Apenas lê a Receita; não altera cadastro. */
 export async function lookupCompanyDataCnpj(
   input: z.input<typeof companyDataLookupSchema>,
@@ -214,6 +221,65 @@ export async function lookupCompanyDataCnpj(
   return {
     ok: true,
     data: { ...result.data, normalizedCnpj },
+  };
+}
+
+/**
+ * Consulta usada no Novo Fluxo: além da Receita, resolve a empresa ativa do
+ * painel para que alteração/baixa nunca seja vinculada ao cliente errado.
+ */
+export async function lookupCompanyFlowClientCnpj(
+  input: z.input<typeof companyDataLookupSchema>,
+): Promise<ActionResult<CompanyFlowClientLookupView>> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  const parsed = companyDataLookupSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+
+  const normalizedCnpj = normalizeCnpj(parsed.data.cnpj);
+  if (!validateCnpj(normalizedCnpj)) {
+    return err("CNPJ inválido — confira os dígitos.");
+  }
+
+  const authorized = await withOrgTx(ctx.orgId, async (tx) => {
+    const corporate = await requireCorporateFlowClan(tx, {
+      orgId: ctx.orgId,
+      clanId: parsed.data.clanId,
+      userId: ctx.userId,
+      role: ctx.role,
+    });
+    return Boolean(corporate && canCreateCompanyFlow(corporate.facts));
+  });
+  if (!authorized) return err("Apenas owner ou admin pode abrir um Fluxo.");
+
+  const result = await lookupCnpj(normalizedCnpj);
+  if (!result.ok) {
+    return err(
+      result.reason === "not_found"
+        ? "CNPJ não encontrado na Receita."
+        : "Não foi possível consultar a Receita agora. Tente novamente.",
+    );
+  }
+
+  const clients = await withOrgTx(ctx.orgId, (tx) =>
+    tx
+      .select({ id: schema.clients.id, name: schema.clients.name, cnpj: schema.clients.cnpj })
+      .from(schema.clients)
+      .where(and(eq(schema.clients.orgId, ctx.orgId), eq(schema.clients.active, true))),
+  );
+  const cnpjMatch = clients.find((client) => client.cnpj === normalizedCnpj) ?? null;
+  const nameMatch = cnpjMatch
+    ? null
+    : resolveClientName(result.data.legalName, clients);
+  const client = cnpjMatch ?? nameMatch;
+
+  return {
+    ok: true,
+    data: {
+      company: { ...result.data, normalizedCnpj },
+      client: client ? { id: client.id, name: client.name } : null,
+      matchedBy: cnpjMatch ? "cnpj" : nameMatch ? "name" : null,
+    },
   };
 }
 
