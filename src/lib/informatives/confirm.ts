@@ -652,7 +652,7 @@ export async function confirmInformative(
           eq(schema.companyFlows.informativeId, informative.id),
         ),
       )
-      .for("update");
+      .for("update", { of: schema.companyFlows });
 
     // Aviso de empresa nova na MESMA transação, idempotente pelo índice
     // parcial: reconfirmar o informativo não gera um segundo aviso.
