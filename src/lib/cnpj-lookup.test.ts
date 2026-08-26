@@ -38,6 +38,7 @@ function rawResponse(overrides: Record<string, unknown> = {}) {
         cnpj_cpf_do_socio: "***123456**",
         qualificacao_socio: "Sócio-Administrador",
         data_entrada_sociedade: "2015-05-20",
+        percentual_capital_social: "60,5",
       },
     ],
     regime_tributario: [
@@ -84,6 +85,7 @@ describe("mapBrasilApiResponse", () => {
           document: "***123456**",
           qualification: "Sócio-Administrador",
           joinedAt: "2015-05-20",
+          participation: "60,5%",
         },
       ],
       taxRegimes: [{ year: 2025, form: "SIMPLES NACIONAL" }],
@@ -93,6 +95,13 @@ describe("mapBrasilApiResponse", () => {
   test("sem atividades secundárias vira array vazio, não null", () => {
     const data = mapBrasilApiResponse(rawResponse({ cnaes_secundarios: [] }));
     expect(data?.secondaryCnaes).toEqual([]);
+  });
+
+  test("participação societária ausente permanece explícita como não informada", () => {
+    const data = mapBrasilApiResponse(rawResponse({
+      qsa: [{ nome_socio: "MARIA TESTE", qualificacao_socio: "Sócio-Administrador" }],
+    }));
+    expect(data?.qsa[0]?.participation).toBeNull();
   });
 
   test("opcao_pelo_simples ausente (não booleano) vira null, nunca false por acidente", () => {

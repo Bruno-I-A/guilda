@@ -19,6 +19,8 @@ export interface CnpjQsaMember {
   document: string | null;
   qualification: string | null;
   joinedAt: string | null;
+  /** A consulta pública normalmente não informa a participação societária. */
+  participation: string | null;
 }
 
 export interface CnpjTaxRegimeEntry {
@@ -75,6 +77,9 @@ interface BrasilApiQsaRaw {
   cnpj_cpf_do_socio?: unknown;
   qualificacao_socio?: unknown;
   data_entrada_sociedade?: unknown;
+  percentual_capital_social?: unknown;
+  participacao_societaria?: unknown;
+  participacao?: unknown;
 }
 
 interface BrasilApiTaxRegimeRaw {
@@ -137,6 +142,14 @@ function asDecimal(value: unknown): string | null {
   return raw && Number.isFinite(numeric) ? numeric.toFixed(2) : null;
 }
 
+function asPercentage(value: unknown): string | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const raw = String(value).trim().replace(",", ".").replace(/%$/, "").trim();
+  const numeric = Number(raw);
+  if (!raw || !Number.isFinite(numeric)) return null;
+  return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 4 }).format(numeric)}%`;
+}
+
 /**
  * Mapeia a resposta bruta da BrasilAPI para o formato do projeto. Pura —
  * sem rede — para ser testável isoladamente.
@@ -174,6 +187,11 @@ export function mapBrasilApiResponse(raw: unknown): CnpjLookupData | null {
         document: asText(item.cnpj_cpf_do_socio),
         qualification: asText(item.qualificacao_socio),
         joinedAt: asDate(item.data_entrada_sociedade),
+        participation: asPercentage(
+          item.percentual_capital_social ??
+            item.participacao_societaria ??
+            item.participacao,
+        ),
       };
     })
     .filter((entry): entry is CnpjQsaMember => entry !== null);

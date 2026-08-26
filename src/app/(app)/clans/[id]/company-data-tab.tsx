@@ -252,7 +252,12 @@ export function CompanyDataTab({ clanId }: { clanId: string }) {
               <div className="grid gap-2 md:grid-cols-2">
                 {company.qsa.map((member, index) => (
                   <div key={`${member.name}-${index}`} className="rounded-md border bg-muted/15 p-3">
-                    <p className="font-medium">{member.name}</p>
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <p className="font-medium">{member.name}</p>
+                      <Badge variant={member.participation ? "default" : "outline"}>
+                        {member.participation ?? "Percentual não informado"}
+                      </Badge>
+                    </div>
                     <p className="mt-1 text-xs text-muted-foreground">{member.qualification ?? "Qualificação não informada"}</p>
                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       {member.document ? <span className="font-mono">{member.document}</span> : null}
@@ -262,6 +267,9 @@ export function CompanyDataTab({ clanId }: { clanId: string }) {
                 ))}
               </div>
             ) : <p className="text-sm text-muted-foreground">Quadro societário não informado.</p>}
+            {company.qsa.some((member) => !member.participation) ? (
+              <p className="text-xs text-amber-200/85">A consulta pública da Receita não informa a porcentagem societária. Confira a participação de cada sócio no contrato social.</p>
+            ) : null}
           </section>
 
           {company.taxRegimes.length > 0 ? (

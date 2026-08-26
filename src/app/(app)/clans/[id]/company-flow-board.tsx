@@ -180,6 +180,13 @@ function splitActivities(value: string): FlowActivity[] {
     .map((description) => ({ description }));
 }
 
+function formatLookupDate(value: string | null): string | null {
+  if (!value) return null;
+  return new Date(`${value}T12:00:00Z`).toLocaleDateString("pt-BR", {
+    timeZone: "UTC",
+  });
+}
+
 type AmendmentField =
   | "legalName"
   | "taxRegime"
@@ -503,11 +510,72 @@ function NewCompanyFlowDialog({
               )}
               <div className="grid gap-2 text-sm sm:grid-cols-2">
                 <div className="rounded-md bg-background/35 p-2.5"><strong className="block text-xs">Endereço atual</strong><span className="mt-1 block text-muted-foreground">{consultedCompany.company.address ? [[consultedCompany.company.address.street, consultedCompany.company.address.number].filter(Boolean).join(", "), consultedCompany.company.address.city, consultedCompany.company.address.state].filter(Boolean).join(" · ") : "Não informado"}</span></div>
-                <div className="rounded-md bg-background/35 p-2.5"><strong className="block text-xs">Atividade principal</strong><span className="mt-1 block text-muted-foreground">{consultedCompany.company.cnaeDescription ?? "Não informada"}{consultedCompany.company.secondaryCnaes.length > 0 ? ` · +${consultedCompany.company.secondaryCnaes.length} secundária${consultedCompany.company.secondaryCnaes.length === 1 ? "" : "s"}` : ""}</span></div>
                 <div className="rounded-md bg-background/35 p-2.5"><strong className="block text-xs">Capital social</strong><span className="mt-1 block text-muted-foreground">{consultedCompany.company.shareCapital ? formatBRLCurrency(consultedCompany.company.shareCapital) : "Não informado"}</span></div>
                 <div className="rounded-md bg-background/35 p-2.5"><strong className="block text-xs">Regime disponível</strong><span className="mt-1 block text-muted-foreground">{consultedCompany.company.isSimplesOptant ? "Simples Nacional" : consultedCompany.company.taxRegimes[0]?.form ?? "Não informado"}</span></div>
                 <div className="rounded-md bg-background/35 p-2.5"><strong className="block text-xs">Natureza jurídica</strong><span className="mt-1 block text-muted-foreground">{consultedCompany.company.legalNature ?? "Não informada"}</span></div>
-                <div className="rounded-md bg-background/35 p-2.5"><strong className="block text-xs">QSA atual</strong><span className="mt-1 block text-muted-foreground">{consultedCompany.company.qsa.length > 0 ? `${consultedCompany.company.qsa.slice(0, 4).map((member) => member.name).join("; ")}${consultedCompany.company.qsa.length > 4 ? `; +${consultedCompany.company.qsa.length - 4}` : ""}` : "Não informado"}</span></div>
+              </div>
+
+              <div className="grid gap-2 rounded-md bg-background/35 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <strong className="text-xs">Atividades econômicas com CNAE</strong>
+                  <Badge variant="outline">
+                    {(consultedCompany.company.cnaeDescription ? 1 : 0) + consultedCompany.company.secondaryCnaes.length} atividade{(consultedCompany.company.cnaeDescription ? 1 : 0) + consultedCompany.company.secondaryCnaes.length === 1 ? "" : "s"}
+                  </Badge>
+                </div>
+                {consultedCompany.company.cnaeDescription ? (
+                  <div className="rounded-md border border-primary/25 bg-primary/5 p-2.5 text-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge>Principal</Badge>
+                      <span className="font-mono text-xs text-muted-foreground">{consultedCompany.company.cnaeCode ?? "CNAE não informado"}</span>
+                    </div>
+                    <p className="mt-1.5">{consultedCompany.company.cnaeDescription}</p>
+                  </div>
+                ) : null}
+                {consultedCompany.company.secondaryCnaes.length > 0 ? (
+                  <div className="grid max-h-48 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2">
+                    {consultedCompany.company.secondaryCnaes.map((activity) => (
+                      <div key={`${activity.code}-${activity.description}`} className="rounded-md border bg-muted/15 p-2.5 text-sm">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">Secundária</Badge>
+                          <span className="font-mono text-xs text-muted-foreground">{activity.code}</span>
+                        </div>
+                        <p className="mt-1.5">{activity.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {!consultedCompany.company.cnaeDescription && consultedCompany.company.secondaryCnaes.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Atividades não informadas.</p>
+                ) : null}
+              </div>
+
+              <div className="grid gap-2 rounded-md bg-background/35 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <strong className="text-xs">QSA atual</strong>
+                  <Badge variant="outline">{consultedCompany.company.qsa.length} integrante{consultedCompany.company.qsa.length === 1 ? "" : "s"}</Badge>
+                </div>
+                {consultedCompany.company.qsa.length > 0 ? (
+                  <div className="grid max-h-52 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2">
+                    {consultedCompany.company.qsa.map((member, index) => (
+                      <div key={`${member.name}-${index}`} className="rounded-md border bg-muted/15 p-2.5 text-sm">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <p className="font-medium">{member.name}</p>
+                          <Badge variant={member.participation ? "default" : "outline"}>
+                            {member.participation ?? "Percentual não informado"}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">{member.qualification ?? "Qualificação não informada"}</p>
+                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                          {member.document ? <span className="font-mono">{member.document}</span> : null}
+                          {member.joinedAt ? <span>Entrada em {formatLookupDate(member.joinedAt)}</span> : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="text-sm text-muted-foreground">Quadro societário não informado.</p>}
+                {consultedCompany.company.qsa.some((member) => !member.participation) ? (
+                  <p className="text-xs text-amber-200/85">A consulta pública da Receita não informa a porcentagem societária. Confira a participação de cada sócio no contrato social.</p>
+                ) : null}
               </div>
             </section>
           ) : null}
