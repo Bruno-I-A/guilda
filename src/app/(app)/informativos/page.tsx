@@ -4,7 +4,10 @@ import { redirect } from "next/navigation";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
-import { companyFlowInformativeText } from "@/domain/company-flow";
+import {
+  companyFlowAmendmentChanges,
+  companyFlowInformativeText,
+} from "@/domain/company-flow";
 import { canHandleInformatives, isAdminRole } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
 import { informativeDraftPayloadSchema } from "@/lib/ai/informative-schema";
@@ -120,14 +123,22 @@ export default async function InformativosPage({
         return row ?? null;
       })
     : null;
-  const initialFlowText = flowForInformative
-    ? companyFlowInformativeText({
+  const flowInput = flowForInformative
+    ? {
         ...flowForInformative.flow,
         existingClientName: flowForInformative.existingClientName ?? null,
         existingClientCnpj: flowForInformative.existingClientCnpj ?? null,
         existingClientTaxRegime: flowForInformative.existingClientTaxRegime ?? null,
-      })
-    : "";
+      }
+    : null;
+  const initialFlowText = flowInput ? companyFlowInformativeText(flowInput) : "";
+  const amendmentSummary = flowInput?.kind === "amendment"
+    ? {
+        companyName: flowInput.existingClientName ?? "Empresa não informada",
+        changes: companyFlowAmendmentChanges(flowInput),
+        observations: flowInput.requestDetails,
+      }
+    : null;
 
   // O payload é JSONB: validar antes de renderizar, nunca confiar na forma.
   let draft: DraftView | null = null;
@@ -190,6 +201,7 @@ export default async function InformativosPage({
           clients={clients}
           initialSourceText={initialFlowText}
           flowId={flowForInformative?.flow.id}
+          amendmentSummary={amendmentSummary}
         />
       ) : (
         <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">

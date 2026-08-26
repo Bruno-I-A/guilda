@@ -45,7 +45,9 @@ export function companyFlowInformativeNoticeTitle(
 ): string {
   return kind === "closure"
     ? `Informativo de baixa: ${companyName}`
-    : `Informativo: ${companyName}`;
+    : kind === "amendment"
+      ? `Informativo de alteração: ${companyName}`
+      : `Informativo: ${companyName}`;
 }
 
 export function accountantChangeNoticeTitle(companyName: string): string {
@@ -109,6 +111,104 @@ export interface FlowInformativeInput {
   approvedAddress: string | null;
   approvedQsa: readonly FlowQsaMember[];
   processingNotes: string | null;
+}
+
+export interface AmendmentChangeSummary {
+  label: string;
+  previous: string | null;
+  next: string;
+}
+
+/** Campos efetivamente pedidos em uma Alteração, prontos para revisão visual. */
+export function companyFlowAmendmentChanges(
+  flow: FlowInformativeInput,
+): AmendmentChangeSummary[] {
+  if (flow.kind !== "amendment") return [];
+
+  const changes: AmendmentChangeSummary[] = [];
+  const add = (label: string, next: string | null | undefined, previous?: string | null) => {
+    const cleanNext = next?.trim();
+    if (!cleanNext || cleanNext === previous?.trim()) return;
+    changes.push({ label, previous: previous?.trim() || null, next: cleanNext });
+  };
+  const descriptions = (items: readonly FlowActivity[]) =>
+    items.map((item) => item.description.trim()).filter(Boolean).join("; ");
+  const qsa = (flow.approvedQsa.length > 0 ? flow.approvedQsa : flow.qsa)
+    .map((member) => [
+      member.changeType === "entered"
+        ? "Entrada"
+        : member.changeType === "left"
+          ? "Saída"
+          : member.changeType === "updated"
+            ? "Atualização"
+            : null,
+      member.name,
+      member.qualification,
+      member.participation,
+    ].filter(Boolean).join(" — "))
+    .filter(Boolean)
+    .join("; ");
+
+  add(
+    "Razão social",
+    flow.approvedLegalName ?? flow.requestedLegalName,
+    flow.existingClientName,
+  );
+  add(
+    "Atividades adicionadas",
+    descriptions(flow.approvedActivities.length > 0
+      ? flow.approvedActivities
+      : flow.requestedActivities),
+  );
+  add("Atividades retiradas", descriptions(flow.removedActivities));
+
+  const taxRegime = flow.approvedTaxRegime ?? flow.taxRegime;
+  add(
+    "Regime tributário",
+    taxRegime ? TAX_REGIME_LABELS[taxRegime] : null,
+    flow.existingClientTaxRegime
+      ? TAX_REGIME_LABELS[flow.existingClientTaxRegime]
+      : null,
+  );
+  add("Endereço", flow.approvedAddress ?? flow.address);
+  add("IPTU", flow.iptu);
+  add(
+    "Capital social",
+    flow.socialCapital ? formatBRLCurrency(flow.socialCapital) : null,
+  );
+  add("QSA", qsa);
+  add("Contato", flow.contactName);
+  add("Celular", flow.contactPhone);
+  add("E-mail", flow.contactEmail);
+
+  return changes;
+}
+
+export function companyFlowAmendmentNoticeBody(
+  flow: FlowInformativeInput,
+  taskCount: number,
+): string {
+  const company = flow.existingClientName ?? flow.requestedLegalName ?? "Empresa não informada";
+  const changes = companyFlowAmendmentChanges(flow);
+  return [
+    "ALTERAÇÃO CADASTRAL",
+    `Empresa: ${company}`,
+    "",
+    "O que foi alterado:",
+    ...(changes.length > 0
+      ? changes.map((change) =>
+          change.previous
+            ? `• ${change.label}: ${change.previous} → ${change.next}`
+            : `• ${change.label}: ${change.next}`)
+      : ["• Consulte as observações da solicitação."]),
+    flow.requestDetails ? "" : null,
+    flow.requestDetails ? "Observações da solicitação:" : null,
+    flow.requestDetails,
+    "",
+    taskCount === 1
+      ? "1 missão foi criada a partir desta alteração."
+      : `${taskCount} missões foram criadas a partir desta alteração.`,
+  ].filter((line): line is string => line !== null).join("\n");
 }
 
 /** Dados de cadastro que uma Alteração concluída deve refletir na empresa. */

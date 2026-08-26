@@ -4,6 +4,8 @@ import {
   amendmentClientRegistrationUpdate,
   accountantChangeInformativeText,
   accountantChangeNoticeTitle,
+  companyFlowAmendmentChanges,
+  companyFlowAmendmentNoticeBody,
   companyFlowActionsText,
   companyFlowInformativeText,
   companyFlowInformativeNoticeTitle,
@@ -92,6 +94,83 @@ describe("Fluxo Societário", () => {
     expect(text).not.toContain("CNPJ:");
   });
 
+  test("resume a alteração mostrando os valores anteriores e os novos", () => {
+    const changes = companyFlowAmendmentChanges({
+      kind: "amendment",
+      existingClientName: "EMPRESA ATUAL LTDA",
+      existingClientCnpj: "12345678000195",
+      existingClientTaxRegime: "simples",
+      requestedLegalName: "EMPRESA RENOMEADA LTDA",
+      requestedActivities: [{ description: "Comércio eletrônico" }],
+      removedActivities: [{ description: "Comércio atacadista" }],
+      taxRegime: "real",
+      iptu: "123.456",
+      socialCapital: "50000.00",
+      roomSize: null,
+      address: "Rua Nova, 200",
+      clientResponsible: null,
+      qsa: [{ name: "Ana", changeType: "entered", participation: "50%" }],
+      contactName: null,
+      contactPhone: "51999999999",
+      contactEmail: "ana@example.com",
+      requestDetails: null,
+      resultCnpj: null,
+      approvedLegalName: null,
+      approvedActivities: [],
+      approvedTaxRegime: null,
+      approvedAddress: null,
+      approvedQsa: [],
+      processingNotes: null,
+    });
+
+    expect(changes).toEqual(expect.arrayContaining([
+      {
+        label: "Razão social",
+        previous: "EMPRESA ATUAL LTDA",
+        next: "EMPRESA RENOMEADA LTDA",
+      },
+      {
+        label: "Regime tributário",
+        previous: "Simples Nacional",
+        next: "Lucro Real",
+      },
+      { label: "Endereço", previous: null, next: "Rua Nova, 200" },
+      { label: "QSA", previous: null, next: "Entrada — Ana — 50%" },
+    ]));
+
+    const body = companyFlowAmendmentNoticeBody({
+      kind: "amendment",
+      existingClientName: "EMPRESA ATUAL LTDA",
+      existingClientCnpj: null,
+      existingClientTaxRegime: "simples",
+      requestedLegalName: "EMPRESA RENOMEADA LTDA",
+      requestedActivities: [],
+      removedActivities: [],
+      taxRegime: "real",
+      iptu: null,
+      socialCapital: null,
+      roomSize: null,
+      address: null,
+      clientResponsible: null,
+      qsa: [],
+      contactName: null,
+      contactPhone: null,
+      contactEmail: null,
+      requestDetails: "Alteração aprovada.",
+      resultCnpj: null,
+      approvedLegalName: null,
+      approvedActivities: [],
+      approvedTaxRegime: null,
+      approvedAddress: null,
+      approvedQsa: [],
+      processingNotes: null,
+    }, 1);
+    expect(body).toContain("ALTERAÇÃO CADASTRAL");
+    expect(body).toContain("Razão social: EMPRESA ATUAL LTDA → EMPRESA RENOMEADA LTDA");
+    expect(body).toContain("Regime tributário: Simples Nacional → Lucro Real");
+    expect(body).toContain("1 missão foi criada a partir desta alteração.");
+  });
+
   test("prepara a baixa no modelo operacional padrão", () => {
     const text = companyFlowInformativeText({
       kind: "closure",
@@ -174,7 +253,7 @@ describe("Fluxo Societário", () => {
       "Informativo de baixa: ALDUIR",
     );
     expect(companyFlowInformativeNoticeTitle("amendment", "ALDUIR")).toBe(
-      "Informativo: ALDUIR",
+      "Informativo de alteração: ALDUIR",
     );
   });
 

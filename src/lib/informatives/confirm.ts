@@ -24,6 +24,7 @@ import { createTaskRecord } from "@/lib/tasks/create";
 import {
   amendmentClientRegistrationUpdate,
   accountantChangeNoticeTitle,
+  companyFlowAmendmentNoticeBody,
   companyFlowInformativeNoticeTitle,
   isAccountantChangeInformative,
 } from "@/domain/company-flow";
@@ -631,8 +632,20 @@ export async function confirmInformative(
     // A ficha do Fluxo permanece a fonte dos dados societários — inclusive
     // para o mural — mesmo que o texto enviado à IA tenha só as ações.
     const [linkedFlow] = await tx
-      .select({ flow: schema.companyFlows })
+      .select({
+        flow: schema.companyFlows,
+        existingClientName: schema.clients.name,
+        existingClientCnpj: schema.clients.cnpj,
+        existingClientTaxRegime: schema.clients.taxRegime,
+      })
       .from(schema.companyFlows)
+      .leftJoin(
+        schema.clients,
+        and(
+          eq(schema.clients.orgId, schema.companyFlows.orgId),
+          eq(schema.clients.id, schema.companyFlows.existingClientId),
+        ),
+      )
       .where(
         and(
           eq(schema.companyFlows.orgId, actor.orgId),
@@ -704,6 +717,24 @@ export async function confirmInformative(
         clientId,
         informativeId: informative.id,
         requiresAck: true,
+      });
+      noticePublished = Boolean(notice);
+    } else if (linkedFlow?.flow.kind === "amendment") {
+      const flow = linkedFlow.flow;
+      const trackingName = linkedFlow.existingClientName ?? flow.requestedLegalName ?? "Empresa não informada";
+      const notice = await publishGuildNotice(tx, {
+        orgId: actor.orgId,
+        authorId: actor.userId,
+        kind: "notice",
+        title: companyFlowInformativeNoticeTitle("amendment", trackingName),
+        body: companyFlowAmendmentNoticeBody({
+          ...flow,
+          existingClientName: linkedFlow.existingClientName,
+          existingClientCnpj: linkedFlow.existingClientCnpj,
+          existingClientTaxRegime: linkedFlow.existingClientTaxRegime,
+        }, taskIds.length),
+        clientId,
+        informativeId: informative.id,
       });
       noticePublished = Boolean(notice);
     } else if (directAccountantChange) {

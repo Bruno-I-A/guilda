@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  ArrowRight,
   Building2,
   Flag,
   Repeat2,
@@ -72,6 +73,16 @@ export interface DraftView {
   warnings: string[];
 }
 
+interface AmendmentSummaryView {
+  companyName: string;
+  changes: readonly {
+    label: string;
+    previous: string | null;
+    next: string;
+  }[];
+  observations: string | null;
+}
+
 /** Destino escolhido na tela para uma linha que veio pendente. */
 type Decision = { kind: "clan"; clanId: string } | { kind: "person"; assigneeId: string };
 
@@ -82,6 +93,7 @@ export function InformativePanel({
   clients,
   initialSourceText = "",
   flowId,
+  amendmentSummary,
 }: {
   draft: DraftView | null;
   clans: { id: string; name: string }[];
@@ -89,10 +101,13 @@ export function InformativePanel({
   clients: { id: string; name: string; cnpj: string | null; taxRegime: "simples" | "presumido" | "association" | "real" }[];
   initialSourceText?: string;
   flowId?: string;
+  amendmentSummary?: AmendmentSummaryView | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [sourceText, setSourceText] = useState(initialSourceText);
+  const [sourceText, setSourceText] = useState(
+    amendmentSummary ? "" : initialSourceText,
+  );
   const [decisions, setDecisions] = useState<Record<number, Decision>>({});
   const [wizardOpen, setWizardOpen] = useState(false);
   const [accountantChangeOpen, setAccountantChangeOpen] = useState(false);
@@ -110,7 +125,13 @@ export function InformativePanel({
 
   function handleAnalyze() {
     startTransition(async () => {
-      const result = await analyzeInformative({ sourceText, flowId });
+      const textToAnalyze = amendmentSummary
+        ? [initialSourceText, sourceText.trim()].filter(Boolean).join("\n")
+        : sourceText;
+      const result = await analyzeInformative({
+        sourceText: textToAnalyze,
+        flowId,
+      });
       if (!result.ok) {
         toast.error(result.error);
         return;
@@ -173,25 +194,91 @@ export function InformativePanel({
               <Building2 className="size-4" aria-hidden /> Novo cliente
             </Button>
           </div>
-          <Textarea
-            value={sourceText}
-            onChange={(event) => setSourceText(event.target.value)}
-            rows={10}
-            maxLength={12_000}
-            placeholder={
-              "INFORMATIVO — NOVO CLIENTE\n\nRazão social: ...\nCNPJ: ...\nEnquadramento: ...\n\nAÇÕES\nFiscal - Camila - parametrizar ...\nRH - cadastrar o pró-labore ..."
-            }
-            className="font-mono text-xs"
-          />
+          {amendmentSummary ? (
+            <>
+              <section className="grid gap-4 rounded-lg border border-primary/35 bg-primary/[0.04] p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge className="border-primary/35 bg-primary/10 text-primary">
+                    Alteração
+                  </Badge>
+                  <h2 className="font-heading text-lg font-medium">
+                    {amendmentSummary.companyName}
+                  </h2>
+                </div>
+                <div>
+                  <p className="hud-label">O que foi alterado</p>
+                  {amendmentSummary.changes.length > 0 ? (
+                    <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                      {amendmentSummary.changes.map((change) => (
+                        <li key={`${change.label}-${change.next}`} className="rounded-md border bg-background/35 p-3">
+                          <p className="text-xs font-medium text-primary">{change.label}</p>
+                          <div className="mt-1 flex items-center gap-2 text-sm">
+                            {change.previous ? (
+                              <>
+                                <span className="text-muted-foreground line-through">{change.previous}</span>
+                                <ArrowRight className="size-3.5 shrink-0 text-primary" aria-hidden />
+                              </>
+                            ) : null}
+                            <span className="font-medium">{change.next}</span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      A solicitação não possui campos estruturados; confira as observações abaixo.
+                    </p>
+                  )}
+                </div>
+                {amendmentSummary.observations ? (
+                  <div className="rounded-md bg-muted/30 p-3">
+                    <p className="hud-label">Observações da solicitação</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
+                      {amendmentSummary.observations}
+                    </p>
+                  </div>
+                ) : null}
+              </section>
+              <div className="grid gap-1.5">
+                <label htmlFor="amendment-extra-actions" className="text-sm font-medium">
+                  Missões ou observações adicionais <span className="font-normal text-muted-foreground">(opcional)</span>
+                </label>
+                <Textarea
+                  id="amendment-extra-actions"
+                  value={sourceText}
+                  onChange={(event) => setSourceText(event.target.value)}
+                  rows={4}
+                  maxLength={8_000}
+                  placeholder="Escreva somente se houver outra providência além da atualização no Societário."
+                  className="text-sm"
+                />
+              </div>
+            </>
+          ) : (
+            <Textarea
+              value={sourceText}
+              onChange={(event) => setSourceText(event.target.value)}
+              rows={10}
+              maxLength={12_000}
+              placeholder={
+                "INFORMATIVO — NOVO CLIENTE\n\nRazão social: ...\nCNPJ: ...\nEnquadramento: ...\n\nAÇÕES\nFiscal - Camila - parametrizar ...\nRH - cadastrar o pró-labore ..."
+              }
+              className="font-mono text-xs"
+            />
+          )}
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground">
               {flowId
-                ? "No Fluxo, somente as linhas após AÇÕES são analisadas; os dados cadastrais ficam protegidos e vão completos ao mural."
+                ? amendmentSummary
+                  ? "A alteração será enviada completa ao mural; o sistema já inclui a missão padrão do Societário."
+                  : "No Fluxo, somente as linhas após AÇÕES são analisadas; os dados cadastrais ficam protegidos e vão completos ao mural."
                 : `${sourceText.length}/12.000`}
             </span>
             <Button
               onClick={handleAnalyze}
-              disabled={pending || sourceText.trim().length < 10}
+              disabled={
+                pending || (!amendmentSummary && sourceText.trim().length < 10)
+              }
             >
               <ScanText className="size-4" aria-hidden /> Analisar
             </Button>
