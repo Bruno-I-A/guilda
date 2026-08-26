@@ -23,6 +23,7 @@ import {
 import { createTaskRecord } from "@/lib/tasks/create";
 import {
   amendmentClientRegistrationUpdate,
+  amendmentRequiresExternalRegistrationTask,
   accountantChangeNoticeTitle,
   companyFlowAmendmentNoticeBody,
   companyFlowInformativeNoticeTitle,
@@ -55,6 +56,21 @@ const TAX_REGIME_LABELS: Record<string, string> = {
   association: "Associação",
   real: "Lucro Real",
 };
+
+function isAutomaticExternalRegistrationTask(task: {
+  title: string;
+  sourceSection: string;
+}): boolean {
+  const text = `${task.title} ${task.sourceSection}`
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR");
+  return (
+    text.includes("atualizar alvara") &&
+    text.includes("inscricao estadual") &&
+    text.includes("cadastros externos")
+  );
+}
 
 function dueDateOf(value: string | null): Date | null {
   return value ? new Date(`${value}T12:00:00Z`) : null;
@@ -362,6 +378,32 @@ export async function confirmInformative(
       };
     }
 
+    // A ficha do Fluxo permanece a fonte oficial dos dados societários. O
+    // bloqueio é adquirido antes de decidir as missões para que uma prévia
+    // antiga também respeite as regras atuais da Alteração.
+    const [linkedFlow] = await tx
+      .select({
+        flow: schema.companyFlows,
+        existingClientName: schema.clients.name,
+        existingClientCnpj: schema.clients.cnpj,
+        existingClientTaxRegime: schema.clients.taxRegime,
+      })
+      .from(schema.companyFlows)
+      .leftJoin(
+        schema.clients,
+        and(
+          eq(schema.clients.orgId, schema.companyFlows.orgId),
+          eq(schema.clients.id, schema.companyFlows.existingClientId),
+        ),
+      )
+      .where(
+        and(
+          eq(schema.companyFlows.orgId, actor.orgId),
+          eq(schema.companyFlows.informativeId, informative.id),
+        ),
+      )
+      .for("update", { of: schema.companyFlows });
+
     const decided = await applyPendingDecisions(
       tx,
       actor.orgId,
@@ -369,7 +411,19 @@ export async function confirmInformative(
       options.decisions ?? [],
     );
     if (!decided.ok) return decided;
-    const tasks = decided.tasks;
+    let tasks = decided.tasks;
+
+    if (
+      linkedFlow?.flow.kind === "amendment" &&
+      !amendmentRequiresExternalRegistrationTask({
+        ...linkedFlow.flow,
+        existingClientName: linkedFlow.existingClientName,
+      })
+    ) {
+      // Remove também a missão automática de prévias criadas antes desta
+      // regra. Missões adicionais escritas pelo dono permanecem intactas.
+      tasks = tasks.filter((task) => !isAutomaticExternalRegistrationTask(task));
+    }
 
     // Zero missões é resultado LEGÍTIMO no cadastro de cliente novo: todas as
     // linhas podem ser combinado (vai para a carteira do Fiscal) ou negação
@@ -377,7 +431,11 @@ export async function confirmInformative(
     // empresa e mandá-la para a fila da carteira — bloquear aqui deixaria o
     // cadastro impossível. Sem empresa nova para criar, aí sim não há nada a
     // fazer.
-    if (tasks.length === 0 && !payload.company.createClient) {
+    if (
+      tasks.length === 0 &&
+      !payload.company.createClient &&
+      payload.kind !== "client_change"
+    ) {
       return { ok: false, message: "Nenhuma missão válida nesta prévia." };
     }
     if (tasks.some((task) => task.assignmentType === "pending")) {
@@ -628,31 +686,6 @@ export async function confirmInformative(
         createdCommitments += 1;
       }
     }
-
-    // A ficha do Fluxo permanece a fonte dos dados societários — inclusive
-    // para o mural — mesmo que o texto enviado à IA tenha só as ações.
-    const [linkedFlow] = await tx
-      .select({
-        flow: schema.companyFlows,
-        existingClientName: schema.clients.name,
-        existingClientCnpj: schema.clients.cnpj,
-        existingClientTaxRegime: schema.clients.taxRegime,
-      })
-      .from(schema.companyFlows)
-      .leftJoin(
-        schema.clients,
-        and(
-          eq(schema.clients.orgId, schema.companyFlows.orgId),
-          eq(schema.clients.id, schema.companyFlows.existingClientId),
-        ),
-      )
-      .where(
-        and(
-          eq(schema.companyFlows.orgId, actor.orgId),
-          eq(schema.companyFlows.informativeId, informative.id),
-        ),
-      )
-      .for("update", { of: schema.companyFlows });
 
     // Aviso de empresa nova na MESMA transação, idempotente pelo índice
     // parcial: reconfirmar o informativo não gera um segundo aviso.

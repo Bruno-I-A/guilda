@@ -23,10 +23,11 @@ function payload(
     tasks?: InformativeDraftPayload["tasks"];
     createClient?: boolean;
     unresolvedAssignees?: string[];
+    kind?: InformativeDraftPayload["kind"];
   } = {},
 ): InformativeDraftPayload {
   return {
-    kind: "new_client",
+    kind: overrides.kind ?? "new_client",
     sourceFormat: "informative",
     company: {
       systemCode: null,
@@ -132,6 +133,14 @@ describe("removeMissionDuplicatedObservations", () => {
         [{ sourceSection }],
       ),
     ).toEqual(["COBRANÇA – ASSAS"]);
+  });
+
+  test("alteração sem providência externa continua confirmável", () => {
+    expect(
+      draftIsBlocked(
+        payload({ tasks: [], createClient: false, kind: "client_change" }),
+      ),
+    ).toBe(false);
   });
 
   test("mantém observação diferente mesmo quando há missões", () => {

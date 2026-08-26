@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import {
+  amendmentRequiresExternalRegistrationTask,
   companyFlowAmendmentChanges,
   companyFlowInformativeText,
 } from "@/domain/company-flow";
@@ -137,6 +138,8 @@ export default async function InformativosPage({
         companyName: flowInput.existingClientName ?? "Empresa não informada",
         changes: companyFlowAmendmentChanges(flowInput),
         observations: flowInput.requestDetails,
+        hasExternalRegistrationTask:
+          amendmentRequiresExternalRegistrationTask(flowInput),
       }
     : null;
 
@@ -148,6 +151,7 @@ export default async function InformativosPage({
       draft = {
         informativeId: pendingDraft.id,
         expiresAt: pendingDraft.expiresAt.toISOString(),
+        kind: parsed.data.kind,
         company: {
           legalName: parsed.data.company.legalName,
           cnpj: parsed.data.company.cnpj,

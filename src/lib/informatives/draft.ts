@@ -693,7 +693,9 @@ export function draftIsBlocked(payload: InformativeDraftPayload): boolean {
     // no cadastro de cliente novo, zero missão é resultado válido (combinado
     // e "sem particularidades" não viram missão) e a confirmação ainda tem
     // trabalho a fazer — criar a empresa e enfileirá-la na carteira.
-    (payload.tasks.length === 0 && !payload.company.createClient) ||
+    (payload.tasks.length === 0 &&
+      !payload.company.createClient &&
+      payload.kind !== "client_change") ||
     payload.unresolvedAssignees.length > 0 ||
     payload.tasks.some((task) => task.assignmentType === "pending")
   );

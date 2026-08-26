@@ -119,6 +119,36 @@ export interface AmendmentChangeSummary {
   next: string;
 }
 
+/** Alterações que exigem refletir os dados em Alvará/IE/cadastros externos. */
+export function amendmentRequiresExternalRegistrationTask(
+  flow: Pick<
+    FlowInformativeInput,
+    | "kind"
+    | "existingClientName"
+    | "requestedLegalName"
+    | "approvedLegalName"
+    | "requestedActivities"
+    | "removedActivities"
+    | "approvedActivities"
+    | "address"
+    | "approvedAddress"
+  >,
+): boolean {
+  if (flow.kind !== "amendment") return false;
+  const legalName = (flow.approvedLegalName ?? flow.requestedLegalName)?.trim();
+  const changedLegalName = Boolean(
+    legalName && legalName !== flow.existingClientName?.trim(),
+  );
+  const changedActivities =
+    flow.requestedActivities.some((activity) => activity.description.trim()) ||
+    flow.removedActivities.some((activity) => activity.description.trim()) ||
+    flow.approvedActivities.some((activity) => activity.description.trim());
+  const changedAddress = Boolean(
+    (flow.approvedAddress ?? flow.address)?.trim(),
+  );
+  return changedLegalName || changedActivities || changedAddress;
+}
+
 /** Campos efetivamente pedidos em uma Alteração, prontos para revisão visual. */
 export function companyFlowAmendmentChanges(
   flow: FlowInformativeInput,
@@ -257,6 +287,8 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
     .join("; ");
   const taxRegime = flow.approvedTaxRegime ?? flow.taxRegime;
   const address = flow.approvedAddress ?? flow.address;
+  const requiresExternalRegistrationTask =
+    amendmentRequiresExternalRegistrationTask(flow);
 
   if (flow.kind === "closure") {
     const closureTaxRegime = flow.existingClientTaxRegime ?? taxRegime;
@@ -307,7 +339,9 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
     "",
     "AÇÕES",
     flow.kind === "amendment"
-      ? "Societário - Atualizar alvará, Inscrição Estadual e demais cadastros externos aplicáveis à alteração."
+      ? requiresExternalRegistrationTask
+        ? "Societário - Atualizar alvará, Inscrição Estadual e demais cadastros externos aplicáveis à alteração."
+        : "Sem missão operacional adicional para esta alteração."
       : "Fiscal - ...",
     flow.kind === "amendment" ? null : "Contabilidade - ...",
     flow.kind === "amendment" ? null : "RH - ...",

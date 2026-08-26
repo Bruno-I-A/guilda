@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   amendmentClientRegistrationUpdate,
+  amendmentRequiresExternalRegistrationTask,
   accountantChangeInformativeText,
   accountantChangeNoticeTitle,
   companyFlowAmendmentChanges,
@@ -92,6 +93,68 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("QSA: Entrada — Ana — Sócia administradora — 100%");
     expect(text).toContain("Societário - Atualizar alvará, Inscrição Estadual");
     expect(text).not.toContain("CNPJ:");
+  });
+
+  test("só cria atualização de Alvará para razão social, atividades ou endereço", () => {
+    const base = {
+      kind: "amendment" as const,
+      existingClientName: "EMPRESA ATUAL LTDA",
+      requestedLegalName: null,
+      approvedLegalName: null,
+      requestedActivities: [],
+      removedActivities: [],
+      approvedActivities: [],
+      address: null,
+      approvedAddress: null,
+    };
+
+    expect(amendmentRequiresExternalRegistrationTask(base)).toBe(false);
+    expect(amendmentRequiresExternalRegistrationTask({
+      ...base,
+      requestedLegalName: "EMPRESA NOVA LTDA",
+    })).toBe(true);
+    expect(amendmentRequiresExternalRegistrationTask({
+      ...base,
+      requestedActivities: [{ description: "Comércio varejista" }],
+    })).toBe(true);
+    expect(amendmentRequiresExternalRegistrationTask({
+      ...base,
+      removedActivities: [{ description: "Serviços administrativos" }],
+    })).toBe(true);
+    expect(amendmentRequiresExternalRegistrationTask({
+      ...base,
+      address: "Rua Nova, 100",
+    })).toBe(true);
+
+    const taxOnlyText = companyFlowInformativeText({
+      kind: "amendment",
+      existingClientName: "EMPRESA ATUAL LTDA",
+      existingClientCnpj: null,
+      existingClientTaxRegime: "simples",
+      requestedLegalName: null,
+      requestedActivities: [],
+      removedActivities: [],
+      taxRegime: "real",
+      iptu: null,
+      socialCapital: null,
+      roomSize: null,
+      address: null,
+      clientResponsible: null,
+      qsa: [],
+      contactName: null,
+      contactPhone: null,
+      contactEmail: null,
+      requestDetails: "Alterar somente o regime tributário.",
+      resultCnpj: null,
+      approvedLegalName: null,
+      approvedActivities: [],
+      approvedTaxRegime: null,
+      approvedAddress: null,
+      approvedQsa: [],
+      processingNotes: "Alteração concluída.",
+    });
+    expect(taxOnlyText).toContain("Sem missão operacional adicional");
+    expect(taxOnlyText).not.toContain("Atualizar alvará");
   });
 
   test("resume a alteração mostrando os valores anteriores e os novos", () => {

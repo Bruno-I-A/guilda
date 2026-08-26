@@ -50,6 +50,7 @@ export interface DraftTaskView {
 export interface DraftView {
   informativeId: string;
   expiresAt: string;
+  kind: "new_client" | "client_change" | "client_closure" | "general_task";
   company: {
     legalName: string | null;
     cnpj: string | null;
@@ -81,6 +82,7 @@ interface AmendmentSummaryView {
     next: string;
   }[];
   observations: string | null;
+  hasExternalRegistrationTask: boolean;
 }
 
 /** Destino escolhido na tela para uma linha que veio pendente. */
@@ -119,7 +121,9 @@ export function InformativePanel({
   // combinado do Fiscal ou "sem particularidades").
   const blocked =
     !draft ||
-    (draft.tasks.length === 0 && !draft.company.createClient) ||
+    (draft.tasks.length === 0 &&
+      !draft.company.createClient &&
+      draft.kind !== "client_change") ||
     draft.unresolvedAssignees.length > 0 ||
     undecided.length > 0;
 
@@ -270,7 +274,9 @@ export function InformativePanel({
             <span className="text-xs text-muted-foreground">
               {flowId
                 ? amendmentSummary
-                  ? "A alteração será enviada completa ao mural; o sistema já inclui a missão padrão do Societário."
+                  ? amendmentSummary.hasExternalRegistrationTask
+                    ? "A alteração será enviada completa ao mural; a atualização de Alvará/IE será criada para o Societário."
+                    : "A alteração será enviada completa ao mural e não exige missão de atualização de Alvará/IE."
                   : "No Fluxo, somente as linhas após AÇÕES são analisadas; os dados cadastrais ficam protegidos e vão completos ao mural."
                 : `${sourceText.length}/12.000`}
             </span>
@@ -366,9 +372,9 @@ export function InformativePanel({
 
           {draft.tasks.length === 0 ? (
             <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
-              Nenhuma missão nesta prévia — as linhas eram combinado ou “sem
-              particularidades”. A empresa será cadastrada e entra na fila da
-              carteira do Fiscal.
+              {draft.kind === "client_change"
+                ? "Esta alteração não exige missão adicional. Ao confirmar, o cadastro e o mural serão atualizados."
+                : "Nenhuma missão nesta prévia — as linhas eram combinado ou “sem particularidades”. A empresa será cadastrada e entra na fila da carteira do Fiscal."}
             </p>
           ) : null}
 
@@ -474,7 +480,9 @@ export function InformativePanel({
             </Button>
             <Button onClick={handleConfirm} disabled={pending || blocked}>
               {draft.tasks.length === 0
-                ? "Cadastrar empresa"
+                ? draft.kind === "client_change"
+                  ? "Confirmar alteração"
+                  : "Cadastrar empresa"
                 : `Criar ${draft.tasks.length} ${draft.tasks.length === 1 ? "missão" : "missões"}`}
             </Button>
           </div>
