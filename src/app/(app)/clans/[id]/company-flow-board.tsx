@@ -18,7 +18,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -678,6 +678,7 @@ function NewCompanyFlowDialog({
   const [kind, setKind] = useState<CompanyFlowKind>("opening");
   const [existingClientId, setExistingClientId] = useState("");
   const [companyCnpj, setCompanyCnpj] = useState("");
+  const companyCnpjRef = useRef("");
   const [consultedCompany, setConsultedCompany] =
     useState<CompanyFlowClientLookupView | null>(null);
   const [legalName, setLegalName] = useState("");
@@ -713,6 +714,53 @@ function NewCompanyFlowDialog({
   const closing = kind === "closure";
   const amendmentHas = (field: AmendmentField) => amendmentFields.includes(field);
 
+  function clearFlowValues() {
+    setExistingClientId("");
+    setConsultedCompany(null);
+    setLegalName("");
+    setActivities("");
+    setRemovedActivities("");
+    setTaxRegime("");
+    setIptu("");
+    setSocialCapital("");
+    setRoomSize("");
+    setAddress("");
+    setQsa([]);
+    setContactName("");
+    setContactPhone("");
+    setContactEmail("");
+    setDetails("");
+    setBillingAmount("");
+    setBillingDescription("");
+    setGovPassword("");
+    setAmendmentFields([]);
+  }
+
+  function resetFlowForm() {
+    setKind("opening");
+    setCompanyCnpj("");
+    companyCnpjRef.current = "";
+    clearFlowValues();
+  }
+
+  function handleDialogOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen);
+    if (!nextOpen) resetFlowForm();
+  }
+
+  function handleKindChange(nextKind: CompanyFlowKind) {
+    setKind(nextKind);
+    setCompanyCnpj("");
+    companyCnpjRef.current = "";
+    clearFlowValues();
+  }
+
+  function handleCompanyCnpjChange(nextCnpj: string) {
+    setCompanyCnpj(nextCnpj);
+    companyCnpjRef.current = nextCnpj.replace(/\D/g, "");
+    clearFlowValues();
+  }
+
   function seedOwnershipFromLookup(company: CompanyFlowClientLookupView["company"]) {
     if (!socialCapital && company.shareCapital) {
       setSocialCapital(company.shareCapital);
@@ -742,17 +790,20 @@ function NewCompanyFlowDialog({
   }
 
   function lookupFlowCompany() {
+    const requestedCnpj = companyCnpj.replace(/\D/g, "");
     startTransition(async () => {
       const result = await lookupCompanyFlowClientCnpj({
         clanId,
-        cnpj: companyCnpj,
+        cnpj: requestedCnpj,
       });
+      if (companyCnpjRef.current !== requestedCnpj) return;
       if (!result.ok || !result.data) {
         toast.error(result.ok ? "A consulta não retornou dados." : result.error);
         return;
       }
       setConsultedCompany(result.data);
       setCompanyCnpj(formatCnpj(result.data.company.normalizedCnpj));
+      companyCnpjRef.current = result.data.company.normalizedCnpj;
       setExistingClientId(result.data.client?.id ?? "");
       if (amendment && amendmentHas("ownership")) {
         seedOwnershipFromLookup(result.data.company);
@@ -852,12 +903,13 @@ function NewCompanyFlowDialog({
       }
       toast.success("Fluxo enviado ao Societário.");
       setOpen(false);
+      resetFlowForm();
       router.refresh();
     });
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogTrigger asChild>
         <Button type="button" size="lg" className="shadow-sm"><Plus aria-hidden /> Criar novo fluxo</Button>
       </DialogTrigger>
@@ -868,7 +920,7 @@ function NewCompanyFlowDialog({
         </DialogHeader>
         <div className="grid gap-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-1.5"><Label>Tipo</Label><Select value={kind} onValueChange={(value) => setKind(value as CompanyFlowKind)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="opening">Abertura</SelectItem><SelectItem value="amendment">Alteração</SelectItem><SelectItem value="closure">Baixa</SelectItem></SelectContent></Select></div>
+            <div className="grid gap-1.5"><Label>Tipo</Label><Select value={kind} onValueChange={(value) => handleKindChange(value as CompanyFlowKind)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="opening">Abertura</SelectItem><SelectItem value="amendment">Alteração</SelectItem><SelectItem value="closure">Baixa</SelectItem></SelectContent></Select></div>
             {opening ? null : (
               <div className="grid gap-1.5">
                 <Label htmlFor="flow-company-cnpj">CNPJ da empresa {kind === "amendment" ? "que será alterada" : "que será baixada"}</Label>
@@ -877,11 +929,7 @@ function NewCompanyFlowDialog({
                     id="flow-company-cnpj"
                     className="font-mono"
                     value={companyCnpj}
-                    onChange={(event) => {
-                      setCompanyCnpj(event.target.value);
-                      setExistingClientId("");
-                      setConsultedCompany(null);
-                    }}
+                    onChange={(event) => handleCompanyCnpjChange(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && companyCnpj.replace(/\D/g, "").length === 14) {
                         event.preventDefault();
