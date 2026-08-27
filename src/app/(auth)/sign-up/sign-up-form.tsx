@@ -125,9 +125,11 @@ export function SignUpForm({
   }
 
   return (
-    <Card className="panel-cut texture-iron">
+    <Card className="panel-cut texture-iron rounded-none border-0 ring-0">
       <CardHeader>
-        <CardTitle>Criar conta</CardTitle>
+        <CardTitle asChild>
+          <h1>Criar conta</h1>
+        </CardTitle>
         <CardDescription>
           {joiningByInvite
             ? "Crie sua conta para aceitar o convite."

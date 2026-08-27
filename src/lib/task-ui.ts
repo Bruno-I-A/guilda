@@ -15,7 +15,7 @@ export const STATUS_LABELS: Record<TaskStatus, string> = {
 export const STATUS_BADGE_CLASSES: Record<TaskStatus, string> = {
   pending: "bg-secondary text-silver border-transparent",
   in_progress: "bg-primary/15 text-primary border-transparent",
-  awaiting_approval: "bg-amber-400/10 text-amber-300 border-transparent",
+  awaiting_approval: "bg-warning/10 text-warning border-transparent",
   completed: "bg-gold/15 text-gold border-transparent",
   rejected: "bg-destructive/15 text-destructive border-transparent",
   cancelled: "bg-muted text-muted-foreground/70 border-transparent",
@@ -25,7 +25,7 @@ export const STATUS_BADGE_CLASSES: Record<TaskStatus, string> = {
 export const STATUS_RAIL_CLASSES: Record<TaskStatus, string> = {
   pending: "border-l-silver/50",
   in_progress: "border-l-primary",
-  awaiting_approval: "border-l-amber-400/70",
+  awaiting_approval: "border-l-warning/70",
   completed: "border-l-gold/60",
   rejected: "border-l-destructive",
   cancelled: "border-l-border",

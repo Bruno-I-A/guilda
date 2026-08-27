@@ -1,9 +1,8 @@
 import { and, asc, eq } from "drizzle-orm";
-import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -114,28 +113,24 @@ export default async function ClanPage({
     );
   const activeTab = parseClanTab(tab, clan.slug);
 
+  // Quem tem um clã só chegou aqui direto: a listagem não teria o que
+  // mostrar, então a saída para cima some de propósito. Ela só serve a quem
+  // tem mais de um clã, e ao admin.
+  const showsClanList = myClanIds.length > 1 || isAdminRole(role);
+
   return (
     <div className="grid gap-6">
-      <div className="grid gap-2">
-        {/* Quem tem um clã só chegou aqui direto; a listagem só serve a
-            quem tem mais de um, e ao admin. */}
-        {(myClanIds.length > 1 || isAdminRole(role)) && (
-          <Link
-            href="/clans"
-            className="flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-4" aria-hidden />{" "}
-            {isAdminRole(role) ? "Clãs" : "Meus clãs"}
-          </Link>
-        )}
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="font-heading text-2xl font-semibold tracking-wide">
-            {clan.name}
-          </h1>
-          {leadsThisClan ? <Badge variant="default">Você lidera</Badge> : null}
-          {!clan.active ? <Badge variant="outline">Inativo</Badge> : null}
-        </div>
-      </div>
+      <PageHeader
+        title={clan.name}
+        backHref={showsClanList ? "/clans" : undefined}
+        backLabel={isAdminRole(role) ? "Clãs" : "Meus clãs"}
+        badges={
+          <>
+            {leadsThisClan ? <Badge variant="default">Você lidera</Badge> : null}
+            {!clan.active ? <Badge variant="outline">Inativo</Badge> : null}
+          </>
+        }
+      />
 
       <ClanTabNav clanId={clan.id} clanSlug={clan.slug} active={activeTab} />
 

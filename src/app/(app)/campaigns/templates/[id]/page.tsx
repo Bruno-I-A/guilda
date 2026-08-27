@@ -1,10 +1,10 @@
 import { and, asc, eq } from "drizzle-orm";
-import { ArrowLeft, Star } from "lucide-react";
+import { Star } from "lucide-react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -50,35 +50,32 @@ export default async function TemplateDetailPage({
 
   return (
     <div className="grid gap-5">
-      <div>
-        <Link
-          href="/campaigns/templates"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" aria-hidden /> Templates
-        </Link>
-        <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="max-w-xl text-2xl font-semibold leading-tight">
-              {template.name}
-            </h1>
-            <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-              <Badge
-                className={cn(
-                  "h-4 px-1.5",
-                  TAX_REGIME_BADGE_CLASSES[template.taxRegime],
-                )}
-              >
-                {TAX_REGIME_LABELS[template.taxRegime]}
-              </Badge>
-              <span>
-                {items.length} {items.length === 1 ? "etapa" : "etapas"}
-              </span>
-              <span className="inline-flex items-center gap-1 font-mono text-gold">
-                <Star className="size-3" aria-hidden /> {totalXp} XP por empresa
-              </span>
-            </div>
-          </div>
+      {/* O XP total vira `chip-loot` — a mesma peça de inventário da lista de
+          templates, em vez de um texto dourado solto. */}
+      <PageHeader
+        backHref="/campaigns/templates"
+        backLabel="Templates"
+        title={template.name}
+        badges={
+          <>
+            <Badge
+              className={cn(
+                "h-4 px-1.5",
+                TAX_REGIME_BADGE_CLASSES[template.taxRegime],
+              )}
+            >
+              {TAX_REGIME_LABELS[template.taxRegime]}
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              <span className="font-mono tabular-nums">{items.length}</span>{" "}
+              {items.length === 1 ? "etapa" : "etapas"}
+            </span>
+            <span className="chip-loot">
+              <Star className="size-3" aria-hidden /> {totalXp} XP por empresa
+            </span>
+          </>
+        }
+        action={
           <TemplateHeaderActions
             template={{
               id: template.id,
@@ -86,8 +83,8 @@ export default async function TemplateDetailPage({
               taxRegime: template.taxRegime,
             }}
           />
-        </div>
-      </div>
+        }
+      />
 
       <div className="divider-rune" />
 

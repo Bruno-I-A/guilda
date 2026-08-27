@@ -94,7 +94,7 @@ function ActionMessage({ state }: { state: TelegramActionState }) {
       aria-live="polite"
       className={cn(
         "text-sm",
-        state.status === "error" ? "text-destructive" : "text-emerald-600",
+        state.status === "error" ? "text-destructive" : "text-success",
       )}
     >
       {state.message}
@@ -156,13 +156,16 @@ export function TelegramSettings({
   const hasKnownTimezone = TIMEZONES.some(([value]) => value === preferences.timezone);
 
   return (
-    <Card className="panel-cut">
+    <Card className="panel-cut rounded-none border-0 ring-0">
       <CardHeader className="border-b">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="grid gap-1">
-            <CardTitle className="flex items-center gap-2">
-              <Send className="size-4 text-[#2AABEE]" aria-hidden />
-              Telegram
+            {/* asChild: este é o título da seção; o CardTitle rende <div>. */}
+            <CardTitle asChild>
+              <h2 className="flex items-center gap-2">
+                <Send className="size-4 text-telegram" aria-hidden />
+                Telegram
+              </h2>
             </CardTitle>
             <CardDescription>
               Receba alertas e acompanhe a Guilda pelo bot, sem usar IA.
@@ -191,11 +194,12 @@ export function TelegramSettings({
           <section className="grid gap-3" aria-labelledby="telegram-account-title">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 p-4">
               <div className="flex min-w-0 items-center gap-3">
-                <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#2AABEE]/15 text-[#2AABEE]">
+                {/* Selo decorativo, não avatar: canto reto, como o resto do app. */}
+                <span className="grid size-9 shrink-0 place-items-center rounded-none bg-telegram/15 text-telegram">
                   <CheckCircle2 className="size-5" aria-hidden />
                 </span>
                 <div className="min-w-0">
-                  <h3 id="telegram-account-title" className="font-medium">
+                  <h3 id="telegram-account-title">
                     {connection.username
                       ? `@${connection.username}`
                       : connection.displayName ?? "Conta do Telegram"}
@@ -233,10 +237,8 @@ export function TelegramSettings({
         ) : (
           <section className="grid gap-3" aria-labelledby="telegram-connect-title">
             <div>
-              <h3 id="telegram-connect-title" className="font-medium">
-                Conectar sua conta
-              </h3>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <h3 id="telegram-connect-title">Conectar sua conta</h3>
+              <p className="mt-1 max-w-prose text-sm text-muted-foreground">
                 Gere um link temporário, abra o bot e toque em Iniciar. O link
                 expira em 10 minutos e só pode ser usado uma vez.
               </p>
@@ -258,7 +260,7 @@ export function TelegramSettings({
             <ActionMessage state={linkState} />
 
             {linkState.status === "success" && linkState.link && (
-              <div className="panel-cut panel-cut-sm grid gap-3 bg-[#2AABEE]/10 p-4 shadow-[inset_0_0_0_1px_color-mix(in_oklab,#2AABEE_35%,transparent)]">
+              <div className="panel-cut panel-cut-sm grid gap-3 bg-telegram/10 p-4 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--telegram)_35%,transparent)]">
                 <div>
                   <p className="font-medium">Seu link está pronto</p>
                   {linkState.expiresAt && (
@@ -297,7 +299,7 @@ export function TelegramSettings({
 
         <section className="grid gap-4 border-t pt-6" aria-labelledby="telegram-preferences-title">
           <div>
-            <h3 id="telegram-preferences-title" className="flex items-center gap-2 font-medium">
+            <h3 id="telegram-preferences-title" className="flex items-center gap-2">
               <BellRing className="size-4 text-gold" aria-hidden />
               Preferências de notificação
             </h3>
@@ -374,7 +376,7 @@ export function TelegramSettings({
                     defaultValue={preferences.quietHoursEnd?.slice(0, 5) ?? ""}
                   />
                 </div>
-                <p className="text-xs text-muted-foreground sm:col-span-2">
+                <p className="max-w-prose text-xs text-muted-foreground sm:col-span-2">
                   Preencha os dois horários para pausar mensagens nesse período.
                   Intervalos que atravessam a meia-noite são aceitos.
                 </p>

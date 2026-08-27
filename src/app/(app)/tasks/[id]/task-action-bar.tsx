@@ -230,10 +230,15 @@ export function TaskActionBar({
         </Button>
       ) : null}
 
+      {/*
+        Cancelar e Excluir são `ghost`: sem fundo, o alvo real vira só o
+        texto. `.touch-target` dá os 44px de dedo sem engordar o visual —
+        e é justamente aqui que errar o toque custa caro.
+      */}
       {can.cancel ? (
         <Button
           variant="ghost"
-          className="text-destructive hover:text-destructive"
+          className="touch-target text-destructive hover:text-destructive"
           disabled={pending}
           onClick={() => setCancelOpen(true)}
         >
@@ -244,7 +249,7 @@ export function TaskActionBar({
       {can.delete ? (
         <Button
           variant="ghost"
-          className="text-destructive hover:text-destructive"
+          className="touch-target text-destructive hover:text-destructive"
           disabled={pending}
           onClick={() => setDeleteOpen(true)}
         >

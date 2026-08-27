@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { AlertTriangle, ListTodo, UserRoundX } from "lucide-react";
-import Link from "next/link";
 
+import { MissionRow } from "@/components/mission-row";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -129,26 +129,33 @@ export async function MissionsTab({
 
   return (
     <div className="grid gap-6">
+      {/* Placas chanfradas em vez de retângulo arredondado: as três medidas
+          da mesa ficam no mesmo vocabulário das linhas de missão abaixo. */}
       <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-lg bg-muted/45 p-2.5">
+        <div className="panel-cut panel-cut-sm p-2.5">
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <ListTodo className="size-3.5" aria-hidden /> Abertas
+            <ListTodo className="size-3.5 shrink-0" aria-hidden /> Abertas
           </span>
-          <strong className="mt-1 block font-mono text-lg">
+          <strong className="mt-1 block font-mono text-lg tabular-nums">
             {openTasks.length}
           </strong>
         </div>
-        <div className="rounded-lg bg-muted/45 p-2.5">
+        <div className="panel-cut panel-cut-sm p-2.5">
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <UserRoundX className="size-3.5" aria-hidden /> Sem responsável
+            <UserRoundX className="size-3.5 shrink-0" aria-hidden /> Sem
+            responsável
           </span>
-          <strong className="mt-1 block font-mono text-lg">{orphans.length}</strong>
+          <strong className="mt-1 block font-mono text-lg tabular-nums">
+            {orphans.length}
+          </strong>
         </div>
-        <div className="rounded-lg bg-muted/45 p-2.5">
+        <div className="panel-cut panel-cut-sm p-2.5">
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <AlertTriangle className="size-3.5" aria-hidden /> Atrasadas
+            <AlertTriangle className="size-3.5 shrink-0" aria-hidden /> Atrasadas
           </span>
-          <strong className="mt-1 block font-mono text-lg">{overdueCount}</strong>
+          <strong className="mt-1 block font-mono text-lg tabular-nums">
+            {overdueCount}
+          </strong>
         </div>
       </div>
 
@@ -160,7 +167,7 @@ export async function MissionsTab({
       />
 
       <section className="grid gap-3">
-        <h2 className="hud-label">Em andamento</h2>
+        <h2>Em andamento</h2>
         {assigned.length === 0 ? (
           <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
             Nenhuma missão do clã em andamento.
@@ -168,31 +175,32 @@ export async function MissionsTab({
         ) : (
           <ul className="grid gap-2">
             {assigned.map((task) => (
-              <li
-                key={task.id}
-                className="flex items-center justify-between gap-3 rounded-lg border bg-card/50 p-3"
-              >
-                <div className="min-w-0">
-                  <Link
-                    href={`/tasks/${task.id}`}
-                    className="truncate font-medium hover:underline"
-                  >
-                    {task.title}
-                  </Link>
-                  {task.client ? (
-                    <p className="truncate text-xs text-muted-foreground">
-                      {task.client.name}
-                    </p>
-                  ) : null}
-                </div>
-                <span className="flex shrink-0 items-center gap-1.5 text-sm">
-                  <Avatar className="size-6">
-                    <AvatarFallback className="text-[9px]">
-                      {initials(task.assignee?.name ?? "?")}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="hidden sm:inline">{task.assignee?.name}</span>
-                </span>
+              <li key={task.id}>
+                {/* A mesma linha de /dashboard e /tasks: painel chanfrado,
+                    trilho de status, marca de atraso e chip de XP. Esta é a
+                    tela de TRIAGEM — era justamente ela que não mostrava
+                    nenhum desses sinais. O status sai porque a seção inteira
+                    já diz "em andamento". */}
+                <MissionRow
+                  variant="compact"
+                  showStatus={false}
+                  task={{
+                    id: task.id,
+                    title: task.title,
+                    status: task.status,
+                    xpValue: task.xpValue,
+                    dueDate: task.dueDate,
+                    clientName: task.client?.name ?? null,
+                    assigneeName: task.assignee?.name ?? null,
+                  }}
+                  trailing={
+                    <Avatar size="sm" className="shrink-0">
+                      <AvatarFallback>
+                        {initials(task.assignee?.name ?? "?")}
+                      </AvatarFallback>
+                    </Avatar>
+                  }
+                />
               </li>
             ))}
           </ul>

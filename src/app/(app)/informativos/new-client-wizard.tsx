@@ -115,7 +115,7 @@ export function NewClientWizard({ onDone }: { onDone: () => void }) {
   const canAdvance = Boolean(company?.legalName.trim() && company?.taxRegime);
 
   return (
-    <div className="panel-cut grid gap-4 rounded-lg border bg-card/50 p-4">
+    <div className="panel-cut grid gap-4 p-4">
       <div className="flex items-center justify-between">
         <p className="hud-label">Novo cliente · passo {step} de 2</p>
         <Button variant="ghost" size="sm" onClick={onDone} disabled={pending}>
@@ -148,7 +148,7 @@ export function NewClientWizard({ onDone }: { onDone: () => void }) {
           {company ? (
             <div className="grid gap-3 rounded-md border p-3">
               {notActive ? (
-                <p className="flex items-start gap-2 text-sm text-amber-300">
+                <p className="flex max-w-prose items-start gap-2 text-sm text-warning">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
                   A Receita mostra esta empresa como {company.cadastralSituation}.
                   Confira antes de cadastrar como cliente novo.
@@ -264,7 +264,7 @@ export function NewClientWizard({ onDone }: { onDone: () => void }) {
             className="font-mono text-xs"
           />
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground">
+            <span className="font-mono text-xs tabular-nums text-muted-foreground">
               {taskText.length}/12.000
             </span>
             <Button

@@ -1,6 +1,6 @@
 "use client";
 
-import { Sparkles, UserRoundCheck } from "lucide-react";
+import { Sparkles, Star, UserRoundCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, useTransition } from "react";
@@ -110,7 +110,7 @@ export function DistributionBoard({
   if (groups.length === 0) {
     return (
       <section className="grid gap-3">
-        <h2 className="hud-label">Fila de distribuição</h2>
+        <h2>Fila de distribuição</h2>
         <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
           Nenhuma missão esperando dono. Quando um informativo chegar, as missões
           deste clã aparecem aqui.
@@ -121,7 +121,7 @@ export function DistributionBoard({
 
   return (
     <section className="grid gap-3">
-      <h2 className="hud-label">Fila de distribuição</h2>
+      <h2>Fila de distribuição</h2>
 
       {!canDistribute ? (
         <p className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">
@@ -138,7 +138,10 @@ export function DistributionBoard({
           );
 
           return (
-            <div key={group.key} className="panel-cut rounded-lg border bg-card/50">
+            // `panel-cut` já traz fundo, aresta interna e canto chanfrado:
+            // `rounded-lg border` só reintroduzia o retângulo que o chanfro
+            // existe para remover.
+            <div key={group.key} className="panel-cut">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
                 <div className="min-w-0">
                   <p className="truncate font-medium">{group.label}</p>
@@ -221,17 +224,29 @@ export function DistributionBoard({
                             {task.title}
                           </Link>
                           <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                            <span className="font-mono text-gold">{task.xpValue} XP</span>
-                            {due ? <span>vence {due}</span> : <span>sem prazo</span>}
+                            {/* Mesmo chip de loot da linha de missão — a
+                                recompensa tem uma forma só no app inteiro. */}
+                            <span className="chip-loot">
+                              <Star className="size-3" aria-hidden />
+                              <span className="tabular-nums">{task.xpValue}</span> XP
+                            </span>
+                            {due ? (
+                              <span>
+                                vence{" "}
+                                <span className="font-mono tabular-nums">{due}</span>
+                              </span>
+                            ) : (
+                              <span>sem prazo</span>
+                            )}
                           </p>
                         </div>
                       </div>
 
                       {task.suggestions.length > 0 ? (
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-xs text-muted-foreground">
-                            Informativo sugeriu:
-                          </span>
+                          {/* Rótulo de um dado, não título de seção — este é o
+                              uso legítimo de `.hud-label`. */}
+                          <span className="hud-label">Informativo sugeriu</span>
                           {task.suggestions.map((suggestion, index) => (
                             <Badge
                               key={`${task.id}-${suggestion.userId ?? suggestion.name}-${index}`}

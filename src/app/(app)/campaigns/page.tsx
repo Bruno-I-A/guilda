@@ -2,6 +2,7 @@ import { Flag } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { PageHeader } from "@/components/page-header";
 import { requireOrgSession } from "@/lib/session";
 
 import { CampaignTabs } from "./campaign-tabs";
@@ -13,13 +14,10 @@ export default async function CampaignsPage() {
 
   return (
     <div className="grid gap-5">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-wide">Campanhas</h1>
-        <p className="text-muted-foreground">
-          Processos recorrentes sobre a carteira de clientes — fechamentos,
-          obrigações e afins.
-        </p>
-      </div>
+      <PageHeader
+        title="Campanhas"
+        description="Processos recorrentes sobre a carteira de clientes — fechamentos, obrigações e afins."
+      />
 
       <CampaignTabs active="campaigns" />
 

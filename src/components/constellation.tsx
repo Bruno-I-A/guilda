@@ -178,7 +178,7 @@ export function Constellation({ totalXp }: { totalXp: number }) {
                     fill="var(--gold)"
                     fontSize={12}
                     fontWeight={700}
-                    style={{ fontFamily: "var(--font-cinzel)" }}
+                    style={{ fontFamily: "var(--font-heading)" }}
                   >
                     {node.level}
                   </text>
@@ -211,7 +211,7 @@ export function Constellation({ totalXp }: { totalXp: number }) {
                   fontSize={10}
                   fill="var(--muted-foreground)"
                   fillOpacity={node.reached ? 0.9 : 0.55}
-                  style={{ fontFamily: "var(--font-geist-mono)" }}
+                  style={{ fontFamily: "var(--font-mono)" }}
                 >
                   {node.level}
                 </text>

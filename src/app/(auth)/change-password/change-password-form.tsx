@@ -59,9 +59,14 @@ export function ChangePasswordForm({ forced }: { forced: boolean }) {
   }
 
   return (
-    <Card className="frame-carved texture-iron">
+    // Era `frame-carved`, utilitário que deixou de existir quando o passe
+    // épico o substituiu por `panel-cut` — a classe estava morta e este card
+    // vinha sem superfície temática nenhuma.
+    <Card className="panel-cut texture-iron rounded-none border-0 ring-0">
       <CardHeader>
-        <CardTitle>{forced ? "Defina sua senha" : "Alterar senha"}</CardTitle>
+        <CardTitle asChild>
+          <h1>{forced ? "Defina sua senha" : "Alterar senha"}</h1>
+        </CardTitle>
         <CardDescription>
           {forced
             ? "Você está usando uma senha temporária — defina uma senha só sua para continuar."

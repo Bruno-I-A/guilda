@@ -14,7 +14,7 @@ export const CLOSING_STATUS_LABELS: Record<ClosingStatus, string> = {
 export const CLOSING_STATUS_BADGE_CLASSES: Record<ClosingStatus, string> = {
   pending: "border-primary/25 bg-primary/10 text-primary",
   blocked: "border-destructive/30 bg-destructive/10 text-destructive",
-  completed: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300",
+  completed: "border-success/25 bg-success/10 text-success",
 };
 
 export const CLOSING_GROUPS: {

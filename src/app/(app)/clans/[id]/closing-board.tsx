@@ -353,12 +353,12 @@ function ClosingRow({
   const [editOpen, setEditOpen] = useState(false);
 
   return (
-    <li className="grid gap-3 rounded-lg border border-l-2 border-l-emerald-400/60 bg-background/45 p-3">
+    <li className="grid gap-3 rounded-lg border border-l-2 border-l-success/60 bg-background/45 p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-medium">{closing.title}</p>
-            <Badge className="h-5 border-emerald-400/25 bg-emerald-400/10 px-1.5 text-emerald-300">
+            <Badge className="h-5 border-success/25 bg-success/10 px-1.5 text-success">
               <Check aria-hidden />
               fechado
             </Badge>
@@ -387,8 +387,8 @@ function ClosingRow({
                 className={cn(
                   "font-mono font-medium",
                   Number(closing.cashBalance) < 0
-                    ? "text-red-300"
-                    : "text-emerald-300",
+                    ? "text-destructive"
+                    : "text-success",
                 )}
               >
                 {formatMoney(closing.cashBalance)}
@@ -402,8 +402,8 @@ function ClosingRow({
                 className={cn(
                   "font-mono font-medium",
                   Number(closing.periodResult) < 0
-                    ? "text-red-300"
-                    : "text-emerald-300",
+                    ? "text-destructive"
+                    : "text-success",
                 )}
               >
                 {formatMoney(closing.periodResult)}
@@ -518,7 +518,7 @@ function CompanyCard({
       className={cn(
         "panel-cut panel-cut-sm overflow-hidden transition-colors",
         hasClosings &&
-          "border-emerald-400/30 bg-emerald-400/[0.04] shadow-[inset_3px_0_0_rgba(52,211,153,0.8)]",
+          "border-success/30 border-l-2 border-l-success bg-success/[0.04]",
       )}
     >
       <div className="flex items-center gap-2 p-3 sm:p-4">
@@ -531,7 +531,7 @@ function CompanyCard({
           <ChevronDown
             className={cn(
               "size-4 shrink-0 text-muted-foreground transition-transform",
-              hasClosings && "text-emerald-300",
+              hasClosings && "text-success",
               expanded && "rotate-180",
             )}
             aria-hidden
@@ -541,7 +541,7 @@ function CompanyCard({
               <h2
                 className={cn(
                   "truncate font-semibold",
-                  hasClosings && "text-emerald-100",
+                  hasClosings && "text-success",
                 )}
               >
                 {company.name}
@@ -555,13 +555,13 @@ function CompanyCard({
                 {TAX_REGIME_LABELS[company.taxRegime]}
               </Badge>
               {hasClosings ? (
-                <Badge className="h-5 border-emerald-400/35 bg-emerald-400/15 px-1.5 text-emerald-200">
+                <Badge className="h-5 border-success/35 bg-success/15 px-1.5 text-success">
                   <ClipboardCheck aria-hidden />
                   com fechamento
                 </Badge>
               ) : null}
               {yearClosed ? (
-                <Badge className="h-5 border-emerald-400/30 bg-emerald-400/10 px-1.5 text-emerald-300">
+                <Badge className="h-5 border-success/30 bg-success/10 px-1.5 text-success">
                   <Check aria-hidden /> {year} fechado
                 </Badge>
               ) : (
@@ -574,8 +574,8 @@ function CompanyCard({
                   className={cn(
                     "h-5 px-1.5",
                     defisCompleted
-                      ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-                      : "border-amber-400/30 bg-amber-400/10 text-amber-300",
+                      ? "border-success/30 bg-success/10 text-success"
+                      : "border-warning/30 bg-warning/10 text-warning",
                   )}
                 >
                   <FileCheck2 aria-hidden />
@@ -583,7 +583,7 @@ function CompanyCard({
                 </Badge>
               ) : null}
               {hasNotes ? (
-                <Badge className="h-5 border-amber-400/30 bg-amber-400/10 px-1.5 text-amber-300">
+                <Badge className="h-5 border-warning/30 bg-warning/10 px-1.5 text-warning">
                   <MessageSquareText aria-hidden /> observação
                 </Badge>
               ) : null}
@@ -591,7 +591,7 @@ function CompanyCard({
             <p
               className={cn(
                 "mt-1 flex items-center gap-1.5 font-mono text-xs text-muted-foreground",
-                hasClosings && "font-semibold text-emerald-300",
+                hasClosings && "font-semibold text-success",
               )}
             >
               {hasClosings ? (

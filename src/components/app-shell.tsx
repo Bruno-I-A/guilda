@@ -137,7 +137,7 @@ function PendingBadge({ count }: { count: number }) {
   return (
     <span
       aria-label={`${count} aviso(s) aguardando confirmação`}
-      className="inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 font-mono text-[10px] leading-4 text-destructive-foreground"
+      className="inline-flex min-w-4 items-center justify-center bg-destructive px-1 font-mono text-hud leading-4 tabular-nums text-destructive-foreground"
     >
       {count > 9 ? "9+" : count}
     </span>
@@ -245,7 +245,7 @@ export function AppShell({
                 href={href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center gap-1 border-t-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-[11px] font-medium",
+                  "flex flex-col items-center gap-1 border-t-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-xs font-medium",
                   active
                     ? "border-primary text-primary"
                     : "border-transparent text-muted-foreground",
@@ -267,7 +267,7 @@ export function AppShell({
           <Sheet open={overflowOpen} onOpenChange={setOverflowOpen}>
             <SheetTrigger
               className={cn(
-                "flex flex-col items-center gap-1 border-t-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-[11px] font-medium",
+                "flex flex-col items-center gap-1 border-t-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-xs font-medium",
                 overflowActive
                   ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground",

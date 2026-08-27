@@ -9,27 +9,44 @@ import {
   notInArray,
   or,
 } from "drizzle-orm";
-import { CalendarClock, ChevronRight, ShieldCheck, Star } from "lucide-react";
+import { ChevronRight, ShieldCheck, Star } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { LevelEmblem } from "@/components/level-emblem";
+import { MissionRow } from "@/components/mission-row";
+import { PageHeader } from "@/components/page-header";
 import { XpBar } from "@/components/xp-bar";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { levelProgress } from "@/domain/xp";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
-import {
-  formatDueDate,
-  isOverdue,
-  STATUS_LABELS,
-  STATUS_RAIL_CLASSES,
-} from "@/lib/task-ui";
 import { getUserXpTotal } from "@/lib/xp-queries";
-import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Início" };
+
+/**
+ * Etiqueta de missão sem dono no clã — "pode ser sua".
+ *
+ * Era o único `rounded-full` de um app cuja premissa é canto chanfrado, e
+ * reimplementava `.hud-label` na unha com `text-[10px]`. Agora usa o degrau
+ * HUD da escala e o mesmo corte em 45° do `chip-loot`, só que em azul-gelo:
+ * é convite, não recompensa — ouro continua reservado ao XP.
+ */
+function AvailableTag() {
+  return (
+    <span
+      className="shrink-0 border border-primary/35 bg-primary/10 px-2 py-0.5 font-mono text-hud font-semibold uppercase tracking-hud text-primary"
+      style={{
+        clipPath:
+          "polygon(0.3rem 0, 100% 0, 100% calc(100% - 0.3rem), calc(100% - 0.3rem) 100%, 0 100%, 0 0.3rem)",
+      }}
+    >
+      Disponível
+    </span>
+  );
+}
 
 export default async function DashboardPage() {
   const session = await requireOrgSession();
@@ -146,12 +163,10 @@ export default async function DashboardPage() {
 
   return (
     <div className="grid gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-wide">Olá, {firstName}</h1>
-        <p className="text-muted-foreground">
-          Conclua missões, ganhe XP e suba no ranking da guilda.
-        </p>
-      </div>
+      <PageHeader
+        title={`Olá, ${firstName}`}
+        description="Conclua missões, ganhe XP e suba no ranking da guilda."
+      />
 
       {/* Banner de status: emblema + progressão + stats da guilda */}
       <section className="panel-cut texture-iron flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:gap-6 sm:p-6">
@@ -189,7 +204,7 @@ export default async function DashboardPage() {
 
       <section className="grid gap-3">
         <div className="flex items-center gap-3">
-          <h2 className="hud-label">Suas missões</h2>
+          <h2>Suas missões</h2>
           <div className="divider-rune flex-1" />
           <Link
             href="/tasks"
@@ -213,43 +228,13 @@ export default async function DashboardPage() {
           </div>
         ) : (
           <ul className="grid gap-1.5">
-            {sortedMine.map((task) => {
-              const overdue = isOverdue(task.dueDate, task.status);
-              return (
-                <li key={task.id}>
-                  <Link
-                    href={`/tasks/${task.id}`}
-                    className={cn(
-                      "panel-cut panel-cut-sm flex items-center gap-3 border-l-2 px-4 py-2.5 transition-colors hover:bg-accent/40",
-                      overdue
-                        ? "border-l-destructive"
-                        : STATUS_RAIL_CLASSES[task.status],
-                    )}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{task.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {STATUS_LABELS[task.status]}
-                        {task.dueDate ? (
-                          <span className={cn(overdue && "font-medium text-destructive")}>
-                            {" · "}
-                            <CalendarClock
-                              className="inline size-3 align-[-1.5px]"
-                              aria-hidden
-                            />{" "}
-                            {overdue ? "atrasada · " : ""}
-                            {formatDueDate(task.dueDate)}
-                          </span>
-                        ) : null}
-                      </p>
-                    </div>
-                    <span className="chip-loot">
-                      <Star className="size-3" aria-hidden /> {task.xpValue} XP
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
+            {sortedMine.map((task) => (
+              <li key={task.id}>
+                {/* Aqui o status importa (é o que diz se já comecei); clã e
+                    responsável são redundantes — a missão é minha. */}
+                <MissionRow task={task} variant="compact" />
+              </li>
+            ))}
           </ul>
         )}
       </section>
@@ -257,7 +242,7 @@ export default async function DashboardPage() {
       <section className="grid gap-3">
         <div className="flex items-center gap-3">
           <ShieldCheck className="size-4 text-primary" aria-hidden />
-          <h2 className="hud-label">Missões dos seus clãs</h2>
+          <h2>Missões dos seus clãs</h2>
           <div className="divider-rune flex-1" />
           <Link
             href="/tasks?scope=my_clans"
@@ -275,49 +260,30 @@ export default async function DashboardPage() {
           </div>
         ) : (
           <ul className="grid gap-1.5">
-            {sortedClanTasks.map((task) => {
-              const overdue = isOverdue(task.dueDate, task.status);
-              return (
-                <li key={task.id}>
-                  <Link
-                    href={`/tasks/${task.id}`}
-                    className={cn(
-                      "panel-cut panel-cut-sm flex items-center gap-3 border-l-2 px-4 py-2.5 transition-colors hover:bg-accent/40",
-                      overdue
-                        ? "border-l-destructive"
-                        : STATUS_RAIL_CLASSES[task.status],
-                    )}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{task.title}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {task.clan?.name ?? "Clã"} · {task.assignee?.name ?? "Disponível no clã"}
-                        {task.dueDate ? (
-                          <span className={cn(overdue && "font-medium text-destructive")}>
-                            {" · "}
-                            <CalendarClock
-                              className="inline size-3 align-[-1.5px]"
-                              aria-hidden
-                            />{" "}
-                            {overdue ? "atrasada · " : ""}
-                            {formatDueDate(task.dueDate)}
-                          </span>
-                        ) : null}
-                      </p>
-                    </div>
-                    {task.assigneeId === null ? (
-                      <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-primary">
-                        disponível
-                      </span>
-                    ) : null}
-                    <span className="chip-loot">
-                      <Star className="size-3" aria-hidden /> {task.xpValue} XP
-                    </span>
-                    <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
-                  </Link>
-                </li>
-              );
-            })}
+            {sortedClanTasks.map((task) => (
+              <li key={task.id}>
+                {/* Sem status: aqui o que decide é DE QUEM é a missão, e o
+                    trilho da esquerda já dá o estado sem gastar texto. */}
+                <MissionRow
+                  task={{
+                    ...task,
+                    clanName: task.clan?.name ?? "Clã",
+                    assigneeName: task.assignee?.name ?? "Disponível no clã",
+                  }}
+                  variant="compact"
+                  showStatus={false}
+                  trailing={
+                    task.assigneeId === null ? <AvailableTag /> : null
+                  }
+                  after={
+                    <ChevronRight
+                      className="size-4 shrink-0 text-muted-foreground"
+                      aria-hidden
+                    />
+                  }
+                />
+              </li>
+            ))}
           </ul>
         )}
       </section>

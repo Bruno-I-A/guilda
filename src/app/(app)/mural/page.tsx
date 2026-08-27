@@ -2,6 +2,7 @@ import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { PageHeader } from "@/components/page-header";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { canEmphasizeNotice, canSeeNoticeAcknowledgements } from "@/domain/guild-permissions";
@@ -105,13 +106,10 @@ export default async function MuralPage() {
 
   return (
     <div className="grid gap-5">
-      <div>
-        <h1 className="font-heading text-2xl font-semibold tracking-wide">Mural</h1>
-        <p className="text-muted-foreground">
-          Avisos da Guilda inteira. Empresa nova entra aqui sozinha, junto com os
-          combinados que não viram missão.
-        </p>
-      </div>
+      <PageHeader
+        title="Mural"
+        description="Avisos da Guilda inteira. Empresa nova entra aqui sozinha, junto com os combinados que não viram missão."
+      />
 
       <NoticeBoard
         notices={views}

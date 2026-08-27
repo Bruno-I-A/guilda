@@ -1,10 +1,11 @@
 import { and, asc, eq } from "drizzle-orm";
-import { ArrowLeft, ArrowRightLeft, CalendarClock, Star, UsersRound } from "lucide-react";
+import { ArrowRightLeft, CalendarClock, Star, UsersRound } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 
+import { PageHeader } from "@/components/page-header";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -250,36 +251,34 @@ export default async function TaskDetailPage({
 
   return (
     <div className="grid gap-5">
-      <div>
-        <Link
-          href="/tasks"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" aria-hidden /> Missões
-        </Link>
-        <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
-          <h1 className="max-w-xl font-sans text-2xl font-semibold leading-tight tracking-tight">
-            {task.title}
-          </h1>
+      {/* O título da missão é o h1 desta rota: herda a escala display
+          (24px Cinzel) como todo h1 do app. A medida fica presa em
+          `max-w-prose` para o título longo não virar uma linha só. */}
+      <PageHeader
+        backHref="/tasks"
+        backLabel="Missões"
+        title={task.title}
+        badges={
           <Badge className={STATUS_BADGE_CLASSES[task.status]}>
             {STATUS_LABELS[task.status]}
           </Badge>
-        </div>
-      </div>
+        }
+        titleClassName="max-w-prose"
+      />
 
       {awaitingMyApproval ? (
-        <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-200">
+        <div className="panel-cut panel-cut-sm bg-warning/10 p-4 text-sm text-warning shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--warning)_35%,transparent)]">
           <p className="font-medium">Esta missão ainda usa o fluxo legado de aprovação.</p>
-          <p>
+          <p className="max-w-prose">
             Ao aprovar, {task.assignee?.name ?? "a pessoa responsável"} recebe {task.xpValue} XP.
           </p>
         </div>
       ) : null}
 
       {task.status === "rejected" && lastRejection?.note ? (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm">
-          <p className="font-medium">Devolvida para ajustes</p>
-          <p className="whitespace-pre-wrap">{lastRejection.note}</p>
+        <div className="panel-cut panel-cut-sm bg-destructive/10 p-4 text-sm shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--destructive)_40%,transparent)]">
+          <p className="font-medium text-destructive">Devolvida para ajustes</p>
+          <p className="max-w-prose whitespace-pre-wrap">{lastRejection.note}</p>
         </div>
       ) : null}
 
@@ -327,7 +326,9 @@ export default async function TaskDetailPage({
                 <CardTitle className="text-base">Descrição</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed">
+                {/* A coluna é `2fr` de um `max-w-5xl`: sem medida, a prosa
+                    roda a ~150 caracteres por linha, o dobro do legível. */}
+                <p className="max-w-prose whitespace-pre-wrap text-sm leading-relaxed">
                   {task.description}
                 </p>
               </CardContent>
@@ -348,7 +349,7 @@ export default async function TaskDetailPage({
                         <span aria-hidden className="absolute left-[15px] top-8 h-[calc(100%-1.75rem)] w-px bg-border" />
                       ) : null}
                       <Avatar className="size-8 shrink-0">
-                        <AvatarFallback className="text-[10px]">
+                        <AvatarFallback className="text-xs">
                           {initials(event.actor.name)}
                         </AvatarFallback>
                       </Avatar>
@@ -357,12 +358,12 @@ export default async function TaskDetailPage({
                           <span className="font-medium">{event.actor.name}</span>{" "}
                           {eventLabel(event.fromStatus, event.toStatus)}
                           {event.toStatus === "completed" ? (
-                            <span className="ml-1.5 font-mono font-semibold text-gold">
+                            <span className="ml-1.5 font-mono font-semibold tabular-nums text-gold">
                               +{task.xpValue} XP
                             </span>
                           ) : null}
                           {event.fromStatus === "completed" && event.toStatus === "in_progress" ? (
-                            <span className="ml-1.5 font-semibold text-destructive">
+                            <span className="ml-1.5 font-mono font-semibold tabular-nums text-destructive">
                               −{task.xpValue} XP
                             </span>
                           ) : null}
@@ -372,7 +373,7 @@ export default async function TaskDetailPage({
                             {event.note}
                           </p>
                         ) : null}
-                        <p className="mt-0.5 text-xs text-muted-foreground">
+                        <p className="mt-0.5 font-mono text-xs tabular-nums text-muted-foreground">
                           {formatDateTime(event.createdAt)}
                         </p>
                       </div>
@@ -388,7 +389,7 @@ export default async function TaskDetailPage({
                       <span aria-hidden className="absolute left-[15px] top-8 h-[calc(100%-1.75rem)] w-px bg-border" />
                     ) : null}
                     <Avatar className="size-8 shrink-0">
-                      <AvatarFallback className="text-[10px]">
+                      <AvatarFallback className="text-xs">
                         {initials(transfer.actor.name)}
                       </AvatarFallback>
                     </Avatar>
@@ -420,7 +421,7 @@ export default async function TaskDetailPage({
                           {transfer.note}
                         </p>
                       ) : null}
-                      <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      <p className="mt-0.5 inline-flex items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground">
                         <ArrowRightLeft className="size-3" aria-hidden />
                         {formatDateTime(transfer.createdAt)}
                       </p>
@@ -439,7 +440,7 @@ export default async function TaskDetailPage({
           <CardContent className="grid gap-3 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Recompensa</span>
-              <span className="inline-flex items-center gap-1 font-mono font-semibold text-gold">
+              <span className="inline-flex items-center gap-1 font-mono font-semibold tabular-nums text-gold">
                 <Star className="size-4" aria-hidden /> {task.xpValue} XP
               </span>
             </div>
@@ -477,7 +478,9 @@ export default async function TaskDetailPage({
                 <span className={cn("inline-flex items-center gap-1", overdue && "font-medium text-destructive")}>
                   <CalendarClock className="size-4" aria-hidden />
                   {overdue ? "atrasada · " : ""}
-                  {formatDueDate(task.dueDate)}
+                  <span className="font-mono tabular-nums">
+                    {formatDueDate(task.dueDate)}
+                  </span>
                 </span>
               ) : (
                 <span className="text-muted-foreground">—</span>
@@ -485,12 +488,16 @@ export default async function TaskDetailPage({
             </div>
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Criada em</span>
-              <span>{formatDateTime(task.createdAt)}</span>
+              <span className="font-mono tabular-nums">
+                {formatDateTime(task.createdAt)}
+              </span>
             </div>
             {task.completedAt ? (
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Concluída em</span>
-                <span>{formatDateTime(task.completedAt)}</span>
+                <span className="font-mono tabular-nums">
+                  {formatDateTime(task.completedAt)}
+                </span>
               </div>
             ) : null}
           </CardContent>

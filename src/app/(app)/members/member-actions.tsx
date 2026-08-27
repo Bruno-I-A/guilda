@@ -130,14 +130,23 @@ export function InviteMemberDialog() {
                 vez. A pessoa vai precisar trocá-la no primeiro acesso.
               </DialogDescription>
             </DialogHeader>
-            <div className="frame-carved grid gap-2 p-4 font-mono text-sm">
+            {/*
+              `frame-carved` não existe mais no globals.css — a caixa estava
+              renderizando sem moldura nenhuma. Agora usa `panel-cut`, a
+              superfície padrão do tema.
+              A senha saiu do ouro: ouro é EXCLUSIVO de recompensa, e senha
+              temporária não é prêmio — o destaque agora é o acento azul-gelo.
+            */}
+            <div className="panel-cut panel-cut-sm grid gap-2 p-4 font-mono text-sm">
               <div>
                 <span className="text-muted-foreground">E-mail: </span>
                 {created.email}
               </div>
               <div>
                 <span className="text-muted-foreground">Senha: </span>
-                <span className="text-gold">{created.password}</span>
+                <span className="font-semibold text-primary">
+                  {created.password}
+                </span>
               </div>
             </div>
             <DialogFooter className="gap-2">
@@ -271,7 +280,14 @@ export function MemberActions({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label={`Ações para ${memberName}`}>
+          {/* 28px de botão, 44px de alvo: o menu vive dentro de uma linha de
+              lista e precisa ser acertável com o dedo. */}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="touch-target"
+            aria-label={`Ações para ${memberName}`}
+          >
             <MoreHorizontal aria-hidden />
           </Button>
         </DropdownMenuTrigger>

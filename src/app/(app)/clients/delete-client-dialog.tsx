@@ -74,9 +74,13 @@ export function DeleteClientButton({
 
   return (
     <>
+      {/* A ação mais destrutiva do app tinha o menor alvo de toque (32px, colado
+          na linha). `touch-target` leva a área para 44px sem inchar o visual —
+          o fluxo de confirmação (digitar o nome) continua sendo a trava real. */}
       <Button
         variant="ghost"
         size="icon"
+        className="touch-target"
         aria-label={`Excluir ${clientName} permanentemente`}
         disabled={loadingSummary}
         onClick={openDialog}
@@ -98,10 +102,30 @@ export function DeleteClientButton({
           </DialogHeader>
           {summary ? (
             <div className="grid gap-3 text-sm">
+              {/* Plural de verdade — o "missão(ões)" parentético era o último
+                  do app. Contagens em mono tabular: é um inventário do estrago
+                  e precisa alinhar na leitura vertical. */}
               <ul className="grid gap-1 text-muted-foreground">
-                <li>{summary.taskCount} missão(ões)</li>
-                <li>{summary.closingCount} fechamento(s)</li>
-                <li>{summary.commitmentCount} compromisso(s)</li>
+                <li>
+                  <span className="font-mono tabular-nums text-foreground">
+                    {summary.taskCount}
+                  </span>{" "}
+                  {summary.taskCount === 1 ? "missão" : "missões"}
+                </li>
+                <li>
+                  <span className="font-mono tabular-nums text-foreground">
+                    {summary.closingCount}
+                  </span>{" "}
+                  {summary.closingCount === 1 ? "fechamento" : "fechamentos"}
+                </li>
+                <li>
+                  <span className="font-mono tabular-nums text-foreground">
+                    {summary.commitmentCount}
+                  </span>{" "}
+                  {summary.commitmentCount === 1
+                    ? "compromisso"
+                    : "compromissos"}
+                </li>
                 {summary.portfolioHolderName ? (
                   <li>Carteira com {summary.portfolioHolderName}</li>
                 ) : null}

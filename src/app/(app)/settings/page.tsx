@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -60,22 +61,18 @@ export default async function SettingsPage() {
 
   return (
     <div className="grid gap-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-wide">
-          <Settings className="size-6 text-primary" aria-hidden /> Configurações
-        </h1>
-        <p className="text-muted-foreground">
-          Ajustes da Guilda restritos a quem administra. Cada pessoa só enxerga
-          os clãs em que está vinculada — o que você define aqui decide o que
-          ela vê.
-        </p>
-      </div>
+      <PageHeader
+        title="Configurações"
+        icon={Settings}
+        description="Ajustes da Guilda restritos a quem administra. Cada pessoa só enxerga os clãs em que está vinculada — o que você define aqui decide o que ela vê."
+      />
 
       {semClan.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-destructive/50 bg-destructive/5 p-4 text-sm">
           <Shield className="size-4 shrink-0 text-destructive" aria-hidden />
           <span className="font-medium">
-            {semClan.length} {semClan.length === 1 ? "pessoa" : "pessoas"} sem clã:
+            <span className="font-mono tabular-nums">{semClan.length}</span>{" "}
+            {semClan.length === 1 ? "pessoa" : "pessoas"} sem clã:
           </span>
           <span className="text-muted-foreground">
             {semClan.map((person) => person.name).join(", ")}. Sem vínculo, a aba
@@ -87,10 +84,8 @@ export default async function SettingsPage() {
       <section className="grid gap-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h2 className="font-heading text-lg font-semibold tracking-wide">
-              Composição dos clãs
-            </h2>
-            <p className="text-sm text-muted-foreground">
+            <h2>Composição dos clãs</h2>
+            <p className="max-w-prose text-sm text-muted-foreground">
               Quem entra, quem sai, quem lidera e qual é o clã principal de cada
               pessoa.
             </p>

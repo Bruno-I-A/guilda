@@ -62,18 +62,29 @@ export async function MembersTab({
   const leaders = rows.filter((row) => row.isLeader).length;
 
   return (
-    <div className="grid gap-4">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <Users className="size-4" aria-hidden />
-          {rows.length} {rows.length === 1 ? "integrante" : "integrantes"}
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Crown className="size-4" aria-hidden />
-          {leaders === 0
-            ? "sem líder definido"
-            : `${leaders} ${leaders === 1 ? "líder" : "líderes"}`}
-        </span>
+    <section className="grid gap-4">
+      {/* A aba não tinha nenhum heading: quem navega por leitor de tela caía
+          direto numa lista sem saber do que ela era. */}
+      <div className="grid gap-1">
+        <h2>Composição do clã</h2>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <Users className="size-4 shrink-0" aria-hidden />
+            <span className="font-mono tabular-nums">{rows.length}</span>{" "}
+            {rows.length === 1 ? "integrante" : "integrantes"}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Crown className="size-4 shrink-0" aria-hidden />
+            {leaders === 0 ? (
+              "sem líder definido"
+            ) : (
+              <>
+                <span className="font-mono tabular-nums">{leaders}</span>{" "}
+                {leaders === 1 ? "líder" : "líderes"}
+              </>
+            )}
+          </span>
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -86,13 +97,11 @@ export async function MembersTab({
           {rows.map((row) => (
             <li
               key={row.userId}
-              className="flex items-center justify-between gap-3 rounded-lg border bg-card/50 p-3"
+              className="panel-cut panel-cut-sm flex items-center justify-between gap-3 px-4 py-3"
             >
               <span className="flex min-w-0 items-center gap-2.5">
-                <Avatar className="size-8">
-                  <AvatarFallback className="text-[10px]">
-                    {initials(row.name)}
-                  </AvatarFallback>
+                <Avatar>
+                  <AvatarFallback>{initials(row.name)}</AvatarFallback>
                 </Avatar>
                 <span className="min-w-0">
                   <span className="flex items-center gap-1.5">
@@ -112,17 +121,22 @@ export async function MembersTab({
               </span>
               <span className="flex shrink-0 items-center gap-3 text-sm">
                 <span className="text-right">
-                  <strong className="block font-mono leading-none">
+                  <strong className="block font-mono leading-none tabular-nums">
                     {row.openCount}
                   </strong>
-                  <span className="text-[11px] text-muted-foreground">abertas</span>
+                  <span className="hud-label">abertas</span>
                 </span>
                 {row.overdueCount > 0 ? (
                   <span className="text-right text-destructive">
-                    <strong className="block font-mono leading-none">
+                    <strong className="block font-mono leading-none tabular-nums">
                       {row.overdueCount}
                     </strong>
-                    <span className="text-[11px]">atrasadas</span>
+                    {/* Mesmo degrau HUD do rótulo ao lado, mas escrito à mão:
+                        `.hud-label` fixa a cor em `muted-foreground` e aqui o
+                        rótulo precisa herdar o vermelho do bloco. */}
+                    <span className="font-mono text-hud uppercase tracking-hud">
+                      atrasadas
+                    </span>
                   </span>
                 ) : null}
               </span>
@@ -130,6 +144,6 @@ export async function MembersTab({
           ))}
         </ul>
       )}
-    </div>
+    </section>
   );
 }

@@ -11,26 +11,18 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { CalendarClock, ListTodo, Plus, Star, UsersRound } from "lucide-react";
+import { ListTodo, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { Pips } from "@/components/pips";
-import { Badge } from "@/components/ui/badge";
+import { MissionRow } from "@/components/mission-row";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { TASK_STATUSES, type TaskStatus } from "@/domain/task-state";
 import { requireOrgSession } from "@/lib/session";
-import {
-  formatDueDate,
-  isOverdue,
-  STATUS_BADGE_CLASSES,
-  STATUS_LABELS,
-  STATUS_RAIL_CLASSES,
-  upcomingWeekBounds,
-} from "@/lib/task-ui";
-import { cn } from "@/lib/utils";
+import { upcomingWeekBounds } from "@/lib/task-ui";
 
 import { TaskFilters, type TaskScope } from "./task-filters";
 
@@ -170,19 +162,17 @@ export default async function TasksPage({
 
   return (
     <div className="grid gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-wide">Missões</h1>
-          <p className="text-sm text-muted-foreground">
-            Acompanhe o trabalho individual, dos seus clãs ou de toda a Guilda.
-          </p>
-        </div>
-        <Button asChild>
-          <Link href="/tasks/new">
-            <Plus aria-hidden /> Nova missão
-          </Link>
-        </Button>
-      </div>
+      <PageHeader
+        title="Missões"
+        description="Acompanhe o trabalho individual, dos seus clãs ou de toda a Guilda."
+        action={
+          <Button asChild>
+            <Link href="/tasks/new">
+              <Plus aria-hidden /> Nova missão
+            </Link>
+          </Button>
+        }
+      />
 
       <TaskFilters
         scope={scope}
@@ -195,7 +185,7 @@ export default async function TasksPage({
       />
 
       {taskList.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-12 text-center">
+        <div className="panel-cut flex flex-col items-center gap-3 p-12 text-center">
           <ListTodo className="size-8 text-muted-foreground" aria-hidden />
           <p className="font-medium">Nenhuma missão por aqui</p>
           <p className="max-w-sm text-sm text-muted-foreground">
@@ -209,55 +199,20 @@ export default async function TasksPage({
         </div>
       ) : (
         <ul className="grid gap-1.5">
-          {taskList.map((task) => {
-            const overdue = isOverdue(task.dueDate, task.status);
-            return (
-              <li key={task.id}>
-                <Link
-                  href={`/tasks/${task.id}`}
-                  className={cn(
-                    "panel-cut panel-cut-sm flex flex-col gap-1.5 border-l-2 px-4 py-3 transition-colors hover:bg-accent/40",
-                    overdue ? "border-l-destructive" : STATUS_RAIL_CLASSES[task.status],
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="min-w-0 flex-1 truncate font-medium leading-snug">
-                      {task.title}
-                    </p>
-                    <span className="chip-loot shrink-0">
-                      <Star className="size-3" aria-hidden /> {task.xpValue} XP
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                    <Badge className={cn("h-4 px-1.5", STATUS_BADGE_CLASSES[task.status])}>
-                      {STATUS_LABELS[task.status]}
-                    </Badge>
-                    <Pips value={task.priority} max={3} label="Prioridade" />
-                    <Pips value={task.difficulty} max={5} label="Dificuldade" />
-                    <span className="inline-flex items-center gap-1">
-                      <UsersRound className="size-3.5" aria-hidden />
-                      {task.clan?.name ?? "Sem clã"}
-                    </span>
-                    <span>
-                      responsável: {task.assignee?.name ?? "Sem responsável"}
-                    </span>
-                    {task.dueDate ? (
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1",
-                          overdue && "font-medium text-destructive",
-                        )}
-                      >
-                        <CalendarClock className="size-3.5" aria-hidden />
-                        {overdue ? "atrasada · " : ""}
-                        {formatDueDate(task.dueDate)}
-                      </span>
-                    ) : null}
-                  </div>
-                </Link>
-              </li>
-            );
-          })}
+          {taskList.map((task) => (
+            <li key={task.id}>
+              {/* A lista completa: é a tela de triagem, então abre os dois
+                  grupos de metadado (estado e atribuição). */}
+              <MissionRow
+                task={{
+                  ...task,
+                  clanName: task.clan?.name ?? null,
+                  assigneeName: task.assignee?.name ?? null,
+                }}
+                variant="full"
+              />
+            </li>
+          ))}
         </ul>
       )}
     </div>

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+import { SegmentedNav } from "@/components/segmented-nav";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -257,27 +258,16 @@ export async function ClosingsTab({
         </div>
       </div>
 
-      <nav
-        aria-label="Regime das empresas"
-        className="grid grid-cols-3 rounded-lg border bg-muted/40 p-0.5"
-      >
-        {CLOSING_GROUPS.map((item) => (
-          <Link
-            key={item.key}
-            href={href({ group: item.key, status: "all", q: "" })}
-            aria-current={group === item.key ? "page" : undefined}
-            className={cn(
-              "rounded-md px-2 py-2 text-center text-xs font-medium transition-colors sm:text-sm",
-              group === item.key
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <span className="sm:hidden">{item.shortLabel}</span>
-            <span className="hidden sm:inline">{item.label}</span>
-          </Link>
-        ))}
-      </nav>
+      <SegmentedNav
+        label="Regime das empresas"
+        active={group}
+        items={CLOSING_GROUPS.map((item) => ({
+          key: item.key,
+          label: item.label,
+          shortLabel: item.shortLabel,
+          href: href({ group: item.key, status: "all", q: "" }),
+        }))}
+      />
 
       <section className="panel-cut texture-iron grid gap-4 p-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
@@ -298,7 +288,7 @@ export async function ClosingsTab({
             <p className="text-muted-foreground">anos em aberto</p>
           </div>
           <div>
-            <p className={cn("text-lg font-semibold", notesCount && "text-amber-300")}>
+            <p className={cn("text-lg font-semibold", notesCount && "text-warning")}>
               {notesCount}
             </p>
             <p className="text-muted-foreground">com observação</p>
@@ -307,7 +297,7 @@ export async function ClosingsTab({
             <p
               className={cn(
                 "text-lg font-semibold",
-                defisPendingCount && "text-amber-300",
+                defisPendingCount && "text-warning",
               )}
             >
               {group === "simples" ? defisPendingCount : closedCount}
@@ -320,33 +310,18 @@ export async function ClosingsTab({
       </section>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <nav
-          aria-label="Filtrar por situação"
-          className="flex max-w-full overflow-x-auto rounded-lg border bg-muted/40 p-0.5"
-        >
-          {(
+        <SegmentedNav
+          label="Filtrar por situação"
+          active={status}
+          items={(
             [
               ["all", "Todas"],
               ["open", "Ano em aberto"],
               ["notes", "Com observação"],
               ["completed", "Ano fechado"],
             ] as const
-          ).map(([key, label]) => (
-            <Link
-              key={key}
-              href={href({ status: key })}
-              aria-current={status === key ? "page" : undefined}
-              className={cn(
-                "whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                status === key
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {label}
-            </Link>
-          ))}
-        </nav>
+          ).map(([key, label]) => ({ key, label, href: href({ status: key }) }))}
+        />
         <form className="relative" action={`/clans/${clanId}`}>
           <input type="hidden" name="tab" value="closings" />
           <input type="hidden" name="year" value={year} />

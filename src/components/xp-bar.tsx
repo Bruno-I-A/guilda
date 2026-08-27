@@ -42,7 +42,7 @@ export function XpBar({
           }}
         />
         <span className="absolute inset-0 flex items-center justify-center">
-          <span className="bg-background/70 px-1.5 py-px font-mono text-[11px] font-semibold tracking-wider text-foreground">
+          <span className="bg-background/70 px-1.5 py-px font-mono text-xs font-semibold tabular-nums tracking-wider text-foreground">
             {current} / {target} XP
           </span>
         </span>

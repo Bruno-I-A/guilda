@@ -19,13 +19,17 @@ export default function ErrorPage({
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-4 p-6 text-center">
       <TriangleAlert className="size-10 text-destructive" aria-hidden />
-      <h1 className="text-xl font-semibold">Algo deu errado</h1>
-      <p className="max-w-sm text-sm text-muted-foreground">
+      {/* Sem classe de tamanho: o h1 herda a escala display (24px Cinzel).
+          Antes era `text-xl`, um passo que não existia em nenhuma outra tela. */}
+      <h1>Algo deu errado</h1>
+      <p className="max-w-prose text-sm text-muted-foreground">
         Um erro inesperado aconteceu. Tente novamente — se persistir, saia e
         entre de novo na sua conta.
       </p>
       {error.digest ? (
-        <p className="text-xs text-muted-foreground">Código: {error.digest}</p>
+        <p className="hud-label">
+          Código: <span className="font-mono normal-case">{error.digest}</span>
+        </p>
       ) : null}
       <Button onClick={reset}>
         <RotateCcw aria-hidden /> Tentar novamente

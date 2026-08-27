@@ -173,7 +173,7 @@ export function InformativePanel({
             className="font-mono text-xs"
           />
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground">
+            <span className="font-mono text-xs tabular-nums text-muted-foreground">
               {sourceText.length}/12.000
             </span>
             <Button
@@ -187,11 +187,9 @@ export function InformativePanel({
       )}
 
       {!draft ? null : (
-        <div className="panel-cut grid gap-4 rounded-lg border bg-card/50 p-4">
+        <div className="panel-cut grid gap-4 p-4">
           <div>
-            <h2 className="font-medium">
-              {draft.company.legalName ?? "Missões sem empresa"}
-            </h2>
+            <h2>{draft.company.legalName ?? "Missões sem empresa"}</h2>
             <p className="text-xs text-muted-foreground">
               {draft.company.cnpj ? `${draft.company.cnpj} · ` : ""}
               {draft.company.taxRegime ?? "regime não informado"}
@@ -222,7 +220,7 @@ export function InformativePanel({
           {draft.company.pendingFiscalNote ? (
             <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
               <p className="hud-label">Vai para a carteira do Fiscal</p>
-              <p className="mt-1 text-sm whitespace-pre-wrap">
+              <p className="mt-1 max-w-prose text-sm whitespace-pre-wrap">
                 {draft.company.pendingFiscalNote}
               </p>
               <p className="mt-1.5 text-xs text-muted-foreground">
@@ -369,7 +367,12 @@ export function InformativePanel({
           ) : null}
 
           <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
-            <Button variant="ghost" onClick={handleCancel} disabled={pending}>
+            <Button
+              variant="ghost"
+              onClick={handleCancel}
+              disabled={pending}
+              className="touch-target"
+            >
               <Trash2 className="size-4" aria-hidden /> Descartar prévia
             </Button>
             <Button onClick={handleConfirm} disabled={pending || blocked}>

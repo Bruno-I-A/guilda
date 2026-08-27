@@ -4,15 +4,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { PageHeader } from "@/components/page-header";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { filterVisibleClans, resolveClanEntry } from "@/domain/clan-access";
@@ -78,17 +72,15 @@ export default async function ClansPage() {
 
   return (
     <div className="grid gap-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-wide">
-          <Flag className="size-6 text-primary" aria-hidden />{" "}
-          {viewerIsAdmin ? "Clãs" : "Meus clãs"}
-        </h1>
-        <p className="text-muted-foreground">
-          {viewerIsAdmin
+      <PageHeader
+        icon={Flag}
+        title={viewerIsAdmin ? "Clãs" : "Meus clãs"}
+        description={
+          viewerIsAdmin
             ? "As áreas operacionais da Guilda, suas lideranças e missões em aberto."
-            : "Os clãs em que você atua: missões, integrantes e campanhas do mês."}
-        </p>
-      </div>
+            : "Os clãs em que você atua: missões, integrantes e campanhas do mês."
+        }
+      />
 
       {entry.outcome === "none" ? (
         <div className="grid justify-items-center gap-2 rounded-lg border border-dashed p-10 text-center">
@@ -121,110 +113,128 @@ export default async function ClansPage() {
             ).length;
 
             return (
-              <Card key={clan.id} className="panel-cut texture-iron">
-                <CardHeader>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <CardTitle className="text-lg">
-                        <Link
-                          href={`/clans/${clan.id}`}
-                          className="underline-offset-4 hover:underline"
-                        >
-                          {clan.name}
-                        </Link>
-                      </CardTitle>
-                      <CardDescription>
-                        {memberships.length}{" "}
-                        {memberships.length === 1 ? "integrante" : "integrantes"}
-                      </CardDescription>
-                    </div>
-                    <Badge variant={clan.active ? "secondary" : "outline"}>
-                      {clan.active ? "Ativo" : "Inativo"}
-                    </Badge>
+              // <section> puro em vez de <Card>: o Card traz borda, raio e um
+              // anel RETANGULAR que sobreviviam ao chanfro e deixavam tocos de
+              // fio nos cantos — mais um `overflow-hidden` que clipava de novo.
+              <section
+                key={clan.id}
+                className="panel-cut texture-iron grid gap-4 p-5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="truncate">
+                      <Link
+                        href={`/clans/${clan.id}`}
+                        className="underline-offset-4 hover:underline"
+                      >
+                        {clan.name}
+                      </Link>
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      <span className="font-mono tabular-nums">
+                        {memberships.length}
+                      </span>{" "}
+                      {memberships.length === 1 ? "integrante" : "integrantes"}
+                    </p>
                   </div>
-                </CardHeader>
-                <CardContent className="grid gap-4">
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="rounded-lg bg-muted/45 p-2.5">
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <ListTodo className="size-3.5" aria-hidden /> Abertas
-                      </span>
-                      <strong className="mt-1 block font-mono text-lg">
-                        {openTasks.length}
-                      </strong>
-                    </div>
-                    <div className="rounded-lg bg-muted/45 p-2.5">
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <UserRoundX className="size-3.5" aria-hidden /> Sem responsável
-                      </span>
-                      <strong className="mt-1 block font-mono text-lg">
-                        {unassigned}
-                      </strong>
-                    </div>
-                    <div className="rounded-lg bg-muted/45 p-2.5">
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <AlertTriangle className="size-3.5" aria-hidden /> Atrasadas
-                      </span>
-                      <strong className="mt-1 block font-mono text-lg">{overdue}</strong>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <p className="hud-label">Liderança</p>
-                    {leaders.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {leaders.map((leader) => (
-                          <Badge key={leader.id} variant="default" className="gap-1">
-                            <Crown className="size-3" aria-hidden /> {leader.user.name}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="flex items-center gap-1.5 text-sm text-destructive">
-                        <AlertTriangle className="size-4" aria-hidden /> Sem líder
-                        definido
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="grid gap-2">
-                    <p className="hud-label">Integrantes</p>
-                    {memberships.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {memberships.map((membership) => (
-                          <span
-                            key={membership.id}
-                            className="inline-flex items-center gap-1.5 rounded-full border bg-background/50 py-1 pr-2.5 pl-1 text-xs"
-                          >
-                            <Avatar className="size-5">
-                              <AvatarFallback className="text-[8px]">
-                                {initials(membership.user.name)}
-                              </AvatarFallback>
-                            </Avatar>
-                            {membership.user.name}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                        <Users className="size-4" aria-hidden /> Nenhuma pessoa vinculada
-                      </p>
-                    )}
-                  </div>
-
-                  <Link
-                    href={`/clans/${clan.id}`}
-                    className="flex items-center justify-between gap-2 rounded-md border bg-background/40 px-3 py-2 text-sm font-medium hover:bg-accent/40"
+                  <Badge
+                    variant={clan.active ? "secondary" : "outline"}
+                    className="shrink-0"
                   >
-                    Abrir o clã
-                    {unassigned > 0 ? (
-                      <span className="font-mono text-xs text-primary">
-                        {unassigned} sem dono
-                      </span>
-                    ) : null}
-                  </Link>
-                </CardContent>
-              </Card>
+                    {clan.active ? "Ativo" : "Inativo"}
+                  </Badge>
+                </div>
+
+                {/* As três medidas ficam em `bg-muted` de propósito: dentro de
+                    uma placa chanfrada, um `panel-cut` aninhado herdaria a cor
+                    do próprio card e sumiria. */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-lg bg-muted/45 p-2.5">
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <ListTodo className="size-3.5 shrink-0" aria-hidden /> Abertas
+                    </span>
+                    <strong className="mt-1 block font-mono text-lg tabular-nums">
+                      {openTasks.length}
+                    </strong>
+                  </div>
+                  <div className="rounded-lg bg-muted/45 p-2.5">
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <UserRoundX className="size-3.5 shrink-0" aria-hidden /> Sem
+                      responsável
+                    </span>
+                    <strong className="mt-1 block font-mono text-lg tabular-nums">
+                      {unassigned}
+                    </strong>
+                  </div>
+                  <div className="rounded-lg bg-muted/45 p-2.5">
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <AlertTriangle className="size-3.5 shrink-0" aria-hidden />{" "}
+                      Atrasadas
+                    </span>
+                    <strong className="mt-1 block font-mono text-lg tabular-nums">
+                      {overdue}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <p className="hud-label">Liderança</p>
+                  {leaders.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {leaders.map((leader) => (
+                        <Badge key={leader.id} variant="default" className="gap-1">
+                          <Crown className="size-3" aria-hidden /> {leader.user.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="flex items-center gap-1.5 text-sm text-destructive">
+                      <AlertTriangle className="size-4 shrink-0" aria-hidden /> Sem
+                      líder definido
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid gap-2">
+                  <p className="hud-label">Integrantes</p>
+                  {memberships.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {memberships.map((membership) => (
+                        <span
+                          key={membership.id}
+                          className="inline-flex items-center gap-1.5 rounded-full border bg-background/50 py-1 pr-2.5 pl-1 text-xs"
+                        >
+                          {/* `size="sm"` em vez de `size-5` + `text-[8px]`: o
+                              próprio Avatar já casa iniciais e diâmetro. */}
+                          <Avatar size="sm">
+                            <AvatarFallback>
+                              {initials(membership.user.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          {membership.user.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                      <Users className="size-4 shrink-0" aria-hidden /> Nenhuma
+                      pessoa vinculada
+                    </p>
+                  )}
+                </div>
+
+                <Link
+                  href={`/clans/${clan.id}`}
+                  className="flex items-center justify-between gap-2 rounded-md border bg-background/40 px-3 py-2 text-sm font-medium hover:bg-accent/40"
+                >
+                  Abrir o clã
+                  {unassigned > 0 ? (
+                    <span className="font-mono text-xs text-primary">
+                      <span className="tabular-nums">{unassigned}</span> sem dono
+                    </span>
+                  ) : null}
+                </Link>
+              </section>
             );
           })}
         </div>

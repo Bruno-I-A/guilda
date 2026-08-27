@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionResult } from "@/lib/action-context";
+import { cn } from "@/lib/utils";
 
 import { acknowledgeNotice, archiveNotice, publishNotice } from "./actions";
 
@@ -188,11 +189,15 @@ export function NoticeBoard({
               <li
                 key={notice.id}
                 id={`aviso-${notice.id}`}
-                className={
-                  needsMyAck
-                    ? "panel-cut rounded-lg border border-primary/50 bg-card/70 p-4"
-                    : "panel-cut rounded-lg border bg-card/50 p-4"
-                }
+                className={cn(
+                  // `panel-cut` já desenha a superfície e a aresta; borda
+                  // arredondada por cima só devolvia o canto que o chanfro corta.
+                  "panel-cut p-4",
+                  // Destaque de "falta a sua confirmação": o anel vai POR DENTRO,
+                  // senão o clip-path cisalha os cantos dele.
+                  needsMyAck &&
+                    "shadow-[inset_0_0_0_1px_var(--primary),inset_0_1px_0_oklch(1_0_0/5%)]",
+                )}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -200,7 +205,7 @@ export function NoticeBoard({
                       {notice.pinned ? (
                         <Pin className="size-3.5 text-primary" aria-label="Fixado" />
                       ) : null}
-                      <h2 className="font-medium">{notice.title}</h2>
+                      <h2>{notice.title}</h2>
                       {notice.kind === "new_client" ? (
                         <Badge variant="secondary" className="gap-1">
                           <Building2 className="size-3" aria-hidden /> Empresa nova
@@ -234,7 +239,7 @@ export function NoticeBoard({
                   ) : null}
                 </div>
 
-                <p className="mt-3 whitespace-pre-wrap text-sm text-muted-foreground">
+                <p className="mt-3 max-w-prose whitespace-pre-wrap text-sm text-muted-foreground">
                   {notice.body}
                 </p>
 
@@ -261,7 +266,7 @@ export function NoticeBoard({
                     )}
 
                     {notice.canManage ? (
-                      <span className="font-mono text-xs text-muted-foreground">
+                      <span className="font-mono text-xs tabular-nums text-muted-foreground">
                         {notice.ackCount} de {notice.totalMembers} confirmaram
                         {notice.pendingNames.length > 0
                           ? ` · falta ${notice.pendingNames.slice(0, 4).join(", ")}${
