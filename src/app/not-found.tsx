@@ -7,8 +7,9 @@ export default function NotFound() {
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-4 p-6 text-center">
       <Compass className="size-10 text-muted-foreground" aria-hidden />
-      <h1 className="text-xl font-semibold">Página não encontrada</h1>
-      <p className="max-w-sm text-sm text-muted-foreground">
+      {/* Herda a escala display (24px Cinzel), igual ao error.tsx. */}
+      <h1>Página não encontrada</h1>
+      <p className="max-w-prose text-sm text-muted-foreground">
         O conteúdo pode ter sido movido, cancelado ou pertencer a outra
         organização.
       </p>

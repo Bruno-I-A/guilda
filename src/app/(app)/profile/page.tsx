@@ -3,6 +3,7 @@ import { TrendingDown, TrendingUp } from "lucide-react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { PageHeader } from "@/components/page-header";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -94,7 +95,7 @@ export default async function ProfilePage() {
 
   return (
     <div className="grid gap-6">
-      <h1 className="text-2xl font-semibold tracking-wide">Perfil</h1>
+      <PageHeader title="Perfil" />
 
       <div className="flex items-center gap-3">
         <Avatar className="size-10">
@@ -112,8 +113,8 @@ export default async function ProfilePage() {
       {/* Vitrine: a constelação de progressão é a peça central do perfil */}
       <section className="panel-cut texture-iron grid gap-4 p-4 sm:p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="hud-label">Constelação de progressão</h2>
-          <span className="font-mono text-xs text-gold">
+          <h2>Constelação de progressão</h2>
+          <span className="font-mono text-xs tabular-nums text-gold">
             {totalXp.toLocaleString("pt-BR")} XP no total
           </span>
         </div>
@@ -123,7 +124,7 @@ export default async function ProfilePage() {
           target={xpLevelSpan}
           label={`Progresso para o nível ${progress.level + 1}`}
         />
-        <p className="font-mono text-xs text-muted-foreground">
+        <p className="font-mono text-xs tabular-nums text-muted-foreground">
           nível {progress.level} · faltam{" "}
           {(progress.nextLevelXp - progress.totalXp).toLocaleString("pt-BR")} XP
           para o nível {progress.level + 1} · {completedCount}{" "}
@@ -173,9 +174,12 @@ export default async function ProfilePage() {
         configured={Boolean(telegramConfig.botToken && botUsername)}
       />
 
-      <Card className="panel-cut">
+      <Card className="panel-cut rounded-none border-0 ring-0">
         <CardHeader>
-          <CardTitle className="hud-label">Histórico de XP</CardTitle>
+          {/* asChild: o CardTitle rende <div>, e este é o título da seção. */}
+          <CardTitle asChild>
+            <h2>Histórico de XP</h2>
+          </CardTitle>
           <CardDescription>Últimos lançamentos do seu ledger</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-1 p-0 pb-3">

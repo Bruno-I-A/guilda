@@ -161,8 +161,8 @@ export function CompanyDataTab({ clanId }: { clanId: string }) {
                 className={cn(
                   "text-sm",
                   active
-                    ? "border-emerald-500/45 bg-emerald-500/10 text-emerald-300"
-                    : "border-amber-500/45 bg-amber-500/10 text-amber-300",
+                    ? "border-success/45 bg-success/10 text-success"
+                    : "border-warning/45 bg-warning/10 text-warning",
                 )}
               >
                 {company.cadastralSituation ?? "Situação não informada"}
@@ -268,7 +268,7 @@ export function CompanyDataTab({ clanId }: { clanId: string }) {
               </div>
             ) : <p className="text-sm text-muted-foreground">Quadro societário não informado.</p>}
             {company.qsa.some((member) => !member.participation) ? (
-              <p className="text-xs text-amber-200/85">A consulta pública da Receita não informa a porcentagem societária. Confira a participação de cada sócio no contrato social.</p>
+              <p className="text-xs text-warning/85">A consulta pública da Receita não informa a porcentagem societária. Confira a participação de cada sócio no contrato social.</p>
             ) : null}
           </section>
 

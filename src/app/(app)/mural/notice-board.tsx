@@ -98,7 +98,7 @@ function InformativeMissionSummary({
         <Badge
           variant="outline"
           className={allCompleted
-            ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-300"
+            ? "border-success/35 bg-success/10 text-success"
             : "border-primary/30 text-primary"}
         >
           {allCompleted ? "Todas concluídas" : `${summary.completed} de ${summary.total} concluídas`}
@@ -113,7 +113,7 @@ function InformativeMissionSummary({
           Geradas
         </span>
         <span className="rounded-md bg-muted/35 px-2.5 py-2">
-          <strong className="block font-mono text-base text-emerald-300">{summary.completed}</strong>
+          <strong className="block font-mono text-base text-success">{summary.completed}</strong>
           Concluídas
         </span>
         <span className="rounded-md bg-muted/35 px-2.5 py-2">
@@ -121,7 +121,7 @@ function InformativeMissionSummary({
           Em aberto
         </span>
         <span className="rounded-md bg-muted/35 px-2.5 py-2">
-          <strong className="flex items-center gap-1 font-mono text-base text-amber-300">
+          <strong className="flex items-center gap-1 font-mono text-base text-warning">
             {summary.unassigned > 0 ? <UserRoundX className="size-3.5" aria-hidden /> : null}
             {summary.unassigned}
           </strong>

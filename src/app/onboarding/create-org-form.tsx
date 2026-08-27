@@ -57,9 +57,13 @@ export function CreateOrgForm({ userName }: { userName: string }) {
   }
 
   return (
-    <Card>
+    // Mesma superfície do card de sign-in: as duas telas são vizinhas no
+    // funil e a de onboarding vinha com <Card> de estoque.
+    <Card className="panel-cut texture-iron rounded-none border-0 ring-0">
       <CardHeader>
-        <CardTitle>Quase lá, {userName.split(" ")[0]}!</CardTitle>
+        <CardTitle asChild>
+          <h1>Quase lá, {userName.split(" ")[0]}!</h1>
+        </CardTitle>
         <CardDescription>
           Sua conta ainda não pertence a nenhuma organização. Crie a sua para
           começar — ou peça um convite a alguém da sua equipe.

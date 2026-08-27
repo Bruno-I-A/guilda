@@ -305,7 +305,7 @@ export async function ClosingsTab({
             <p className="text-muted-foreground">anos em aberto</p>
           </div>
           <div>
-            <p className={cn("text-lg font-semibold", notesCount && "text-amber-300")}>
+            <p className={cn("text-lg font-semibold", notesCount && "text-warning")}>
               {notesCount}
             </p>
             <p className="text-muted-foreground">com observação</p>
@@ -314,7 +314,7 @@ export async function ClosingsTab({
             <p
               className={cn(
                 "text-lg font-semibold",
-                defisPendingCount && "text-amber-300",
+                defisPendingCount && "text-warning",
               )}
             >
               {group === "simples" ? defisPendingCount : closedCount}

@@ -12,6 +12,53 @@ existentes. A skill tree do perfil fica para uma rodada dedicada, em cima deste 
 > "mesa de guerra" (aprovações pendentes + tarefas por prazo). A regra segue:
 > Cinzel só em display, ouro só em recompensa, sem glow.
 
+> **Adendo 2 (2026-08-26) — a regra de intensidade envelheceu; o código está certo.**
+> A seção "Decisões" abaixo manda ornamento e textura só nas telas de vitrine
+> (perfil, leaderboard, auth) e telas de uso diário "limpas". Na prática o
+> **dashboard virou a vitrine** — é onde vivem o `LevelEmblem`, a `XpBar` e o
+> banner `panel-cut texture-iron` — e isso foi deliberado, não deriva. A auditoria
+> de 2026-08-26 sinalizou a divergência como decaimento do spec; a decisão do
+> usuário foi **manter o código e corrigir o spec**. `texture-iron` FICA no
+> dashboard e no formulário de missão. Sem este registro, a próxima auditoria
+> reabre a discussão.
+>
+> **Adendo 3 (2026-08-26) — o corpo do app nunca renderizou na fonte pretendida.**
+> `globals.css` declarava `--font-sans: var(--font-sans)` (auto-referência) desde
+> o commit da Fase 1. Por spec CSS a propriedade circular vira guaranteed-invalid,
+> então `html { font-sans }` caía no fallback do navegador: o app inteiro rodou em
+> **Times New Roman**, enquanto os arquivos da Geist eram baixados e ignorados.
+> Corrigido para `var(--font-geist-sans)`. Consequência: todo julgamento de
+> tamanho abaixo de heading tinha sido calibrado contra a métrica de um serif que
+> ninguém pretendia usar — daí a re-derivação da escala no adendo seguinte.
+>
+> **Adendo 4 (2026-08-26) — escala display de quatro passos.**
+> A linha "títulos em Cinzel" era ampla demais e produziu hierarquia invertida:
+> `.hud-label` (11px mono) era aplicado a `<h2>` em seis seções, deixando o título
+> MENOR e com menos contraste que o corpo de 14px abaixo dele; e `<h3>`–`<h6>`
+> não tinham tema nenhum. A escala agora vive no `@layer base` do `globals.css`:
+>
+> | Nível | Face | Tamanho | Papel |
+> | ----- | ---- | ------- | ----- |
+> | `h1`  | Cinzel | 24px | título de página |
+> | `h2`  | Cinzel | 18px | título de seção |
+> | `h3`  | Geist  | 15px | subtítulo dentro da seção |
+> | `h4`+ | mono   | 11px | micro-rótulo |
+>
+> `h3` é **sans de propósito**: Cinzel neste tamanho fica apertado e ilegível —
+> "títulos em Cinzel" vale para os dois passos de display, não para todo heading.
+> Regra que fecha o buraco: **`.hud-label` é RÓTULO, não heading.** Título de
+> seção é `<h2>`; etiqueta de dado (span/legend/p) é `.hud-label`. O degrau de
+> 11px virou token de escala (`--text-hud` + `--tracking-hud`) para acabar com os
+> `text-[8px]`/`text-[9px]`/`text-[10px]`/`text-[11px]` escritos na mão.
+>
+> **Adendo 5 (2026-08-26) — sucesso e alerta ganharam token.**
+> A paleta nunca definiu papel para "deu certo" e "atenção", e o código preencheu
+> a lacuna com `amber`/`emerald`/`red` crus do Tailwind em 22 lugares. Agora há
+> `--success` (verde-gelo, fica na família fria) e `--warning` (cobre **saturado**
+> de propósito: o ouro é fosco e exclusivo de recompensa, e a saturação alta é o
+> que impede confundir "atenção" com "prêmio"). `--telegram` nomeia a cor de marca
+> externa que estava solta como `#2AABEE`.
+
 ## Decisões (fechadas — não redecidir)
 
 - **Direção**: dark, estilo viking, estética de game. **Sem brilho/glow/neon** — isto
@@ -48,8 +95,20 @@ Regras da paleta:
 ## Utilitários temáticos (CSS puro, sem assets externos — compatível com CSP)
 
 - `texture-iron` — ruído sutil (SVG inline data-URI) + gradiente vertical.
-- `frame-carved` — moldura com cantos reforçados via pseudo-elementos.
-- `divider-rune` — divisor ornamental com losango central.
+- ~~`frame-carved`~~ — **NÃO EXISTE MAIS.** Substituído por `panel-cut` no
+  Adendo 1. Ficaram dois call sites órfãos citando a classe morta (o card de
+  alterar senha e uma caixa em `member-actions`), corrigidos em 2026-08-26.
+  Toda menção a `frame-carved` abaixo deve ser lida como `panel-cut`.
+- `panel-cut` — painel de cantos chanfrados em 45° via `clip-path`. Sobre um
+  `<Card>` a receita é `panel-cut rounded-none border-0 ring-0` (o `ring-0` é
+  obrigatório: o Card traz `ring-1` e o anel retangular sobrevivia ao chanfro).
+- `divider-rune` — divisor ornamental com losango central. Sobre superfície de
+  card, passe `[--rune-notch:var(--card)]` — o entalhe precisa ser da cor de
+  trás, e antes ele era sempre `--background` e funcionava por sorte.
+- `hud-label` — micro-rótulo mono maiúsculo. **Rótulo, nunca heading.**
+- `chip-loot` — a recompensa de XP como item de inventário chanfrado.
+- `touch-target` — área tocável de 44px sem alterar o tamanho visual do
+  controle. Para ação destrutiva e botão de ícone dentro de linha de lista.
 
 ## Passe tela a tela
 

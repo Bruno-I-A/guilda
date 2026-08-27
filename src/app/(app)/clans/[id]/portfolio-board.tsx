@@ -114,7 +114,7 @@ function ClientRow({
           <Badge variant="outline" className="shrink-0 text-[10px]">inativa</Badge>
         ) : null}
         {client.profile.missingFields.length > 0 ? (
-          <Badge variant="outline" className="shrink-0 border-amber-500/40 text-[10px] text-amber-300">
+          <Badge variant="outline" className="shrink-0 border-warning/40 text-[10px] text-warning">
             ficha incompleta
           </Badge>
         ) : null}

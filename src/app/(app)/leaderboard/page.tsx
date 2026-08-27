@@ -1,7 +1,8 @@
 import { Crown, Medal, Trophy } from "lucide-react";
 import type { Metadata } from "next";
-import Link from "next/link";
 
+import { PageHeader } from "@/components/page-header";
+import { SegmentedNav, type SegmentedNavItem } from "@/components/segmented-nav";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,11 +14,13 @@ import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Ranking" };
 
-const PERIOD_TABS = [
-  { key: "week", label: "Semana" },
-  { key: "month", label: "Mês" },
-  { key: "all", label: "Geral" },
-] as const;
+// "week" é o padrão: mora em /leaderboard sem query, para não deixar a URL
+// canônica do ranking com parâmetro redundante.
+const PERIOD_TABS: readonly SegmentedNavItem[] = [
+  { key: "week", label: "Semana", href: "/leaderboard" },
+  { key: "month", label: "Mês", href: "/leaderboard?period=month" },
+  { key: "all", label: "Geral", href: "/leaderboard?period=all" },
+];
 
 function parsePeriod(value: string | undefined): LeaderboardPeriod {
   return value === "month" || value === "all" ? value : "week";
@@ -42,30 +45,12 @@ export default async function LeaderboardPage({
 
   return (
     <div className="grid gap-5">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-wide">Ranking</h1>
-        <p className="text-muted-foreground">
-          Soma de XP da guilda por período — missões concluídas e fechamentos pontuam.
-        </p>
-      </div>
+      <PageHeader
+        title="Ranking"
+        description="Soma de XP da guilda por período — missões concluídas e fechamentos pontuam."
+      />
 
-      <nav aria-label="Período" className="flex w-fit rounded-lg border bg-muted/40 p-0.5">
-        {PERIOD_TABS.map(({ key, label }) => (
-          <Link
-            key={key}
-            href={key === "week" ? "/leaderboard" : `/leaderboard?period=${key}`}
-            aria-current={period === key ? "page" : undefined}
-            className={cn(
-              "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
-              period === key
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {label}
-          </Link>
-        ))}
-      </nav>
+      <SegmentedNav items={PERIOD_TABS} active={period} label="Período" />
 
       {rows.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-12 text-center">
@@ -76,7 +61,7 @@ export default async function LeaderboardPage({
           </p>
         </div>
       ) : (
-        <Card className="panel-cut texture-iron">
+        <Card className="panel-cut texture-iron rounded-none border-0 ring-0">
           <CardContent className="divide-y p-0">
             {rows.map((row, index) => {
               const isSelf = row.userId === session.user.id;
@@ -99,7 +84,7 @@ export default async function LeaderboardPage({
                         aria-label={`${index + 1}º lugar`}
                       />
                     ) : (
-                      <span className="text-sm font-medium text-muted-foreground">
+                      <span className="font-mono text-sm font-medium tabular-nums text-muted-foreground">
                         {index + 1}º
                       </span>
                     )}
@@ -117,7 +102,15 @@ export default async function LeaderboardPage({
                       ) : null}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Nível {levelFromXp(row.totalXp)} · {row.totalXp} XP no total
+                      Nível{" "}
+                      <span className="font-mono tabular-nums">
+                        {levelFromXp(row.totalXp)}
+                      </span>{" "}
+                      ·{" "}
+                      <span className="font-mono tabular-nums">
+                        {row.totalXp}
+                      </span>{" "}
+                      XP no total
                     </p>
                   </div>
                   <Badge

@@ -222,7 +222,8 @@ export function ImportClientsButton() {
 
                 setSummary(data);
                 toast.success(
-                  `${data.created} criada(s), ${data.updated} atualizada(s).`,
+                  `${data.created} ${data.created === 1 ? "criada" : "criadas"}, ` +
+                    `${data.updated} ${data.updated === 1 ? "atualizada" : "atualizadas"}.`,
                 );
                 router.refresh();
               });
@@ -260,43 +261,55 @@ export function ImportClientsButton() {
               />
             </div>
 
+            {/* Placar da importação: número em mono tabular, o que ele conta
+                em `hud-label` (é rótulo de dado, não título). */}
             {summary ? (
-              <div className="rounded-lg border bg-muted/25 p-3 text-sm">
-                <div className="grid grid-cols-2 gap-2 font-mono text-xs sm:grid-cols-4">
+              <div className="panel-cut panel-cut-sm p-3 text-sm">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <div>
-                    <p className="text-lg font-semibold text-foreground">
+                    <p className="font-mono text-lg font-semibold tabular-nums text-foreground">
                       {summary.created}
                     </p>
-                    <p className="text-muted-foreground">criadas</p>
+                    <p className="hud-label">criadas</p>
                   </div>
                   <div>
-                    <p className="text-lg font-semibold text-foreground">
+                    <p className="font-mono text-lg font-semibold tabular-nums text-foreground">
                       {summary.updated}
                     </p>
-                    <p className="text-muted-foreground">atualizadas</p>
+                    <p className="hud-label">atualizadas</p>
                   </div>
                   <div>
-                    <p className="text-lg font-semibold text-foreground">
+                    <p className="font-mono text-lg font-semibold tabular-nums text-foreground">
                       {summary.unchanged}
                     </p>
-                    <p className="text-muted-foreground">sem mudança</p>
+                    <p className="hud-label">sem mudança</p>
                   </div>
                   <div>
-                    <p className="text-lg font-semibold text-foreground">
+                    <p className="font-mono text-lg font-semibold tabular-nums text-foreground">
                       {summary.rejected.length}
                     </p>
-                    <p className="text-muted-foreground">rejeitadas</p>
+                    <p className="hud-label">rejeitadas</p>
                   </div>
                 </div>
                 {summary.rejected.length > 0 ? (
                   <ul className="mt-3 grid max-h-28 gap-1 overflow-auto border-t pt-3 text-xs text-muted-foreground">
                     {summary.rejected.slice(0, 8).map((item) => (
                       <li key={`${item.rowNumber}-${item.error}`}>
-                        Linha {item.rowNumber}: {item.error}
+                        Linha{" "}
+                        <span className="font-mono tabular-nums">
+                          {item.rowNumber}
+                        </span>
+                        : {item.error}
                       </li>
                     ))}
                     {summary.rejected.length > 8 ? (
-                      <li>Mais {summary.rejected.length - 8} linha(s) rejeitada(s).</li>
+                      <li>
+                        Mais {summary.rejected.length - 8}{" "}
+                        {summary.rejected.length - 8 === 1
+                          ? "linha rejeitada"
+                          : "linhas rejeitadas"}
+                        .
+                      </li>
                     ) : null}
                   </ul>
                 ) : null}
@@ -341,10 +354,13 @@ export function ClientRowActions({
   }
 
   return (
+    // `touch-target` em cada ícone: são controles de 32px dentro de uma linha
+    // de lista, e no celular o dedo não acerta isso.
     <div className="flex shrink-0 items-center gap-1">
       <Button
         variant="ghost"
         size="icon"
+        className="touch-target"
         aria-label={`Editar ${client.name}`}
         disabled={pending}
         onClick={() => setEditOpen(true)}
@@ -354,6 +370,7 @@ export function ClientRowActions({
       <Button
         variant="ghost"
         size="icon"
+        className="touch-target"
         aria-label={client.active ? `Desativar ${client.name}` : `Reativar ${client.name}`}
         disabled={pending}
         onClick={() =>

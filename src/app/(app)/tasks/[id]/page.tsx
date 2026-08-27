@@ -285,7 +285,7 @@ export default async function TaskDetailPage({
       </div>
 
       {awaitingMyApproval ? (
-        <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-200">
+        <div className="rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
           <p className="font-medium">Esta missão ainda usa o fluxo legado de aprovação.</p>
           <p>
             Ao aprovar, {task.assignee?.name ?? "a pessoa responsável"} recebe {task.xpValue} XP.

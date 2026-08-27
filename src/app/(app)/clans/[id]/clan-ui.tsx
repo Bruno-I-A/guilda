@@ -35,8 +35,8 @@ export function ClanStatusStrip({
           <dd
             className={cn(
               "min-w-8 font-mono text-lg font-semibold text-foreground",
-              item.tone === "positive" && "text-emerald-400",
-              item.tone === "warning" && "text-amber-300",
+              item.tone === "positive" && "text-success",
+              item.tone === "warning" && "text-warning",
               item.tone === "danger" && "text-destructive",
             )}
           >

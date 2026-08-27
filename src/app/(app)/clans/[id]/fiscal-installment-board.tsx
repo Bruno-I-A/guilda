@@ -468,7 +468,7 @@ function InstallmentImportDialog({ clanId }: { clanId: string }) {
               </Table>
             </div>
             {preview.rejectedRows.length > 0 ? (
-              <div className="rounded-md border border-amber-400/30 bg-amber-400/5 p-3 text-xs">
+              <div className="rounded-md border border-warning/30 bg-warning/5 p-3 text-xs">
                 <p className="font-medium">Linhas não importadas</p>
                 {preview.rejectedRows.map((row) => <p key={row.rowNumber}>Linha {row.rowNumber}: {row.message}</p>)}
               </div>
@@ -553,7 +553,7 @@ function InstallmentCard({
     <article
       className={cn(
         "grid gap-4 rounded-lg border bg-card/35 p-4 transition-colors",
-        row.generatedThisMonth && "border-emerald-400/30 bg-emerald-400/[0.035]",
+        row.generatedThisMonth && "border-success/30 bg-success/[0.035]",
         !row.clientActive && "opacity-60",
       )}
     >
@@ -563,7 +563,7 @@ function InstallmentCard({
             <h3 className="font-heading text-base font-medium">{row.clientName}</h3>
             {!row.clientActive ? <Badge variant="outline">Inativa</Badge> : null}
             {row.generatedThisMonth ? (
-              <Badge className="border-emerald-400/30 bg-emerald-400/10 text-emerald-300">
+              <Badge className="border-success/30 bg-success/10 text-success">
                 <Check aria-hidden /> Gerada em {periodLabel}
               </Badge>
             ) : (
@@ -726,7 +726,7 @@ export function FiscalInstallmentBoard({
           <p className="mt-1 text-xs text-primary/80">
             Confirmar a geração acrescenta automaticamente uma parcela paga.
           </p>
-          <p className="mt-1 text-xs text-amber-300/80">
+          <p className="mt-1 text-xs text-warning/80">
             Não registre senhas ou códigos de acesso nas observações; este campo
             guarda apenas caminhos e instruções operacionais.
           </p>
@@ -816,13 +816,13 @@ export function FiscalInstallmentBoard({
           <span className="text-xs text-muted-foreground">Empresas</span>
           <strong className="block font-mono text-lg">{companyCount}</strong>
         </div>
-        <div className="rounded-lg bg-emerald-400/5 p-3">
+        <div className="rounded-lg bg-success/5 p-3">
           <span className="text-xs text-muted-foreground">Geradas em {periodLabel}</span>
-          <strong className="block font-mono text-lg text-emerald-300">{generatedCount}</strong>
+          <strong className="block font-mono text-lg text-success">{generatedCount}</strong>
         </div>
-        <div className="rounded-lg bg-amber-400/5 p-3">
+        <div className="rounded-lg bg-warning/5 p-3">
           <span className="text-xs text-muted-foreground">Pendentes em {periodLabel}</span>
-          <strong className="block font-mono text-lg text-amber-300">{rows.length - generatedCount}</strong>
+          <strong className="block font-mono text-lg text-warning">{rows.length - generatedCount}</strong>
         </div>
       </div>
       <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_13rem]">

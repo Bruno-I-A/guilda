@@ -337,7 +337,7 @@ export function AppShell({
               <p className="truncate text-sm font-medium">{user.name}</p>
               <p className="mt-0.5 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{ROLE_LABELS[role] ?? role}</p>
             </div>
-            <span className="size-1.5 bg-emerald-400 [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]" aria-label="Conectado" />
+            <span className="size-1.5 bg-success [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]" aria-label="Conectado" />
           </div>
         </div>
       </aside>

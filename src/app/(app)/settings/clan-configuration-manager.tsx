@@ -150,7 +150,7 @@ export function ClanDetailsDialog({
             className="panel-cut panel-cut-sm flex min-h-11 items-center justify-between bg-card/50 px-3 text-left text-sm"
           >
             <span><strong className="block">Clã ativo</strong><span className="text-xs text-muted-foreground">Clãs inativos preservam histórico, mas não recebem novas missões.</span></span>
-            <span className={enabled ? "font-mono text-emerald-400" : "font-mono text-muted-foreground"}>{enabled ? "SIM" : "NÃO"}</span>
+            <span className={enabled ? "font-mono text-success" : "font-mono text-muted-foreground"}>{enabled ? "SIM" : "NÃO"}</span>
           </button>
           <DialogFooter>
             <Button type="submit" disabled={pending}>{pending ? "Salvando…" : "Salvar"}</Button>

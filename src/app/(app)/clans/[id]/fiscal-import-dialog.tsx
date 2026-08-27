@@ -260,7 +260,7 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
           ) : summary ? (
             <div className="grid gap-4">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <div className="rounded-lg bg-emerald-500/10 p-3 text-center"><strong className="block font-mono text-xl text-emerald-400">{summary.createdProfiles}</strong><span className="text-xs">fichas criadas</span></div>
+                <div className="rounded-lg bg-success/10 p-3 text-center"><strong className="block font-mono text-xl text-success">{summary.createdProfiles}</strong><span className="text-xs">fichas criadas</span></div>
                 <div className="rounded-lg bg-primary/10 p-3 text-center"><strong className="block font-mono text-xl text-primary">{summary.updatedProfiles}</strong><span className="text-xs">atualizadas</span></div>
                 <div className="rounded-lg bg-muted/40 p-3 text-center"><strong className="block font-mono text-xl">{summary.unchangedProfiles}</strong><span className="text-xs">sem mudança</span></div>
                 <div className="rounded-lg bg-muted/40 p-3 text-center"><strong className="block font-mono text-xl">{summary.ignored}</strong><span className="text-xs">ignoradas</span></div>
@@ -278,7 +278,7 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
                 <span>{preview.rejected} rejeitada(s)</span>
                 <span>{preview.skipped} ignorada(s)</span>
                 {preview.missingColumns.length > 0 ? (
-                  <Badge variant="outline" className="border-amber-500/40 text-amber-300">
+                  <Badge variant="outline" className="border-warning/40 text-warning">
                     Sem {preview.missingColumns.map((column) => COLUMN_LABELS[column] ?? column).join(", ")}
                   </Badge>
                 ) : null}
@@ -316,13 +316,13 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
                         {resolution?.ignored ? (
                           <Badge variant="outline">Linha ignorada</Badge>
                         ) : selectedName ? (
-                          <p className="flex items-center gap-1.5 text-sm"><Check className="size-4 text-emerald-400" aria-hidden /><span className="truncate">{selectedName}</span>{selectedClient && !selectedClient.active ? <Badge variant="outline">inativa</Badge> : null}{row.status !== "matched" ? <Badge variant="outline">confirmada manualmente</Badge> : null}</p>
+                          <p className="flex items-center gap-1.5 text-sm"><Check className="size-4 text-success" aria-hidden /><span className="truncate">{selectedName}</span>{selectedClient && !selectedClient.active ? <Badge variant="outline">inativa</Badge> : null}{row.status !== "matched" ? <Badge variant="outline">confirmada manualmente</Badge> : null}</p>
                         ) : (
                           <p className="flex items-center gap-1.5 text-sm text-destructive"><AlertTriangle className="size-4" aria-hidden /> Sem conciliação</p>
                         )}
                         <p className="line-clamp-2 text-[11px] text-muted-foreground">{row.explanation}</p>
                         {row.issues.length > 0 ? (
-                          <p className="text-[11px] text-amber-300">
+                          <p className="text-[11px] text-warning">
                             {row.issues
                               .map((issue) =>
                                 `${ISSUE_FIELD_LABELS[issue.field] ?? issue.field}: ${issue.message}${issue.raw ? ` (“${issue.raw}”)` : ""}`,

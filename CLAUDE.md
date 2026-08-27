@@ -201,6 +201,12 @@ por regime), que continua não implementado.
 
 ## Design e UX (decisões já tomadas — não redecidir do zero)
 
+**Antes de escrever qualquer tela, leia `docs/design-system.md`.** Ele é
+normativo: escala tipográfica, tokens de cor, os componentes de chrome que já
+existem (`PageHeader`, `SegmentedNav`, `MissionRow`) e o checklist de PR. Esta
+seção guarda o PORQUÊ das decisões; aquele arquivo guarda o COMO aplicá-las.
+Se você está prestes a copiar classes de outra tela, o componente já existe.
+
 - **Direção estética**: dark, denso, "espaço próprio" — explicitamente NÃO
   corporativo/sério. O objetivo é não parecer "trabalho", e sim algo que estimule
   o uso voluntário. Estilo viking "Gelo e Ferro" (spec em
@@ -208,6 +214,19 @@ por regime), que continua não implementado.
   azul-gelo/prata, títulos em Cinzel, tipografia mono para números de XP/nível,
   ouro EXCLUSIVO para recompensa. **Sem brilho/glow/neon** (decisão de 2026-07-06,
   substitui a ideia anterior de "acentos neon"). Dark é o tema único, sem toggle.
+
+- **Escala tipográfica (2026-08-26)**: "títulos em Cinzel" vale para os DOIS
+  passos de display, não para todo heading — `h1` 24px Cinzel, `h2` 18px Cinzel,
+  `h3` 15px Geist (sans de propósito: Cinzel nesse tamanho fica ilegível),
+  `h4`+ 11px mono maiúsculo. A escala mora no `@layer base` do `globals.css`, e
+  o nível semântico já traz o tamanho — heading não leva classe de tamanho no
+  call site. **`.hud-label` é RÓTULO, nunca heading**: título de seção é `<h2>`;
+  etiqueta de dado é `.hud-label`. Detalhes e histórico nos adendos do spec.
+
+- **Ornamento (2026-08-26)**: a regra original do spec ("textura só nas telas de
+  vitrine; dashboard e tarefas limpas") foi INVERTIDA na prática e o código está
+  certo — o dashboard virou a vitrine. Não remova `texture-iron` do dashboard
+  nem do formulário de missão.
 
 - **Grafo estilo Obsidian foi CONSIDERADO E REJEITADO.** Motivo: tarefas de
   trabalho não têm relação orgânica entre si (dependência real só existiria nas

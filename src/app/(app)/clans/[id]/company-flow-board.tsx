@@ -132,10 +132,10 @@ const FLOW_SOURCE_LABELS: Record<CompanyFlowSource, string> = {
 
 const STATUS_CLASS: Record<CompanyFlowStatus, string> = {
   sent_to_corporate: "border-sky-500/40 bg-sky-500/10 text-sky-300",
-  in_progress: "border-amber-500/40 bg-amber-500/10 text-amber-300",
+  in_progress: "border-warning/40 bg-warning/10 text-warning",
   awaiting_owner: "border-violet-500/40 bg-violet-500/10 text-violet-300",
   informative_drafting: "border-primary/40 bg-primary/10 text-primary",
-  completed: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
+  completed: "border-success/40 bg-success/10 text-success",
   cancelled: "border-muted-foreground/30 text-muted-foreground",
 };
 
@@ -344,20 +344,20 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
               <Badge className="w-fit">Atividades econômicas</Badge>
               {row.requestedActivities.length > 0 ? (
                 <div>
-                  <p className="text-[10px] font-medium tracking-wider text-emerald-300 uppercase">Adicionar</p>
+                  <p className="text-[10px] font-medium tracking-wider text-success uppercase">Adicionar</p>
                   <ul className="mt-1 grid gap-1">
                     {row.requestedActivities.map((activity, index) => (
-                      <li key={`${activity.description}-${index}`} className="rounded bg-emerald-500/5 px-2 py-1.5">+ {activity.description}</li>
+                      <li key={`${activity.description}-${index}`} className="rounded bg-success/5 px-2 py-1.5">+ {activity.description}</li>
                     ))}
                   </ul>
                 </div>
               ) : null}
               {row.removedActivities.length > 0 ? (
                 <div>
-                  <p className="text-[10px] font-medium tracking-wider text-red-300 uppercase">Retirar</p>
+                  <p className="text-[10px] font-medium tracking-wider text-destructive uppercase">Retirar</p>
                   <ul className="mt-1 grid gap-1">
                     {row.removedActivities.map((activity, index) => (
-                      <li key={`${activity.description}-${index}`} className="rounded bg-red-500/5 px-2 py-1.5">− {activity.description}</li>
+                      <li key={`${activity.description}-${index}`} className="rounded bg-destructive/5 px-2 py-1.5">− {activity.description}</li>
                     ))}
                   </ul>
                 </div>
@@ -636,7 +636,7 @@ function NewCompanyFlowDialog({
           </div>
 
           {!opening && consultedCompany ? (
-            <section className={cn("grid gap-3 rounded-md border p-3", consultedCompany.client ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/35 bg-amber-500/5")}>
+            <section className={cn("grid gap-3 rounded-md border p-3", consultedCompany.client ? "border-success/30 bg-success/5" : "border-warning/35 bg-warning/5")}>
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <p className="hud-label">Dados atuais consultados</p>
@@ -646,11 +646,11 @@ function NewCompanyFlowDialog({
                 <Badge variant="outline">{consultedCompany.company.cadastralSituation ?? "Situação não informada"}</Badge>
               </div>
               {consultedCompany.client ? (
-                <p className="text-xs text-emerald-300">
+                <p className="text-xs text-success">
                   Vinculada ao cadastro “{consultedCompany.client.name}”{consultedCompany.matchedBy === "name" ? " pela razão social; o CNPJ ainda não consta no cadastro interno" : ""}.
                 </p>
               ) : (
-                <p className="text-xs text-amber-300">Esta empresa ainda não foi localizada entre os clientes ativos do painel. Complete o cadastro antes de abrir o Fluxo.</p>
+                <p className="text-xs text-warning">Esta empresa ainda não foi localizada entre os clientes ativos do painel. Complete o cadastro antes de abrir o Fluxo.</p>
               )}
               <div className="grid gap-2 text-sm sm:grid-cols-2">
                 <div className="rounded-md bg-background/35 p-2.5"><strong className="block text-xs">Endereço atual</strong><span className="mt-1 block text-muted-foreground">{consultedCompany.company.address ? [[consultedCompany.company.address.street, consultedCompany.company.address.number].filter(Boolean).join(", "), consultedCompany.company.address.city, consultedCompany.company.address.state].filter(Boolean).join(" · ") : "Não informado"}</span></div>
@@ -718,7 +718,7 @@ function NewCompanyFlowDialog({
                   </div>
                 ) : <p className="text-sm text-muted-foreground">Quadro societário não informado.</p>}
                 {consultedCompany.company.qsa.some((member) => !member.participation) ? (
-                  <p className="text-xs text-amber-200/85">A consulta pública da Receita não informa a porcentagem societária. Confira a participação de cada sócio no contrato social.</p>
+                  <p className="text-xs text-warning/85">A consulta pública da Receita não informa a porcentagem societária. Confira a participação de cada sócio no contrato social.</p>
                 ) : null}
               </div>
             </section>
@@ -959,7 +959,7 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
           {["awaiting_owner", "informative_drafting"].includes(row.status) && row.canPrepareInformative ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Próximo passo</h3><p className="text-xs text-muted-foreground">O Informativo mostrará o resumo da alteração para conferência; o dono só precisa escrever se houver alguma missão ou observação adicional.</p><Button type="button" disabled={pending} onClick={prepareInformative}><ClipboardPenLine aria-hidden /> {row.status === "informative_drafting" ? "Gerar Informativo novamente" : "Preparar Informativo"}</Button></section> : null}
           {row.status === "informative_drafting" ? <p className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">A preparação do Informativo está aberta. Você pode gerar o texto novamente até criar a prévia em Informativos.</p> : null}
           {row.status === "sent_to_corporate" && row.canClaim ? <Button type="button" disabled={pending} onClick={claim}><UserRoundCheck aria-hidden /> Assumir processamento</Button> : null}
-          {row.status === "completed" ? <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-300"><CheckCircle2 className="mr-1 inline size-4" aria-hidden /> Informativo gerado e Fluxo concluído. A confirmação das missões segue em Informativos.</div> : null}
+          {row.status === "completed" ? <div className="rounded-md border border-success/30 bg-success/5 p-3 text-sm text-success"><CheckCircle2 className="mr-1 inline size-4" aria-hidden /> Informativo gerado e Fluxo concluído. A confirmação das missões segue em Informativos.</div> : null}
           {row.history.length > 0 ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Histórico</h3>{row.history.map((event) => <div key={event.id} className="rounded-md bg-muted/35 px-3 py-2 text-xs"><span className="font-medium">{eventLabel(event.eventType)}</span><span className="text-muted-foreground"> · {event.actorName} · {new Date(event.createdAt).toLocaleString("pt-BR")}</span>{event.note ? <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{event.note}</p> : null}</div>)}</section> : null}
         </div>
         <DialogFooter className="gap-2 sm:justify-between">
@@ -1113,7 +1113,7 @@ export function CompanyFlowBoard({
         ))}
         {visible.length === 0 ? (
           <div className="grid min-h-44 justify-items-center content-center gap-2 rounded-lg border border-dashed p-8 text-center">
-            {view === "open" ? <CheckCircle2 className="size-8 text-emerald-400" aria-hidden /> : <Archive className="size-8 text-muted-foreground" aria-hidden />}
+            {view === "open" ? <CheckCircle2 className="size-8 text-success" aria-hidden /> : <Archive className="size-8 text-muted-foreground" aria-hidden />}
             <p className="font-medium">{view === "open" ? "Nenhum fluxo em andamento" : "Nenhum fluxo no histórico"}</p>
             <p className="max-w-md text-sm text-muted-foreground">
               {query || status !== "all"

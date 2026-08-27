@@ -188,7 +188,7 @@ function StepButton({
       title={`${label}. Clique para alterar.`}
       className={cn(
         "inline-flex size-7 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-        status === "completed" && "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
+        status === "completed" && "border-success/40 bg-success/10 text-success",
         status === "blocked" && "border-destructive/50 bg-destructive/10 text-destructive",
         status === "pending" && "text-muted-foreground hover:bg-muted",
       )}

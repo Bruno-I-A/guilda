@@ -312,7 +312,7 @@ export function DistributionBoard({
                               variant="outline"
                               size="sm"
                               disabled={pending}
-                              className="border-emerald-500/35 text-emerald-300 hover:bg-emerald-500/10 hover:text-emerald-200"
+                              className="border-success/35 text-success hover:bg-success/10 hover:text-success"
                               onClick={() => completeDirectly(task.id)}
                             >
                               <CircleCheckBig aria-hidden /> Concluir direto

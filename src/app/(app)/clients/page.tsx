@@ -1,9 +1,10 @@
 import { and, asc, desc, eq, ilike, type SQL } from "drizzle-orm";
 import { Building2, Search } from "lucide-react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { PageHeader } from "@/components/page-header";
+import { SegmentedNav, type SegmentedNavItem } from "@/components/segmented-nav";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { withOrgTx } from "@/db/org-tx";
@@ -67,44 +68,46 @@ export default async function ClientsPage({
     return suffix ? `/clients?${suffix}` : "/clients";
   }
 
+  // O filtro de regime é navegação por URL (preserva o `?q=` da busca), não
+  // estado de cliente — por isso vira <SegmentedNav>, e não Tabs.
+  const regimeItems: SegmentedNavItem[] = (["all", ...TAX_REGIMES] as const).map(
+    (key) => ({
+      key,
+      label: key === "all" ? "Todos" : TAX_REGIME_LABELS[key],
+      href: regimeHref(key),
+    }),
+  );
+
   return (
     <div className="grid gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-wide">Clientes</h1>
-          <p className="text-muted-foreground">
-            Empresas acompanhadas pela contabilidade — {activeCount}{" "}
-            {activeCount === 1 ? "ativa" : "ativas"} de {clientList.length}.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <ImportClientsButton />
-          <NewClientButton />
-        </div>
-      </div>
+      <PageHeader
+        title="Clientes"
+        description={
+          <>
+            Empresas acompanhadas pela contabilidade —{" "}
+            <span className="font-mono tabular-nums">{activeCount}</span>{" "}
+            {activeCount === 1 ? "ativa" : "ativas"} de{" "}
+            <span className="font-mono tabular-nums">{clientList.length}</span>.
+          </>
+        }
+        action={
+          <>
+            <ImportClientsButton />
+            <NewClientButton />
+          </>
+        }
+      />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <nav
-          aria-label="Filtrar por regime"
-          className="flex max-w-full overflow-x-auto rounded-lg border bg-muted/40 p-0.5"
-        >
-          {(["all", ...TAX_REGIMES] as const).map((key) => (
-            <Link
-              key={key}
-              href={regimeHref(key)}
-              aria-current={regime === key ? "page" : undefined}
-              className={cn(
-                "whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                regime === key
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {key === "all" ? "Todos" : TAX_REGIME_LABELS[key]}
-            </Link>
-          ))}
-        </nav>
-        <form className="relative" action="/clients">
+      {/* Filtros no mesmo trilho: as abas de regime e a busca dividem a
+          borda inferior, então a linha lê como um só controle. */}
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b border-border">
+        <SegmentedNav
+          items={regimeItems}
+          active={regime}
+          label="Filtrar por regime"
+          className="border-b-0"
+        />
+        <form className="relative pb-2" action="/clients">
           {regime !== "all" ? (
             <input type="hidden" name="regime" value={regime} />
           ) : null}

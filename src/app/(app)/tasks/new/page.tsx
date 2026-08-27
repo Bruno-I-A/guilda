@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { PageHeader } from "@/components/page-header";
 import {
   listActiveClans,
   listOrgMembersWithResolvedClan,
@@ -19,13 +20,10 @@ export default async function NewTaskPage() {
 
   return (
     <div className="mx-auto grid w-full max-w-2xl gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-wide">Nova missão</h1>
-        <p className="text-muted-foreground">
-          O XP é definido pela dificuldade e prioridade e fica congelado na
-          criação.
-        </p>
-      </div>
+      <PageHeader
+        title="Nova missão"
+        description="O XP é definido pela dificuldade e prioridade e fica congelado na criação."
+      />
       <TaskForm
         members={members.map((member) => ({
           userId: member.userId,

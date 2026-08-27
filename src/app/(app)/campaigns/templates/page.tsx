@@ -3,6 +3,7 @@ import { ScrollText, Star } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -32,16 +33,11 @@ export default async function TemplatesPage() {
 
   return (
     <div className="grid gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-wide">Templates</h1>
-          <p className="text-muted-foreground">
-            Checklists por regime — cada campanha materializa as missões a
-            partir deles.
-          </p>
-        </div>
-        <NewTemplateButton />
-      </div>
+      <PageHeader
+        title="Templates"
+        description="Checklists por regime — cada campanha materializa as missões a partir deles."
+        action={<NewTemplateButton />}
+      />
 
       <CampaignTabs active="templates" />
 
@@ -82,7 +78,9 @@ export default async function TemplatesPage() {
                         {TAX_REGIME_LABELS[template.taxRegime]}
                       </Badge>
                       <span>
-                        {template.items.length}{" "}
+                        <span className="font-mono tabular-nums">
+                          {template.items.length}
+                        </span>{" "}
                         {template.items.length === 1 ? "etapa" : "etapas"}
                       </span>
                     </div>

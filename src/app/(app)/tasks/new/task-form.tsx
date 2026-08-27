@@ -118,12 +118,20 @@ export function TaskForm({
   }
 
   return (
-    <Card className="panel-cut texture-iron">
+    <Card className="panel-cut texture-iron rounded-none border-0 ring-0">
       <CardContent>
         <form onSubmit={onSubmit} className="grid gap-5" noValidate>
+          {/*
+            Rótulo de campo é 14px normal, não HUD: este formulário é usado no
+            celular, e 11px mono com 0.18em de tracking não se lê de relance.
+            O único `.hud-label` que sobra aqui é o do banner de recompensa,
+            que etiqueta um DADO (o XP), não um campo.
+          */}
           <fieldset className="grid gap-2">
-            <legend className="hud-label mb-2">Destino da missão</legend>
-            <div className="grid grid-cols-2 rounded-lg border p-1" role="radiogroup">
+            <legend className="mb-2 text-sm font-medium">Destino da missão</legend>
+            {/* Mesmo desenho do seletor de prioridade abaixo: segmentos retos
+                colados, sem canto arredondado. */}
+            <div className="grid grid-cols-2 border border-border" role="radiogroup">
               <button
                 type="button"
                 role="radio"
@@ -131,7 +139,7 @@ export function TaskForm({
                 onClick={() => setAssignmentType("individual")}
                 disabled={eligibleMembers.length === 0}
                 className={cn(
-                  "flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                  "flex items-center justify-center gap-2 border-r border-border px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50",
                   assignmentType === "individual"
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -146,7 +154,7 @@ export function TaskForm({
                 onClick={() => setAssignmentType("clan")}
                 disabled={clans.length === 0}
                 className={cn(
-                  "flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                  "flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50",
                   assignmentType === "clan"
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -158,9 +166,7 @@ export function TaskForm({
           </fieldset>
 
           <div className="grid gap-2">
-            <Label htmlFor="title" className="hud-label">
-              Título
-            </Label>
+            <Label htmlFor="title">Título</Label>
             <Input
               id="title"
               name="title"
@@ -171,9 +177,7 @@ export function TaskForm({
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="description" className="hud-label">
-              Descrição (opcional)
-            </Label>
+            <Label htmlFor="description">Descrição (opcional)</Label>
             <Textarea
               id="description"
               name="description"
@@ -191,9 +195,7 @@ export function TaskForm({
             <div className="grid content-start gap-2">
               {assignmentType === "individual" ? (
                 <>
-                  <Label htmlFor="assignee" className="hud-label">
-                    Pessoa responsável
-                  </Label>
+                  <Label htmlFor="assignee">Pessoa responsável</Label>
                   <Select value={assigneeId} onValueChange={setAssigneeId}>
                     <SelectTrigger id="assignee" className="w-full">
                       <SelectValue placeholder="Escolha uma pessoa" />
@@ -219,9 +221,7 @@ export function TaskForm({
                 </>
               ) : (
                 <>
-                  <Label htmlFor="clan" className="hud-label">
-                    Clã responsável
-                  </Label>
+                  <Label htmlFor="clan">Clã responsável</Label>
                   <Select value={clanId} onValueChange={setClanId}>
                     <SelectTrigger id="clan" className="w-full">
                       <SelectValue placeholder="Escolha um clã" />
@@ -241,9 +241,7 @@ export function TaskForm({
               )}
             </div>
             <div className="grid content-start gap-2">
-              <Label htmlFor="dueDate" className="hud-label">
-                Prazo (opcional)
-              </Label>
+              <Label htmlFor="dueDate">Prazo (opcional)</Label>
               <Input id="dueDate" name="dueDate" type="date" />
             </div>
           </div>
@@ -260,11 +258,13 @@ export function TaskForm({
 
           <div className="grid gap-5 sm:grid-cols-2">
             <div className="grid content-start gap-2">
-              <span className="hud-label">Prioridade</span>
+              {/* Span e não <Label>: o controle abaixo é um radiogroup com
+                  `aria-label` próprio — aqui o texto é só o rótulo visível. */}
+              <span className="text-sm font-medium">Prioridade</span>
               <PrioritySegments value={priority} onChange={setPriority} />
             </div>
             <div className="grid content-start gap-2">
-              <span className="hud-label">Dificuldade</span>
+              <span className="text-sm font-medium">Dificuldade</span>
               <DifficultyPips value={difficulty} onChange={setDifficulty} />
             </div>
           </div>
@@ -272,7 +272,7 @@ export function TaskForm({
           {/* Banner de loot: a recompensa reage às escolhas acima. */}
           <div className="panel-cut panel-cut-sm flex items-center justify-between bg-gold/10 px-4 py-3 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--gold)_35%,transparent)]">
             <span className="hud-label !text-gold/80">Recompensa ao concluir</span>
-            <span className="inline-flex items-center gap-1.5 font-mono text-lg font-bold text-gold">
+            <span className="inline-flex items-center gap-1.5 font-mono text-lg font-bold tabular-nums text-gold">
               <Star className="size-4" aria-hidden />
               {xpPreview} XP
             </span>

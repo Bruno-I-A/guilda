@@ -223,7 +223,7 @@ export function TemplateItemsEditor({
               key={item.id}
               className="panel-cut panel-cut-sm flex items-center gap-3 px-4 py-2.5"
             >
-              <span className="w-6 shrink-0 text-center font-mono text-sm text-muted-foreground">
+              <span className="w-6 shrink-0 text-center font-mono text-sm tabular-nums text-muted-foreground">
                 {index + 1}
               </span>
               <div className="min-w-0 flex-1">
@@ -232,13 +232,22 @@ export function TemplateItemsEditor({
                 </p>
                 <div className="mt-0.5 flex items-center gap-3 text-xs text-muted-foreground">
                   <Pips value={item.difficulty} max={5} label="Dificuldade" />
-                  <span className="font-mono text-gold">{item.xpValue} XP</span>
+                  <span className="font-mono tabular-nums text-gold">
+                    {item.xpValue} XP
+                  </span>
                 </div>
               </div>
-              <div className="flex shrink-0 items-center">
+              {/*
+                Quatro ícones de 32px colados dentro de uma linha de lista.
+                `touch-target` leva cada alvo a 44px; o `gap-1` existe para que
+                o alvo do "Excluir" não invada o botão vizinho — sem folga, os
+                44px do destrutivo comeriam 6px do "Editar".
+              */}
+              <div className="flex shrink-0 items-center gap-1">
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="touch-target"
                   aria-label={`Subir ${item.title}`}
                   disabled={pending || index === 0}
                   onClick={() =>
@@ -250,6 +259,7 @@ export function TemplateItemsEditor({
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="touch-target"
                   aria-label={`Descer ${item.title}`}
                   disabled={pending || index === items.length - 1}
                   onClick={() =>
@@ -263,6 +273,7 @@ export function TemplateItemsEditor({
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="touch-target"
                   aria-label={`Editar ${item.title}`}
                   disabled={pending}
                   onClick={() => {
@@ -275,7 +286,7 @@ export function TemplateItemsEditor({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="text-destructive hover:text-destructive"
+                  className="touch-target text-destructive hover:text-destructive"
                   aria-label={`Excluir ${item.title}`}
                   disabled={pending}
                   onClick={() =>

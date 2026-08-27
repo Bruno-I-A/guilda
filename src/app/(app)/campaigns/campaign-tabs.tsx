@@ -1,31 +1,22 @@
-import Link from "next/link";
+import { SegmentedNav, type SegmentedNavItem } from "@/components/segmented-nav";
 
-import { cn } from "@/lib/utils";
+/**
+ * Abas da área de Campanhas (campanhas em si chegam na Fase 5c).
+ *
+ * Era uma das quatro cópias byte-idênticas da pílula `bg-background shadow-sm`;
+ * agora só nomeia os destinos e deixa a aparência com o `SegmentedNav`.
+ */
+const CAMPAIGN_TABS: readonly SegmentedNavItem[] = [
+  { key: "campaigns", label: "Campanhas", href: "/campaigns" },
+  { key: "templates", label: "Templates", href: "/campaigns/templates" },
+];
 
-/** Abas da área de Campanhas (campanhas em si chegam na Fase 5c). */
 export function CampaignTabs({ active }: { active: "campaigns" | "templates" }) {
-  const tabs = [
-    { key: "campaigns", label: "Campanhas", href: "/campaigns" },
-    { key: "templates", label: "Templates", href: "/campaigns/templates" },
-  ] as const;
-
   return (
-    <nav aria-label="Seções de campanhas" className="flex w-fit rounded-lg border bg-muted/40 p-0.5">
-      {tabs.map(({ key, label, href }) => (
-        <Link
-          key={key}
-          href={href}
-          aria-current={active === key ? "page" : undefined}
-          className={cn(
-            "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
-            active === key
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {label}
-        </Link>
-      ))}
-    </nav>
+    <SegmentedNav
+      items={CAMPAIGN_TABS}
+      active={active}
+      label="Seções de campanhas"
+    />
   );
 }

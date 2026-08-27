@@ -209,7 +209,7 @@ export function FiscalProfileDialog({
         </DialogHeader>
 
         {profile.missingFields.length > 0 ? (
-          <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 text-xs">
+          <div className="rounded-lg border border-warning/35 bg-warning/10 p-3 text-xs">
             Ficha incompleta: revise {profile.missingFields.join(", ")}.
           </div>
         ) : null}

@@ -3,9 +3,9 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { initials, ROLE_LABELS } from "@/lib/people";
+import { PageHeader } from "@/components/page-header";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { auth } from "@/lib/auth";
 import { getActiveMember, isAdminRole, requireOrgSession } from "@/lib/session";
 
@@ -35,58 +35,67 @@ export default async function MembersPage() {
   );
 
   return (
-    <div className="grid gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-wide">Membros</h1>
-          <p className="text-muted-foreground">
-            {members.length} {members.length === 1 ? "pessoa" : "pessoas"} em{" "}
-            {org.name}
-          </p>
-        </div>
-        {viewerIsAdmin ? <InviteMemberDialog /> : null}
-      </div>
+    <div className="grid gap-5">
+      <PageHeader
+        title="Membros"
+        description={
+          <>
+            <span className="font-mono tabular-nums">{members.length}</span>{" "}
+            {members.length === 1 ? "pessoa" : "pessoas"} em {org.name}
+          </>
+        }
+        action={viewerIsAdmin ? <InviteMemberDialog /> : undefined}
+      />
 
-      <Card>
-        <CardContent className="divide-y p-0">
-          {members.map((member) => {
-            const isSelf = member.userId === session.user.id;
-            const canManage =
-              viewerIsAdmin && !isSelf && member.role !== "owner";
-            return (
-              <div key={member.id} className="flex items-center gap-3 p-4">
-                <Avatar className="size-9">
-                  <AvatarFallback className="text-xs">
-                    {initials(member.user.name)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">
-                    {member.user.name}
-                    {isSelf ? (
-                      <span className="text-muted-foreground"> (você)</span>
-                    ) : null}
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {member.user.email}
-                  </p>
-                </div>
-                <Badge variant={member.role === "member" ? "secondary" : "default"}>
-                  {ROLE_LABELS[member.role] ?? member.role}
-                </Badge>
-                {canManage ? (
-                  <MemberActions
-                    memberId={member.id}
-                    memberName={member.user.name}
-                    role={member.role}
-                    organizationId={org.id}
-                  />
-                ) : null}
+      {/*
+        Era um <Card> de estoque com `divide-y` — a única lista do app que
+        ainda usava a superfície genérica. Agora cada pessoa é uma placa
+        chanfrada, igual a /clients e aos templates. Sem `texture-iron`:
+        textura é de tela de vitrine, e esta é lista de uso diário.
+      */}
+      <ul className="grid gap-1.5">
+        {members.map((member) => {
+          const isSelf = member.userId === session.user.id;
+          const canManage = viewerIsAdmin && !isSelf && member.role !== "owner";
+          return (
+            <li
+              key={member.id}
+              className="panel-cut panel-cut-sm flex items-center gap-3 px-4 py-2.5"
+            >
+              <Avatar className="size-9">
+                <AvatarFallback className="text-xs">
+                  {initials(member.user.name)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium leading-snug">
+                  {member.user.name}
+                  {isSelf ? (
+                    <span className="text-muted-foreground"> (você)</span>
+                  ) : null}
+                </p>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {member.user.email}
+                </p>
               </div>
-            );
-          })}
-        </CardContent>
-      </Card>
+              <Badge
+                variant={member.role === "member" ? "secondary" : "default"}
+                className="shrink-0"
+              >
+                {ROLE_LABELS[member.role] ?? member.role}
+              </Badge>
+              {canManage ? (
+                <MemberActions
+                  memberId={member.id}
+                  memberName={member.user.name}
+                  role={member.role}
+                  organizationId={org.id}
+                />
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

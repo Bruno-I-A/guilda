@@ -583,11 +583,11 @@ function PeriodRow({
             {formatDate(period.dueDate)}
           </span>
           {period.distributedAmount !== null ? (
-            <span className="font-mono text-xs text-emerald-300">
+            <span className="font-mono text-xs text-success">
               {formatBRLCurrency(period.distributedAmount)}
             </span>
           ) : period.completedAt ? (
-            <span className="text-xs text-amber-300">valor não informado</span>
+            <span className="text-xs text-warning">valor não informado</span>
           ) : null}
           {period.completedAt ? (
             <Badge variant="outline" className="gap-1 border-transparent bg-primary/10">
@@ -835,13 +835,13 @@ export function CommitmentBoard({
                   )}
                   <h3 className="min-w-0 flex-1 truncate font-medium">{commitment.clientName}</h3>
                   {commitment.targetAmount !== null ? (
-                    <span className="flex shrink-0 items-center gap-1.5 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 font-mono text-sm font-semibold text-emerald-400">
+                    <span className="flex shrink-0 items-center gap-1.5 rounded-md border border-success/30 bg-success/10 px-2.5 py-1 font-mono text-sm font-semibold text-success">
                       <CircleDollarSign className="size-3.5" aria-hidden />
                       Meta {formatBRLCurrency(commitment.targetAmount)}
                     </span>
                   ) : commitment.notes ? (
                     <span
-                      className="flex max-w-40 shrink-0 items-center gap-1.5 truncate rounded-md border border-emerald-400/25 bg-emerald-400/8 px-2.5 py-1 text-sm font-medium text-emerald-300 sm:max-w-64"
+                      className="flex max-w-40 shrink-0 items-center gap-1.5 truncate rounded-md border border-success/25 bg-success/8 px-2.5 py-1 text-sm font-medium text-success sm:max-w-64"
                       title={commitment.notes}
                     >
                       <CircleDollarSign className="size-3.5 shrink-0" aria-hidden />

@@ -13,9 +13,12 @@ export default async function OnboardingPage() {
     redirect("/dashboard");
   }
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-muted/40 p-4">
-      <div className="flex flex-col items-center gap-2 font-heading text-lg font-semibold tracking-widest">
-        <GuildCrest className="size-14" />
+    // Alinhado ao (auth)/layout: as duas telas são vizinhas no funil de
+    // entrada e antes não combinavam (crest 14 vs 16, texto lg vs 2xl, e um
+    // fundo `bg-muted/40` que só existia aqui).
+    <div className="flex min-h-svh flex-col items-center justify-center gap-6 p-4">
+      <div className="flex flex-col items-center gap-3 font-heading text-2xl font-semibold tracking-widest">
+        <GuildCrest className="size-16" />
         Guilda
       </div>
       <div className="w-full max-w-sm">
