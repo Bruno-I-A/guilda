@@ -1,6 +1,7 @@
 import { formatBRLCurrency } from "@/lib/currency";
 import { TAX_REGIME_LABELS, type TaxRegime } from "@/lib/clients-ui";
 import { formatCnpj } from "./cnpj";
+import type { TaskStatus } from "./task-state";
 
 export const COMPANY_FLOW_KINDS = ["opening", "amendment", "closure"] as const;
 export type CompanyFlowKind = (typeof COMPANY_FLOW_KINDS)[number];
@@ -37,6 +38,25 @@ export const COMPANY_FLOW_STATUS_LABELS: Record<CompanyFlowStatus, string> = {
   completed: "Concluído",
   cancelled: "Cancelado",
 };
+
+export type CompanyFlowRhVerificationState =
+  | "not_required"
+  | "pending"
+  | "confirmed";
+
+/**
+ * Fluxos antigos de baixa não possuem vínculo com a missão preventiva e são
+ * mantidos como legado. Toda baixa nova nasce com taskId e só fica liberada
+ * quando a missão do RH chega a `completed`.
+ */
+export function companyFlowRhVerificationState(input: {
+  kind: CompanyFlowKind;
+  taskId: string | null;
+  taskStatus: TaskStatus | null;
+}): CompanyFlowRhVerificationState {
+  if (input.kind !== "closure" || !input.taskId) return "not_required";
+  return input.taskStatus === "completed" ? "confirmed" : "pending";
+}
 
 /** Título do aviso no mural para distinguir uma baixa dos demais informativos. */
 export function companyFlowInformativeNoticeTitle(
@@ -106,6 +126,8 @@ export interface FlowInformativeInput {
   requestDetails: string | null;
   billingAmount?: string | null;
   billingDescription?: string | null;
+  /** Evita recriar no Informativo a missão preventiva já concluída pelo RH. */
+  rhVerificationConfirmed?: boolean;
   resultCnpj: string | null;
   approvedLegalName: string | null;
   approvedActivities: readonly FlowActivity[];
@@ -337,6 +359,9 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
       "",
       "OBSERVAÇÕES:",
       flow.requestDetails || "—",
+      flow.rhVerificationConfirmed
+        ? "VALIDAÇÃO PRÉVIA – Folha e pró-labore confirmados pelo RH antes da baixa."
+        : null,
       flow.billingAmount && flow.billingDescription ? "" : null,
       flow.billingAmount && flow.billingDescription
         ? `COBRANÇA DO SERVIÇO – ${formatCompanyFlowBillingAmount(flow.billingAmount)}`
@@ -349,11 +374,13 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
       "SOCIETÁRIO – Baixar o Alvará.",
       "CONTABIL – Rafa/Bruno – Finalizar lançamentos até a data da baixa",
       "FISCAL – Fabi/Jessica – Finalizar todos os informativos da empresa até a data da baixa",
-      "RH – Carol/Jenifer – Baixar o pró-labore.",
+      flow.rhVerificationConfirmed
+        ? null
+        : "RH – Carol/Jenifer – Baixar o pró-labore.",
       "SUCESSO DO CLIENTE – Separar toda a documentação, confeccionar o Protocolo de entrega, combinar a entrega com a cliente e cobrar a baixa.",
       "SUCESSO DO CLIENTE – Retirar empresa do E-Auditoria.",
       "SUCESSO DO CLIENTE – Retirar empresa do Onvio.",
-    ].join("\n");
+    ].filter((line): line is string => line !== null).join("\n");
   }
 
   return [

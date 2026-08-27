@@ -10,6 +10,7 @@ import {
   COMPANY_FLOW_KINDS,
   COMPANY_FLOW_SOURCES,
   companyFlowInformativeText,
+  companyFlowRhVerificationState,
 } from "@/domain/company-flow";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
 import { TAX_REGIMES } from "@/lib/clients-ui";
@@ -26,13 +27,14 @@ import {
 } from "@/lib/action-context";
 import { isActiveClanMember, loadClanScopedFacts } from "@/lib/clans/facts";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
-import { SOCIETARIO_CLAN_SLUG } from "@/lib/clans/rules";
+import { RH_CLAN_SLUG, SOCIETARIO_CLAN_SLUG } from "@/lib/clans/rules";
 import { resolveClientName } from "@/lib/ai/client-resolution";
 import {
   decryptFlowSecret,
   encryptFlowSecret,
 } from "@/lib/company-flows/secrets";
 import { lookupCnpj, type CnpjLookupData } from "@/lib/cnpj-lookup";
+import { createTaskRecord } from "@/lib/tasks/create";
 
 const activitySchema = z.object({
   code: z.string().trim().max(12).nullable().optional(),
@@ -165,6 +167,8 @@ async function requireCorporateFlowClan(
 function revalidateCompanyFlow(clanId: string) {
   revalidatePath(`/clans/${clanId}`);
   revalidatePath("/informativos");
+  revalidatePath("/tasks");
+  revalidatePath("/dashboard");
 }
 
 const companyDataLookupSchema = z.object({
@@ -309,13 +313,30 @@ export async function createCompanyFlow(
       return err("Apenas owner ou admin pode abrir um Fluxo.");
     }
 
+    let existingClient: { id: string; name: string } | null = null;
     if (data.existingClientId) {
       const [client] = await tx
-        .select({ id: schema.clients.id })
+        .select({ id: schema.clients.id, name: schema.clients.name })
         .from(schema.clients)
         .where(and(eq(schema.clients.orgId, ctx.orgId), eq(schema.clients.id, data.existingClientId)))
         .for("update");
       if (!client) return err("A empresa escolhida não pertence à organização.");
+      existingClient = client;
+    }
+
+    const [rhClan] = data.kind === "closure"
+      ? await tx
+          .select({ id: schema.clans.id })
+          .from(schema.clans)
+          .where(and(
+            eq(schema.clans.orgId, ctx.orgId),
+            eq(schema.clans.slug, RH_CLAN_SLUG),
+            eq(schema.clans.active, true),
+          ))
+          .limit(1)
+      : [];
+    if (data.kind === "closure" && !rhClan) {
+      return err("O clã RH precisa estar ativo para abrir um Fluxo de baixa.");
     }
 
     const [flow] = await tx
@@ -346,6 +367,37 @@ export async function createCompanyFlow(
       })
       .returning({ id: schema.companyFlows.id });
 
+    let rhVerificationTaskId: string | null = null;
+    if (data.kind === "closure" && rhClan) {
+      const companyName = existingClient?.name ?? "Empresa";
+      const taskTitle = `Verificar folha e pró-labore antes da baixa — ${companyName}`;
+      const task = await createTaskRecord(tx, {
+        orgId: ctx.orgId,
+        creatorId: ctx.userId,
+        assigneeId: null,
+        clanId: rhClan.id,
+        clientId: existingClient?.id ?? null,
+        title: taskTitle.slice(0, 200),
+        description: [
+          `A empresa ${companyName} entrou em processo de baixa.`,
+          "",
+          "Verifique se existe folha registrada ou pró-labore ativo. Baixe o que estiver pendente ou, se já estiver regularizado, conclua esta missão para confirmar.",
+          "",
+          "Enquanto esta missão não estiver concluída, o Societário não poderá confirmar a baixa no Fluxo.",
+        ].join("\n"),
+        priority: 3,
+        difficulty: 2,
+      });
+      rhVerificationTaskId = task.id;
+      await tx
+        .update(schema.companyFlows)
+        .set({ rhVerificationTaskId: task.id })
+        .where(and(
+          eq(schema.companyFlows.orgId, ctx.orgId),
+          eq(schema.companyFlows.id, flow.id),
+        ));
+    }
+
     if (encryptedSecret) {
       await tx.insert(schema.companyFlowSecrets).values({
         orgId: ctx.orgId,
@@ -358,7 +410,12 @@ export async function createCompanyFlow(
       orgId: ctx.orgId,
       flowId: flow.id,
       eventType: "created",
-      newValue: { kind: data.kind, source: data.source, hasGovSecret: Boolean(encryptedSecret) },
+      newValue: {
+        kind: data.kind,
+        source: data.source,
+        hasGovSecret: Boolean(encryptedSecret),
+        rhVerificationTaskId,
+      },
       actorId: ctx.userId,
     });
     return { ok: true, data: { flowId: flow.id } };
@@ -498,6 +555,25 @@ export async function returnCompanyFlowToOwner(
     if (flow.status !== "in_progress") return err("Este Fluxo não está em processamento.");
     if (flow.kind === "opening" && !data.resultCnpj) return err("Informe o CNPJ aprovado antes de devolver uma abertura.");
 
+    if (flow.kind === "closure" && flow.rhVerificationTaskId) {
+      const [rhVerificationTask] = await tx
+        .select({ status: schema.tasks.status })
+        .from(schema.tasks)
+        .where(and(
+          eq(schema.tasks.orgId, ctx.orgId),
+          eq(schema.tasks.id, flow.rhVerificationTaskId),
+        ))
+        .for("update");
+      const verificationState = companyFlowRhVerificationState({
+        kind: flow.kind,
+        taskId: flow.rhVerificationTaskId,
+        taskStatus: rhVerificationTask?.status ?? null,
+      });
+      if (verificationState !== "confirmed") {
+        return err("O RH ainda não confirmou a baixa da folha e do pró-labore. Conclua a missão do RH antes de devolver este Fluxo.");
+      }
+    }
+
     const simpleConfirmation = flow.kind === "amendment" || flow.kind === "closure";
 
     await tx.update(schema.companyFlows).set({
@@ -553,9 +629,11 @@ export async function prepareCompanyFlowInformative(
         clientName: schema.clients.name,
         clientCnpj: schema.clients.cnpj,
         clientTaxRegime: schema.clients.taxRegime,
+        rhVerificationTaskStatus: schema.tasks.status,
       })
       .from(schema.companyFlows)
       .leftJoin(schema.clients, and(eq(schema.clients.orgId, schema.companyFlows.orgId), eq(schema.clients.id, schema.companyFlows.existingClientId)))
+      .leftJoin(schema.tasks, and(eq(schema.tasks.orgId, schema.companyFlows.orgId), eq(schema.tasks.id, schema.companyFlows.rhVerificationTaskId)))
       .where(and(eq(schema.companyFlows.orgId, ctx.orgId), eq(schema.companyFlows.id, data.flowId), eq(schema.companyFlows.societarioClanId, data.clanId)))
       .for("update", { of: schema.companyFlows });
     if (!flow) return err("Fluxo não encontrado.");
@@ -569,6 +647,9 @@ export async function prepareCompanyFlowInformative(
       existingClientName: flow.clientName ?? null,
       existingClientCnpj: flow.clientCnpj ?? null,
       existingClientTaxRegime: flow.clientTaxRegime ?? null,
+      rhVerificationConfirmed:
+        Boolean(flow.flow.rhVerificationTaskId) &&
+        flow.rhVerificationTaskStatus === "completed",
     });
     if (flow.flow.status !== "informative_drafting") {
       await tx.update(schema.companyFlows).set({ status: "informative_drafting", updatedAt: new Date() })
@@ -648,6 +729,39 @@ export async function lookupCompanyFlowCnpj(
   };
 }
 
+async function cancelOpenRhVerificationTask(
+  tx: OrgTx,
+  input: { orgId: string; taskId: string | null; actorId: string },
+): Promise<void> {
+  if (!input.taskId) return;
+  const [task] = await tx
+    .select({ id: schema.tasks.id, status: schema.tasks.status })
+    .from(schema.tasks)
+    .where(and(
+      eq(schema.tasks.orgId, input.orgId),
+      eq(schema.tasks.id, input.taskId),
+    ))
+    .for("update");
+  if (!task || task.status === "completed" || task.status === "cancelled") return;
+
+  const now = new Date();
+  await tx
+    .update(schema.tasks)
+    .set({ status: "cancelled", updatedAt: now })
+    .where(and(
+      eq(schema.tasks.orgId, input.orgId),
+      eq(schema.tasks.id, task.id),
+    ));
+  await tx.insert(schema.taskEvents).values({
+    orgId: input.orgId,
+    taskId: task.id,
+    actorId: input.actorId,
+    fromStatus: task.status,
+    toStatus: "cancelled",
+    note: "Missão cancelada automaticamente com o Fluxo de baixa.",
+  });
+}
+
 export async function cancelCompanyFlow(
   input: z.input<typeof flowTargetSchema>,
 ): Promise<ActionResult> {
@@ -664,6 +778,11 @@ export async function cancelCompanyFlow(
       .for("update");
     if (!flow) return err("Fluxo não encontrado.");
     if (flow.status === "completed" || flow.status === "cancelled") return err("Este Fluxo não pode mais ser cancelado.");
+    await cancelOpenRhVerificationTask(tx, {
+      orgId: ctx.orgId,
+      taskId: flow.rhVerificationTaskId,
+      actorId: ctx.userId,
+    });
     await tx.update(schema.companyFlows).set({ status: "cancelled", updatedAt: new Date() }).where(eq(schema.companyFlows.id, flow.id));
     await tx.insert(schema.companyFlowEvents).values({ orgId: ctx.orgId, flowId: flow.id, eventType: "cancelled", previousValue: { status: flow.status }, newValue: { status: "cancelled" }, actorId: ctx.userId });
     return { ok: true };
@@ -739,6 +858,11 @@ export async function deleteCompanyFlow(
         .set({ status: "cancelled", decidedAt: new Date() })
         .where(eq(schema.informatives.id, informative.id));
     }
+    await cancelOpenRhVerificationTask(tx, {
+      orgId: ctx.orgId,
+      taskId: flow.rhVerificationTaskId,
+      actorId: ctx.userId,
+    });
     await tx.delete(schema.companyFlows).where(and(
       eq(schema.companyFlows.orgId, ctx.orgId),
       eq(schema.companyFlows.id, flow.id),

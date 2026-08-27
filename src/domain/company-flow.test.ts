@@ -11,9 +11,33 @@ import {
   companyFlowActionsText,
   companyFlowInformativeText,
   companyFlowInformativeNoticeTitle,
+  companyFlowRhVerificationState,
 } from "./company-flow";
 
 describe("Fluxo Societário", () => {
+  test("trava somente baixas novas enquanto o RH ainda não concluiu a verificação", () => {
+    expect(companyFlowRhVerificationState({
+      kind: "closure",
+      taskId: "task-rh",
+      taskStatus: "pending",
+    })).toBe("pending");
+    expect(companyFlowRhVerificationState({
+      kind: "closure",
+      taskId: "task-rh",
+      taskStatus: "completed",
+    })).toBe("confirmed");
+    expect(companyFlowRhVerificationState({
+      kind: "closure",
+      taskId: null,
+      taskStatus: null,
+    })).toBe("not_required");
+    expect(companyFlowRhVerificationState({
+      kind: "amendment",
+      taskId: "task-rh",
+      taskStatus: "pending",
+    })).toBe("not_required");
+  });
+
   test("leva os dados aprovados ao informativo sem vazar credencial", () => {
     const text = companyFlowInformativeText({
       kind: "opening",
@@ -262,6 +286,7 @@ describe("Fluxo Societário", () => {
       approvedAddress: null,
       approvedQsa: [],
       processingNotes: "Baixa concluída pelo Societário.",
+      rhVerificationConfirmed: true,
     });
 
     expect(text).toContain("INFORMATIVO DE BAIXA DE CLIENTE");
@@ -271,13 +296,47 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("OBSERVAÇÕES:\nEMPRESA BAIXADA 30/06/2026");
     expect(text).toContain("SOCIETÁRIO – Baixar o Alvará.");
     expect(text).toContain("CONTABIL – Rafa/Bruno – Finalizar lançamentos até a data da baixa");
-    expect(text).toContain("RH – Carol/Jenifer – Baixar o pró-labore.");
+    expect(text).toContain("VALIDAÇÃO PRÉVIA – Folha e pró-labore confirmados pelo RH antes da baixa.");
+    expect(text).not.toContain("RH – Carol/Jenifer – Baixar o pró-labore.");
     expect(text).not.toContain("(efetuado)");
     expect(text).toContain("SUCESSO DO CLIENTE – Separar toda a documentação");
     expect(text).not.toContain("ATENDIMENTO – Jessica");
     expect(text).toContain("SUCESSO DO CLIENTE – Retirar empresa do E-Auditoria.");
     expect(text).toContain("SUCESSO DO CLIENTE – Retirar empresa do Onvio.");
     expect(text).not.toContain("SERVIDOR");
+  });
+
+  test("mantém a missão de RH apenas para baixas legadas sem verificação preventiva", () => {
+    const text = companyFlowInformativeText({
+      kind: "closure",
+      existingClientName: "EMPRESA LEGADA LTDA",
+      existingClientCnpj: null,
+      existingClientTaxRegime: "simples",
+      requestedLegalName: null,
+      requestedActivities: [],
+      removedActivities: [],
+      taxRegime: null,
+      iptu: null,
+      socialCapital: null,
+      roomSize: null,
+      address: null,
+      clientResponsible: null,
+      qsa: [],
+      contactName: null,
+      contactPhone: null,
+      contactEmail: null,
+      requestDetails: null,
+      resultCnpj: null,
+      approvedLegalName: null,
+      approvedActivities: [],
+      approvedTaxRegime: null,
+      approvedAddress: null,
+      approvedQsa: [],
+      processingNotes: null,
+    });
+
+    expect(text).toContain("RH – Carol/Jenifer – Baixar o pró-labore.");
+    expect(text).not.toContain("VALIDAÇÃO PRÉVIA");
   });
 
   test("prepara a cobrança de alteração e baixa para o Financeiro", () => {

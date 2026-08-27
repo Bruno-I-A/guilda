@@ -46,13 +46,16 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   COMPANY_FLOW_KIND_LABELS,
   COMPANY_FLOW_STATUS_LABELS,
+  companyFlowRhVerificationState,
   type CompanyFlowKind,
+  type CompanyFlowRhVerificationState,
   type CompanyFlowSource,
   type CompanyFlowStatus,
   type FlowActivity,
   type FlowQsaMember,
 } from "@/domain/company-flow";
 import { formatCnpj } from "@/domain/cnpj";
+import type { TaskStatus } from "@/domain/task-state";
 import { TAX_REGIME_LABELS, TAX_REGIMES, type TaxRegime } from "@/lib/clients-ui";
 import { formatBRLCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
@@ -93,6 +96,9 @@ export interface CompanyFlowView {
   requestDetails: string | null;
   billingAmount: string | null;
   billingDescription: string | null;
+  rhVerificationTaskId: string | null;
+  rhVerificationTaskStatus: TaskStatus | null;
+  rhVerificationCompletedAt: string | null;
   assignedTo: string | null;
   assignedName: string | null;
   resultCnpj: string | null;
@@ -150,6 +156,37 @@ const HISTORY_FLOW_STATUSES: readonly CompanyFlowStatus[] = [
   "completed",
   "cancelled",
 ];
+
+function RhVerificationBadge({
+  state,
+}: {
+  state: CompanyFlowRhVerificationState;
+}) {
+  if (state === "not_required") return null;
+  return state === "confirmed" ? (
+    <Badge variant="outline" className="border-success/45 bg-success/10 text-success">
+      <ShieldCheck aria-hidden /> Confirmado pelo RH
+    </Badge>
+  ) : (
+    <Badge variant="outline" className="border-warning/50 bg-warning/10 text-warning">
+      <Clock3 aria-hidden /> RH ainda não verificou
+    </Badge>
+  );
+}
+
+function getRhVerificationState(
+  row: Pick<
+    CompanyFlowView,
+    "kind" | "status" | "rhVerificationTaskId" | "rhVerificationTaskStatus"
+  >,
+): CompanyFlowRhVerificationState {
+  if (row.status === "cancelled") return "not_required";
+  return companyFlowRhVerificationState({
+    kind: row.kind,
+    taskId: row.rhVerificationTaskId,
+    taskStatus: row.rhVerificationTaskStatus,
+  });
+}
 
 function flowStageDescription(row: CompanyFlowView): string {
   switch (row.status) {
@@ -825,6 +862,7 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
   const amendment = row.kind === "amendment";
   const closure = row.kind === "closure";
   const simpleConfirmation = amendment || closure;
+  const rhVerificationState = getRhVerificationState(row);
   const companyName = amendment
     ? row.existingClientName ?? row.approvedLegalName ?? row.requestedLegalName ?? "Empresa"
     : row.approvedLegalName ?? row.requestedLegalName ?? row.existingClientName ?? "Empresa";
@@ -934,8 +972,19 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader><DialogTitle>{COMPANY_FLOW_KIND_LABELS[row.kind]} · {companyName}</DialogTitle><DialogDescription>Criado por {row.createdByName} em {new Date(row.createdAt).toLocaleString("pt-BR")}</DialogDescription></DialogHeader>
         <div className="grid gap-4 text-sm">
-          <div className="flex flex-wrap gap-2"><Badge variant="outline" className={STATUS_CLASS[row.status]}>{COMPANY_FLOW_STATUS_LABELS[row.status]}</Badge><Badge variant="outline">Origem: {FLOW_SOURCE_LABELS[row.source]}</Badge>{row.assignedName ? <Badge variant="outline">Societário: {row.assignedName}</Badge> : null}</div>
+          <div className="flex flex-wrap gap-2"><Badge variant="outline" className={STATUS_CLASS[row.status]}>{COMPANY_FLOW_STATUS_LABELS[row.status]}</Badge><Badge variant="outline">Origem: {FLOW_SOURCE_LABELS[row.source]}</Badge>{row.assignedName ? <Badge variant="outline">Societário: {row.assignedName}</Badge> : null}<RhVerificationBadge state={rhVerificationState} /></div>
           <FlowRequestSummary row={row} />
+          {rhVerificationState === "pending" ? (
+            <section className="rounded-md border border-warning/45 bg-warning/10 p-3" role="status">
+              <h3 className="flex items-center gap-2 text-warning"><Clock3 className="size-4" aria-hidden /> Verificação obrigatória do RH pendente</h3>
+              <p className="mt-1 max-w-prose text-xs text-muted-foreground">O RH precisa baixar a folha e o pró-labore, ou confirmar que já estão regularizados. O Societário pode trabalhar no processo, mas não consegue confirmar a baixa enquanto essa missão estiver pendente.</p>
+            </section>
+          ) : rhVerificationState === "confirmed" ? (
+            <section className="rounded-md border border-success/35 bg-success/5 p-3" role="status">
+              <h3 className="flex items-center gap-2 text-success"><ShieldCheck className="size-4" aria-hidden /> Folha e pró-labore confirmados pelo RH</h3>
+              <p className="mt-1 text-xs text-muted-foreground">Validação concluída{row.rhVerificationCompletedAt ? ` em ${new Date(row.rhVerificationCompletedAt).toLocaleString("pt-BR")}` : ""}. A confirmação da baixa está liberada para o Societário.</p>
+            </section>
+          ) : null}
           {row.hasGovSecret ? <section className="rounded-md border border-primary/30 bg-primary/5 p-3"><p className="flex items-center gap-1.5 font-medium"><KeyRound className="size-4" aria-hidden /> Acesso Gov.br protegido</p>{revealedSecret ? <p className="mt-2 rounded bg-background px-2 py-1 font-mono text-sm break-all">{revealedSecret}</p> : <Button type="button" className="mt-2" variant="outline" size="sm" disabled={pending || !row.canReturn} onClick={revealSecret}><Eye aria-hidden /> Revelar senha</Button>}</section> : null}
           {row.status === "in_progress" && row.canReturn ? (
             <section className="grid gap-3 border-t pt-4">
@@ -953,7 +1002,10 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
                 </>
               )}
               {simpleConfirmation ? null : <div className="grid gap-1.5"><Label>Retorno e observações</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder="O que foi deferido, pendências ou cuidados" /></div>}
-              <Button type="button" disabled={pending || (!simpleConfirmation && !notes.trim())} onClick={returnToOwner}><Send aria-hidden /> {amendment ? "Confirmar alteração e devolver ao dono" : closure ? "Confirmar baixa e devolver ao dono" : "Devolver ao dono"}</Button>
+              <Button type="button" disabled={pending || (!simpleConfirmation && !notes.trim()) || (closure && rhVerificationState === "pending")} onClick={returnToOwner}>
+                {closure && rhVerificationState === "pending" ? <Clock3 aria-hidden /> : <Send aria-hidden />}
+                {amendment ? "Confirmar alteração e devolver ao dono" : closure ? rhVerificationState === "pending" ? "Aguardando confirmação do RH" : "Confirmar baixa e devolver ao dono" : "Devolver ao dono"}
+              </Button>
             </section>
           ) : null}
           {["awaiting_owner", "informative_drafting"].includes(row.status) && row.canPrepareInformative ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Próximo passo</h3><p className="text-xs text-muted-foreground">O Informativo mostrará o resumo da alteração para conferência; o dono só precisa escrever se houver alguma missão ou observação adicional.</p><Button type="button" disabled={pending} onClick={prepareInformative}><ClipboardPenLine aria-hidden /> {row.status === "informative_drafting" ? "Gerar Informativo novamente" : "Preparar Informativo"}</Button></section> : null}
@@ -1099,6 +1151,7 @@ export function CompanyFlowBoard({
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline">{COMPANY_FLOW_KIND_LABELS[row.kind]}</Badge>
                 <Badge variant="outline" className={STATUS_CLASS[row.status]}>{COMPANY_FLOW_STATUS_LABELS[row.status]}</Badge>
+                <RhVerificationBadge state={getRhVerificationState(row)} />
               </div>
               <h3 className="mt-2 truncate text-base font-medium">{row.approvedLegalName ?? row.requestedLegalName ?? row.existingClientName ?? "Empresa"}</h3>
               <p className="mt-1 text-sm text-muted-foreground">{flowStageDescription(row)}</p>

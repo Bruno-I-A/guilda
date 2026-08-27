@@ -863,6 +863,8 @@ export const companyFlows = pgTable(
     /** Cobrança do serviço de alteração/baixa, destinada ao Financeiro. */
     billingAmount: numeric("billing_amount", { precision: 15, scale: 2 }),
     billingDescription: text("billing_description"),
+    /** Missão preventiva do RH que libera a conclusão de uma baixa. */
+    rhVerificationTaskId: uuid("rh_verification_task_id"),
     assignedTo: text("assigned_to").references(() => user.id),
     resultCnpj: varchar("result_cnpj", { length: 14 }),
     approvedLegalName: varchar("approved_legal_name", { length: 200 }),
@@ -907,6 +909,11 @@ export const companyFlows = pgTable(
       columns: [t.orgId, t.informativeId],
       foreignColumns: [informatives.orgId, informatives.id],
     }).onDelete("restrict"),
+    foreignKey({
+      name: "company_flows_org_rh_verification_task_fk",
+      columns: [t.orgId, t.rhVerificationTaskId],
+      foreignColumns: [tasks.orgId, tasks.id],
+    }).onDelete("restrict"),
     uniqueIndex("company_flows_org_id_uidx").on(t.orgId, t.id),
     index("company_flows_org_clan_status_idx").on(
       t.orgId,
@@ -923,6 +930,9 @@ export const companyFlows = pgTable(
     uniqueIndex("company_flows_org_informative_uidx")
       .on(t.orgId, t.informativeId)
       .where(sql`${t.informativeId} IS NOT NULL`),
+    uniqueIndex("company_flows_org_rh_verification_task_uidx")
+      .on(t.orgId, t.rhVerificationTaskId)
+      .where(sql`${t.rhVerificationTaskId} IS NOT NULL`),
     check(
       "company_flows_kind_client_check",
       sql`(${t.kind} = 'opening' AND ${t.existingClientId} IS NULL) OR (${t.kind} <> 'opening' AND ${t.existingClientId} IS NOT NULL)`,
@@ -938,6 +948,10 @@ export const companyFlows = pgTable(
     check(
       "company_flows_billing_kind_check",
       sql`${t.kind} <> 'opening' OR (${t.billingAmount} IS NULL AND ${t.billingDescription} IS NULL)`,
+    ),
+    check(
+      "company_flows_rh_verification_kind_check",
+      sql`${t.kind} = 'closure' OR ${t.rhVerificationTaskId} IS NULL`,
     ),
   ],
 );

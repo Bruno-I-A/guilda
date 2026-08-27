@@ -71,6 +71,25 @@ export async function runTelegramTaskAction(input: {
         error: "A missão mudou de estado. Consulte a lista novamente.",
       };
     }
+    if (intent.to === "cancelled") {
+      const [linkedRhVerificationFlow] = await tx
+        .select({ id: schema.companyFlows.id, status: schema.companyFlows.status })
+        .from(schema.companyFlows)
+        .where(and(
+          eq(schema.companyFlows.orgId, input.orgId),
+          eq(schema.companyFlows.rhVerificationTaskId, task.id),
+        ))
+        .limit(1);
+      if (
+        linkedRhVerificationFlow &&
+        linkedRhVerificationFlow.status !== "cancelled"
+      ) {
+        return {
+          ok: false,
+          error: "Esta é a verificação obrigatória do RH. Cancele o Fluxo de baixa para cancelar a missão.",
+        };
+      }
+    }
     if (intent.to === "completed" && !task.assigneeId) {
       return {
         ok: false,
