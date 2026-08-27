@@ -202,7 +202,9 @@ function flowStageDescription(row: CompanyFlowView): string {
         ? `Em processamento por ${row.assignedName}`
         : "Em processamento no Societário";
     case "awaiting_owner":
-      return "Retornado ao dono para preparar o Informativo";
+      return row.kind === "amendment"
+        ? "Alteração confirmada; Informativo pendente"
+        : "Processo confirmado; Informativo pendente";
     case "informative_drafting":
       return "Informativo em preparação";
     case "completed":
@@ -250,12 +252,16 @@ const AMENDMENT_FIELDS: readonly {
   { key: "contact", label: "Contato", description: "Nome, telefone ou e-mail" },
 ];
 
-function eventLabel(eventType: string): string {
+function eventLabel(eventType: string, kind: CompanyFlowKind): string {
   const labels: Record<string, string> = {
     created: "Fluxo enviado ao Societário",
     claimed: "Fluxo assumido",
     assigned: "Responsável alterado",
-    returned_to_owner: "Devolvido ao dono",
+    returned_to_owner: kind === "amendment"
+      ? "Informativo confirmado"
+      : kind === "closure"
+        ? "Baixa confirmada"
+        : "Dados aprovados confirmados",
     informative_prepared: "Informativo preparado",
     informative_cancelled: "Prévia de informativo cancelada",
     informative_confirmed: "Informativo confirmado",
@@ -1115,10 +1121,10 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
       setCnpj(result.data.cnpj);
       setApprovedName(result.data.legalName);
       setApprovedActivities(result.data.activities.map((activity) => activity.description).join("\n"));
-      toast.success("Dados consultados na Receita. Revise antes de devolver.");
+      toast.success("Dados consultados na Receita. Revise antes de confirmar.");
     });
   }
-  function returnToOwner() {
+  function confirmProcessing() {
     startTransition(async () => {
       const result = await returnCompanyFlowToOwner({
         clanId,
@@ -1135,7 +1141,7 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
         toast.error(result.error);
         return;
       }
-      toast.success("Fluxo devolvido ao dono.");
+      toast.success(amendment ? "Informativo confirmado." : closure ? "Baixa confirmada." : "Dados aprovados confirmados.");
       router.refresh();
     });
   }
@@ -1212,8 +1218,8 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
           {row.status === "in_progress" && row.canReturn ? (
             <section className="grid gap-3 border-t pt-4">
               <div>
-                <h3 className="font-medium">{amendment ? "Confirmação da alteração" : closure ? "Confirmação da baixa" : "Retorno do Societário"}</h3>
-                <p className="text-xs text-muted-foreground">{simpleConfirmation ? "Confirme quando o processo estiver concluído. O dono seguirá para o Informativo." : "Registre os dados aprovados antes de devolver ao dono."}</p>
+                <h3 className="font-medium">{amendment ? "Confirmação do informativo" : closure ? "Confirmação da baixa" : "Confirmação dos dados aprovados"}</h3>
+                <p className="text-xs text-muted-foreground">{amendment ? "Confira as informações e confirme quando todas as alterações estiverem concluídas." : closure ? "Confirme quando o processo de baixa estiver concluído." : "Registre e confirme os dados aprovados."}</p>
               </div>
               {simpleConfirmation ? (
                 <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">{amendment ? "Confira as alterações destacadas acima. Ao confirmar, você registra que todos esses itens foram concluídos pelo Societário." : "Esta confirmação registra que a baixa foi concluída pelo Societário."}</div>
@@ -1225,17 +1231,17 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
                 </>
               )}
               {simpleConfirmation ? null : <div className="grid gap-1.5"><Label>Retorno e observações</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder="O que foi deferido, pendências ou cuidados" /></div>}
-              <Button type="button" disabled={pending || (!simpleConfirmation && !notes.trim()) || (closure && rhVerificationState === "pending")} onClick={returnToOwner}>
+              <Button type="button" disabled={pending || (!simpleConfirmation && !notes.trim()) || (closure && rhVerificationState === "pending")} onClick={confirmProcessing}>
                 {closure && rhVerificationState === "pending" ? <Clock3 aria-hidden /> : <Send aria-hidden />}
-                {amendment ? "Confirmar alteração e devolver ao dono" : closure ? rhVerificationState === "pending" ? "Aguardando confirmação do RH" : "Confirmar baixa e devolver ao dono" : "Devolver ao dono"}
+                {amendment ? "Confirmar informativo" : closure ? rhVerificationState === "pending" ? "Aguardando confirmação do RH" : "Confirmar baixa" : "Confirmar dados aprovados"}
               </Button>
             </section>
           ) : null}
-          {["awaiting_owner", "informative_drafting"].includes(row.status) && row.canPrepareInformative ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Próximo passo</h3><p className="text-xs text-muted-foreground">O Informativo mostrará o resumo da alteração para conferência; o dono só precisa escrever se houver alguma missão ou observação adicional.</p><Button type="button" disabled={pending} onClick={prepareInformative}><ClipboardPenLine aria-hidden /> {row.status === "informative_drafting" ? "Gerar Informativo novamente" : "Preparar Informativo"}</Button></section> : null}
+          {["awaiting_owner", "informative_drafting"].includes(row.status) && row.canPrepareInformative ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Próximo passo</h3><p className="text-xs text-muted-foreground">O Informativo mostrará o resumo da alteração para conferência; acrescente somente alguma missão ou observação adicional, se necessário.</p><Button type="button" disabled={pending} onClick={prepareInformative}><ClipboardPenLine aria-hidden /> {row.status === "informative_drafting" ? "Gerar Informativo novamente" : "Preparar Informativo"}</Button></section> : null}
           {row.status === "informative_drafting" ? <p className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">A preparação do Informativo está aberta. Você pode gerar o texto novamente até criar a prévia em Informativos.</p> : null}
           {row.status === "sent_to_corporate" && row.canClaim ? <Button type="button" disabled={pending} onClick={claim}><UserRoundCheck aria-hidden /> Assumir processamento</Button> : null}
           {row.status === "completed" ? <div className="rounded-md border border-success/30 bg-success/5 p-3 text-sm text-success"><CheckCircle2 className="mr-1 inline size-4" aria-hidden /> Informativo gerado e Fluxo concluído. A confirmação das missões segue em Informativos.</div> : null}
-          {row.history.length > 0 ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Histórico</h3>{row.history.map((event) => <div key={event.id} className="rounded-md bg-muted/35 px-3 py-2 text-xs"><span className="font-medium">{eventLabel(event.eventType)}</span><span className="text-muted-foreground"> · {event.actorName} · {new Date(event.createdAt).toLocaleString("pt-BR")}</span>{event.note ? <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{event.note}</p> : null}</div>)}</section> : null}
+          {row.history.length > 0 ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Histórico</h3>{row.history.map((event) => <div key={event.id} className="rounded-md bg-muted/35 px-3 py-2 text-xs"><span className="font-medium">{eventLabel(event.eventType, row.kind)}</span><span className="text-muted-foreground"> · {event.actorName} · {new Date(event.createdAt).toLocaleString("pt-BR")}</span>{event.note ? <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{event.note}</p> : null}</div>)}</section> : null}
         </div>
         <DialogFooter className="gap-2 sm:justify-between">
           <p className="mr-auto text-xs text-muted-foreground">Cancelar preserva o histórico; excluir remove o Fluxo definitivamente.</p>
@@ -1336,7 +1342,7 @@ export function CompanyFlowBoard({
             <strong className="mt-1 block font-mono text-xl">{openRows.filter((row) => row.status === "in_progress").length}</strong>
           </div>
           <div className="rounded-lg border bg-card/35 p-3">
-            <span className="text-xs text-muted-foreground">Com o dono / Informativo</span>
+            <span className="text-xs text-muted-foreground">Aguardando Informativo</span>
             <strong className="mt-1 block font-mono text-xl">{openRows.filter((row) => ["awaiting_owner", "informative_drafting"].includes(row.status)).length}</strong>
           </div>
         </div>

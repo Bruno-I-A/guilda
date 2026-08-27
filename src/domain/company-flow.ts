@@ -33,7 +33,7 @@ export const COMPANY_FLOW_KIND_LABELS: Record<CompanyFlowKind, string> = {
 export const COMPANY_FLOW_STATUS_LABELS: Record<CompanyFlowStatus, string> = {
   sent_to_corporate: "Aguardando Societário",
   in_progress: "Em processamento",
-  awaiting_owner: "Devolvido ao dono",
+  awaiting_owner: "Aguardando Informativo",
   informative_drafting: "Informativo em preparação",
   completed: "Concluído",
   cancelled: "Cancelado",

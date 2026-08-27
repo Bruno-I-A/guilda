@@ -611,14 +611,14 @@ export async function returnCompanyFlowToOwner(
       );
     });
     if (!authorized) {
-      return err("Você não pode devolver este Fluxo.");
+      return err("Você não pode confirmar este Fluxo.");
     }
 
     const officialCompany = await lookupCnpj(resultCnpj);
     if (!officialCompany.ok) {
       return err(
         officialCompany.reason === "not_found"
-          ? "CNPJ não encontrado na Receita. Confira o número antes de devolver."
+          ? "CNPJ não encontrado na Receita. Confira o número antes de confirmar."
           : "Não foi possível confirmar a razão social na Receita agora. Tente novamente.",
       );
     }
@@ -633,10 +633,10 @@ export async function returnCompanyFlowToOwner(
       .for("update");
     if (!flow) return err("Fluxo não encontrado.");
     if (!canReturnCompanyFlow({ ...corporate.facts, isActiveCorporateMember: corporate.activeMember, isAssignedToFlow: flow.assignedTo === ctx.userId })) {
-      return err("Apenas quem assumiu o Fluxo, a liderança do Societário ou owner/admin pode devolvê-lo.");
+      return err("Apenas quem assumiu o Fluxo, a liderança do Societário ou owner/admin pode confirmar o processo.");
     }
     if (flow.status !== "in_progress") return err("Este Fluxo não está em processamento.");
-    if (flow.kind === "opening" && !data.resultCnpj) return err("Informe o CNPJ aprovado antes de devolver uma abertura.");
+    if (flow.kind === "opening" && !data.resultCnpj) return err("Informe o CNPJ aprovado antes de confirmar uma abertura.");
 
     if (flow.kind === "closure" && flow.rhVerificationTaskId) {
       const [rhVerificationTask] = await tx
@@ -653,7 +653,7 @@ export async function returnCompanyFlowToOwner(
         taskStatus: rhVerificationTask?.status ?? null,
       });
       if (verificationState !== "confirmed") {
-        return err("O RH ainda não confirmou a baixa da folha e do pró-labore. Conclua a missão do RH antes de devolver este Fluxo.");
+        return err("O RH ainda não confirmou a baixa da folha e do pró-labore. Conclua a missão do RH antes de confirmar este Fluxo.");
       }
     }
 
@@ -721,7 +721,7 @@ export async function prepareCompanyFlowInformative(
       .for("update", { of: schema.companyFlows });
     if (!flow) return err("Fluxo não encontrado.");
     if (flow.flow.status !== "awaiting_owner" && flow.flow.status !== "informative_drafting") {
-      return err("O Fluxo precisa estar devolvido ao dono antes de preparar o Informativo.");
+      return err("O processamento precisa estar confirmado antes de preparar o Informativo.");
     }
     if (flow.flow.informativeId) return err("Este Fluxo já possui uma prévia de Informativo. Abra Informativos para continuar.");
 
