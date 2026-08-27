@@ -11,6 +11,8 @@ import {
   COMPANY_FLOW_SOURCES,
   companyFlowInformativeText,
   companyFlowRhVerificationState,
+  parseQsaParticipation,
+  qsaDistributionIsComplete,
 } from "@/domain/company-flow";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
 import { TAX_REGIMES } from "@/lib/clients-ui";
@@ -45,8 +47,10 @@ const qsaMemberSchema = z.object({
   name: z.string().trim().min(2, "Informe o nome do sócio.").max(200),
   document: z.string().trim().max(32).nullable().optional(),
   qualification: z.string().trim().max(120).nullable().optional(),
+  previousParticipation: z.string().trim().max(40).nullable().optional(),
   participation: z.string().trim().max(40).nullable().optional(),
-  changeType: z.enum(["entered", "left", "updated"]).nullable().optional(),
+  quotaTransferDetails: z.string().trim().max(300).nullable().optional(),
+  changeType: z.enum(["entered", "left", "updated", "remaining"]).nullable().optional(),
 });
 
 function optionalMoneySchema(label: string) {
@@ -114,6 +118,85 @@ const createFlowSchema = flowBaseSchema.superRefine((data, ctx) => {
     }
   } else if (!data.existingClientId) {
     ctx.addIssue({ code: "custom", path: ["existingClientId"], message: "Escolha a empresa que será alterada ou baixada." });
+  }
+  if (data.kind === "amendment" && (data.qsa.length > 0 || Boolean(data.socialCapital))) {
+    if (!data.socialCapital || Number(data.socialCapital) <= 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["socialCapital"],
+        message: "Informe o capital social após a alteração do QSA.",
+      });
+    }
+    if (data.qsa.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["qsa"],
+        message: "Informe a composição societária final junto com o capital social.",
+      });
+    }
+    data.qsa.forEach((member, index) => {
+      const participation = parseQsaParticipation(member.participation);
+      const previousParticipation = parseQsaParticipation(member.previousParticipation);
+      if (
+        (member.changeType === "left" || member.changeType === "updated") &&
+        (previousParticipation === null || previousParticipation <= 0)
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["qsa", index, "previousParticipation"],
+          message: "Informe a participação anterior para calcular a movimentação das quotas.",
+        });
+      }
+      if (participation === null) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["qsa", index, "participation"],
+          message: "Informe uma participação final válida entre 0% e 100%.",
+        });
+      } else if (member.changeType === "left" && participation !== 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["qsa", index, "participation"],
+          message: "O sócio que saiu deve ficar com participação final de 0%.",
+        });
+      } else if (member.changeType !== "left" && participation <= 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["qsa", index, "participation"],
+          message: "Sócios que permanecem ou entram devem ter participação final maior que 0%.",
+        });
+      }
+      if (
+        member.changeType === "remaining" &&
+        previousParticipation !== null &&
+        participation !== null &&
+        Math.abs(previousParticipation - participation) >= 0.001
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["qsa", index, "changeType"],
+          message: "Marque que o sócio alterou a participação e descreva a movimentação das quotas.",
+        });
+      }
+      if (
+        member.changeType &&
+        member.changeType !== "remaining" &&
+        !member.quotaTransferDetails?.trim()
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["qsa", index, "quotaTransferDetails"],
+          message: "Informe a origem ou o destino das quotas movimentadas.",
+        });
+      }
+    });
+    if (!qsaDistributionIsComplete(data.qsa)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["qsa"],
+        message: "A participação final dos sócios deve fechar em 100%.",
+      });
+    }
   }
   const hasBillingAmount = Boolean(data.billingAmount);
   const hasBillingDescription = Boolean(data.billingDescription?.trim());

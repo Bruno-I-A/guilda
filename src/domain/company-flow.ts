@@ -100,8 +100,91 @@ export interface FlowQsaMember {
   name: string;
   document?: string | null;
   qualification?: string | null;
+  /** Participação antes da alteração, para evidenciar a movimentação de quotas. */
+  previousParticipation?: string | null;
+  /** Participação final; a soma dos sócios remanescentes deve fechar em 100%. */
   participation?: string | null;
-  changeType?: "entered" | "left" | "updated" | null;
+  /** Origem/destino das quotas ou indicação de aumento de capital. */
+  quotaTransferDetails?: string | null;
+  changeType?: "entered" | "left" | "updated" | "remaining" | null;
+}
+
+export function parseQsaParticipation(value: string | null | undefined): number | null {
+  const raw = value?.trim().replace(/%$/, "").trim();
+  if (!raw) return null;
+  const normalized = raw.includes(",")
+    ? raw.replace(/\./g, "").replace(",", ".")
+    : raw;
+  const numeric = Number(normalized);
+  return Number.isFinite(numeric) && numeric >= 0 && numeric <= 100
+    ? numeric
+    : null;
+}
+
+export function qsaFinalParticipationTotal(
+  members: readonly Pick<FlowQsaMember, "participation">[],
+): number {
+  return members.reduce(
+    (total, member) => total + (parseQsaParticipation(member.participation) ?? 0),
+    0,
+  );
+}
+
+export function qsaDistributionIsComplete(
+  members: readonly Pick<FlowQsaMember, "participation">[],
+): boolean {
+  return members.length > 0 && Math.abs(qsaFinalParticipationTotal(members) - 100) < 0.001;
+}
+
+export function qsaMemberCapitalValue(
+  socialCapital: string | null | undefined,
+  participation: string | null | undefined,
+): string | null {
+  const rawCapital = socialCapital?.trim();
+  const percentage = parseQsaParticipation(participation);
+  if (!rawCapital || percentage === null) return null;
+  const normalizedCapital = rawCapital.includes(",")
+    ? rawCapital.replace(/\./g, "").replace(",", ".")
+    : rawCapital;
+  const capital = Number(normalizedCapital);
+  if (!Number.isFinite(capital)) return null;
+  return ((capital * percentage) / 100).toFixed(2);
+}
+
+function qsaChangeLabel(changeType: FlowQsaMember["changeType"]): string | null {
+  if (changeType === "entered") return "Entrada";
+  if (changeType === "left") return "Saída";
+  if (changeType === "updated") return "Alteração de participação";
+  if (changeType === "remaining") return "Permanece no QSA";
+  return null;
+}
+
+export function formatQsaParticipation(value: string | null | undefined): string | null {
+  const parsed = parseQsaParticipation(value);
+  if (parsed === null) return value?.trim() || null;
+  return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 4 }).format(parsed)}%`;
+}
+
+function qsaMemberSummary(
+  member: FlowQsaMember,
+  socialCapital: string | null,
+): string {
+  const previous = formatQsaParticipation(member.previousParticipation);
+  const next = formatQsaParticipation(member.participation);
+  const participation = previous
+    ? `Participação: ${previous} → ${next ?? "não informada"}`
+    : next
+      ? `Participação final: ${next}`
+      : null;
+  const capitalValue = qsaMemberCapitalValue(socialCapital, member.participation);
+  return [
+    qsaChangeLabel(member.changeType),
+    member.name,
+    member.qualification,
+    participation,
+    capitalValue ? `Capital final: ${formatBRLCurrency(capitalValue)}` : null,
+    member.quotaTransferDetails ? `Movimentação de quotas: ${member.quotaTransferDetails}` : null,
+  ].filter(Boolean).join(" — ");
 }
 
 /** Dados seguros para transformar o retorno do Societário em um rascunho. */
@@ -215,18 +298,7 @@ export function companyFlowAmendmentChanges(
   const descriptions = (items: readonly FlowActivity[]) =>
     items.map((item) => item.description.trim()).filter(Boolean).join("; ");
   const qsa = (flow.approvedQsa.length > 0 ? flow.approvedQsa : flow.qsa)
-    .map((member) => [
-      member.changeType === "entered"
-        ? "Entrada"
-        : member.changeType === "left"
-          ? "Saída"
-          : member.changeType === "updated"
-            ? "Atualização"
-            : null,
-      member.name,
-      member.qualification,
-      member.participation,
-    ].filter(Boolean).join(" — "))
+    .map((member) => qsaMemberSummary(member, flow.socialCapital))
     .filter(Boolean)
     .join("; ");
 
@@ -257,7 +329,7 @@ export function companyFlowAmendmentChanges(
     "Capital social",
     flow.socialCapital ? formatBRLCurrency(flow.socialCapital) : null,
   );
-  add("QSA", qsa);
+  add("Composição societária final", qsa);
   add("Contato", flow.contactName);
   add("Celular", flow.contactPhone);
   add("E-mail", flow.contactEmail);
@@ -333,12 +405,7 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
     .filter(Boolean)
     .join("; ");
   const qsa = (flow.approvedQsa.length > 0 ? flow.approvedQsa : flow.qsa)
-    .map((member) => [
-      member.changeType === "entered" ? "Entrada" : member.changeType === "left" ? "Saída" : member.changeType === "updated" ? "Atualização" : null,
-      member.name,
-      member.qualification,
-      member.participation,
-    ].filter(Boolean).join(" — "))
+    .map((member) => qsaMemberSummary(member, flow.socialCapital))
     .filter(Boolean)
     .join("; ");
   const taxRegime = flow.approvedTaxRegime ?? flow.taxRegime;
@@ -398,7 +465,7 @@ export function companyFlowInformativeText(flow: FlowInformativeInput): string {
     flow.roomSize ? `Tamanho da sala: ${flow.roomSize}` : null,
     address ? `${flow.kind === "amendment" ? "Novo endereço" : "Endereço"}: ${address}` : null,
     flow.clientResponsible ? `Responsável: ${flow.clientResponsible}` : null,
-    qsa ? `${flow.approvedQsa.length > 0 ? "QSA atualizado" : "QSA"}: ${qsa}` : null,
+    qsa ? `${flow.kind === "amendment" ? "Composição societária final" : flow.approvedQsa.length > 0 ? "QSA atualizado" : "QSA"}: ${qsa}` : null,
     [flow.contactName, flow.contactPhone, flow.contactEmail].filter(Boolean).length > 0
       ? `Contato: ${[flow.contactName, flow.contactPhone, flow.contactEmail].filter(Boolean).join(" · ")}`
       : null,

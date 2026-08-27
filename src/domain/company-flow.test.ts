@@ -12,6 +12,10 @@ import {
   companyFlowInformativeText,
   companyFlowInformativeNoticeTitle,
   companyFlowRhVerificationState,
+  parseQsaParticipation,
+  qsaDistributionIsComplete,
+  qsaFinalParticipationTotal,
+  qsaMemberCapitalValue,
 } from "./company-flow";
 
 describe("Fluxo Societário", () => {
@@ -95,7 +99,14 @@ describe("Fluxo Societário", () => {
       roomSize: null,
       address: "Rua Nova, 200, São Paulo/SP",
       clientResponsible: null,
-      qsa: [{ name: "Ana", changeType: "entered", qualification: "Sócia administradora", participation: "100%" }],
+      qsa: [{
+        name: "Ana",
+        changeType: "entered",
+        qualification: "Sócia administradora",
+        previousParticipation: "0%",
+        participation: "100%",
+        quotaTransferDetails: "aumento de capital",
+      }],
       contactName: null,
       contactPhone: null,
       contactEmail: null,
@@ -115,7 +126,8 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("Atividades a retirar: Comércio atacadista");
     expect(text).toContain("Novo regime tributário: Lucro Presumido");
     expect(text).toContain("Novo endereço: Rua Nova, 200, São Paulo/SP");
-    expect(text).toContain("QSA: Entrada — Ana — Sócia administradora — 100%");
+    expect(text).toContain("Composição societária final: Entrada — Ana — Sócia administradora — Participação: 0% → 100% — Capital final: R$");
+    expect(text).toContain("Movimentação de quotas: aumento de capital");
     expect(text).toContain("Societário - Atualizar alvará, Inscrição Estadual");
     expect(text).not.toContain("CNPJ:");
   });
@@ -223,7 +235,11 @@ describe("Fluxo Societário", () => {
         next: "Lucro Real",
       },
       { label: "Endereço", previous: null, next: "Rua Nova, 200" },
-      { label: "QSA", previous: null, next: "Entrada — Ana — 50%" },
+      {
+        label: "Composição societária final",
+        previous: null,
+        next: expect.stringContaining("Entrada — Ana — Participação final: 50% — Capital final: R$"),
+      },
     ]));
 
     const body = companyFlowAmendmentNoticeBody({
@@ -257,6 +273,20 @@ describe("Fluxo Societário", () => {
     expect(body).toContain("Razão social: EMPRESA ATUAL LTDA → EMPRESA RENOMEADA LTDA");
     expect(body).toContain("Regime tributário: Simples Nacional → Lucro Real");
     expect(body).toContain("1 missão foi criada a partir desta alteração.");
+  });
+
+  test("confere a composição final do QSA e calcula o capital de cada sócio", () => {
+    const qsa = [
+      { participation: "60,5%" },
+      { participation: "39.5" },
+      { participation: "0%" },
+    ];
+
+    expect(parseQsaParticipation("60,5%")).toBe(60.5);
+    expect(qsaFinalParticipationTotal(qsa)).toBe(100);
+    expect(qsaDistributionIsComplete(qsa)).toBe(true);
+    expect(qsaDistributionIsComplete([{ participation: "99,9%" }])).toBe(false);
+    expect(qsaMemberCapitalValue("50000.00", "60,5%")).toBe("30250.00");
   });
 
   test("prepara a baixa no modelo operacional padrão", () => {

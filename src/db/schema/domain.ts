@@ -818,8 +818,10 @@ export interface CompanyFlowQsaMember {
   name: string;
   document?: string | null;
   qualification?: string | null;
+  previousParticipation?: string | null;
   participation?: string | null;
-  changeType?: "entered" | "left" | "updated" | null;
+  quotaTransferDetails?: string | null;
+  changeType?: "entered" | "left" | "updated" | "remaining" | null;
 }
 
 /**
