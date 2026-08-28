@@ -31,6 +31,7 @@ import type { ActionResult } from "@/lib/action-context";
 import {
   createClient,
   finalizeClientReplacementImport,
+  getLatestClientReplacementImport,
   processClientReplacementImport,
   retryClientReplacementLookups,
   setClientReplacementRowRegime,
@@ -216,7 +217,26 @@ export function ImportClientsButton() {
 
   return (
     <>
-      <Button variant="outline" onClick={() => setOpen(true)}>
+      <Button
+        variant="outline"
+        onClick={() => {
+          setOpen(true);
+          startTransition(async () => {
+            const result = await getLatestClientReplacementImport();
+            if (!result.ok) {
+              toast.error(result.error);
+              return;
+            }
+            if (result.data) {
+              if (result.data.status === "processing" || result.data.status === "cooldown") {
+                await processUntilReview(result.data);
+              } else {
+                setProgress(result.data);
+              }
+            }
+          });
+        }}
+      >
         <Upload aria-hidden /> Importar Excel
       </Button>
       <Dialog
@@ -278,6 +298,12 @@ export function ImportClientsButton() {
                 <div><p className="font-mono font-semibold tabular-nums text-success">{progress.consulted}</p><p className="hud-label">consultadas</p></div>
                 <div><p className="font-mono font-semibold tabular-nums text-destructive">{progress.errors}</p><p className="hud-label">com erro</p></div>
               </div>
+
+              {!pending ? (
+                <Button variant="ghost" onClick={() => setProgress(null)}>
+                  Enviar outra planilha
+                </Button>
+              ) : null}
 
               {pending ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">

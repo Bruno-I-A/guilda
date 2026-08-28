@@ -1,6 +1,6 @@
 "use server";
 
-import { and, count, eq, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { readSheet } from "read-excel-file/node";
 import { z } from "zod";
@@ -427,6 +427,30 @@ export async function startClientReplacementImport(
 }
 
 const batchSchema = z.object({ batchId: z.uuid() });
+
+export async function getLatestClientReplacementImport(): Promise<
+  ActionResult<ClientImportProgress | null>
+> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  if (!isAdminRole(ctx.role)) return err("Apenas admin/owner pode substituir a base.");
+  const batch = await withOrgTx(ctx.orgId, (tx) => tx.query.clientImportBatches.findFirst({
+    where: and(
+      eq(schema.clientImportBatches.orgId, ctx.orgId),
+      ne(schema.clientImportBatches.status, "completed"),
+    ),
+    orderBy: [desc(schema.clientImportBatches.createdAt)],
+  }));
+  if (!batch) return { ok: true, data: null };
+  return {
+    ok: true,
+    data: progressOf(
+      batch.id,
+      batch.status === "cooldown" ? "processing" : batch.status,
+      batch.rows as EnrichedClientImportRow[],
+    ),
+  };
+}
 
 export async function processClientReplacementImport(
   input: z.input<typeof batchSchema>,
