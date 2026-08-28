@@ -65,7 +65,7 @@ export interface CnpjLookupData {
 
 export type CnpjLookupResult =
   | { ok: true; data: CnpjLookupData }
-  | { ok: false; reason: "not_found" | "service_error" };
+  | { ok: false; reason: "not_found" | "rate_limited" | "service_error" };
 
 interface BrasilApiCnaeRaw {
   codigo?: unknown;
@@ -286,6 +286,12 @@ export async function lookupCnpj(normalizedCnpj: string): Promise<CnpjLookupResu
 
     if (response.status === 404) {
       return { ok: false, reason: "not_found" };
+    }
+    if (
+      response.status === 429 ||
+      (response.status === 403 && response.headers.get("x-vercel-mitigated") === "deny")
+    ) {
+      return { ok: false, reason: "rate_limited" };
     }
     if (!response.ok) {
       return { ok: false, reason: "service_error" };

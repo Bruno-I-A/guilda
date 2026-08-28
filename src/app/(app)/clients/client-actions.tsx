@@ -184,11 +184,23 @@ export function ImportClientsButton() {
   const [pending, startTransition] = useTransition();
   const [progress, setProgress] = useState<ClientImportProgress | null>(null);
   const [confirmation, setConfirmation] = useState("");
+  const [retryIn, setRetryIn] = useState(0);
+
+  async function wait(seconds: number) {
+    for (let remaining = seconds; remaining > 0; remaining--) {
+      setRetryIn(remaining);
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    }
+    setRetryIn(0);
+  }
 
   async function processUntilReview(initial: ClientImportProgress) {
     let current = initial;
     setProgress(current);
-    while (current.status === "processing") {
+    while (current.status === "processing" || current.status === "cooldown") {
+      if (current.status === "cooldown") {
+        await wait(current.retryAfterSeconds);
+      }
       const result = await processClientReplacementImport({ batchId: current.batchId });
       if (!result.ok || !result.data) {
         toast.error(result.ok ? "Consulta sem progresso." : result.error);
@@ -196,6 +208,9 @@ export function ImportClientsButton() {
       }
       current = result.data;
       setProgress(current);
+      if (current.status === "processing") {
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      }
     }
   }
 
@@ -211,6 +226,7 @@ export function ImportClientsButton() {
           if (!nextOpen) {
             setProgress(null);
             setConfirmation("");
+            setRetryIn(0);
           }
         }}
       >
@@ -265,7 +281,10 @@ export function ImportClientsButton() {
 
               {pending ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <LoaderCircle className="animate-spin" aria-hidden /> Consultando em blocos seguros…
+                  <LoaderCircle className="animate-spin" aria-hidden />
+                  {retryIn > 0
+                    ? `Limite temporário atingido. Retomando em ${retryIn}s…`
+                    : "Consultando um CNPJ por vez…"}
                 </div>
               ) : null}
 

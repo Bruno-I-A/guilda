@@ -75,6 +75,7 @@ export interface ClientImportProgress {
   total: number;
   consulted: number;
   errors: number;
+  retryAfterSeconds: number;
   review: {
     rowNumber: number;
     cnpj: string;
@@ -108,6 +109,7 @@ function progressOf(
   batchId: string,
   status: string,
   rows: EnrichedClientImportRow[],
+  retryAfterSeconds = 0,
 ): ClientImportProgress {
   return {
     batchId,
@@ -115,6 +117,7 @@ function progressOf(
     total: rows.length,
     consulted: rows.filter((row) => row.state === "consulted").length,
     errors: rows.filter((row) => row.state === "error").length,
+    retryAfterSeconds,
     review: rows
       .filter((row) =>
         row.state === "error" ||
@@ -447,11 +450,12 @@ export async function processClientReplacementImport(
   const indexes = rows
     .map((row, index) => ({ row, index }))
     .filter(({ row }) => row.state === "pending")
-    .slice(0, 8);
+    .slice(0, 1);
   const consulted = await Promise.all(indexes.map(async ({ row, index }) => ({
     index,
     result: await lookupCnpj(row.cnpj),
   })));
+  let retryAfterSeconds = 0;
   for (const item of consulted) {
     const current = rows[item.index];
     current.attempts += 1;
@@ -460,23 +464,38 @@ export async function processClientReplacementImport(
       current.lookup = item.result.data;
       current.taxRegime = inferTaxRegime(item.result.data);
       current.error = null;
+    } else if (item.result.reason === "not_found") {
+      current.state = "error";
+      current.error = "CNPJ não encontrado na consulta pública";
+    } else if (item.result.reason === "rate_limited") {
+      current.state = "pending";
+      current.error = null;
+      retryAfterSeconds = Math.min(300, 30 * (2 ** Math.min(current.attempts - 1, 3)));
+    } else if (current.attempts < 3) {
+      current.state = "pending";
+      current.error = null;
+      retryAfterSeconds = 15 * current.attempts;
     } else {
       current.state = "error";
-      current.error = item.result.reason === "not_found"
-        ? "CNPJ não encontrado na consulta pública"
-        : "Serviço de consulta indisponível; tente novamente";
+      current.error = "Serviço de consulta indisponível; tente novamente mais tarde";
     }
   }
   const hasPending = rows.some((row) => row.state === "pending");
   const needsReview = rows.some((row) => row.state === "error" || !row.taxRegime);
-  const status = hasPending ? "processing" : needsReview ? "review" : "ready";
+  const status = retryAfterSeconds > 0
+    ? "cooldown"
+    : hasPending
+      ? "processing"
+      : needsReview
+        ? "review"
+        : "ready";
   await withOrgTx(ctx.orgId, (tx) => tx.update(schema.clientImportBatches)
     .set({ rows, status, updatedAt: new Date() })
     .where(and(
       eq(schema.clientImportBatches.id, batch.id),
       eq(schema.clientImportBatches.orgId, ctx.orgId),
     )));
-  return { ok: true, data: progressOf(batch.id, status, rows) };
+  return { ok: true, data: progressOf(batch.id, status, rows, retryAfterSeconds) };
 }
 
 export async function retryClientReplacementLookups(
@@ -496,6 +515,7 @@ export async function retryClientReplacementLookups(
     for (const row of rows) {
       if (row.state === "error") {
         row.state = "pending";
+        row.attempts = 0;
         row.error = null;
       }
     }
