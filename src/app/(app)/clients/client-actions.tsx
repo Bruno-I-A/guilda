@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArchiveRestore, LoaderCircle, Pencil, Plus, Upload } from "lucide-react";
+import { AlertTriangle, Archive, ArchiveRestore, CheckCircle2, LoaderCircle, Pencil, Plus, RefreshCw, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -30,10 +30,14 @@ import type { ActionResult } from "@/lib/action-context";
 
 import {
   createClient,
-  importClientsFromSpreadsheet,
+  finalizeClientReplacementImport,
+  processClientReplacementImport,
+  retryClientReplacementLookups,
+  setClientReplacementRowRegime,
   setClientActive,
+  startClientReplacementImport,
   updateClient,
-  type ImportClientsResult,
+  type ClientImportProgress,
 } from "./actions";
 import { DeleteClientButton } from "./delete-client-dialog";
 
@@ -177,9 +181,23 @@ export function NewClientButton() {
 export function ImportClientsButton() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [taxRegime, setTaxRegime] = useState<TaxRegime>("simples");
   const [pending, startTransition] = useTransition();
-  const [summary, setSummary] = useState<ImportClientsResult | null>(null);
+  const [progress, setProgress] = useState<ClientImportProgress | null>(null);
+  const [confirmation, setConfirmation] = useState("");
+
+  async function processUntilReview(initial: ClientImportProgress) {
+    let current = initial;
+    setProgress(current);
+    while (current.status === "processing") {
+      const result = await processClientReplacementImport({ batchId: current.batchId });
+      if (!result.ok || !result.data) {
+        toast.error(result.ok ? "Consulta sem progresso." : result.error);
+        return;
+      }
+      current = result.data;
+      setProgress(current);
+    }
+  }
 
   return (
     <>
@@ -190,66 +208,36 @@ export function ImportClientsButton() {
         open={open}
         onOpenChange={(nextOpen) => {
           setOpen(nextOpen);
-          if (!nextOpen) setSummary(null);
+          if (!nextOpen) {
+            setProgress(null);
+            setConfirmation("");
+          }
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Importar empresas</DialogTitle>
+            <DialogTitle>Substituir pela base real</DialogTitle>
             <DialogDescription>
-              Envie uma planilha por regime. Use uma coluna de nome e, se tiver,
-              uma coluna de CNPJ.
+              A planilha é validada e cada CNPJ é consultado antes de qualquer
+              exclusão. E-mail e celular da planilha são preservados como contato operacional.
             </DialogDescription>
           </DialogHeader>
-          <form
-            className="grid gap-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const formData = new FormData(event.currentTarget);
-              formData.set("taxRegime", taxRegime);
-              startTransition(async () => {
-                const result = await importClientsFromSpreadsheet(formData);
-                if (!result.ok) {
-                  toast.error(result.error);
-                  return;
-                }
-
-                const data = result.data;
-                if (!data) {
-                  toast.error("Importação sem resumo.");
-                  return;
-                }
-
-                setSummary(data);
-                toast.success(
-                  `${data.created} ${data.created === 1 ? "criada" : "criadas"}, ` +
-                    `${data.updated} ${data.updated === 1 ? "atualizada" : "atualizadas"}.`,
-                );
-                router.refresh();
-              });
-            }}
-          >
-            <div className="grid gap-2">
-              <Label htmlFor="import-regime">Regime deste arquivo</Label>
-              <Select
-                value={taxRegime}
-                onValueChange={(v) => setTaxRegime(v as TaxRegime)}
-              >
-                <SelectTrigger id="import-regime" className="w-full">
-                  <SelectValue>{TAX_REGIME_LABELS[taxRegime]}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {TAX_REGIMES.filter((regime) => regime !== "association").map(
-                    (regime) => (
-                      <SelectItem key={regime} value={regime}>
-                        {TAX_REGIME_LABELS[regime]}
-                      </SelectItem>
-                    ),
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-
+          {!progress ? (
+            <form
+              className="grid gap-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const formData = new FormData(event.currentTarget);
+                startTransition(async () => {
+                  const result = await startClientReplacementImport(formData);
+                  if (!result.ok || !result.data) {
+                    toast.error(result.ok ? "Importação sem lote." : result.error);
+                    return;
+                  }
+                  await processUntilReview(result.data);
+                });
+              }}
+            >
             <div className="grid gap-2">
               <Label htmlFor="import-file">Planilha</Label>
               <Input
@@ -260,69 +248,102 @@ export function ImportClientsButton() {
                 required
               />
             </div>
-
-            {/* Placar da importação: número em mono tabular, o que ele conta
-                em `hud-label` (é rótulo de dado, não título). */}
-            {summary ? (
-              <div className="panel-cut panel-cut-sm p-3 text-sm">
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <div>
-                    <p className="font-mono text-lg font-semibold tabular-nums text-foreground">
-                      {summary.created}
-                    </p>
-                    <p className="hud-label">criadas</p>
-                  </div>
-                  <div>
-                    <p className="font-mono text-lg font-semibold tabular-nums text-foreground">
-                      {summary.updated}
-                    </p>
-                    <p className="hud-label">atualizadas</p>
-                  </div>
-                  <div>
-                    <p className="font-mono text-lg font-semibold tabular-nums text-foreground">
-                      {summary.unchanged}
-                    </p>
-                    <p className="hud-label">sem mudança</p>
-                  </div>
-                  <div>
-                    <p className="font-mono text-lg font-semibold tabular-nums text-foreground">
-                      {summary.rejected.length}
-                    </p>
-                    <p className="hud-label">rejeitadas</p>
-                  </div>
-                </div>
-                {summary.rejected.length > 0 ? (
-                  <ul className="mt-3 grid max-h-28 gap-1 overflow-auto border-t pt-3 text-xs text-muted-foreground">
-                    {summary.rejected.slice(0, 8).map((item) => (
-                      <li key={`${item.rowNumber}-${item.error}`}>
-                        Linha{" "}
-                        <span className="font-mono tabular-nums">
-                          {item.rowNumber}
-                        </span>
-                        : {item.error}
-                      </li>
-                    ))}
-                    {summary.rejected.length > 8 ? (
-                      <li>
-                        Mais {summary.rejected.length - 8}{" "}
-                        {summary.rejected.length - 8 === 1
-                          ? "linha rejeitada"
-                          : "linhas rejeitadas"}
-                        .
-                      </li>
-                    ) : null}
-                  </ul>
-                ) : null}
-              </div>
-            ) : null}
-
             <DialogFooter>
               <Button type="submit" disabled={pending}>
                 {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : null}
-                Importar
+                Validar e consultar CNPJs
               </Button>
             </DialogFooter>
           </form>
+          ) : (
+            <div className="grid gap-4" aria-live="polite" aria-busy={pending}>
+              <div className="panel-cut panel-cut-sm grid grid-cols-3 gap-3 p-4">
+                <div><p className="font-mono font-semibold tabular-nums">{progress.total}</p><p className="hud-label">empresas</p></div>
+                <div><p className="font-mono font-semibold tabular-nums text-success">{progress.consulted}</p><p className="hud-label">consultadas</p></div>
+                <div><p className="font-mono font-semibold tabular-nums text-destructive">{progress.errors}</p><p className="hud-label">com erro</p></div>
+              </div>
+
+              {pending ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <LoaderCircle className="animate-spin" aria-hidden /> Consultando em blocos seguros…
+                </div>
+              ) : null}
+
+              {progress.review.length > 0 ? (
+                <div className="grid gap-2">
+                  <h3>Itens que exigem atenção</h3>
+                  <div className="grid max-h-72 gap-2 overflow-y-auto">
+                    {progress.review.map((row) => (
+                      <div key={row.rowNumber} className="panel-cut panel-cut-sm grid gap-2 p-3 text-sm">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium">{row.name}</p>
+                            <p className="font-mono text-xs text-muted-foreground">{formatCnpj(row.cnpj)}</p>
+                            {row.error ? <p className="mt-1 text-destructive">{row.error}</p> : null}
+                            {row.cadastralSituation && row.cadastralSituation.toUpperCase() !== "ATIVA" ? (
+                              <p className="mt-1 text-warning">Situação na Receita: {row.cadastralSituation}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                        {!row.error && !row.taxRegime ? (
+                          <Select
+                            onValueChange={(value) => startTransition(async () => {
+                              const result = await setClientReplacementRowRegime({ batchId: progress.batchId, rowNumber: row.rowNumber, taxRegime: value as TaxRegime });
+                              if (!result.ok || !result.data) {
+                                toast.error(result.ok ? "Revisão sem retorno." : result.error);
+                                return;
+                              }
+                              setProgress(result.data);
+                            })}
+                          >
+                            <SelectTrigger className="w-full"><SelectValue placeholder="Definir regime tributário" /></SelectTrigger>
+                            <SelectContent>{TAX_REGIMES.map((regime) => <SelectItem key={regime} value={regime}>{TAX_REGIME_LABELS[regime]}</SelectItem>)}</SelectContent>
+                          </Select>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {progress.errors > 0 && !pending ? (
+                <Button variant="outline" onClick={() => startTransition(async () => {
+                  const reset = await retryClientReplacementLookups({ batchId: progress.batchId });
+                  if (!reset.ok || !reset.data) {
+                    toast.error(reset.ok ? "Reconsulta sem retorno." : reset.error);
+                    return;
+                  }
+                  await processUntilReview(reset.data);
+                })}>
+                  <RefreshCw aria-hidden /> Tentar consultas novamente
+                </Button>
+              ) : null}
+
+              {progress.status === "ready" ? (
+                <div className="grid gap-3 border-t border-border pt-4">
+                  <div className="flex gap-2 text-sm text-success"><CheckCircle2 className="size-4 shrink-0" aria-hidden /> Todas as consultas e regimes estão prontos.</div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="replace-confirmation">Confirme a substituição definitiva</Label>
+                    <Input id="replace-confirmation" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="ZERAR E IMPORTAR" />
+                    <p className="text-xs text-muted-foreground">Isso apaga clientes, fluxos, missões, informativos, controles mensais e XP de teste. Usuários, clãs, integrações e configurações permanecem.</p>
+                  </div>
+                  <Button variant="destructive" className="touch-target" disabled={pending || confirmation !== "ZERAR E IMPORTAR"} onClick={() => startTransition(async () => {
+                    const result = await finalizeClientReplacementImport({ batchId: progress.batchId, confirmation: "ZERAR E IMPORTAR" });
+                    if (!result.ok || !result.data) {
+                      toast.error(result.ok ? "Importação sem resumo." : result.error);
+                      return;
+                    }
+                    toast.success(`${result.data.imported} empresas reais importadas; ${result.data.inactive} ficaram inativas conforme a Receita.`);
+                    setOpen(false);
+                    router.refresh();
+                  })}>
+                    Zerar testes e importar base real
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </>

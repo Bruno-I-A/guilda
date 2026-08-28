@@ -511,6 +511,38 @@ export const clients = pgTable(
     name: varchar("name", { length: 200 }).notNull(),
     taxRegime: taxRegime("tax_regime").notNull(),
     cnpj: varchar("cnpj", { length: 14 }), // opcional; normalizado (só dígitos)
+    tradeName: varchar("trade_name", { length: 200 }),
+    operationalEmail: varchar("operational_email", { length: 200 }),
+    operationalPhone: varchar("operational_phone", { length: 20 }),
+    revenueEmail: varchar("revenue_email", { length: 200 }),
+    revenuePhones: jsonb("revenue_phones").$type<string[]>().notNull().default([]),
+    address: jsonb("address").$type<{
+      street: string | null;
+      number: string | null;
+      complement: string | null;
+      district: string | null;
+      city: string | null;
+      state: string | null;
+      zipCode: string | null;
+    }>(),
+    cadastralSituation: varchar("cadastral_situation", { length: 80 }),
+    cadastralSituationDate: date("cadastral_situation_date", { mode: "string" }),
+    companySize: varchar("company_size", { length: 120 }),
+    legalNature: varchar("legal_nature", { length: 200 }),
+    shareCapital: numeric("share_capital", { precision: 15, scale: 2 }),
+    headquartersType: varchar("headquarters_type", { length: 40 }),
+    qsa: jsonb("qsa").$type<{
+      name: string;
+      document: string | null;
+      qualification: string | null;
+      joinedAt: string | null;
+      participation: string | null;
+    }[]>().notNull().default([]),
+    taxRegimeHistory: jsonb("tax_regime_history").$type<{
+      year: number | null;
+      form: string;
+    }[]>().notNull().default([]),
+    cnpjSyncedAt: timestamp("cnpj_synced_at", { withTimezone: true }),
     // Preenchidos só pelo fluxo "Novo cliente" dos Informativos (consulta de
     // CNPJ na Receita via BrasilAPI) — nulos no cadastro manual/import CSV.
     cnaeCode: varchar("cnae_code", { length: 10 }),
@@ -551,6 +583,32 @@ export const clients = pgTable(
 );
 
 export type Client = typeof clients.$inferSelect;
+
+/**
+ * Lote durável da substituição da base de clientes. As consultas externas são
+ * feitas em pequenos blocos; somente a confirmação final troca a base dentro
+ * de uma única transação.
+ */
+export const clientImportBatches = pgTable(
+  "client_import_batches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id),
+    fileName: varchar("file_name", { length: 255 }).notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("processing"),
+    rows: jsonb("rows").$type<unknown[]>().notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("client_import_batches_org_created_idx").on(t.orgId, t.createdAt),
+  ],
+);
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
   creator: one(user, { fields: [tasks.creatorId], references: [user.id] }),

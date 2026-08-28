@@ -92,7 +92,7 @@ export default async function ClientsPage({
         }
         action={
           <>
-            <ImportClientsButton />
+            {isAdmin ? <ImportClientsButton /> : null}
             <NewClientButton />
           </>
         }
