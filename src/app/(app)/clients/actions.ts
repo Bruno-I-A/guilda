@@ -106,12 +106,17 @@ export interface ClientImportProgress {
     taxRegime: (typeof TAX_REGIMES)[number] | null;
     cadastralSituation: string | null;
     excluded: boolean;
+    exclusionReason: string | null;
   }[];
 }
 
 function isExcludedImportRow(row: EnrichedClientImportRow): boolean {
   const situation = row.lookup?.cadastralSituation?.toUpperCase();
-  return row.state === "excluded" || situation === "BAIXADA";
+  return (
+    row.state === "excluded" ||
+    situation === "BAIXADA" ||
+    row.error === "CNPJ não encontrado na consulta pública"
+  );
 }
 
 function isNonActiveImportRow(row: EnrichedClientImportRow): boolean {
@@ -125,7 +130,9 @@ function importBatchStatus(
 ): string {
   if (retryAfterSeconds > 0) return "cooldown";
   if (rows.some((row) => row.state === "pending")) return "processing";
-  if (rows.some((row) => row.state === "error")) return "review";
+  if (rows.some((row) => row.state === "error" && !isExcludedImportRow(row))) {
+    return "review";
+  }
   if (rows.some((row) => !isExcludedImportRow(row) && !row.taxRegime)) {
     return "review";
   }
@@ -144,23 +151,30 @@ function progressOf(
     total: rows.length,
     consulted: rows.filter((row) => row.state === "consulted" && !isExcludedImportRow(row)).length,
     excluded: rows.filter(isExcludedImportRow).length,
-    errors: rows.filter((row) => row.state === "error").length,
+    errors: rows.filter((row) => row.state === "error" && !isExcludedImportRow(row)).length,
     retryAfterSeconds,
     review: rows
       .filter((row) =>
-        row.state === "error" ||
+        isExcludedImportRow(row) ||
+        (row.state === "error" && !isExcludedImportRow(row)) ||
         isNonActiveImportRow(row) ||
         (row.state === "consulted" && !row.taxRegime),
       )
-      .map((row) => ({
-        rowNumber: row.rowNumber,
-        cnpj: row.cnpj,
-        name: row.lookup?.legalName ?? row.spreadsheetName,
-        error: row.error,
-        taxRegime: row.taxRegime,
-        cadastralSituation: row.lookup?.cadastralSituation ?? null,
-        excluded: isExcludedImportRow(row),
-      })),
+      .map((row) => {
+        const excluded = isExcludedImportRow(row);
+        return {
+          rowNumber: row.rowNumber,
+          cnpj: row.cnpj,
+          name: row.lookup?.legalName ?? row.spreadsheetName,
+          error: excluded ? null : row.error,
+          taxRegime: row.taxRegime,
+          cadastralSituation: row.lookup?.cadastralSituation ?? null,
+          excluded,
+          exclusionReason: excluded
+            ? row.error ?? "Empresa baixada na Receita"
+            : null,
+        };
+      }),
   };
 }
 
@@ -625,7 +639,9 @@ export async function processClientReplacementImport(
         : inferTaxRegimeFromCnpj(item.result.data);
       current.error = null;
     } else if (item.result.reason === "not_found") {
-      current.state = "error";
+      current.state = "excluded";
+      current.lookup = null;
+      current.taxRegime = null;
       current.error = "CNPJ não encontrado na consulta pública";
     } else if (item.result.reason === "rate_limited") {
       current.state = "pending";
@@ -665,7 +681,7 @@ export async function retryClientReplacementLookups(
     if (!batch) return null;
     const rows = batch.rows as EnrichedClientImportRow[];
     for (const row of rows) {
-      if (row.state === "error") {
+      if (row.state === "error" && !isExcludedImportRow(row)) {
         row.state = "pending";
         row.attempts = 0;
         row.error = null;
