@@ -80,7 +80,7 @@ export interface ClientRegistrationLookupView extends CnpjLookupData {
   suggestedTaxRegime: (typeof TAX_REGIMES)[number] | null;
 }
 
-type ImportRowState = "pending" | "consulted" | "error";
+type ImportRowState = "pending" | "consulted" | "excluded" | "error";
 
 interface EnrichedClientImportRow extends ClientReplacementRow {
   state: ImportRowState;
@@ -95,6 +95,7 @@ export interface ClientImportProgress {
   status: string;
   total: number;
   consulted: number;
+  excluded: number;
   errors: number;
   retryAfterSeconds: number;
   review: {
@@ -104,7 +105,31 @@ export interface ClientImportProgress {
     error: string | null;
     taxRegime: (typeof TAX_REGIMES)[number] | null;
     cadastralSituation: string | null;
+    excluded: boolean;
   }[];
+}
+
+function isExcludedImportRow(row: EnrichedClientImportRow): boolean {
+  const situation = row.lookup?.cadastralSituation?.toUpperCase();
+  return row.state === "excluded" || situation === "BAIXADA";
+}
+
+function isNonActiveImportRow(row: EnrichedClientImportRow): boolean {
+  const situation = row.lookup?.cadastralSituation?.toUpperCase();
+  return Boolean(situation && situation !== "ATIVA");
+}
+
+function importBatchStatus(
+  rows: EnrichedClientImportRow[],
+  retryAfterSeconds = 0,
+): string {
+  if (retryAfterSeconds > 0) return "cooldown";
+  if (rows.some((row) => row.state === "pending")) return "processing";
+  if (rows.some((row) => row.state === "error")) return "review";
+  if (rows.some((row) => !isExcludedImportRow(row) && !row.taxRegime)) {
+    return "review";
+  }
+  return "ready";
 }
 
 function progressOf(
@@ -117,15 +142,15 @@ function progressOf(
     batchId,
     status,
     total: rows.length,
-    consulted: rows.filter((row) => row.state === "consulted").length,
+    consulted: rows.filter((row) => row.state === "consulted" && !isExcludedImportRow(row)).length,
+    excluded: rows.filter(isExcludedImportRow).length,
     errors: rows.filter((row) => row.state === "error").length,
     retryAfterSeconds,
     review: rows
       .filter((row) =>
         row.state === "error" ||
-        (row.state === "consulted" && (
-          !row.taxRegime || row.lookup?.cadastralSituation?.toUpperCase() !== "ATIVA"
-        )),
+        isNonActiveImportRow(row) ||
+        (row.state === "consulted" && !row.taxRegime),
       )
       .map((row) => ({
         rowNumber: row.rowNumber,
@@ -134,6 +159,7 @@ function progressOf(
         error: row.error,
         taxRegime: row.taxRegime,
         cadastralSituation: row.lookup?.cadastralSituation ?? null,
+        excluded: isExcludedImportRow(row),
       })),
   };
 }
@@ -553,7 +579,7 @@ export async function getLatestClientReplacementImport(): Promise<
     ok: true,
     data: progressOf(
       batch.id,
-      batch.status === "cooldown" ? "processing" : batch.status,
+      importBatchStatus(batch.rows as EnrichedClientImportRow[]),
       batch.rows as EnrichedClientImportRow[],
     ),
   };
@@ -591,9 +617,12 @@ export async function processClientReplacementImport(
     const current = rows[item.index];
     current.attempts += 1;
     if (item.result.ok) {
-      current.state = "consulted";
       current.lookup = item.result.data;
-      current.taxRegime = inferTaxRegimeFromCnpj(item.result.data);
+      const situation = item.result.data.cadastralSituation?.toUpperCase();
+      current.state = situation === "BAIXADA" ? "excluded" : "consulted";
+      current.taxRegime = current.state === "excluded"
+        ? null
+        : inferTaxRegimeFromCnpj(item.result.data);
       current.error = null;
     } else if (item.result.reason === "not_found") {
       current.state = "error";
@@ -611,15 +640,7 @@ export async function processClientReplacementImport(
       current.error = "Serviço de consulta indisponível; tente novamente mais tarde";
     }
   }
-  const hasPending = rows.some((row) => row.state === "pending");
-  const needsReview = rows.some((row) => row.state === "error" || !row.taxRegime);
-  const status = retryAfterSeconds > 0
-    ? "cooldown"
-    : hasPending
-      ? "processing"
-      : needsReview
-        ? "review"
-        : "ready";
+  const status = importBatchStatus(rows, retryAfterSeconds);
   await withOrgTx(ctx.orgId, (tx) => tx.update(schema.clientImportBatches)
     .set({ rows, status, updatedAt: new Date() })
     .where(and(
@@ -678,9 +699,9 @@ export async function setClientReplacementRowRegime(
     if (!batch) return null;
     const rows = batch.rows as EnrichedClientImportRow[];
     const row = rows.find((candidate) => candidate.rowNumber === parsed.data.rowNumber);
-    if (!row || row.state !== "consulted") return null;
+    if (!row || row.state !== "consulted" || isExcludedImportRow(row)) return null;
     row.taxRegime = parsed.data.taxRegime;
-    const status = rows.every((candidate) => candidate.state === "consulted" && candidate.taxRegime) ? "ready" : "review";
+    const status = importBatchStatus(rows);
     await tx.update(schema.clientImportBatches).set({ rows, status, updatedAt: new Date() })
       .where(eq(schema.clientImportBatches.id, batch.id));
     return progressOf(batch.id, status, rows);
@@ -695,7 +716,7 @@ const finalizeReplacementSchema = z.object({
 
 export async function finalizeClientReplacementImport(
   input: z.input<typeof finalizeReplacementSchema>,
-): Promise<ActionResult<{ imported: number; inactive: number }>> {
+): Promise<ActionResult<{ imported: number; skipped: number }>> {
   const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
   if (!isAdminRole(ctx.role)) return err("Apenas admin/owner pode substituir a base.");
@@ -705,7 +726,7 @@ export async function finalizeClientReplacementImport(
   const finalizationState: {
     stage: "validating" | "resetting" | "importing";
   } = { stage: "validating" };
-  let result: { imported: number; inactive: number } | null;
+  let result: { imported: number; skipped: number } | null;
   try {
     result = await withOrgTx(ctx.orgId, async (tx) => {
       const [batch] = await tx.select().from(schema.clientImportBatches)
@@ -713,13 +734,18 @@ export async function finalizeClientReplacementImport(
         .for("update");
       if (!batch) return null;
       const rows = batch.rows as EnrichedClientImportRow[];
-      if (!rows.every((row) => row.state === "consulted" && row.lookup && row.taxRegime)) return null;
+      if (!rows.every((row) =>
+        isExcludedImportRow(row) ||
+        (row.state === "consulted" && row.lookup && row.taxRegime),
+      )) return null;
+      const importableRows = rows.filter((row) => !isExcludedImportRow(row));
+      if (importableRows.length === 0) return null;
 
       finalizationState.stage = "resetting";
       await tx.execute(sql`SELECT reset_org_operational_data_for_launch(${ctx.orgId})`);
       finalizationState.stage = "importing";
       const now = new Date();
-      await tx.insert(schema.clients).values(rows.map((row) => {
+      await tx.insert(schema.clients).values(importableRows.map((row) => {
         const lookup = row.lookup!;
         return {
           orgId: ctx.orgId,
@@ -749,8 +775,8 @@ export async function finalizeClientReplacementImport(
         };
       }));
       return {
-        imported: rows.length,
-        inactive: rows.filter((row) => row.lookup?.cadastralSituation?.toUpperCase() !== "ATIVA").length,
+        imported: importableRows.length,
+        skipped: rows.length - importableRows.length,
       };
     });
   } catch (error) {

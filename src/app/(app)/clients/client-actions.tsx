@@ -388,9 +388,10 @@ export function ImportClientsButton() {
           </form>
           ) : (
             <div className="grid gap-4" aria-live="polite" aria-busy={pending}>
-              <div className="panel-cut panel-cut-sm grid grid-cols-3 gap-3 p-4">
+              <div className="panel-cut panel-cut-sm grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
                 <div><p className="font-mono font-semibold tabular-nums">{progress.total}</p><p className="hud-label">empresas</p></div>
                 <div><p className="font-mono font-semibold tabular-nums text-success">{progress.consulted}</p><p className="hud-label">consultadas</p></div>
+                <div><p className="font-mono font-semibold tabular-nums text-warning">{progress.excluded}</p><p className="hud-label">não importadas</p></div>
                 <div><p className="font-mono font-semibold tabular-nums text-destructive">{progress.errors}</p><p className="hud-label">com erro</p></div>
               </div>
 
@@ -421,12 +422,14 @@ export function ImportClientsButton() {
                             <p className="font-medium">{row.name}</p>
                             <p className="font-mono text-xs text-muted-foreground">{formatCnpj(row.cnpj)}</p>
                             {row.error ? <p className="mt-1 text-destructive">{row.error}</p> : null}
-                            {row.cadastralSituation && row.cadastralSituation.toUpperCase() !== "ATIVA" ? (
-                              <p className="mt-1 text-warning">Situação na Receita: {row.cadastralSituation}</p>
+                            {row.excluded ? (
+                              <p className="mt-1 text-warning">Situação na Receita: {row.cadastralSituation}. Esta empresa não será importada.</p>
+                            ) : row.cadastralSituation && row.cadastralSituation.toUpperCase() !== "ATIVA" ? (
+                              <p className="mt-1 text-warning">Situação na Receita: {row.cadastralSituation}. Será cadastrada como inativa.</p>
                             ) : null}
                           </div>
                         </div>
-                        {!row.error && !row.taxRegime ? (
+                        {!row.error && !row.excluded && !row.taxRegime ? (
                           <Select
                             onValueChange={(value) => startTransition(async () => {
                               const result = await setClientReplacementRowRegime({ batchId: progress.batchId, rowNumber: row.rowNumber, taxRegime: value as TaxRegime });
@@ -462,7 +465,7 @@ export function ImportClientsButton() {
 
               {progress.status === "ready" ? (
                 <div className="grid gap-3 border-t border-border pt-4">
-                  <div className="flex gap-2 text-sm text-success"><CheckCircle2 className="size-4 shrink-0" aria-hidden /> Todas as consultas e regimes estão prontos.</div>
+                  <div className="flex gap-2 text-sm text-success"><CheckCircle2 className="size-4 shrink-0" aria-hidden /> Empresas ativas prontas; CNPJs baixados serão ignorados.</div>
                   <div className="grid gap-2">
                     <Label htmlFor="replace-confirmation">Confirme a substituição definitiva</Label>
                     <Input id="replace-confirmation" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="ZERAR E IMPORTAR" />
@@ -474,7 +477,7 @@ export function ImportClientsButton() {
                       toast.error(result.ok ? "Importação sem resumo." : result.error);
                       return;
                     }
-                    toast.success(`${result.data.imported} empresas reais importadas; ${result.data.inactive} ficaram inativas conforme a Receita.`);
+                    toast.success(`${result.data.imported} empresas importadas; ${result.data.skipped} CNPJ${result.data.skipped === 1 ? "" : "s"} baixado${result.data.skipped === 1 ? "" : "s"} ignorado${result.data.skipped === 1 ? "" : "s"}.`);
                     setOpen(false);
                     router.refresh();
                   })}>
