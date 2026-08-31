@@ -554,14 +554,17 @@ export async function startClientReplacementImport(
   if (parsed.rows.length === 0) return err("Nenhuma empresa válida encontrada.");
   if (parsed.rows.length > 3000) return err("Importe no máximo 3000 empresas.");
 
-  const rows: EnrichedClientImportRow[] = parsed.rows.map((row) => ({
-    ...row,
-    state: "pending",
-    attempts: 0,
-    lookup: null,
-    taxRegime: null,
-    error: null,
-  }));
+  const rows: EnrichedClientImportRow[] = parsed.rows.map((row) => {
+    const validCnpj = validateCnpj(row.cnpj);
+    return {
+      ...row,
+      state: validCnpj ? "pending" : "excluded",
+      attempts: 0,
+      lookup: null,
+      taxRegime: null,
+      error: validCnpj ? null : "CNPJ inválido na planilha",
+    };
+  });
   const [batch] = await withOrgTx(ctx.orgId, (tx) =>
     tx.insert(schema.clientImportBatches).values({
       orgId: ctx.orgId,

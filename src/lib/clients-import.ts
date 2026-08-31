@@ -110,15 +110,12 @@ export function parseClientReplacementRows(
       rejected.push({ rowNumber: i + 1, error: "razão social inválida" });
       continue;
     }
-    if (!validateCnpj(cnpj)) {
-      rejected.push({ rowNumber: i + 1, error: "CNPJ inválido" });
-      continue;
-    }
-    if (seen.has(cnpj)) {
+    const validCnpj = validateCnpj(cnpj);
+    if (validCnpj && seen.has(cnpj)) {
       rejected.push({ rowNumber: i + 1, error: "CNPJ repetido na planilha" });
       continue;
     }
-    seen.add(cnpj);
+    if (validCnpj) seen.add(cnpj);
     const operationalEmail = emailIndex === -1 ? null : cellText(row[emailIndex]) || null;
     const operationalPhone = phoneIndex === -1
       ? null

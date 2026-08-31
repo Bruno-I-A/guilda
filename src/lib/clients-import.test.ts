@@ -103,4 +103,30 @@ describe("parseClientReplacementRows", () => {
     expect(result.rows).toHaveLength(1);
     expect(result.rejected).toEqual([{ rowNumber: 3, error: "CNPJ repetido na planilha" }]);
   });
+
+  it("mantém CNPJ inválido no lote para ser desconsiderado sem bloquear a carga", () => {
+    const result = parseClientReplacementRows([
+      ["Razão Social", "E-mail", "Celular", "CNPJ"],
+      ["Empresa válida", "valida@empresa.com.br", "54999999999", "11.222.333/0001-81"],
+      ["Empresa ignorada", "ignorada@empresa.com.br", "54988888888", "11.222.333/0001-80"],
+    ]);
+
+    expect(result.rejected).toEqual([]);
+    expect(result.rows).toEqual([
+      {
+        rowNumber: 2,
+        spreadsheetName: "Empresa válida",
+        operationalEmail: "valida@empresa.com.br",
+        operationalPhone: "54999999999",
+        cnpj: "11222333000181",
+      },
+      {
+        rowNumber: 3,
+        spreadsheetName: "Empresa ignorada",
+        operationalEmail: "ignorada@empresa.com.br",
+        operationalPhone: "54988888888",
+        cnpj: "11222333000180",
+      },
+    ]);
+  });
 });
