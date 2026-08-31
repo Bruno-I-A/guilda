@@ -595,50 +595,76 @@ export async function finalizeClientReplacementImport(
   const parsed = finalizeReplacementSchema.safeParse(input);
   if (!parsed.success) return err('Digite exatamente "ZERAR E IMPORTAR".');
 
-  const result = await withOrgTx(ctx.orgId, async (tx) => {
-    const [batch] = await tx.select().from(schema.clientImportBatches)
-      .where(and(eq(schema.clientImportBatches.id, parsed.data.batchId), eq(schema.clientImportBatches.orgId, ctx.orgId)))
-      .for("update");
-    if (!batch) return null;
-    const rows = batch.rows as EnrichedClientImportRow[];
-    if (!rows.every((row) => row.state === "consulted" && row.lookup && row.taxRegime)) return null;
+  const finalizationState: {
+    stage: "validating" | "resetting" | "importing";
+  } = { stage: "validating" };
+  let result: { imported: number; inactive: number } | null;
+  try {
+    result = await withOrgTx(ctx.orgId, async (tx) => {
+      const [batch] = await tx.select().from(schema.clientImportBatches)
+        .where(and(eq(schema.clientImportBatches.id, parsed.data.batchId), eq(schema.clientImportBatches.orgId, ctx.orgId)))
+        .for("update");
+      if (!batch) return null;
+      const rows = batch.rows as EnrichedClientImportRow[];
+      if (!rows.every((row) => row.state === "consulted" && row.lookup && row.taxRegime)) return null;
 
-    await tx.execute(sql`SELECT reset_org_operational_data_for_launch(${ctx.orgId})`);
-    const now = new Date();
-    await tx.insert(schema.clients).values(rows.map((row) => {
-      const lookup = row.lookup!;
+      finalizationState.stage = "resetting";
+      await tx.execute(sql`SELECT reset_org_operational_data_for_launch(${ctx.orgId})`);
+      finalizationState.stage = "importing";
+      const now = new Date();
+      await tx.insert(schema.clients).values(rows.map((row) => {
+        const lookup = row.lookup!;
+        return {
+          orgId: ctx.orgId,
+          name: lookup.legalName,
+          tradeName: lookup.tradeName,
+          taxRegime: row.taxRegime!,
+          cnpj: row.cnpj,
+          operationalEmail: row.operationalEmail,
+          operationalPhone: row.operationalPhone,
+          revenueEmail: lookup.email,
+          revenuePhones: lookup.phones,
+          address: lookup.address,
+          cadastralSituation: lookup.cadastralSituation,
+          cadastralSituationDate: lookup.cadastralSituationDate,
+          companySize: lookup.companySize,
+          legalNature: lookup.legalNature,
+          shareCapital: lookup.shareCapital,
+          headquartersType: lookup.headquartersType,
+          cnaeCode: lookup.cnaeCode,
+          cnaeDescription: lookup.cnaeDescription,
+          secondaryCnaes: lookup.secondaryCnaes,
+          openedAt: lookup.openedAt,
+          qsa: lookup.qsa,
+          taxRegimeHistory: lookup.taxRegimes,
+          cnpjSyncedAt: now,
+          active: lookup.cadastralSituation?.toUpperCase() === "ATIVA",
+        };
+      }));
       return {
-        orgId: ctx.orgId,
-        name: lookup.legalName,
-        tradeName: lookup.tradeName,
-        taxRegime: row.taxRegime!,
-        cnpj: row.cnpj,
-        operationalEmail: row.operationalEmail,
-        operationalPhone: row.operationalPhone,
-        revenueEmail: lookup.email,
-        revenuePhones: lookup.phones,
-        address: lookup.address,
-        cadastralSituation: lookup.cadastralSituation,
-        cadastralSituationDate: lookup.cadastralSituationDate,
-        companySize: lookup.companySize,
-        legalNature: lookup.legalNature,
-        shareCapital: lookup.shareCapital,
-        headquartersType: lookup.headquartersType,
-        cnaeCode: lookup.cnaeCode,
-        cnaeDescription: lookup.cnaeDescription,
-        secondaryCnaes: lookup.secondaryCnaes,
-        openedAt: lookup.openedAt,
-        qsa: lookup.qsa,
-        taxRegimeHistory: lookup.taxRegimes,
-        cnpjSyncedAt: now,
-        active: lookup.cadastralSituation?.toUpperCase() === "ATIVA",
+        imported: rows.length,
+        inactive: rows.filter((row) => row.lookup?.cadastralSituation?.toUpperCase() !== "ATIVA").length,
       };
-    }));
-    return {
-      imported: rows.length,
-      inactive: rows.filter((row) => row.lookup?.cadastralSituation?.toUpperCase() !== "ATIVA").length,
-    };
-  });
+    });
+  } catch (error) {
+    const cause = (error as {
+      cause?: { code?: string; constraint?: string; table?: string; routine?: string };
+    })?.cause;
+    console.error("Client replacement finalization failed", {
+      stage: finalizationState.stage,
+      code: cause?.code,
+      constraint: cause?.constraint,
+      table: cause?.table,
+      routine: cause?.routine,
+    });
+    return err(
+      finalizationState.stage === "resetting"
+        ? "Não foi possível limpar os dados de teste. A importação não foi aplicada; tente novamente após a implantação terminar."
+        : finalizationState.stage === "importing"
+          ? "Não foi possível gravar a nova base. A limpeza foi desfeita e nenhum dado foi perdido."
+          : "Não foi possível validar o lote para importação.",
+    );
+  }
   if (!result) return err("O lote ainda possui consultas ou regimes pendentes.");
   revalidatePath("/", "layout");
   return { ok: true, data: result };

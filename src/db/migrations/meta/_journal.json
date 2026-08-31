@@ -449,6 +449,13 @@
       "when": 1787945483973,
       "tag": "0063_curly_killer_shrike",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1788170400000,
+      "tag": "0064_fix_client_launch_reset_order",
+      "breakpoints": true
     }
   ]
 }
