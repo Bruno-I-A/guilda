@@ -1,11 +1,12 @@
 "use client";
 
-import { AlertTriangle, Archive, ArchiveRestore, CheckCircle2, Eye, LoaderCircle, Pencil, Plus, RefreshCw, Upload } from "lucide-react";
+import { AlertTriangle, Archive, ArchiveRestore, CheckCircle2, Eye, LoaderCircle, Pencil, Plus, RefreshCw, Search, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +33,7 @@ import {
   createClient,
   finalizeClientReplacementImport,
   getLatestClientReplacementImport,
+  lookupClientRegistrationCnpj,
   processClientReplacementImport,
   retryClientReplacementLookups,
   setClientReplacementRowRegime,
@@ -39,6 +41,7 @@ import {
   startClientReplacementImport,
   updateClient,
   type ClientImportProgress,
+  type ClientRegistrationLookupView,
 } from "./actions";
 import {
   ClientDetailsDialog,
@@ -57,6 +60,7 @@ function ClientFormDialog({
   submitLabel,
   onSubmit,
   pending,
+  cnpjLookup = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -72,10 +76,35 @@ function ClientFormDialog({
     operationalPhone: string;
   }) => void;
   pending: boolean;
+  cnpjLookup?: boolean;
 }) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [cnpj, setCnpj] = useState(initial?.cnpj ? formatCnpj(initial.cnpj) : "");
   const [taxRegime, setTaxRegime] = useState<TaxRegime>(
     initial?.taxRegime ?? "simples",
   );
+  const [lookup, setLookup] = useState<ClientRegistrationLookupView | null>(null);
+  const [lookupPending, startLookupTransition] = useTransition();
+  const cnpjDigits = cnpj.replace(/\D/g, "");
+  const lookupReady = !cnpjLookup || cnpjDigits.length === 0 || lookup?.normalizedCnpj === cnpjDigits;
+
+  function consultCnpj() {
+    startLookupTransition(async () => {
+      const result = await lookupClientRegistrationCnpj({ cnpj });
+      if (!result.ok || !result.data) {
+        toast.error(result.ok ? "Consulta sem dados." : result.error);
+        setLookup(null);
+        return;
+      }
+      setLookup(result.data);
+      setCnpj(formatCnpj(result.data.normalizedCnpj));
+      setName(result.data.legalName);
+      if (result.data.suggestedTaxRegime) {
+        setTaxRegime(result.data.suggestedTaxRegime);
+      }
+    });
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -91,7 +120,7 @@ function ClientFormDialog({
             onSubmit({
               name: String(form.get("name") ?? ""),
               taxRegime,
-              cnpj: String(form.get("cnpj") ?? ""),
+              cnpj,
               operationalEmail: String(form.get("operationalEmail") ?? ""),
               operationalPhone: String(form.get("operationalPhone") ?? ""),
             });
@@ -102,7 +131,8 @@ function ClientFormDialog({
             <Input
               id="client-name"
               name="name"
-              defaultValue={initial?.name ?? ""}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
               placeholder="Ex.: Padaria Estrela do Norte LTDA"
               maxLength={200}
               required
@@ -128,14 +158,51 @@ function ClientFormDialog({
           </div>
           <div className="grid gap-2">
             <Label htmlFor="client-cnpj">CNPJ (opcional)</Label>
-            <Input
-              id="client-cnpj"
-              name="cnpj"
-              defaultValue={initial?.cnpj ? formatCnpj(initial.cnpj) : ""}
-              placeholder="00.000.000/0000-00"
-              inputMode="numeric"
-            />
+            <div className={cnpjLookup ? "grid gap-2 sm:grid-cols-[1fr_auto]" : undefined}>
+              <Input
+                id="client-cnpj"
+                name="cnpj"
+                value={cnpj}
+                onChange={(event) => {
+                  setCnpj(event.target.value);
+                  setLookup(null);
+                }}
+                placeholder="00.000.000/0000-00"
+                inputMode="numeric"
+              />
+              {cnpjLookup ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={lookupPending || cnpjDigits.length !== 14}
+                  onClick={consultCnpj}
+                >
+                  {lookupPending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Search aria-hidden />}
+                  Consultar
+                </Button>
+              ) : null}
+            </div>
           </div>
+          {lookup ? (
+            <section className="grid gap-2 border border-success/35 bg-success/5 p-3" aria-live="polite">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-medium">{lookup.legalName}</p>
+                <Badge variant="outline" className="border-success/40 text-success">
+                  {lookup.cadastralSituation ?? "Consultada"}
+                </Badge>
+              </div>
+              {lookup.tradeName ? <p className="text-xs text-muted-foreground">Nome fantasia: {lookup.tradeName}</p> : null}
+              {lookup.cnaeDescription ? (
+                <p className="text-xs">
+                  <span className="font-mono text-muted-foreground">{lookup.cnaeCode}</span> · {lookup.cnaeDescription}
+                  {lookup.secondaryCnaes.length > 0 ? ` · +${lookup.secondaryCnaes.length} secundária${lookup.secondaryCnaes.length === 1 ? "" : "s"}` : ""}
+                </p>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                Ao cadastrar, endereço, atividades, QSA, capital social e contatos públicos também serão salvos.
+              </p>
+            </section>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-2">
               <Label htmlFor="client-email">E-mail operacional</Label>
@@ -160,7 +227,7 @@ function ClientFormDialog({
             </div>
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending || lookupPending || !lookupReady}>
               {submitLabel}
             </Button>
           </DialogFooter>
@@ -180,26 +247,29 @@ export function NewClientButton() {
       <Button onClick={() => setOpen(true)}>
         <Plus aria-hidden /> Nova empresa
       </Button>
-      <ClientFormDialog
-        open={open}
-        onOpenChange={setOpen}
-        title="Nova empresa-cliente"
-        description="Cadastre as empresas que serão acompanhadas nos fechamentos."
-        submitLabel="Cadastrar"
-        pending={pending}
-        onSubmit={(fields) =>
-          startTransition(async () => {
-            const result = await createClient(fields);
-            if (!result.ok) {
-              toast.error(result.error);
-              return;
-            }
-            toast.success("Empresa cadastrada!");
-            setOpen(false);
-            router.refresh();
-          })
-        }
-      />
+      {open ? (
+        <ClientFormDialog
+          open={open}
+          onOpenChange={setOpen}
+          title="Nova empresa-cliente"
+          description="Consulte o CNPJ para preencher e salvar a ficha cadastral completa."
+          submitLabel="Cadastrar empresa"
+          pending={pending}
+          cnpjLookup
+          onSubmit={(fields) =>
+            startTransition(async () => {
+              const result = await createClient(fields);
+              if (!result.ok) {
+                toast.error(result.error);
+                return;
+              }
+              toast.success("Empresa cadastrada com os dados da consulta!");
+              setOpen(false);
+              router.refresh();
+            })
+          }
+        />
+      ) : null}
     </>
   );
 }

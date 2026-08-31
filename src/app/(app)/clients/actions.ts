@@ -74,6 +74,11 @@ export interface ImportClientsResult {
   rejected: { rowNumber: number; error: string }[];
 }
 
+export interface ClientRegistrationLookupView extends CnpjLookupData {
+  normalizedCnpj: string;
+  suggestedTaxRegime: (typeof TAX_REGIMES)[number] | null;
+}
+
 type ImportRowState = "pending" | "consulted" | "error";
 
 interface EnrichedClientImportRow extends ClientReplacementRow {
@@ -163,15 +168,48 @@ export async function createClient(
   }
   const data = parsed.data;
 
+  let official: CnpjLookupData | null = null;
+  if (data.cnpj) {
+    const lookup = await lookupCnpj(data.cnpj);
+    if (!lookup.ok) {
+      return err(
+        lookup.reason === "not_found"
+          ? "CNPJ não encontrado na Receita. Confira os dígitos."
+          : "Não foi possível confirmar o CNPJ agora. Consulte novamente antes de cadastrar.",
+      );
+    }
+    official = lookup.data;
+  }
+
   try {
     await withOrgTx(ctx.orgId, (tx) =>
       tx.insert(schema.clients).values({
         orgId: ctx.orgId,
-        name: data.name,
+        name: official?.legalName ?? data.name,
         taxRegime: data.taxRegime,
         cnpj: data.cnpj ?? null,
         operationalEmail: data.operationalEmail || null,
         operationalPhone: data.operationalPhone ?? null,
+        tradeName: official?.tradeName ?? null,
+        revenueEmail: official?.email ?? null,
+        revenuePhones: official?.phones ?? [],
+        address: official?.address ?? null,
+        cadastralSituation: official?.cadastralSituation ?? null,
+        cadastralSituationDate: official?.cadastralSituationDate ?? null,
+        companySize: official?.companySize ?? null,
+        legalNature: official?.legalNature ?? null,
+        shareCapital: official?.shareCapital ?? null,
+        headquartersType: official?.headquartersType ?? null,
+        cnaeCode: official?.cnaeCode ?? null,
+        cnaeDescription: official?.cnaeDescription ?? null,
+        secondaryCnaes: official?.secondaryCnaes ?? [],
+        openedAt: official?.openedAt ?? null,
+        qsa: official?.qsa ?? [],
+        taxRegimeHistory: official?.taxRegimes ?? [],
+        cnpjSyncedAt: official ? new Date() : null,
+        active: official?.cadastralSituation
+          ? official.cadastralSituation.toUpperCase() === "ATIVA"
+          : true,
       }),
     );
   } catch (error) {
@@ -184,6 +222,55 @@ export async function createClient(
   revalidatePath("/clients");
   revalidatePath("/clans/[id]", "page");
   return { ok: true };
+}
+
+const registrationLookupSchema = z.object({
+  cnpj: z.string().min(1),
+});
+
+export async function lookupClientRegistrationCnpj(
+  input: z.input<typeof registrationLookupSchema>,
+): Promise<ActionResult<ClientRegistrationLookupView>> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  const parsed = registrationLookupSchema.safeParse(input);
+  if (!parsed.success) return err("Informe um CNPJ válido.");
+
+  const normalizedCnpj = normalizeCnpj(parsed.data.cnpj);
+  if (!validateCnpj(normalizedCnpj)) {
+    return err("CNPJ inválido — confira os dígitos.");
+  }
+
+  const existing = await withOrgTx(ctx.orgId, (tx) =>
+    tx.query.clients.findFirst({
+      columns: { name: true },
+      where: and(
+        eq(schema.clients.orgId, ctx.orgId),
+        eq(schema.clients.cnpj, normalizedCnpj),
+      ),
+    }),
+  );
+  if (existing) return err(`Este CNPJ já está cadastrado como ${existing.name}.`);
+
+  const result = await lookupCnpj(normalizedCnpj);
+  if (!result.ok) {
+    return err(
+      result.reason === "not_found"
+        ? "CNPJ não encontrado na Receita."
+        : result.reason === "rate_limited"
+          ? "A consulta pública atingiu o limite temporário. Aguarde um pouco e tente novamente."
+          : "Não foi possível consultar a Receita agora.",
+    );
+  }
+
+  return {
+    ok: true,
+    data: {
+      ...result.data,
+      normalizedCnpj,
+      suggestedTaxRegime: inferTaxRegime(result.data),
+    },
+  };
 }
 
 const updateClientSchema = clientFieldsSchema.extend({
