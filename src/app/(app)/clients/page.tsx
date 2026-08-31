@@ -164,6 +164,13 @@ export default async function ClientsPage({
                   {client.cnpj ? (
                     <span className="font-mono">{formatCnpj(client.cnpj)}</span>
                   ) : null}
+                  {client.operationalEmail ? <span>{client.operationalEmail}</span> : null}
+                  {client.operationalPhone ? <span>{client.operationalPhone}</span> : null}
+                  {client.cnaeDescription ? (
+                    <span className="max-w-80 truncate" title={client.cnaeDescription}>
+                      {client.cnaeDescription}
+                    </span>
+                  ) : null}
                   {!client.active ? (
                     <Badge className="h-4 border-transparent bg-muted px-1.5 text-muted-foreground/70">
                       Inativa
@@ -178,6 +185,24 @@ export default async function ClientsPage({
                   taxRegime: client.taxRegime,
                   cnpj: client.cnpj,
                   active: client.active,
+                  tradeName: client.tradeName,
+                  operationalEmail: client.operationalEmail,
+                  operationalPhone: client.operationalPhone,
+                  revenueEmail: client.revenueEmail,
+                  revenuePhones: client.revenuePhones,
+                  address: client.address,
+                  cadastralSituation: client.cadastralSituation,
+                  cadastralSituationDate: client.cadastralSituationDate,
+                  companySize: client.companySize,
+                  legalNature: client.legalNature,
+                  shareCapital: client.shareCapital,
+                  headquartersType: client.headquartersType,
+                  cnaeCode: client.cnaeCode,
+                  cnaeDescription: client.cnaeDescription,
+                  secondaryCnaes: client.secondaryCnaes ?? [],
+                  openedAt: client.openedAt,
+                  qsa: client.qsa,
+                  taxRegimeHistory: client.taxRegimeHistory,
                 }}
                 isAdmin={isAdmin}
               />

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Archive, ArchiveRestore, CheckCircle2, LoaderCircle, Pencil, Plus, RefreshCw, Upload } from "lucide-react";
+import { AlertTriangle, Archive, ArchiveRestore, CheckCircle2, Eye, LoaderCircle, Pencil, Plus, RefreshCw, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -40,15 +40,13 @@ import {
   updateClient,
   type ClientImportProgress,
 } from "./actions";
+import {
+  ClientDetailsDialog,
+  type ClientDetailsView,
+} from "./client-details-dialog";
 import { DeleteClientButton } from "./delete-client-dialog";
 
-interface ClientView {
-  id: string;
-  name: string;
-  taxRegime: TaxRegime;
-  cnpj: string | null;
-  active: boolean;
-}
+type ClientView = ClientDetailsView;
 
 function ClientFormDialog({
   open,
@@ -70,6 +68,8 @@ function ClientFormDialog({
     name: string;
     taxRegime: TaxRegime;
     cnpj: string;
+    operationalEmail: string;
+    operationalPhone: string;
   }) => void;
   pending: boolean;
 }) {
@@ -92,6 +92,8 @@ function ClientFormDialog({
               name: String(form.get("name") ?? ""),
               taxRegime,
               cnpj: String(form.get("cnpj") ?? ""),
+              operationalEmail: String(form.get("operationalEmail") ?? ""),
+              operationalPhone: String(form.get("operationalPhone") ?? ""),
             });
           }}
         >
@@ -133,6 +135,29 @@ function ClientFormDialog({
               placeholder="00.000.000/0000-00"
               inputMode="numeric"
             />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="client-email">E-mail operacional</Label>
+              <Input
+                id="client-email"
+                name="operationalEmail"
+                type="email"
+                defaultValue={initial?.operationalEmail ?? ""}
+                placeholder="contato@empresa.com"
+                maxLength={200}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="client-phone">Celular operacional</Label>
+              <Input
+                id="client-phone"
+                name="operationalPhone"
+                defaultValue={initial?.operationalPhone ?? ""}
+                placeholder="(00) 00000-0000"
+                inputMode="tel"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button type="submit" disabled={pending}>
@@ -403,6 +428,7 @@ export function ClientRowActions({
   isAdmin: boolean;
 }) {
   const router = useRouter();
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -423,6 +449,15 @@ export function ClientRowActions({
     // `touch-target` em cada ícone: são controles de 32px dentro de uma linha
     // de lista, e no celular o dedo não acerta isso.
     <div className="flex shrink-0 items-center gap-1">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="touch-target"
+        aria-label={`Ver dados de ${client.name}`}
+        onClick={() => setDetailsOpen(true)}
+      >
+        <Eye aria-hidden />
+      </Button>
       <Button
         variant="ghost"
         size="icon"
@@ -450,6 +485,14 @@ export function ClientRowActions({
       </Button>
       {isAdmin ? (
         <DeleteClientButton clientId={client.id} clientName={client.name} />
+      ) : null}
+
+      {detailsOpen ? (
+        <ClientDetailsDialog
+          client={client}
+          open={detailsOpen}
+          onOpenChange={setDetailsOpen}
+        />
       ) : null}
 
       {editOpen ? (

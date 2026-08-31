@@ -44,6 +44,21 @@ const clientFieldsSchema = z.object({
     .optional()
     .transform((v) => (v ? normalizeCnpj(v) : undefined))
     .refine((v) => !v || validateCnpj(v), "CNPJ inválido — confira os dígitos."),
+  operationalEmail: z
+    .string()
+    .trim()
+    .max(200, "E-mail muito longo.")
+    .email("E-mail inválido.")
+    .or(z.literal(""))
+    .optional(),
+  operationalPhone: z
+    .string()
+    .optional()
+    .transform((value) => value?.replace(/\D/g, "") || undefined)
+    .refine(
+      (value) => !value || /^\d{10,11}$/.test(value),
+      "Celular deve ter 10 ou 11 dígitos.",
+    ),
 });
 
 function isUniqueViolation(error: unknown): boolean {
@@ -155,6 +170,8 @@ export async function createClient(
         name: data.name,
         taxRegime: data.taxRegime,
         cnpj: data.cnpj ?? null,
+        operationalEmail: data.operationalEmail || null,
+        operationalPhone: data.operationalPhone ?? null,
       }),
     );
   } catch (error) {
@@ -193,6 +210,8 @@ export async function updateClient(
           name: data.name,
           taxRegime: data.taxRegime,
           cnpj: data.cnpj ?? null,
+          operationalEmail: data.operationalEmail || null,
+          operationalPhone: data.operationalPhone ?? null,
         })
         .where(
           and(
