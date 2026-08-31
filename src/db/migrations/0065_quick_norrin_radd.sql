@@ -1,0 +1,1 @@
+ALTER TYPE "public"."tax_regime" ADD VALUE 'mei' BEFORE 'simples';

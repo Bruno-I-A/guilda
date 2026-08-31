@@ -86,7 +86,7 @@ Regras:
 - NÃO INVENTE PRAZO. dueDate deve ser null se o texto não trouxer uma data clara para CONCLUIR a ação. Data de abertura da empresa ("ABERTURA: 16/07/2026") é dado cadastral, não prazo. Não existe prazo padrão por setor. Quando houver dia e mês sem ano, use o ano da data de referência, mesmo que a data já tenha passado.
 - Prioridade: 1 baixa, 2 normal, 3 urgente/importante. Dificuldade: 1 simples a 5 complexa.
 - Títulos devem começar pelo assunto da ação, sem repetir o nome da empresa.
-- taxRegime: simples, presumido, association ou real; null se ausente.
+- taxRegime: mei, simples, presumido, association ou real; null se ausente.
 - CNPJ pode vir formatado; preserve-o no campo cnpj.
 - Quando a mensagem mencionar uma empresa já cadastrada, devolva legalName exatamente como aparece no diretório de clientes se houver uma correspondência inequívoca. Para novo cliente, preserve o nome informado.
 - fiscalNote: null na imensa maioria dos casos. Só é preenchido na exceção do setor FISCAL descrita acima, exclusiva de cadastro de cliente novo.

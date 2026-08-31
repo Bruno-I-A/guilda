@@ -482,6 +482,7 @@ export type TaskTransfer = typeof taskTransfers.$inferSelect;
 
 /** Regime tributário — chave que casa template→cliente nas Campanhas (Fase 5). */
 export const taxRegime = pgEnum("tax_regime", [
+  "mei",
   "simples",
   "presumido",
   "association",

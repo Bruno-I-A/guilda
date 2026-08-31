@@ -100,7 +100,7 @@ export function InformativePanel({
   draft: DraftView | null;
   clans: { id: string; name: string }[];
   members: { userId: string; name: string }[];
-  clients: { id: string; name: string; cnpj: string | null; taxRegime: "simples" | "presumido" | "association" | "real" }[];
+  clients: { id: string; name: string; cnpj: string | null; taxRegime: "mei" | "simples" | "presumido" | "association" | "real" }[];
   initialSourceText?: string;
   flowId?: string;
   amendmentSummary?: AmendmentSummaryView | null;

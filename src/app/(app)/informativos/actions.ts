@@ -8,6 +8,7 @@ import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import { companyFlowActionsText } from "@/domain/company-flow";
 import * as schema from "@/db/schema";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
+import { inferTaxRegimeFromCnpj } from "@/domain/client-tax-regime";
 import { canHandleInformatives, isAdminRole } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
 import {
@@ -141,7 +142,7 @@ export async function lookupClientCnpj(input: {
       cnaeDescription: result.data.cnaeDescription,
       secondaryCnaes: result.data.secondaryCnaes,
       openedAt: result.data.openedAt,
-      suggestedTaxRegime: result.data.isSimplesOptant ? "simples" : null,
+      suggestedTaxRegime: inferTaxRegimeFromCnpj(result.data),
       cadastralSituation: result.data.cadastralSituation,
     },
   };

@@ -42,8 +42,14 @@ describe("parseClientCsvLine", () => {
     }
   });
 
-  it("rejeita regime desconhecido", () => {
+  it("reconhece MEI como regime próprio", () => {
     const result = parseClientCsvLine("Empresa X;;MEI");
+    expect(result.kind).toBe("row");
+    if (result.kind === "row") expect(result.row.taxRegime).toBe("mei");
+  });
+
+  it("rejeita regime desconhecido", () => {
+    const result = parseClientCsvLine("Empresa X;;arbitrado");
     expect(result.kind).toBe("error");
   });
 

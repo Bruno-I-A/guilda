@@ -8,6 +8,7 @@ import { z } from "zod";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
+import { inferTaxRegimeFromCnpj } from "@/domain/client-tax-regime";
 import {
   err,
   requireMemberContext,
@@ -104,25 +105,6 @@ export interface ClientImportProgress {
     taxRegime: (typeof TAX_REGIMES)[number] | null;
     cadastralSituation: string | null;
   }[];
-}
-
-function inferTaxRegime(
-  lookup: CnpjLookupData,
-): (typeof TAX_REGIMES)[number] | null {
-  if (lookup.isMeiOptant) return "simples";
-  if (lookup.isSimplesOptant) return "simples";
-  const latest = [...lookup.taxRegimes]
-    .sort((a, b) => (b.year ?? 0) - (a.year ?? 0))[0]?.form
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toUpperCase();
-  if (latest?.includes("PRESUMIDO")) return "presumido";
-  if (latest?.includes("REAL")) return "real";
-  const nature = lookup.legalNature
-    ?.normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toUpperCase();
-  return nature?.includes("ASSOCIACAO PRIVADA") ? "association" : null;
 }
 
 function progressOf(
@@ -268,7 +250,7 @@ export async function lookupClientRegistrationCnpj(
     data: {
       ...result.data,
       normalizedCnpj,
-      suggestedTaxRegime: inferTaxRegime(result.data),
+      suggestedTaxRegime: inferTaxRegimeFromCnpj(result.data),
     },
   };
 }
@@ -592,7 +574,7 @@ export async function processClientReplacementImport(
     if (item.result.ok) {
       current.state = "consulted";
       current.lookup = item.result.data;
-      current.taxRegime = inferTaxRegime(item.result.data);
+      current.taxRegime = inferTaxRegimeFromCnpj(item.result.data);
       current.error = null;
     } else if (item.result.reason === "not_found") {
       current.state = "error";

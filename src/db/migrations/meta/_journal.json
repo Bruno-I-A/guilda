@@ -456,6 +456,13 @@
       "when": 1788170400000,
       "tag": "0064_fix_client_launch_reset_order",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1788215302413,
+      "tag": "0065_quick_norrin_radd",
+      "breakpoints": true
     }
   ]
 }

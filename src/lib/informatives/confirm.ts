@@ -51,6 +51,7 @@ export interface InformativeTaskDecision {
 }
 
 const TAX_REGIME_LABELS: Record<string, string> = {
+  mei: "MEI",
   simples: "Simples Nacional",
   presumido: "Lucro Presumido",
   association: "Associação",
