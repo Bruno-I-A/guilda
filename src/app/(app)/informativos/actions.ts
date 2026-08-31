@@ -89,7 +89,8 @@ async function requireInformativeActor(): Promise<
 
 const cnpjLookupSchema = z.object({ cnpj: z.string().min(1, "Informe o CNPJ.") });
 
-export interface CnpjLookupView {
+interface ConsultedCnpjLookupView {
+  kind: "consulted";
   legalName: string;
   normalizedCnpj: string;
   cnaeCode: string | null;
@@ -101,6 +102,16 @@ export interface CnpjLookupView {
   /** Ex.: "ATIVA", "BAIXADA" — a tela decide se avisa, a action nunca bloqueia. */
   cadastralSituation: string | null;
 }
+
+interface ExistingCnpjLookupView {
+  kind: "existing";
+  clientId: string;
+  legalName: string;
+  normalizedCnpj: string;
+  active: boolean;
+}
+
+export type CnpjLookupView = ConsultedCnpjLookupView | ExistingCnpjLookupView;
 
 /**
  * Passo 1 do fluxo "Novo cliente": busca o CNPJ na Receita (via BrasilAPI).
@@ -124,6 +135,28 @@ export async function lookupClientCnpj(input: {
     return err("CNPJ inválido — confira os dígitos.");
   }
 
+  const existing = await withOrgTx(gate.actor.orgId, (tx) =>
+    tx.query.clients.findFirst({
+      columns: { id: true, name: true, active: true },
+      where: and(
+        eq(schema.clients.orgId, gate.actor.orgId),
+        eq(schema.clients.cnpj, normalized),
+      ),
+    }),
+  );
+  if (existing) {
+    return {
+      ok: true,
+      data: {
+        kind: "existing",
+        clientId: existing.id,
+        legalName: existing.name,
+        normalizedCnpj: normalized,
+        active: existing.active,
+      },
+    };
+  }
+
   const result = await lookupCnpj(normalized);
   if (!result.ok) {
     return err(
@@ -136,6 +169,7 @@ export async function lookupClientCnpj(input: {
   return {
     ok: true,
     data: {
+      kind: "consulted",
       legalName: result.data.legalName,
       normalizedCnpj: normalized,
       cnaeCode: result.data.cnaeCode,

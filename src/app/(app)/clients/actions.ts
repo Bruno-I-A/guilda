@@ -152,6 +152,21 @@ export async function createClient(
 
   let official: CnpjLookupData | null = null;
   if (data.cnpj) {
+    const existing = await withOrgTx(ctx.orgId, (tx) =>
+      tx.query.clients.findFirst({
+        columns: { name: true, active: true },
+        where: and(
+          eq(schema.clients.orgId, ctx.orgId),
+          eq(schema.clients.cnpj, data.cnpj!),
+        ),
+      }),
+    );
+    if (existing) {
+      return err(
+        `Este CNPJ já está cadastrado como ${existing.name}${existing.active ? "" : " (empresa inativa)"}.`,
+      );
+    }
+
     const lookup = await lookupCnpj(data.cnpj);
     if (!lookup.ok) {
       return err(
@@ -225,14 +240,18 @@ export async function lookupClientRegistrationCnpj(
 
   const existing = await withOrgTx(ctx.orgId, (tx) =>
     tx.query.clients.findFirst({
-      columns: { name: true },
+      columns: { name: true, active: true },
       where: and(
         eq(schema.clients.orgId, ctx.orgId),
         eq(schema.clients.cnpj, normalizedCnpj),
       ),
     }),
   );
-  if (existing) return err(`Este CNPJ já está cadastrado como ${existing.name}.`);
+  if (existing) {
+    return err(
+      `Este CNPJ já está cadastrado como ${existing.name}${existing.active ? "" : " (empresa inativa)"}.`,
+    );
+  }
 
   const result = await lookupCnpj(normalizedCnpj);
   if (!result.ok) {
