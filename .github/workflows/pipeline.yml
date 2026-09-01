@@ -1,0 +1,72 @@
+name: Guilda pipeline
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_production:
+        description: "Publicar o commit atual em produção"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guilda-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  quality:
+    name: Testes e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://build:build@127.0.0.1:5432/build
+      BETTER_AUTH_SECRET: segredo-apenas-para-validacao-do-build-32ch
+      BETTER_AUTH_URL: http://localhost:4000
+      NEXT_PUBLIC_APP_URL: http://localhost:4000
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v7.0.1
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Verificar lint
+        run: npm run lint
+
+      - name: Verificar tipos
+        run: npx tsc --noEmit
+
+      - name: Gerar build de produção
+        run: npm run build
+
+  deploy-production:
+    name: Publicar produção
+    needs: quality
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.deploy_production == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - name: Acionar Easypanel
+        env:
+          DEPLOY_URL: ${{ secrets.EASYPANEL_PRODUCTION_DEPLOY_URL }}
+        run: curl --fail-with-body --silent --show-error --request POST "$DEPLOY_URL"
