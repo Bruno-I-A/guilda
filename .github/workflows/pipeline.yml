@@ -32,10 +32,10 @@ jobs:
       NEXT_PUBLIC_APP_URL: http://localhost:4000
     steps:
       - name: Baixar código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Preparar Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -70,4 +70,3 @@ jobs:
         env:
           DEPLOY_URL: ${{ secrets.EASYPANEL_PRODUCTION_DEPLOY_URL }}
         run: curl --fail-with-body --silent --show-error --request POST "$DEPLOY_URL"
-
