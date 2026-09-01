@@ -670,18 +670,16 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
 export function NewCompanyFlowDialog({
   clanId,
   initialKind = "opening",
-  amendmentOnly = false,
+  lockedKind,
   triggerLabel = "Criar novo fluxo",
 }: {
   clanId: string;
   initialKind?: CompanyFlowKind;
-  amendmentOnly?: boolean;
+  lockedKind?: Extract<CompanyFlowKind, "amendment" | "closure">;
   triggerLabel?: string;
 }) {
   const router = useRouter();
-  const effectiveInitialKind: CompanyFlowKind = amendmentOnly
-    ? "amendment"
-    : initialKind;
+  const effectiveInitialKind: CompanyFlowKind = lockedKind ?? initialKind;
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [kind, setKind] = useState<CompanyFlowKind>(effectiveInitialKind);
@@ -922,16 +920,22 @@ export function NewCompanyFlowDialog({
       <DialogTrigger asChild>
         <Button
           type="button"
-          size={amendmentOnly ? "sm" : "lg"}
-          variant={amendmentOnly ? "outline" : "default"}
-          className={amendmentOnly ? undefined : "shadow-sm"}
+          size={lockedKind ? "sm" : "lg"}
+          variant={lockedKind ? "outline" : "default"}
+          className={lockedKind ? undefined : "shadow-sm"}
         >
           <Plus aria-hidden /> {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>{amendmentOnly ? "Nova alteração" : "Novo Fluxo"}</DialogTitle>
+          <DialogTitle>
+            {lockedKind === "amendment"
+              ? "Nova alteração"
+              : lockedKind === "closure"
+                ? "Nova baixa"
+                : "Novo Fluxo"}
+          </DialogTitle>
           <DialogDescription>
             Registre o pedido do cliente. Ele será enviado ao Societário sem
             virar missão ou informativo ainda.
@@ -939,11 +943,11 @@ export function NewCompanyFlowDialog({
         </DialogHeader>
         <div className="grid gap-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            {amendmentOnly ? (
+            {lockedKind ? (
               <div className="grid gap-1.5">
                 <Label>Tipo</Label>
                 <div className="flex h-9 items-center rounded-md border bg-muted/25 px-3 text-sm font-medium">
-                  Alteração
+                  {COMPANY_FLOW_KIND_LABELS[lockedKind]}
                 </div>
               </div>
             ) : (

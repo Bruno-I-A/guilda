@@ -228,7 +228,7 @@ export default async function InformativosPage({
           flowId={flowForInformative?.flow.id}
           amendmentSummary={amendmentSummary}
           societarioClanId={societarioClanId}
-          canCreateAmendmentFlow={isAdminRole(role)}
+          canCreateCompanyFlow={isAdminRole(role)}
         />
       ) : (
         <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">

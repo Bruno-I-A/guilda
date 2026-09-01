@@ -98,7 +98,7 @@ export function InformativePanel({
   flowId,
   amendmentSummary,
   societarioClanId,
-  canCreateAmendmentFlow = false,
+  canCreateCompanyFlow = false,
 }: {
   draft: DraftView | null;
   clans: { id: string; name: string }[];
@@ -108,7 +108,7 @@ export function InformativePanel({
   flowId?: string;
   amendmentSummary?: AmendmentSummaryView | null;
   societarioClanId?: string | null;
-  canCreateAmendmentFlow?: boolean;
+  canCreateCompanyFlow?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -197,13 +197,19 @@ export function InformativePanel({
         <AccountantChangeWizard clients={clients} onDone={() => setAccountantChangeOpen(false)} />
       ) : (
         <div className="grid gap-2">
-          <div className="flex justify-end gap-2">
-            {!flowId && canCreateAmendmentFlow && societarioClanId ? (
+          <div className="flex flex-wrap justify-end gap-2">
+            {!flowId && canCreateCompanyFlow && societarioClanId ? (
               <NewCompanyFlowDialog
                 clanId={societarioClanId}
-                initialKind="amendment"
-                amendmentOnly
+                lockedKind="amendment"
                 triggerLabel="Alteração de empresa"
+              />
+            ) : null}
+            {!flowId && canCreateCompanyFlow && societarioClanId ? (
+              <NewCompanyFlowDialog
+                clanId={societarioClanId}
+                lockedKind="closure"
+                triggerLabel="Baixa de empresa"
               />
             ) : null}
             {!flowId ? <Button variant="outline" size="sm" onClick={() => setAccountantChangeOpen(true)}>Baixa por desligamento</Button> : null}
