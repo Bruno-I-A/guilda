@@ -21,7 +21,6 @@ import { cn } from "@/lib/utils";
 
 import {
   ClientRowActions,
-  ImportClientsButton,
   NewClientButton,
 } from "./client-actions";
 
@@ -90,12 +89,7 @@ export default async function ClientsPage({
             <span className="font-mono tabular-nums">{clientList.length}</span>.
           </>
         }
-        action={
-          <>
-            {isAdmin ? <ImportClientsButton /> : null}
-            <NewClientButton />
-          </>
-        }
+        action={<NewClientButton />}
       />
 
       {/* Filtros no mesmo trilho: as abas de regime e a busca dividem a
@@ -137,7 +131,7 @@ export default async function ClientsPage({
           <p className="max-w-sm text-sm text-muted-foreground">
             {q || regime !== "all"
               ? "Ajuste a busca ou o filtro de regime."
-              : "Cadastre manualmente ou importe uma planilha com as empresas."}
+              : "Cadastre uma empresa para começar."}
           </p>
         </div>
       ) : (
