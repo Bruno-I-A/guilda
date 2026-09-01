@@ -34,6 +34,7 @@ import {
 } from "./actions";
 import { NewClientWizard } from "./new-client-wizard";
 import { AccountantChangeWizard } from "./accountant-change-wizard";
+import { NewCompanyFlowDialog } from "../clans/[id]/company-flow-board";
 
 export interface DraftTaskView {
   index: number;
@@ -96,6 +97,8 @@ export function InformativePanel({
   initialSourceText = "",
   flowId,
   amendmentSummary,
+  societarioClanId,
+  canCreateAmendmentFlow = false,
 }: {
   draft: DraftView | null;
   clans: { id: string; name: string }[];
@@ -104,6 +107,8 @@ export function InformativePanel({
   initialSourceText?: string;
   flowId?: string;
   amendmentSummary?: AmendmentSummaryView | null;
+  societarioClanId?: string | null;
+  canCreateAmendmentFlow?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -193,6 +198,14 @@ export function InformativePanel({
       ) : (
         <div className="grid gap-2">
           <div className="flex justify-end gap-2">
+            {!flowId && canCreateAmendmentFlow && societarioClanId ? (
+              <NewCompanyFlowDialog
+                clanId={societarioClanId}
+                initialKind="amendment"
+                amendmentOnly
+                triggerLabel="Alteração de empresa"
+              />
+            ) : null}
             {!flowId ? <Button variant="outline" size="sm" onClick={() => setAccountantChangeOpen(true)}>Baixa por desligamento</Button> : null}
             <Button variant="outline" size="sm" onClick={() => setWizardOpen(true)}>
               <Building2 className="size-4" aria-hidden /> Novo cliente

@@ -12,6 +12,7 @@ import {
 import { canHandleInformatives, isAdminRole } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
 import { informativeDraftPayloadSchema } from "@/lib/ai/informative-schema";
+import { SOCIETARIO_CLAN_SLUG } from "@/lib/clans/rules";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 
 import { InformativePanel, type DraftView } from "./informative-panel";
@@ -29,7 +30,14 @@ export default async function InformativosPage({
   const role = viewer.role as OrgRole;
   const { flowId } = await searchParams;
 
-  const { pendingDraft, clans, members, clients, leadsAnyClan } = await withOrgTx(
+  const {
+    pendingDraft,
+    clans,
+    members,
+    clients,
+    leadsAnyClan,
+    societarioClanId,
+  } = await withOrgTx(
     session.orgId,
     async (tx) => {
       const draftRow = await tx
@@ -45,7 +53,7 @@ export default async function InformativosPage({
         .orderBy(desc(schema.informatives.createdAt))
         .limit(1);
       const clanRows = await tx
-        .select({ id: schema.clans.id, name: schema.clans.name })
+        .select({ id: schema.clans.id, name: schema.clans.name, slug: schema.clans.slug })
         .from(schema.clans)
         .where(
           and(
@@ -91,6 +99,8 @@ export default async function InformativosPage({
         members: memberRows,
         clients: clientRows,
         leadsAnyClan: leadership.length > 0,
+        societarioClanId:
+          clanRows.find((clan) => clan.slug === SOCIETARIO_CLAN_SLUG)?.id ?? null,
       };
     },
   );
@@ -217,6 +227,8 @@ export default async function InformativosPage({
           initialSourceText={initialFlowText}
           flowId={flowForInformative?.flow.id}
           amendmentSummary={amendmentSummary}
+          societarioClanId={societarioClanId}
+          canCreateAmendmentFlow={isAdminRole(role)}
         />
       ) : (
         <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">

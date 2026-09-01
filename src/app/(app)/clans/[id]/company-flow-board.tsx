@@ -667,15 +667,24 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
   );
 }
 
-function NewCompanyFlowDialog({
+export function NewCompanyFlowDialog({
   clanId,
+  initialKind = "opening",
+  amendmentOnly = false,
+  triggerLabel = "Criar novo fluxo",
 }: {
   clanId: string;
+  initialKind?: CompanyFlowKind;
+  amendmentOnly?: boolean;
+  triggerLabel?: string;
 }) {
   const router = useRouter();
+  const effectiveInitialKind: CompanyFlowKind = amendmentOnly
+    ? "amendment"
+    : initialKind;
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [kind, setKind] = useState<CompanyFlowKind>("opening");
+  const [kind, setKind] = useState<CompanyFlowKind>(effectiveInitialKind);
   const [existingClientId, setExistingClientId] = useState("");
   const [companyCnpj, setCompanyCnpj] = useState("");
   const companyCnpjRef = useRef("");
@@ -737,7 +746,7 @@ function NewCompanyFlowDialog({
   }
 
   function resetFlowForm() {
-    setKind("opening");
+    setKind(effectiveInitialKind);
     setCompanyCnpj("");
     companyCnpjRef.current = "";
     clearFlowValues();
@@ -911,16 +920,35 @@ function NewCompanyFlowDialog({
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogTrigger asChild>
-        <Button type="button" size="lg" className="shadow-sm"><Plus aria-hidden /> Criar novo fluxo</Button>
+        <Button
+          type="button"
+          size={amendmentOnly ? "sm" : "lg"}
+          variant={amendmentOnly ? "outline" : "default"}
+          className={amendmentOnly ? undefined : "shadow-sm"}
+        >
+          <Plus aria-hidden /> {triggerLabel}
+        </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Novo Fluxo</DialogTitle>
-          <DialogDescription>Registre o pedido do cliente. Ele será enviado ao Societário sem virar missão ou informativo ainda.</DialogDescription>
+          <DialogTitle>{amendmentOnly ? "Nova alteração" : "Novo Fluxo"}</DialogTitle>
+          <DialogDescription>
+            Registre o pedido do cliente. Ele será enviado ao Societário sem
+            virar missão ou informativo ainda.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-1.5"><Label>Tipo</Label><Select value={kind} onValueChange={(value) => handleKindChange(value as CompanyFlowKind)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="opening">Abertura</SelectItem><SelectItem value="amendment">Alteração</SelectItem><SelectItem value="closure">Baixa</SelectItem></SelectContent></Select></div>
+            {amendmentOnly ? (
+              <div className="grid gap-1.5">
+                <Label>Tipo</Label>
+                <div className="flex h-9 items-center rounded-md border bg-muted/25 px-3 text-sm font-medium">
+                  Alteração
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-1.5"><Label>Tipo</Label><Select value={kind} onValueChange={(value) => handleKindChange(value as CompanyFlowKind)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="opening">Abertura</SelectItem><SelectItem value="amendment">Alteração</SelectItem><SelectItem value="closure">Baixa</SelectItem></SelectContent></Select></div>
+            )}
             {opening ? null : (
               <div className="grid gap-1.5">
                 <Label htmlFor="flow-company-cnpj">CNPJ da empresa {kind === "amendment" ? "que será alterada" : "que será baixada"}</Label>
