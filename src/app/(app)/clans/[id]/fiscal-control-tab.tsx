@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -92,6 +92,7 @@ export async function FiscalControlTab({
           eq(schema.fiscalControlPeriods.orgId, orgId),
           eq(schema.fiscalControlPeriods.periodYear, period.year),
           eq(schema.fiscalControlPeriods.periodMonth, period.month),
+          ne(schema.clients.taxRegime, "mei"),
         ),
       )
       .orderBy(asc(schema.clients.name));

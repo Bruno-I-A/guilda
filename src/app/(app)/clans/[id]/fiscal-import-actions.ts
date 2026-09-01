@@ -1,6 +1,6 @@
 "use server";
 
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { readSheet } from "read-excel-file/node";
 import { z } from "zod";
@@ -191,7 +191,12 @@ export async function previewFiscalSpreadsheet(
           eq(schema.fiscalClientProfiles.clientId, schema.clients.id),
         ),
       )
-      .where(eq(schema.clients.orgId, ctx.orgId))
+      .where(
+        and(
+          eq(schema.clients.orgId, ctx.orgId),
+          ne(schema.clients.taxRegime, "mei"),
+        ),
+      )
       .orderBy(asc(schema.clients.name));
     const aliases = await tx
       .select({
@@ -445,6 +450,7 @@ export async function applyFiscalImport(
           .where(
             and(
               eq(schema.clients.orgId, ctx.orgId),
+              ne(schema.clients.taxRegime, "mei"),
               inArray(schema.clients.id, [...new Set(targetIds)]),
             ),
           )

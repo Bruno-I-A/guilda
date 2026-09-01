@@ -138,11 +138,14 @@ export async function saveFiscalClientProfile(
     }
 
     const [client] = await tx
-      .select({ id: schema.clients.id })
+      .select({ id: schema.clients.id, taxRegime: schema.clients.taxRegime })
       .from(schema.clients)
       .where(and(eq(schema.clients.orgId, ctx.orgId), eq(schema.clients.id, data.clientId)))
       .for("update");
     if (!client) return err("Empresa não encontrada.");
+    if (client.taxRegime === "mei") {
+      return err("Empresas MEI são controladas exclusivamente na aba MEI.");
+    }
 
     const [current] = await tx
       .select()

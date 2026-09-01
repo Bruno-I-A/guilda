@@ -25,6 +25,7 @@ import { ClanTabNav } from "./clan-tab-nav";
 import { ClosingsTab, type ClosingsTabParams } from "./closings-tab";
 import { CommitmentsTab } from "./commitments-tab";
 import { MembersTab } from "./members-tab";
+import { MeiTab } from "./mei-tab";
 import { MissionsTab } from "./missions-tab";
 import { PortfolioTab } from "./portfolio-tab";
 import { CompanyDataTab } from "./company-data-tab";
@@ -56,6 +57,7 @@ export default async function ClanPage({
       feeView?: string;
       fiscalYear?: string;
       fiscalMonth?: string;
+      meiYear?: string;
     } & ClosingsTabParams
   >;
 }) {
@@ -67,6 +69,7 @@ export default async function ClanPage({
     feeView,
     fiscalYear,
     fiscalMonth,
+    meiYear,
     ...filters
   } = await searchParams;
   const session = await requireOrgSession();
@@ -241,6 +244,15 @@ export default async function ClanPage({
           requestedView={fiscalView}
           requestedYear={fiscalYear}
           requestedMonth={fiscalMonth}
+        />
+      ) : null}
+
+      {activeTab === "mei" ? (
+        <MeiTab
+          orgId={session.orgId}
+          clanId={clan.id}
+          canManage={canManageFiscalPortfolio(clanFacts)}
+          requestedYear={meiYear}
         />
       ) : null}
 

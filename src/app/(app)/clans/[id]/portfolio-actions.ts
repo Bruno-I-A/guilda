@@ -1,6 +1,6 @@
 "use server";
 
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -98,6 +98,7 @@ export async function assignPortfolioClients(
         .where(
           and(
             eq(schema.clients.orgId, ctx.orgId),
+            ne(schema.clients.taxRegime, "mei"),
             inArray(schema.clients.id, clientIds),
           ),
         )
@@ -267,6 +268,7 @@ export async function confirmNewClientPortfolio(
         id: schema.clients.id,
         name: schema.clients.name,
         active: schema.clients.active,
+        taxRegime: schema.clients.taxRegime,
         pendingFiscalNote: schema.clients.pendingFiscalNote,
         pendingFiscalAssignment: schema.clients.pendingFiscalAssignment,
       })
@@ -275,6 +277,9 @@ export async function confirmNewClientPortfolio(
       .for("update");
     if (!client) return err("Empresa não encontrada.");
     if (!client.active) return err("Empresa inativa não entra em carteira.");
+    if (client.taxRegime === "mei") {
+      return err("Empresas MEI são controladas exclusivamente na aba MEI.");
+    }
     if (!client.pendingFiscalAssignment) {
       return err("Esta empresa já teve a entrada na carteira confirmada.");
     }

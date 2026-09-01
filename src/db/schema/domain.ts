@@ -560,11 +560,9 @@ export const clients = pgTable(
     suggestedFiscalOwnerId: text("suggested_fiscal_owner_id").references(
       () => user.id,
     ),
-    // true em TODO cliente recém-criado (qualquer via, não só o fluxo de
-    // CNPJ) — inclusive quando não há nota nenhuma (ex.: "FISCAL - sem
-    // particularidades"). Sem isto, esse caso ficaria indistinguível de
-    // qualquer empresa antiga sem responsável na aba Carteira. Zerado junto
-    // com os dois campos acima quando o líder confirma quem assume.
+    // true em cliente não-MEI recém-criado pelo fluxo de Informativos —
+    // inclusive quando não há nota nenhuma. MEIs seguem diretamente para a
+    // planilha anual e nunca entram nessa fila de carteira.
     pendingFiscalAssignment: boolean("pending_fiscal_assignment")
       .notNull()
       .default(false),
@@ -584,6 +582,64 @@ export const clients = pgTable(
 );
 
 export type Client = typeof clients.$inferSelect;
+
+/** Situação da declaração anual DASN-SIMEI no ano-calendário. */
+export const meiDeclarationStatus = pgEnum("mei_declaration_status", [
+  "pending",
+  "in_progress",
+  "submitted",
+]);
+
+/**
+ * Controle anual exclusivo das empresas MEI. A ausência de uma linha significa
+ * "pendente"; ela é criada no primeiro salvamento da planilha.
+ */
+export const meiAnnualDeclarations = pgTable(
+  "mei_annual_declarations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    year: smallint("year").notNull(),
+    status: meiDeclarationStatus("status").notNull().default("pending"),
+    submittedAt: date("submitted_at", { mode: "string" }),
+    notes: text("notes"),
+    updatedBy: text("updated_by")
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+      name: "mei_annual_declarations_org_client_fk",
+    }).onDelete("cascade"),
+    uniqueIndex("mei_annual_declarations_org_client_year_uidx").on(
+      t.orgId,
+      t.clientId,
+      t.year,
+    ),
+    index("mei_annual_declarations_org_year_status_idx").on(
+      t.orgId,
+      t.year,
+      t.status,
+    ),
+    check(
+      "mei_annual_declarations_year_check",
+      sql`${t.year} BETWEEN 2000 AND 2100`,
+    ),
+    check(
+      "mei_annual_declarations_submission_check",
+      sql`(${t.status} = 'submitted' AND ${t.submittedAt} IS NOT NULL) OR (${t.status} <> 'submitted' AND ${t.submittedAt} IS NULL)`,
+    ),
+  ],
+);
+
+export type MeiAnnualDeclaration = typeof meiAnnualDeclarations.$inferSelect;
 
 /**
  * Lote durável da importação de clientes. As consultas externas são feitas em

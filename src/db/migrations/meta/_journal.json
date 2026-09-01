@@ -463,6 +463,13 @@
       "when": 1788215302413,
       "tag": "0065_quick_norrin_radd",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1788288496266,
+      "tag": "0066_tidy_exodus",
+      "breakpoints": true
     }
   ]
 }

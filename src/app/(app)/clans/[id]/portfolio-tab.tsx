@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, ne } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -17,9 +17,9 @@ import {
 /**
  * A carteira do clã Fiscal: quais empresas estão sob responsabilidade de quem.
  *
- * A tela mostra a Guilda inteira de empresas — inclusive as que ninguém pegou,
- * que são o motivo de a tela existir. Empresa inativa só aparece se ainda
- * estiver presa a alguém, para poder ser limpa.
+ * A tela mostra todas as empresas não-MEI — inclusive as que ninguém pegou,
+ * que são o motivo de a tela existir. Os MEIs vivem no controle anual próprio.
+ * Empresa inativa só aparece se ainda estiver presa a alguém, para ser limpa.
  */
 export async function PortfolioTab({
   orgId,
@@ -102,7 +102,12 @@ export async function PortfolioTab({
           eq(schema.fiscalClientProfiles.clientId, schema.clients.id),
         ),
       )
-      .where(eq(schema.clients.orgId, orgId))
+      .where(
+        and(
+          eq(schema.clients.orgId, orgId),
+          ne(schema.clients.taxRegime, "mei"),
+        ),
+      )
       .orderBy(asc(schema.clients.name));
 
     const historyRows = await tx

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, ne } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -132,6 +132,7 @@ export async function materializeFiscalControl(
       and(
         eq(schema.clients.orgId, input.orgId),
         eq(schema.clients.active, true),
+        ne(schema.clients.taxRegime, "mei"),
       ),
     )
     .orderBy(asc(schema.clients.id))

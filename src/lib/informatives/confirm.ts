@@ -531,11 +531,17 @@ export async function confirmInformative(
           cnaeDescription: payload.company.cnaeDescription,
           secondaryCnaes: payload.company.secondaryCnaes,
           openedAt: payload.company.openedAt,
-          pendingFiscalNote: payload.company.pendingFiscalNote,
-          suggestedFiscalOwnerId: payload.company.suggestedFiscalOwnerId,
-          // Todo cliente que nasce aqui precisa de alguém na carteira fiscal
-          // — mesmo sem nota nenhuma (ver comentário no schema).
-          pendingFiscalAssignment: true,
+          pendingFiscalNote:
+            payload.company.taxRegime === "mei"
+              ? null
+              : payload.company.pendingFiscalNote,
+          suggestedFiscalOwnerId:
+            payload.company.taxRegime === "mei"
+              ? null
+              : payload.company.suggestedFiscalOwnerId,
+          // Todo cliente não-MEI precisa entrar na decisão da carteira fiscal.
+          // O MEI segue direto para o controle anual próprio.
+          pendingFiscalAssignment: payload.company.taxRegime !== "mei",
         })
         .onConflictDoNothing()
         .returning({ id: schema.clients.id });
