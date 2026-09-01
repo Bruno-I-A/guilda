@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
  *
  * A rota resolve o clã, os vínculos do visitante e ainda a consulta da aba
  * ativa antes de pintar. A silhueta cobre o caso comum — a aba Missões, a
- * Mesa do Líder — porque é o padrão de `parseClanTab` e o que quase todo
+ * Mesa do clã — porque é o padrão de `parseClanTab` e o que quase todo
  * acesso abre.
  *
  * A barra de abas é o trilho sublinhado do <SegmentedNav> (borda inferior +
@@ -68,7 +68,7 @@ export default function ClanLoading() {
             ))}
           </div>
 
-          {/* Mesa do Líder: a fila de missões sem responsável */}
+          {/* Mesa do clã: a fila de missões sem responsável */}
           <section className="grid gap-3">
             <Skeleton className="h-3 w-40 rounded-none" />
             <div className="panel-cut grid gap-2.5 p-4">

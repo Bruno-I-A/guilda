@@ -18,7 +18,7 @@ export interface TransferAuthorizationContext {
     clanId: string;
     assigneeIsActiveMember: boolean;
   };
-  actorIsActiveLeaderOfTaskClan: boolean;
+  actorIsActiveMemberOfTaskClan: boolean;
 }
 
 export type ClanResolution =
@@ -75,11 +75,11 @@ export function authorizeTaskTransfer(
   if (!task.clanId || task.clanId !== destination.clanId) {
     return deny("Apenas admin ou owner pode transferir uma missão entre clãs.");
   }
-  if (ctx.actorIsActiveLeaderOfTaskClan) return ALLOW;
+  if (ctx.actorIsActiveMemberOfTaskClan) return ALLOW;
   if (task.assigneeId === actor.id) return ALLOW;
 
   return deny(
-    "Apenas a pessoa responsável, um líder do clã ou um admin pode transferir a missão.",
+    "Apenas integrantes do clã ou um admin podem transferir a missão.",
   );
 }
 

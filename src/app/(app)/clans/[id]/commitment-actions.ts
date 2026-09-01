@@ -60,7 +60,7 @@ async function requireDistributionManager(
   }
   if (!canManageClanCommitments(facts)) {
     return err(
-      "Apenas o líder da Contabilidade ou um admin pode gerenciar as distribuições.",
+      "Apenas integrantes da Contabilidade ou um admin podem gerenciar as distribuições.",
     );
   }
   return { ok: true, clanId: clan.id };

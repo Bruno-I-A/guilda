@@ -72,7 +72,7 @@ export async function assignPortfolioClients(
       }
       if (!canManageFiscalPortfolio(facts)) {
         return err(
-          "Apenas o líder deste clã ou um admin pode remanejar a carteira.",
+          "Apenas integrantes do Fiscal ou um admin podem remanejar a carteira.",
         );
       }
 
@@ -217,7 +217,7 @@ const NEW_CLIENT_PORTFOLIO_XP = 30;
  * CNPJ dos Informativos, com `pending_fiscal_note`/`suggested_fiscal_owner_id`
  * em aberto). Diferente de `assignPortfolioClients` (remanejamento do dia a
  * dia, sem XP): aqui é a primeira atribuição de uma empresa que acabou de
- * nascer, então a decisão do líder também credita XP a quem recebeu —
+ * nascer, então a decisão da equipe também credita XP a quem recebeu —
  * incorporar um cliente novo é responsabilidade de verdade, e uma missão já
  * `completed` fica no histórico da pessoa como registro dessa decisão.
  */
@@ -247,7 +247,7 @@ export async function confirmNewClientPortfolio(
       return err("Este clã não trabalha por carteira.");
     }
     if (!canManageFiscalPortfolio(facts)) {
-      return err("Apenas o líder deste clã ou um admin pode definir a carteira.");
+      return err("Apenas integrantes do Fiscal ou um admin podem definir a carteira.");
     }
 
     const targetIsActiveClanMember = await isActiveClanMember(

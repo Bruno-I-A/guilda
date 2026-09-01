@@ -86,7 +86,7 @@ export async function saveFiscalInstallment(
 
   const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<{ id: string }>> => {
     if (!(await canManageInstallments(tx, ctx, data.clanId))) {
-      return err("Apenas a liderança do Fiscal ou um admin pode alterar parcelamentos.");
+      return err("Apenas integrantes do Fiscal ou um admin podem alterar parcelamentos.");
     }
     const [client] = await tx
       .select({ id: schema.clients.id })
@@ -167,7 +167,7 @@ export async function deleteFiscalInstallment(
 
   const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
     if (!(await canManageInstallments(tx, ctx, data.clanId))) {
-      return err("Apenas a liderança do Fiscal ou um admin pode excluir parcelamentos.");
+      return err("Apenas integrantes do Fiscal ou um admin podem excluir parcelamentos.");
     }
     const removed = await tx
       .delete(schema.fiscalInstallments)
@@ -203,7 +203,7 @@ export async function changeFiscalInstallmentPaid(
 
   const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<{ paidInstallments: number }>> => {
     if (!(await canManageInstallments(tx, ctx, data.clanId))) {
-      return err("Apenas a liderança do Fiscal ou um admin pode alterar o progresso.");
+      return err("Apenas integrantes do Fiscal ou um admin podem alterar o progresso.");
     }
     const [installment] = await tx
       .select({
@@ -270,7 +270,7 @@ export async function setFiscalInstallmentGenerated(
 
   const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
     if (!(await canManageInstallments(tx, ctx, data.clanId))) {
-      return err("Apenas a liderança do Fiscal ou um admin pode marcar parcelas geradas.");
+      return err("Apenas integrantes do Fiscal ou um admin podem marcar parcelas geradas.");
     }
     const [installment] = await tx
       .select({
@@ -412,7 +412,7 @@ export async function previewInstallmentImport(
 
   return withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<InstallmentImportPreview>> => {
     if (!(await canManageInstallments(tx, ctx, clanId))) {
-      return err("Apenas a liderança do Fiscal ou um admin pode importar parcelamentos.");
+      return err("Apenas integrantes do Fiscal ou um admin podem importar parcelamentos.");
     }
     const clients = await tx
       .select({ id: schema.clients.id, name: schema.clients.name })
@@ -493,7 +493,7 @@ export async function applyInstallmentImport(
 
   const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<{ imported: number }>> => {
     if (!(await canManageInstallments(tx, ctx, data.clanId))) {
-      return err("Apenas a liderança do Fiscal ou um admin pode importar parcelamentos.");
+      return err("Apenas integrantes do Fiscal ou um admin podem importar parcelamentos.");
     }
     const clientIds = [...new Set(data.rows.map((row) => row.clientId))];
     const clients = await tx

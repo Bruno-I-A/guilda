@@ -291,9 +291,9 @@ export const taskTransfers = pgTable(
 /**
  * Sugestões de responsável extraídas do informativo ("Att. FULANO").
  * São SUGESTÃO, nunca atribuição: a missão de clã nasce sem responsável e o
- * líder decide. Uma linha pode citar duas pessoas ("Rafa/Bruno"), por isso é
+ * equipe decide. Uma linha pode citar duas pessoas ("Rafa/Bruno"), por isso é
  * tabela e não coluna. `user_id` fica nulo quando o nome não casa com ninguém
- * do diretório — o registro do nome cru é a trilha para o líder entender.
+ * do diretório — o registro do nome cru é a trilha para a equipe entender.
  */
 export const taskAssigneeSuggestions = pgTable(
   "task_assignee_suggestions",
@@ -553,7 +553,7 @@ export const clients = pgTable(
     >(),
     openedAt: date("opened_at", { mode: "string" }),
     // Combinado do Fiscal extraído do informativo de cliente novo (ex.: Fator
-    // R, faturamento) — mora aqui só até o líder confirmar a carteira. A Ficha
+    // R, faturamento) — mora aqui só até a equipe confirmar a carteira. A Ficha
     // Fiscal permanente recebe o texto antes de estes campos serem limpos;
     // trocar o responsável não altera a ficha.
     pendingFiscalNote: text("pending_fiscal_note"),

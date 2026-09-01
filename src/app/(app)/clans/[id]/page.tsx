@@ -137,6 +137,10 @@ export default async function ClanPage({
     memberships.some(
       (membership) => membership.userId === session.user.id && membership.isLeader,
     );
+  const isActiveClanMember =
+    clan.active &&
+    memberships.some((membership) => membership.userId === session.user.id);
+  const clanFacts = { role, leadsThisClan, isActiveClanMember };
   const activeTab = parseClanTab(tab, clan.slug);
 
   return (
@@ -187,7 +191,7 @@ export default async function ClanPage({
           orgId={session.orgId}
           clanId={clan.id}
           memberships={memberships}
-          canDistribute={canDistributeClanTasks({ role, leadsThisClan })}
+          canDistribute={canDistributeClanTasks(clanFacts)}
           canQuickComplete={canQuickCompleteUnassignedInformativeTask({
             role,
             leadsThisClan,
@@ -213,7 +217,7 @@ export default async function ClanPage({
         <CampaignsTab
           orgId={session.orgId}
           clanId={clan.id}
-          canManage={canDistributeClanTasks({ role, leadsThisClan })}
+          canManage={canDistributeClanTasks(clanFacts)}
           isFiscal={clan.slug === "fiscal"}
         />
       ) : null}
@@ -222,7 +226,7 @@ export default async function ClanPage({
         <CommitmentsTab
           orgId={session.orgId}
           clanId={clan.id}
-          canManage={canManageClanCommitments({ role, leadsThisClan })}
+          canManage={canManageClanCommitments(clanFacts)}
           requestedYear={distributionYear}
         />
       ) : null}
@@ -233,7 +237,7 @@ export default async function ClanPage({
           clanId={clan.id}
           memberships={memberships}
           viewerId={session.user.id}
-          canManage={canManageFiscalPortfolio({ role, leadsThisClan })}
+          canManage={canManageFiscalPortfolio(clanFacts)}
           requestedView={fiscalView}
           requestedYear={fiscalYear}
           requestedMonth={fiscalMonth}
@@ -244,7 +248,7 @@ export default async function ClanPage({
         <FiscalInstallmentTab
           orgId={session.orgId}
           clanId={clan.id}
-          canManage={canManageFiscalPortfolio({ role, leadsThisClan })}
+          canManage={canManageFiscalPortfolio(clanFacts)}
           requestedYear={fiscalYear}
           requestedMonth={fiscalMonth}
         />
@@ -255,7 +259,7 @@ export default async function ClanPage({
           orgId={session.orgId}
           clanId={clan.id}
           viewerId={session.user.id}
-          canManage={canManageFiscalPortfolio({ role, leadsThisClan })}
+          canManage={canManageFiscalPortfolio(clanFacts)}
           memberships={memberships}
           requestedView={feeView}
           requestedYear={fiscalYear}

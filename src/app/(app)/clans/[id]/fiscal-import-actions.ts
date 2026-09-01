@@ -136,7 +136,7 @@ export async function previewFiscalSpreadsheet(
     assertFiscalManager(tx, ctx, clanId),
   );
   if (!authorized) {
-    return err("Apenas a liderança do Fiscal ou um admin pode importar a planilha.");
+    return err("Apenas integrantes do Fiscal ou um admin podem importar a planilha.");
   }
 
   const file = formData.get("file");
@@ -166,7 +166,7 @@ export async function previewFiscalSpreadsheet(
 
   const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<FiscalImportPreview>> => {
     if (!(await assertFiscalManager(tx, ctx, clanId))) {
-      return err("Apenas a liderança do Fiscal ou um admin pode importar a planilha.");
+      return err("Apenas integrantes do Fiscal ou um admin podem importar a planilha.");
     }
     const clients = await tx
       .select({
@@ -385,7 +385,7 @@ export async function applyFiscalImport(
 
   const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<FiscalImportApplyResult>> => {
     if (!(await assertFiscalManager(tx, ctx, data.clanId))) {
-      return err("Apenas a liderança do Fiscal ou um admin pode concluir a importação.");
+      return err("Apenas integrantes do Fiscal ou um admin podem concluir a importação.");
     }
     const [batch] = await tx
       .select()

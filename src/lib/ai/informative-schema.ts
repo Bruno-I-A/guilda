@@ -157,7 +157,7 @@ export const informativeDraftPayloadSchema = informativeExtractionSchema
         .nullable()
         .default(null),
       // Resolvidos a partir de fiscalNote — combinado do Fiscal e a pessoa
-      // sugerida, pendentes até o líder confirmar a carteira (ver
+      // sugerida, pendentes até a equipe confirmar a carteira (ver
       // src/app/(app)/clans/[id]/portfolio-actions.ts).
       pendingFiscalNote: z.string().trim().max(1000).nullable().default(null),
       suggestedFiscalOwnerId: z.string().min(1).nullable().default(null),

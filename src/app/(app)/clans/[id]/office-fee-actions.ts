@@ -18,7 +18,7 @@ import {
   canUpdateFiscalControl,
 } from "@/domain/guild-permissions";
 import { err, requireMemberContext, type ActionResult } from "@/lib/action-context";
-import { isActiveClanMember, loadClanScopedFacts } from "@/lib/clans/facts";
+import { loadClanScopedFacts } from "@/lib/clans/facts";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 import { FISCAL_CLAN_SLUG } from "@/lib/clans/rules";
 import {
@@ -98,7 +98,7 @@ export async function saveOfficeFeeProfile(
     });
     if (!fiscal) return err("Clã Fiscal não encontrado.");
     if (!canManageFiscalOperations(fiscal.facts)) {
-      return err("Apenas a liderança do Fiscal ou um admin pode editar honorários.");
+      return err("Apenas integrantes do Fiscal ou um admin podem editar honorários.");
     }
     const [client] = await tx
       .select({ id: schema.clients.id })
@@ -195,7 +195,7 @@ export async function openOfficeFeeControlPeriod(
     });
     if (!fiscal) return err("Clã Fiscal não encontrado.");
     if (!canManageFiscalOperations(fiscal.facts)) {
-      return err("Apenas a liderança do Fiscal ou um admin pode abrir o controle de honorários.");
+      return err("Apenas integrantes do Fiscal ou um admin podem abrir o controle de honorários.");
     }
     return { ok: true, data: await materializeOfficeFeeControl(tx, {
       orgId: ctx.orgId,
@@ -249,12 +249,9 @@ export async function updateOfficeFeeControl(
       .where(and(eq(schema.officeFeeControlPeriods.orgId, ctx.orgId), eq(schema.officeFeeControlPeriods.id, data.controlId)))
       .for("update");
     if (!control) return err("Controle mensal de honorários não encontrado.");
-    const activeMember = await isActiveClanMember(tx, ctx.orgId, data.clanId, ctx.userId);
-    if (!canUpdateFiscalControl({
-      ...fiscal.facts,
-      isActiveClanMember: activeMember,
-      ownsControlSnapshot: control.responsibleUserId === ctx.userId,
-    })) return err("Você só pode atualizar empresas da sua responsabilidade.");
+    if (!canUpdateFiscalControl(fiscal.facts)) {
+      return err("Apenas integrantes do Fiscal ou um admin podem atualizar honorários.");
+    }
 
     const nextSteps: Record<OfficeFeeStage, FiscalStepStatus> = {
       invoice: control.invoiceStatus,

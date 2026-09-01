@@ -1,7 +1,7 @@
 import type { OrgRole } from "./task-state";
 
 /**
- * Permissões da Mesa do Líder, dos informativos e do Mural.
+ * Permissões dos espaços de clã, dos informativos e do Mural.
  *
  * São funções puras: a Server Action carrega os fatos do banco (papel na
  * organização, liderança de clã ativo, autoria do aviso) e chama estas
@@ -55,6 +55,13 @@ export interface ClanScopedFacts {
   role: OrgRole;
   /** Lidera ESTE clã, e o clã está ativo. */
   leadsThisClan: boolean;
+  /** Integra ESTE clã e tanto o clã quanto o vínculo na organização estão ativos. */
+  isActiveClanMember: boolean;
+}
+
+/** Operação diária do clã: integrante ativo do próprio clã ou admin/owner. */
+export function canOperateClan(actor: ClanScopedFacts): boolean {
+  return isAdminRole(actor.role) || actor.isActiveClanMember;
 }
 
 /**
@@ -64,72 +71,61 @@ export interface ClanScopedFacts {
  * virando o espaço de trabalho da pessoa, entrar e sair de clã passou a
  * definir o que ela vê, então a composição vive nas Configurações da Guilda.
  *
- * O líder continua dono do dia a dia: distribui missões
- * (`canDistributeClanTasks`) e remaneja a carteira
- * (`canManageFiscalPortfolio`).
+ * As operações diárias são colaborativas entre os integrantes do próprio clã.
  */
-export function canManageClanMembership(actor: ClanScopedFacts): boolean {
+export function canManageClanMembership(
+  actor: Pick<ClanScopedFacts, "role">,
+): boolean {
   return isAdminRole(actor.role);
 }
 
 /**
- * Remanejar empresa entre pessoas da carteira fiscal é trabalho do dia a dia
- * do líder — mesma régua da Mesa do Líder. Membro comum enxerga a carteira
- * inteira do clã (transparência de quem responde pelo quê) mas não move nada.
+ * O espaço Fiscal é colaborativo: qualquer integrante ativo pode cadastrar,
+ * editar e remanejar empresas. Admin/owner mantém acesso de supervisão mesmo
+ * sem integrar o clã.
  */
 export function canManageFiscalPortfolio(actor: ClanScopedFacts): boolean {
-  return isAdminRole(actor.role) || actor.leadsThisClan;
+  return canOperateClan(actor);
 }
 
 /**
- * A Ficha Fiscal, a importação e a abertura de competências alteram a
- * configuração do trabalho de toda a equipe. Seguem, portanto, a mesma
- * régua da carteira: liderança do Fiscal ou admin/owner.
+ * Ficha Fiscal, importações, competências, parcelamentos e honorários seguem
+ * a mesma régua colaborativa da carteira.
  */
 export function canManageFiscalOperations(actor: ClanScopedFacts): boolean {
   return canManageFiscalPortfolio(actor);
 }
 
-export interface FiscalControlActorFacts extends ClanScopedFacts {
-  /** A pessoa continua como integrante ativa do clã Fiscal. */
-  isActiveClanMember: boolean;
-  /** A competência guardou essa pessoa como responsável no seu snapshot. */
-  ownsControlSnapshot: boolean;
-}
-
 /**
- * Líder/admin pode corrigir qualquer controle. Integrante comum atualiza
- * somente as empresas que ficaram sob sua responsabilidade quando a
- * competência foi aberta; remanejamentos futuros não reescrevem o histórico.
+ * Todo integrante ativo pode atualizar qualquer controle do espaço Fiscal.
+ * O snapshot de responsável continua registrado como histórico da competência,
+ * mas não limita mais quem pode executar a rotina.
  */
 export function canUpdateFiscalControl(
-  actor: FiscalControlActorFacts,
+  actor: ClanScopedFacts,
 ): boolean {
-  return (
-    canManageFiscalOperations(actor) ||
-    (actor.isActiveClanMember && actor.ownsControlSnapshot)
-  );
+  return canManageFiscalOperations(actor);
 }
 
-export function canAppointClanLeader(actor: ClanScopedFacts): boolean {
+export function canAppointClanLeader(
+  actor: Pick<ClanScopedFacts, "role">,
+): boolean {
   return isAdminRole(actor.role);
 }
 
-/** A Mesa distribui as missões do clã: líder do clã ou admin/owner. */
+/** Qualquer integrante ativo distribui as missões do próprio clã. */
 export function canDistributeClanTasks(actor: ClanScopedFacts): boolean {
-  return isAdminRole(actor.role) || actor.leadsThisClan;
+  return canOperateClan(actor);
 }
 
 export interface QuickCompleteClanTaskFacts extends ClanScopedFacts {
-  /** Quem confirma recebe o registro e o XP, então precisa integrar o clã. */
-  isActiveClanMember: boolean;
   /** Atalho reservado às rotinas simples do Sucesso do Cliente. */
   isCustomerSuccessClan: boolean;
 }
 
 /**
- * Conclusão de uma missão simples ainda sem dono: mantém a régua da Mesa do
- * Líder, mas exige que quem clicou possa ser registrado como executor.
+ * Conclusão de uma missão simples ainda sem dono: exige vínculo ativo com o
+ * Sucesso do Cliente para registrar quem executou.
  */
 export function canQuickCompleteUnassignedInformativeTask(
   actor: QuickCompleteClanTaskFacts,
@@ -142,11 +138,11 @@ export function canQuickCompleteUnassignedInformativeTask(
 }
 
 /**
- * Distribuição de lucros da empresa (planejar, registrar valor e gerar a
- * missão do período): mesma régua do dia a dia do líder da Contabilidade.
+ * Distribuição de lucros da empresa é operação diária compartilhada entre os
+ * integrantes ativos da Contabilidade.
  */
 export function canManageClanCommitments(actor: ClanScopedFacts): boolean {
-  return isAdminRole(actor.role) || actor.leadsThisClan;
+  return canOperateClan(actor);
 }
 
 export interface CompanyFlowActorFacts extends ClanScopedFacts {
@@ -171,12 +167,9 @@ export function canClaimCompanyFlow(actor: CompanyFlowActorFacts): boolean {
   return isAdminRole(actor.role) || actor.isActiveCorporateMember;
 }
 
-/** Só quem assumiu, liderança do Societário ou owner/admin pode devolver o resultado. */
+/** Qualquer integrante ativo do Societário pode devolver o resultado. */
 export function canReturnCompanyFlow(actor: CompanyFlowActorFacts): boolean {
-  return (
-    isAdminRole(actor.role) ||
-    (actor.isActiveCorporateMember && (actor.isAssignedToFlow || actor.leadsThisClan))
-  );
+  return isAdminRole(actor.role) || actor.isActiveCorporateMember;
 }
 
 /** A ponte para Informativos continua sendo uma decisão do dono/admin. */

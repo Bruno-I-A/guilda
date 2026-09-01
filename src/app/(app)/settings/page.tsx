@@ -34,7 +34,7 @@ export default async function SettingsPage() {
 
   // A composição dos clãs define o que cada pessoa enxerga — por isso vive
   // aqui, atrás do papel, e não na tela do clã (decisão de 2026-08-18).
-  if (!canManageClanMembership({ role: viewer.role as OrgRole, leadsThisClan: false })) {
+  if (!canManageClanMembership({ role: viewer.role as OrgRole })) {
     redirect("/dashboard");
   }
 

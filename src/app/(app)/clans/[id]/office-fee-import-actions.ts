@@ -118,7 +118,7 @@ export async function previewOfficeFeeSpreadsheet(
   if (!parsedInput.success) return err("Clã inválido.");
   const clanId = parsedInput.data.clanId;
   const authorized = await withOrgTx(ctx.orgId, (tx) => assertFiscalManager(tx, ctx, clanId));
-  if (!authorized) return err("Apenas a liderança do Fiscal ou um admin pode importar honorários.");
+  if (!authorized) return err("Apenas integrantes do Fiscal ou um admin podem importar honorários.");
 
   const file = formData.get("file");
   if (!(file instanceof File)) return err("Selecione uma planilha.");
@@ -142,7 +142,7 @@ export async function previewOfficeFeeSpreadsheet(
 
   return withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<OfficeFeeImportPreview>> => {
     if (!(await assertFiscalManager(tx, ctx, clanId))) {
-      return err("Apenas a liderança do Fiscal ou um admin pode concluir a prévia.");
+      return err("Apenas integrantes do Fiscal ou um admin podem concluir a prévia.");
     }
     const clients = await tx
       .select({
@@ -352,7 +352,7 @@ export async function applyOfficeFeeImport(
   const data = parsed.data;
   const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<OfficeFeeImportApplyResult>> => {
     if (!(await assertFiscalManager(tx, ctx, data.clanId))) {
-      return err("Apenas a liderança do Fiscal ou um admin pode concluir a importação.");
+      return err("Apenas integrantes do Fiscal ou um admin podem concluir a importação.");
     }
     const [batch] = await tx.select().from(schema.fiscalImportBatches).where(
       and(

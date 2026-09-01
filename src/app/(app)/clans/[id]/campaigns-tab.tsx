@@ -80,7 +80,7 @@ export async function CampaignsTab({
           title="Nenhuma campanha neste clã ainda"
           description={canManage
             ? "Abra a campanha do mês — por exemplo, a apuração de agosto."
-            : "Quando a liderança abrir a campanha do mês, ela aparece aqui."}
+            : "Quando a equipe abrir a campanha do mês, ela aparece aqui."}
         />
       ) : (
         <CampaignBoard

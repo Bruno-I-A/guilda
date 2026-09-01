@@ -212,7 +212,7 @@ export async function PortfolioTab({
     );
 
   // Empresas presas a quem não é mais do clã: aparecem à parte, com nome, para
-  // o líder redistribuir — some da carteira da pessoa mas não some da tela.
+  // o clã redistribuir — some da carteira da pessoa mas não some da tela.
   const strandedRows = relevant.filter(
     (row) => row.holderId && !memberIds.has(row.holderId),
   );
@@ -223,7 +223,7 @@ export async function PortfolioTab({
   }));
 
   // Cliente novo (qualquer via de cadastro) sem carteira ainda: ganha bloco
-  // próprio, à frente do "sem responsável" comum — é decisão do líder, não
+  // próprio, à frente do "sem responsável" comum — é decisão da equipe, não
   // fila normal. A pessoa sugerida só é usada se ainda for do clã hoje.
   const memberNameById = new Map(
     memberships.map((membership) => [membership.userId, membership.name]),

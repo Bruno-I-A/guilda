@@ -437,7 +437,7 @@ export function FiscalControlBoard({
         <div className="grid justify-items-center gap-2 rounded-lg border border-dashed p-10 text-center">
           <ClipboardCheck className="size-8 text-muted-foreground" aria-hidden />
           <p className="font-medium">Competência ainda não aberta</p>
-          <p className="max-w-md text-sm text-muted-foreground">A liderança pode gerar uma linha para cada empresa ativa, sem criar dezenas de missões.</p>
+          <p className="max-w-md text-sm text-muted-foreground">A equipe pode gerar uma linha para cada empresa ativa, sem criar dezenas de missões.</p>
         </div>
       ) : (
         <>

@@ -114,6 +114,7 @@ export async function CompanyFlowTab({
   const actorFacts = {
     role,
     leadsThisClan,
+    isActiveClanMember: viewerIsCorporateMember,
     isActiveCorporateMember: viewerIsCorporateMember,
   };
   const rows: CompanyFlowView[] = flows.map((row) => ({

@@ -556,7 +556,7 @@ export async function buildInformativeDraft(
 
   // Cliente novo de verdade: o combinado do Fiscal (se houver) vai direto
   // para a carteira, não para uma missão — quem decide o responsável é o
-  // líder do clã Fiscal na aba Carteira (ver portfolio-actions.ts), não a
+  // equipe do clã Fiscal na aba Carteira (ver portfolio-actions.ts), não a
   // Mesa do Líder. O nome sugerido só pré-preenche o seletor do líder; ele
   // sempre pode trocar.
   // Distribuição de lucros: o setor precisa resolver especificamente para a

@@ -151,7 +151,7 @@ export async function createTaskRecord(
       ),
     });
   } else if (shouldNotifyTaskCreation(input.informativeId) && input.clanId) {
-    const leaders = await tx
+    const clanMembers = await tx
       .select({ userId: schema.clanMemberships.userId })
       .from(schema.clanMemberships)
       .innerJoin(
@@ -172,19 +172,18 @@ export async function createTaskRecord(
         and(
           eq(schema.clanMemberships.orgId, input.orgId),
           eq(schema.clanMemberships.clanId, input.clanId),
-          eq(schema.clanMemberships.isLeader, true),
           eq(schema.clans.orgId, input.orgId),
           eq(schema.clans.active, true),
           eq(schema.member.organizationId, input.orgId),
         ),
       );
 
-    for (const leader of leaders) {
+    for (const clanMember of clanMembers) {
       await enqueueTelegramNotificationIfEnabled(tx, {
         orgId: input.orgId,
-        userId: leader.userId,
+        userId: clanMember.userId,
         eventType: "task_clan_created",
-        dedupeKey: `task:${task.id}:clan-created:leader:${leader.userId}`,
+        dedupeKey: `task:${task.id}:clan-created:member:${clanMember.userId}`,
         payload: notificationPayload(
           "tasks",
           `🛡️ Nova missão para o seu clã\n\n${input.title}\nPrazo: ${dueDateLabel(input.dueDate ?? null)}\nRecompensa: ${xpValue} XP`,

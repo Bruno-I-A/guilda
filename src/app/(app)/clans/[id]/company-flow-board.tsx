@@ -1119,7 +1119,7 @@ function NewCompanyFlowDialog({
               </div>
             </section>
           ) : null}
-          {closing ? null : <div className="grid gap-1.5 rounded-md border border-primary/30 bg-primary/5 p-3"><Label htmlFor="gov-password" className="flex items-center gap-1.5"><ShieldCheck className="size-4" aria-hidden /> Senha Gov.br (opcional)</Label><Input id="gov-password" type="password" autoComplete="new-password" value={govPassword} onChange={(event) => setGovPassword(event.target.value)} placeholder="Fica cifrada e não entra no histórico" /><p className="text-xs text-muted-foreground">Somente o dono, o responsável societário e a liderança do Societário podem revelar esta senha.</p></div>}
+          {closing ? null : <div className="grid gap-1.5 rounded-md border border-primary/30 bg-primary/5 p-3"><Label htmlFor="gov-password" className="flex items-center gap-1.5"><ShieldCheck className="size-4" aria-hidden /> Senha Gov.br (opcional)</Label><Input id="gov-password" type="password" autoComplete="new-password" value={govPassword} onChange={(event) => setGovPassword(event.target.value)} placeholder="Fica cifrada e não entra no histórico" /><p className="text-xs text-muted-foreground">Integrantes do Societário e owner/admin podem revelar esta senha.</p></div>}
         </div>
         <DialogFooter><Button type="button" disabled={pending || (!opening && !existingClientId)} onClick={submit}>{pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Send aria-hidden />} Enviar ao Societário</Button></DialogFooter>
       </DialogContent>

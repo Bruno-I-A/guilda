@@ -350,7 +350,7 @@ export function InformativePanel({
                 {draft.company.pendingFiscalNote}
               </p>
               <p className="mt-1.5 text-xs text-muted-foreground">
-                O líder do Fiscal escolhe quem assume a empresa na aba Carteira.
+                A equipe Fiscal escolhe quem assume a empresa na aba Carteira.
               </p>
             </div>
           ) : null}

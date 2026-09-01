@@ -695,30 +695,16 @@ export async function transferTask(input: {
       return err("A verificação da folha e do pró-labore deve permanecer no clã RH.");
     }
 
-    let actorIsLeader = false;
+    let actorIsClanMember = false;
     if (task.clanId) {
-      const [leaderMembership] = await tx
-        .select({ id: schema.clanMemberships.id })
-        .from(schema.clanMemberships)
-        .innerJoin(
-          schema.clans,
-          and(
-            eq(schema.clans.id, schema.clanMemberships.clanId),
-            eq(schema.clans.orgId, schema.clanMemberships.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(schema.clanMemberships.orgId, ctx.orgId),
-            eq(schema.clanMemberships.clanId, task.clanId),
-            eq(schema.clanMemberships.userId, ctx.userId),
-            eq(schema.clanMemberships.isLeader, true),
-            eq(schema.clans.orgId, ctx.orgId),
-            eq(schema.clans.active, true),
-          ),
-        )
-        .limit(1);
-      actorIsLeader = Boolean(leaderMembership);
+      const actorClan = await loadClanScopedFacts(
+        tx,
+        ctx.orgId,
+        task.clanId,
+        ctx.userId,
+        ctx.role,
+      );
+      actorIsClanMember = actorClan.facts.isActiveClanMember;
     }
 
     const decision = authorizeTaskTransfer({
@@ -733,7 +719,7 @@ export async function transferTask(input: {
         clanId: destination.clanId,
         assigneeIsActiveMember: true,
       },
-      actorIsActiveLeaderOfTaskClan: actorIsLeader,
+      actorIsActiveMemberOfTaskClan: actorIsClanMember,
     });
     if (!decision.allowed) return err(decision.reason);
 

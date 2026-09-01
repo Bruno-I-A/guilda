@@ -633,7 +633,7 @@ export async function returnCompanyFlowToOwner(
       .for("update");
     if (!flow) return err("Fluxo não encontrado.");
     if (!canReturnCompanyFlow({ ...corporate.facts, isActiveCorporateMember: corporate.activeMember, isAssignedToFlow: flow.assignedTo === ctx.userId })) {
-      return err("Apenas quem assumiu o Fluxo, a liderança do Societário ou owner/admin pode confirmar o processo.");
+      return err("Apenas integrantes do Societário ou owner/admin podem confirmar o processo.");
     }
     if (flow.status !== "in_progress") return err("Este Fluxo não está em processamento.");
     if (flow.kind === "opening" && !data.resultCnpj) return err("Informe o CNPJ aprovado antes de confirmar uma abertura.");
@@ -761,7 +761,7 @@ export async function revealCompanyFlowGovPassword(
       .for("update");
     if (!flow) return err("Fluxo não encontrado.");
     if (!canReturnCompanyFlow({ ...corporate.facts, isActiveCorporateMember: corporate.activeMember, isAssignedToFlow: flow.assignedTo === ctx.userId })) {
-      return err("A senha do Gov.br só pode ser vista pelo responsável societário, liderança ou owner/admin.");
+      return err("A senha do Gov.br só pode ser vista por integrantes do Societário ou owner/admin.");
     }
     const [secret] = await tx.select().from(schema.companyFlowSecrets)
       .where(and(eq(schema.companyFlowSecrets.orgId, ctx.orgId), eq(schema.companyFlowSecrets.flowId, data.flowId)));

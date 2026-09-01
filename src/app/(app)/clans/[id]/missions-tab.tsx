@@ -25,7 +25,7 @@ const OPEN_STATUSES = [
 ] as const;
 
 /**
- * A Mesa do Líder: quem ainda não tem dono, quem está com o quê e quanto
+ * A mesa do clã: quem ainda não tem dono, quem está com o quê e quanto
  * cada integrante já carrega.
  */
 export async function MissionsTab({
