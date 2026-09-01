@@ -1,6 +1,6 @@
 "use server";
 
-import { and, count, desc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, count, desc, eq, isNull, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { readSheet } from "read-excel-file/node";
 import { z } from "zod";
@@ -531,7 +531,7 @@ export async function startClientReplacementImport(
 ): Promise<ActionResult<ClientImportProgress>> {
   const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
-  if (!isAdminRole(ctx.role)) return err("Apenas admin/owner pode substituir a base.");
+  if (!isAdminRole(ctx.role)) return err("Apenas admin/owner pode importar empresas.");
 
   const file = formData.get("file");
   if (!(file instanceof File)) return err("Selecione a planilha de clientes.");
@@ -583,7 +583,7 @@ export async function getLatestClientReplacementImport(): Promise<
 > {
   const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
-  if (!isAdminRole(ctx.role)) return err("Apenas admin/owner pode substituir a base.");
+  if (!isAdminRole(ctx.role)) return err("Apenas admin/owner pode importar empresas.");
   const batch = await withOrgTx(ctx.orgId, (tx) => tx.query.clientImportBatches.findFirst({
     where: and(
       eq(schema.clientImportBatches.orgId, ctx.orgId),
@@ -607,7 +607,7 @@ export async function processClientReplacementImport(
 ): Promise<ActionResult<ClientImportProgress>> {
   const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
-  if (!isAdminRole(ctx.role)) return err("Apenas admin/owner pode substituir a base.");
+  if (!isAdminRole(ctx.role)) return err("Apenas admin/owner pode importar empresas.");
   const parsed = batchSchema.safeParse(input);
   if (!parsed.success) return err("Lote inválido.");
 
@@ -674,7 +674,7 @@ export async function retryClientReplacementLookups(
 ): Promise<ActionResult<ClientImportProgress>> {
   const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
-  if (!isAdminRole(ctx.role)) return err("Apenas admin/owner pode substituir a base.");
+  if (!isAdminRole(ctx.role)) return err("Apenas admin/owner pode importar empresas.");
   const parsed = batchSchema.safeParse(input);
   if (!parsed.success) return err("Lote inválido.");
   const result = await withOrgTx(ctx.orgId, async (tx) => {
@@ -708,7 +708,7 @@ export async function setClientReplacementRowRegime(
 ): Promise<ActionResult<ClientImportProgress>> {
   const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
-  if (!isAdminRole(ctx.role)) return err("Apenas admin/owner pode substituir a base.");
+  if (!isAdminRole(ctx.role)) return err("Apenas admin/owner pode importar empresas.");
   const parsed = rowRegimeSchema.safeParse(input);
   if (!parsed.success) return err("Revisão inválida.");
   const result = await withOrgTx(ctx.orgId, async (tx) => {
@@ -730,22 +730,21 @@ export async function setClientReplacementRowRegime(
 
 const finalizeReplacementSchema = z.object({
   batchId: z.uuid(),
-  confirmation: z.literal("ZERAR E IMPORTAR"),
 });
 
 export async function finalizeClientReplacementImport(
   input: z.input<typeof finalizeReplacementSchema>,
-): Promise<ActionResult<{ imported: number; skipped: number }>> {
+): Promise<ActionResult<{ imported: number; skipped: number; alreadyExisting: number }>> {
   const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
-  if (!isAdminRole(ctx.role)) return err("Apenas admin/owner pode substituir a base.");
+  if (!isAdminRole(ctx.role)) return err("Apenas admin/owner pode importar empresas.");
   const parsed = finalizeReplacementSchema.safeParse(input);
-  if (!parsed.success) return err('Digite exatamente "ZERAR E IMPORTAR".');
+  if (!parsed.success) return err("Lote inválido.");
 
   const finalizationState: {
-    stage: "validating" | "resetting" | "importing";
+    stage: "validating" | "importing";
   } = { stage: "validating" };
-  let result: { imported: number; skipped: number } | null;
+  let result: { imported: number; skipped: number; alreadyExisting: number } | null;
   try {
     result = await withOrgTx(ctx.orgId, async (tx) => {
       const [batch] = await tx.select().from(schema.clientImportBatches)
@@ -758,51 +757,62 @@ export async function finalizeClientReplacementImport(
         (row.state === "consulted" && row.lookup && row.taxRegime),
       )) return null;
       const importableRows = rows.filter((row) => !isExcludedImportRow(row));
-      if (importableRows.length === 0) return null;
 
-      finalizationState.stage = "resetting";
-      await tx.execute(sql`SELECT reset_org_operational_data_for_launch(${ctx.orgId})`);
       finalizationState.stage = "importing";
       const now = new Date();
-      await tx.insert(schema.clients).values(importableRows.map((row) => {
-        const lookup = row.lookup!;
-        return {
-          orgId: ctx.orgId,
-          name: lookup.legalName,
-          tradeName: lookup.tradeName,
-          taxRegime: row.taxRegime!,
-          cnpj: row.cnpj,
-          operationalEmail: row.operationalEmail,
-          operationalPhone: row.operationalPhone,
-          revenueEmail: lookup.email,
-          revenuePhones: lookup.phones,
-          address: lookup.address,
-          cadastralSituation: lookup.cadastralSituation,
-          cadastralSituationDate: lookup.cadastralSituationDate,
-          companySize: lookup.companySize,
-          legalNature: lookup.legalNature,
-          shareCapital: lookup.shareCapital,
-          headquartersType: lookup.headquartersType,
-          cnaeCode: lookup.cnaeCode,
-          cnaeDescription: lookup.cnaeDescription,
-          secondaryCnaes: lookup.secondaryCnaes,
-          openedAt: lookup.openedAt,
-          qsa: lookup.qsa,
-          taxRegimeHistory: lookup.taxRegimes,
-          cnpjSyncedAt: now,
-          active: lookup.cadastralSituation?.toUpperCase() === "ATIVA",
-        };
-      }));
+      const inserted = importableRows.length > 0
+        ? await tx
+            .insert(schema.clients)
+            .values(importableRows.map((row) => {
+              const lookup = row.lookup!;
+              return {
+                orgId: ctx.orgId,
+                name: lookup.legalName,
+                tradeName: lookup.tradeName,
+                taxRegime: row.taxRegime!,
+                cnpj: row.cnpj,
+                operationalEmail: row.operationalEmail,
+                operationalPhone: row.operationalPhone,
+                revenueEmail: lookup.email,
+                revenuePhones: lookup.phones,
+                address: lookup.address,
+                cadastralSituation: lookup.cadastralSituation,
+                cadastralSituationDate: lookup.cadastralSituationDate,
+                companySize: lookup.companySize,
+                legalNature: lookup.legalNature,
+                shareCapital: lookup.shareCapital,
+                headquartersType: lookup.headquartersType,
+                cnaeCode: lookup.cnaeCode,
+                cnaeDescription: lookup.cnaeDescription,
+                secondaryCnaes: lookup.secondaryCnaes,
+                openedAt: lookup.openedAt,
+                qsa: lookup.qsa,
+                taxRegimeHistory: lookup.taxRegimes,
+                cnpjSyncedAt: now,
+                active: lookup.cadastralSituation?.toUpperCase() === "ATIVA",
+              };
+            }))
+            .onConflictDoNothing()
+            .returning({ id: schema.clients.id })
+        : [];
+      await tx
+        .update(schema.clientImportBatches)
+        .set({ status: "completed", updatedAt: now })
+        .where(and(
+          eq(schema.clientImportBatches.id, batch.id),
+          eq(schema.clientImportBatches.orgId, ctx.orgId),
+        ));
       return {
-        imported: importableRows.length,
+        imported: inserted.length,
         skipped: rows.length - importableRows.length,
+        alreadyExisting: importableRows.length - inserted.length,
       };
     });
   } catch (error) {
     const cause = (error as {
       cause?: { code?: string; constraint?: string; table?: string; routine?: string };
     })?.cause;
-    console.error("Client replacement finalization failed", {
+    console.error("Incremental client import finalization failed", {
       stage: finalizationState.stage,
       code: cause?.code,
       constraint: cause?.constraint,
@@ -810,11 +820,9 @@ export async function finalizeClientReplacementImport(
       routine: cause?.routine,
     });
     return err(
-      finalizationState.stage === "resetting"
-        ? "Não foi possível limpar os dados de teste. A importação não foi aplicada; tente novamente após a implantação terminar."
-        : finalizationState.stage === "importing"
-          ? "Não foi possível gravar a nova base. A limpeza foi desfeita e nenhum dado foi perdido."
-          : "Não foi possível validar o lote para importação.",
+      finalizationState.stage === "importing"
+        ? "Não foi possível gravar as novas empresas. Nenhum dado existente foi alterado."
+        : "Não foi possível validar o lote para importação.",
     );
   }
   if (!result) return err("O lote ainda possui consultas ou regimes pendentes.");

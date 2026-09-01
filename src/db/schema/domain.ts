@@ -586,9 +586,9 @@ export const clients = pgTable(
 export type Client = typeof clients.$inferSelect;
 
 /**
- * Lote durável da substituição da base de clientes. As consultas externas são
- * feitas em pequenos blocos; somente a confirmação final troca a base dentro
- * de uma única transação.
+ * Lote durável da importação de clientes. As consultas externas são feitas em
+ * pequenos blocos; somente a confirmação final inclui os CNPJs ainda ausentes,
+ * dentro de uma única transação.
  */
 export const clientImportBatches = pgTable(
   "client_import_batches",
