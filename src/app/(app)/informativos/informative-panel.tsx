@@ -34,7 +34,7 @@ import {
 } from "./actions";
 import { NewClientWizard } from "./new-client-wizard";
 import { AccountantChangeWizard } from "./accountant-change-wizard";
-import { NewCompanyFlowDialog } from "../clans/[id]/company-flow-board";
+import { DirectCompanyInformativeWizard } from "./direct-company-informative-wizard";
 
 export interface DraftTaskView {
   index: number;
@@ -97,8 +97,6 @@ export function InformativePanel({
   initialSourceText = "",
   flowId,
   amendmentSummary,
-  societarioClanId,
-  canCreateCompanyFlow = false,
 }: {
   draft: DraftView | null;
   clans: { id: string; name: string }[];
@@ -107,8 +105,6 @@ export function InformativePanel({
   initialSourceText?: string;
   flowId?: string;
   amendmentSummary?: AmendmentSummaryView | null;
-  societarioClanId?: string | null;
-  canCreateCompanyFlow?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -118,6 +114,7 @@ export function InformativePanel({
   const [decisions, setDecisions] = useState<Record<number, Decision>>({});
   const [wizardOpen, setWizardOpen] = useState(false);
   const [accountantChangeOpen, setAccountantChangeOpen] = useState(false);
+  const [directKind, setDirectKind] = useState<"amendment" | "closure" | null>(null);
 
   const pendingTasks = draft?.tasks.filter((t) => t.assignmentType === "pending") ?? [];
   const undecided = pendingTasks.filter((task) => !decisions[task.index]);
@@ -195,22 +192,24 @@ export function InformativePanel({
         <NewClientWizard onDone={() => setWizardOpen(false)} />
       ) : accountantChangeOpen ? (
         <AccountantChangeWizard clients={clients} onDone={() => setAccountantChangeOpen(false)} />
+      ) : directKind ? (
+        <DirectCompanyInformativeWizard
+          kind={directKind}
+          clients={clients}
+          onDone={() => setDirectKind(null)}
+        />
       ) : (
         <div className="grid gap-2">
           <div className="flex flex-wrap justify-end gap-2">
-            {!flowId && canCreateCompanyFlow && societarioClanId ? (
-              <NewCompanyFlowDialog
-                clanId={societarioClanId}
-                lockedKind="amendment"
-                triggerLabel="Alteração de empresa"
-              />
+            {!flowId ? (
+              <Button variant="outline" size="sm" onClick={() => setDirectKind("amendment")}>
+                Alteração de empresa
+              </Button>
             ) : null}
-            {!flowId && canCreateCompanyFlow && societarioClanId ? (
-              <NewCompanyFlowDialog
-                clanId={societarioClanId}
-                lockedKind="closure"
-                triggerLabel="Baixa de empresa"
-              />
+            {!flowId ? (
+              <Button variant="outline" size="sm" onClick={() => setDirectKind("closure")}>
+                Baixa de empresa
+              </Button>
             ) : null}
             {!flowId ? <Button variant="outline" size="sm" onClick={() => setAccountantChangeOpen(true)}>Baixa por desligamento</Button> : null}
             <Button variant="outline" size="sm" onClick={() => setWizardOpen(true)}>

@@ -78,6 +78,39 @@ export function isAccountantChangeInformative(sourceText: string): boolean {
   return /^INFORMATIVO DE BAIXA DE CLIENTE POR DESLIGAMENTO\s*$/im.test(sourceText);
 }
 
+export function directCompanyInformativeText(input: {
+  kind: "amendment" | "closure";
+  companyName: string;
+  cnpj: string | null;
+  taxRegime: TaxRegime;
+  details: string;
+  actions: string;
+}): string {
+  const heading = input.kind === "amendment"
+    ? "INFORMATIVO DE ALTERAÇÃO DE EMPRESA"
+    : "INFORMATIVO DE BAIXA DE CLIENTE";
+  const event = input.kind === "amendment"
+    ? "ALTERAÇÃO CADASTRAL"
+    : "BAIXA DE CLIENTE";
+  const details = input.kind === "amendment"
+    ? `O que foi alterado: ${input.details.trim() || "—"}`
+    : input.details.trim() || "—";
+
+  return [
+    heading,
+    event,
+    `RAZÃO SOCIAL – ${input.companyName}`,
+    `CNPJ – ${input.cnpj ? formatCnpj(input.cnpj) : "NÃO INFORMADO"}`,
+    `ENQUADRAMENTO – ${TAX_REGIME_LABELS[input.taxRegime].toUpperCase()}`,
+    "",
+    "OBSERVAÇÕES:",
+    details,
+    "",
+    "AÇÕES",
+    input.actions.trim() || "Nenhuma missão adicional.",
+  ].join("\n");
+}
+
 /**
  * O formulário do Informativo continua mostrando o resumo completo do Fluxo
  * para revisão humana. A IA, porém, só precisa classificar as providências

@@ -69,7 +69,7 @@ export interface ResolvedCompany {
   openedAt: string | null;
 }
 
-/** Dados oficiais do Fluxo; nunca precisam seguir para a IA de roteamento. */
+/** Contexto cadastral já resolvido pelo Fluxo ou por um atalho direto. */
 export interface CompanyFlowDraftContext {
   kind: "opening" | "amendment" | "closure";
   existingClientId: string | null;
@@ -78,6 +78,8 @@ export interface CompanyFlowDraftContext {
   taxRegime: TaxRegime | null;
   billingAmount: string | null;
   billingDescription: string | null;
+  /** Texto completo preservado nos atalhos diretos de Informativos. */
+  noticeSourceText?: string | null;
 }
 
 export type BuildInformativeDraftResult =
@@ -590,6 +592,9 @@ export async function buildInformativeDraft(
   const observations = removeMissionDuplicatedObservations(
     [
       ...(flowContext ? [] : extractObservationLines(sourceText)),
+      ...(flowContext?.noticeSourceText
+        ? extractObservationLines(flowContext.noticeSourceText)
+        : []),
       ...extracted.data.ignoredNotes,
       // Distribuição sem clã reconhecido não some: vira observação do aviso.
       ...unroutedCommitments,

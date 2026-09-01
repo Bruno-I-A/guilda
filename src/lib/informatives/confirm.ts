@@ -801,7 +801,12 @@ export async function confirmInformative(
         authorId: actor.userId,
         kind: "notice",
         title: companyFlowInformativeNoticeTitle(
-          linkedFlow?.flow.kind ?? (payload.kind === "client_closure" ? "closure" : null),
+          linkedFlow?.flow.kind ??
+            (payload.kind === "client_closure"
+              ? "closure"
+              : payload.kind === "client_change"
+                ? "amendment"
+                : null),
           trackingName,
         ),
         body: [

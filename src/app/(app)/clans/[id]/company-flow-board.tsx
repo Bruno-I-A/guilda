@@ -667,22 +667,15 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
   );
 }
 
-export function NewCompanyFlowDialog({
+function NewCompanyFlowDialog({
   clanId,
-  initialKind = "opening",
-  lockedKind,
-  triggerLabel = "Criar novo fluxo",
 }: {
   clanId: string;
-  initialKind?: CompanyFlowKind;
-  lockedKind?: Extract<CompanyFlowKind, "amendment" | "closure">;
-  triggerLabel?: string;
 }) {
   const router = useRouter();
-  const effectiveInitialKind: CompanyFlowKind = lockedKind ?? initialKind;
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [kind, setKind] = useState<CompanyFlowKind>(effectiveInitialKind);
+  const [kind, setKind] = useState<CompanyFlowKind>("opening");
   const [existingClientId, setExistingClientId] = useState("");
   const [companyCnpj, setCompanyCnpj] = useState("");
   const companyCnpjRef = useRef("");
@@ -744,7 +737,7 @@ export function NewCompanyFlowDialog({
   }
 
   function resetFlowForm() {
-    setKind(effectiveInitialKind);
+    setKind("opening");
     setCompanyCnpj("");
     companyCnpjRef.current = "";
     clearFlowValues();
@@ -918,41 +911,16 @@ export function NewCompanyFlowDialog({
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogTrigger asChild>
-        <Button
-          type="button"
-          size={lockedKind ? "sm" : "lg"}
-          variant={lockedKind ? "outline" : "default"}
-          className={lockedKind ? undefined : "shadow-sm"}
-        >
-          <Plus aria-hidden /> {triggerLabel}
-        </Button>
+        <Button type="button" size="lg" className="shadow-sm"><Plus aria-hidden /> Criar novo fluxo</Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>
-            {lockedKind === "amendment"
-              ? "Nova alteração"
-              : lockedKind === "closure"
-                ? "Nova baixa"
-                : "Novo Fluxo"}
-          </DialogTitle>
-          <DialogDescription>
-            Registre o pedido do cliente. Ele será enviado ao Societário sem
-            virar missão ou informativo ainda.
-          </DialogDescription>
+          <DialogTitle>Novo Fluxo</DialogTitle>
+          <DialogDescription>Registre o pedido do cliente. Ele será enviado ao Societário sem virar missão ou informativo ainda.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            {lockedKind ? (
-              <div className="grid gap-1.5">
-                <Label>Tipo</Label>
-                <div className="flex h-9 items-center rounded-md border bg-muted/25 px-3 text-sm font-medium">
-                  {COMPANY_FLOW_KIND_LABELS[lockedKind]}
-                </div>
-              </div>
-            ) : (
-              <div className="grid gap-1.5"><Label>Tipo</Label><Select value={kind} onValueChange={(value) => handleKindChange(value as CompanyFlowKind)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="opening">Abertura</SelectItem><SelectItem value="amendment">Alteração</SelectItem><SelectItem value="closure">Baixa</SelectItem></SelectContent></Select></div>
-            )}
+            <div className="grid gap-1.5"><Label>Tipo</Label><Select value={kind} onValueChange={(value) => handleKindChange(value as CompanyFlowKind)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="opening">Abertura</SelectItem><SelectItem value="amendment">Alteração</SelectItem><SelectItem value="closure">Baixa</SelectItem></SelectContent></Select></div>
             {opening ? null : (
               <div className="grid gap-1.5">
                 <Label htmlFor="flow-company-cnpj">CNPJ da empresa {kind === "amendment" ? "que será alterada" : "que será baixada"}</Label>

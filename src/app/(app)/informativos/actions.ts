@@ -207,6 +207,24 @@ const analyzeSchema = z.object({
   resolvedCompany: resolvedCompanySchema.optional(),
   /** Presente quando a prévia nasceu de um Fluxo devolvido pelo Societário. */
   flowId: z.uuid("Fluxo inválido.").optional(),
+  /** Atalho direto: vincula empresa e tipo sem criar Fluxo Societário. */
+  directCompany: z.object({
+    clientId: z.uuid("Empresa inválida."),
+    kind: z.enum(["amendment", "closure"]),
+  }).optional(),
+}).superRefine((data, ctx) => {
+  const origins = [
+    Boolean(data.flowId),
+    Boolean(data.directCompany),
+    Boolean(data.resolvedCompany),
+  ].filter(Boolean).length;
+  if (origins > 1) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["directCompany"],
+      message: "Escolha apenas uma origem para o Informativo.",
+    });
+  }
 });
 
 /**
@@ -218,6 +236,7 @@ export async function analyzeInformative(input: {
   sourceText: string;
   resolvedCompany?: ResolvedCompany;
   flowId?: string;
+  directCompany?: { clientId: string; kind: "amendment" | "closure" };
 }): Promise<ActionResult<{ informativeId: string }>> {
   const gate = await requireInformativeActor();
   if (!gate.ok) return gate;
@@ -229,6 +248,7 @@ export async function analyzeInformative(input: {
 
   let flowContext: CompanyFlowDraftContext | undefined;
   let sourceForAi = parsed.data.sourceText;
+  let sourceToSave = parsed.data.sourceText;
   const flowId = parsed.data.flowId;
   if (flowId) {
     if (!isAdminRole(gate.actor.role)) {
@@ -275,6 +295,37 @@ export async function analyzeInformative(input: {
       billingDescription: flow.billingDescription,
     };
     sourceForAi = actions;
+    sourceToSave = actions;
+  } else if (parsed.data.directCompany) {
+    const directCompany = await withOrgTx(gate.actor.orgId, (tx) =>
+      tx.query.clients.findFirst({
+        where: and(
+          eq(schema.clients.orgId, gate.actor.orgId),
+          eq(schema.clients.id, parsed.data.directCompany!.clientId),
+          eq(schema.clients.active, true),
+        ),
+        columns: {
+          id: true,
+          name: true,
+          cnpj: true,
+          taxRegime: true,
+        },
+      }),
+    );
+    if (!directCompany) return err("Empresa ativa não encontrada.");
+    flowContext = {
+      kind: parsed.data.directCompany.kind,
+      existingClientId: directCompany.id,
+      legalName: directCompany.name,
+      normalizedCnpj: directCompany.cnpj,
+      taxRegime: directCompany.taxRegime,
+      billingAmount: null,
+      billingDescription: null,
+      noticeSourceText: parsed.data.sourceText,
+    };
+    sourceForAi =
+      companyFlowActionsText(parsed.data.sourceText) ??
+      "Nenhuma missão adicional.";
   }
 
   let draft;
@@ -299,7 +350,7 @@ export async function analyzeInformative(input: {
     model: draft.model,
     // No Fluxo, persiste somente o bloco enviado à IA; a ficha societária
     // continua sendo a fonte dos dados cadastrais e sensíveis.
-    sourceText: sourceForAi,
+    sourceText: sourceToSave,
     source: "panel",
     connectionId: null,
   });

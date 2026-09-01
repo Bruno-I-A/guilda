@@ -12,6 +12,7 @@ import {
   companyFlowInformativeText,
   companyFlowInformativeNoticeTitle,
   companyFlowRhVerificationState,
+  directCompanyInformativeText,
   parseQsaParticipation,
   qsaDistributionIsComplete,
   qsaFinalParticipationTotal,
@@ -473,6 +474,32 @@ describe("Fluxo Societário", () => {
     expect(accountantChangeNoticeTitle("ADONIRAN")).toBe(
       "Desligamento de cliente: ADONIRAN — troca de contabilidade",
     );
+  });
+
+  test("monta atalhos diretos de alteração e baixa sem criar fluxo", () => {
+    const amendment = directCompanyInformativeText({
+      kind: "amendment",
+      companyName: "EMPRESA TESTE LTDA",
+      cnpj: "11222333000181",
+      taxRegime: "simples",
+      details: "Mudança de endereço",
+      actions: "Fiscal – Atualizar cadastro",
+    });
+    expect(amendment).toContain("INFORMATIVO DE ALTERAÇÃO DE EMPRESA");
+    expect(amendment).toContain("OBSERVAÇÕES:\nO que foi alterado: Mudança de endereço");
+    expect(amendment).toContain("AÇÕES\nFiscal – Atualizar cadastro");
+
+    const closure = directCompanyInformativeText({
+      kind: "closure",
+      companyName: "EMPRESA TESTE LTDA",
+      cnpj: null,
+      taxRegime: "real",
+      details: "Baixa concluída em 31/08/2026",
+      actions: "",
+    });
+    expect(closure).toContain("INFORMATIVO DE BAIXA DE CLIENTE");
+    expect(closure).toContain("CNPJ – NÃO INFORMADO");
+    expect(closure).toContain("AÇÕES\nNenhuma missão adicional.");
   });
 
   test("reflete razão social e regime no cadastro apenas após uma alteração", () => {
