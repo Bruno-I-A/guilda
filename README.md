@@ -130,6 +130,11 @@ npm run e2e:phase3   # gamificação: crédito, níveis, ranking, reversão
 
 ## Deploy na VPS
 
+O projeto usa ambientes separados: trabalho normal em `develop`, homologação
+com banco próprio e produção em `main`. A promoção e o deploy de produção são
+manuais depois da validação. Veja o procedimento completo em
+[`docs/environments.md`](docs/environments.md).
+
 ```bash
 cp .env.production.example .env   # DOMAIN, senhas, BETTER_AUTH_SECRET e FLOW_SECRETS_KEY
 docker compose up -d --build --remove-orphans
