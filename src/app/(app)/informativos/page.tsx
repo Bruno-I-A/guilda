@@ -2,6 +2,7 @@ import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { PageHeader } from "@/components/page-header";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import {
@@ -198,15 +199,10 @@ export default async function InformativosPage({
 
   return (
     <div className="grid gap-5">
-      <div>
-        <h1 className="font-heading text-2xl font-semibold tracking-wide">
-          Informativos
-        </h1>
-        <p className="text-muted-foreground">
-          Cole o informativo, confira o destino de cada linha e confirme. Nada é
-          criado antes da sua confirmação.
-        </p>
-      </div>
+      <PageHeader
+        title="Informativos"
+        description="Escolha os clãs, descreva as missões e confirme a prévia. Nada é criado antes da sua confirmação."
+      />
 
       {canHandle ? (
         <InformativePanel

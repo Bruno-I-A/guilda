@@ -30,6 +30,12 @@ import {
   type CompanyFlowDraftContext,
   type ResolvedCompany,
 } from "@/lib/informatives/draft";
+import {
+  buildStructuredInformativePayload,
+  STRUCTURED_INFORMATIVE_MODEL,
+  structuredInformativeSourceText,
+} from "@/lib/informatives/structured";
+import { listActiveClans } from "@/lib/org";
 
 /**
  * Server Actions do painel de informativos.
@@ -226,6 +232,96 @@ const analyzeSchema = z.object({
     });
   }
 });
+
+const structuredMissionSchema = z.object({
+  clanId: z.uuid("Escolha um clã válido."),
+  description: z
+    .string()
+    .trim()
+    .min(3, "Descreva a missão.")
+    .max(5_000, "A descrição da missão excede 5.000 caracteres."),
+});
+
+const structuredInformativeSchema = z.object({
+  missions: z
+    .array(structuredMissionSchema)
+    .min(1, "Adicione ao menos uma missão.")
+    .max(60, "Adicione no máximo 60 missões por Informativo."),
+  resolvedCompany: resolvedCompanySchema.optional(),
+});
+
+/**
+ * Caminho rápido do painel: clã e descrição já chegam separados, portanto a
+ * prévia é montada deterministicamente e nenhuma API de IA é chamada.
+ */
+export async function prepareStructuredInformative(input: {
+  missions: { clanId: string; description: string }[];
+  resolvedCompany?: ResolvedCompany;
+}): Promise<ActionResult<{ informativeId: string }>> {
+  const gate = await requireInformativeActor();
+  if (!gate.ok) return gate;
+
+  const parsed = structuredInformativeSchema.safeParse(input);
+  if (!parsed.success) {
+    return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+  }
+  if (
+    parsed.data.resolvedCompany &&
+    !validateCnpj(parsed.data.resolvedCompany.normalizedCnpj)
+  ) {
+    return err("CNPJ inválido — confira os dígitos.");
+  }
+
+  const clans = await listActiveClans(gate.actor.orgId);
+  const activeClanIds = new Set(clans.map((clan) => clan.id));
+  if (parsed.data.missions.some((mission) => !activeClanIds.has(mission.clanId))) {
+    return err("Um dos clãs selecionados não está mais ativo. Atualize a página.");
+  }
+
+  let company;
+  if (parsed.data.resolvedCompany) {
+    const resolved = parsed.data.resolvedCompany;
+    const existing = await withOrgTx(gate.actor.orgId, (tx) =>
+      tx.query.clients.findFirst({
+        where: and(
+          eq(schema.clients.orgId, gate.actor.orgId),
+          eq(schema.clients.cnpj, resolved.normalizedCnpj),
+        ),
+        columns: { id: true, name: true },
+      }),
+    );
+    company = {
+      ...resolved,
+      legalName: existing?.name ?? resolved.legalName,
+      clientId: existing?.id ?? null,
+      createClient: !existing,
+    };
+  }
+
+  let payload;
+  try {
+    payload = buildStructuredInformativePayload({
+      clans,
+      missions: parsed.data.missions,
+      company,
+    });
+  } catch (error) {
+    console.error("informativo estruturado: falha ao montar prévia", error);
+    return err("Não foi possível montar a prévia. Atualize a página e tente novamente.");
+  }
+
+  const saved = await saveInformativeDraft({
+    actor: gate.actor,
+    payload,
+    model: STRUCTURED_INFORMATIVE_MODEL,
+    sourceText: structuredInformativeSourceText(parsed.data.missions, clans),
+    source: "panel",
+    connectionId: null,
+  });
+
+  revalidatePath("/informativos");
+  return { ok: true, data: { informativeId: saved.id } };
+}
 
 /**
  * Extrai e roteia, salvando a prévia. Substitui a prévia pendente anterior

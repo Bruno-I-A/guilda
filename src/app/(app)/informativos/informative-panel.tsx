@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Building2,
   Flag,
+  ListChecks,
   Repeat2,
   ScanText,
   Trash2,
@@ -31,7 +32,15 @@ import {
   analyzeInformative,
   cancelInformativeDraft,
   confirmInformativeDraft,
+  prepareStructuredInformative,
 } from "./actions";
+import {
+  ClanMissionEditor,
+  clanMissionGroupsAreValid,
+  emptyClanMissionGroup,
+  flattenClanMissionGroups,
+  type ClanMissionGroupDraft,
+} from "./clan-mission-editor";
 import { NewClientWizard } from "./new-client-wizard";
 import { AccountantChangeWizard } from "./accountant-change-wizard";
 import { DirectCompanyInformativeWizard } from "./direct-company-informative-wizard";
@@ -112,12 +121,16 @@ export function InformativePanel({
     amendmentSummary ? "" : initialSourceText,
   );
   const [decisions, setDecisions] = useState<Record<number, Decision>>({});
+  const [missionGroups, setMissionGroups] = useState<ClanMissionGroupDraft[]>([
+    emptyClanMissionGroup(),
+  ]);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [accountantChangeOpen, setAccountantChangeOpen] = useState(false);
   const [directKind, setDirectKind] = useState<"amendment" | "closure" | null>(null);
 
   const pendingTasks = draft?.tasks.filter((t) => t.assignmentType === "pending") ?? [];
   const undecided = pendingTasks.filter((task) => !decisions[task.index]);
+  const structuredMissionCount = flattenClanMissionGroups(missionGroups).length;
   // Espelha draftIsBlocked no servidor: prévia sem missão continua
   // confirmável quando há empresa nova a cadastrar (as linhas podem ser todas
   // combinado do Fiscal ou "sem particularidades").
@@ -131,18 +144,26 @@ export function InformativePanel({
 
   function handleAnalyze() {
     startTransition(async () => {
-      const textToAnalyze = amendmentSummary
-        ? [initialSourceText, sourceText.trim()].filter(Boolean).join("\n")
-        : sourceText;
-      const result = await analyzeInformative({
-        sourceText: textToAnalyze,
-        flowId,
-      });
+      const structured = !flowId && !amendmentSummary;
+      const result = structured
+        ? await prepareStructuredInformative({
+            missions: flattenClanMissionGroups(missionGroups),
+          })
+        : await analyzeInformative({
+            sourceText: amendmentSummary
+              ? [initialSourceText, sourceText.trim()].filter(Boolean).join("\n")
+              : sourceText,
+            flowId,
+          });
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
-      toast.success("Prévia gerada. Confira antes de confirmar.");
+      toast.success(
+        structured
+          ? "Prévia gerada sem processamento de IA."
+          : "Prévia gerada. Confira antes de confirmar.",
+      );
       setDecisions({});
       router.refresh();
     });
@@ -165,6 +186,7 @@ export function InformativePanel({
       }
       toast.success(result.data?.message ?? "Missões criadas.");
       setSourceText("");
+      setMissionGroups([emptyClanMissionGroup()]);
       setDecisions({});
       router.refresh();
     });
@@ -189,7 +211,7 @@ export function InformativePanel({
   return (
     <div className="grid gap-5">
       {wizardOpen ? (
-        <NewClientWizard onDone={() => setWizardOpen(false)} />
+        <NewClientWizard clans={clans} onDone={() => setWizardOpen(false)} />
       ) : accountantChangeOpen ? (
         <AccountantChangeWizard clients={clients} onDone={() => setAccountantChangeOpen(false)} />
       ) : directKind ? (
@@ -223,7 +245,7 @@ export function InformativePanel({
                   <Badge className="border-primary/35 bg-primary/10 text-primary">
                     Alteração
                   </Badge>
-                  <h2 className="font-heading text-lg font-medium">
+                  <h2 className="font-medium">
                     {amendmentSummary.companyName}
                   </h2>
                 </div>
@@ -276,7 +298,7 @@ export function InformativePanel({
                 />
               </div>
             </>
-          ) : (
+          ) : flowId ? (
             <Textarea
               value={sourceText}
               onChange={(event) => setSourceText(event.target.value)}
@@ -287,6 +309,13 @@ export function InformativePanel({
               }
               className="font-mono text-xs"
             />
+          ) : (
+            <ClanMissionEditor
+              clans={clans}
+              groups={missionGroups}
+              onChange={setMissionGroups}
+              disabled={pending}
+            />
           )}
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground">
@@ -296,15 +325,23 @@ export function InformativePanel({
                     ? "A alteração será enviada completa ao mural; a atualização de Alvará/IE será criada para o Societário."
                     : "A alteração será enviada completa ao mural e não exige missão de atualização de Alvará/IE."
                   : "No Fluxo, somente as linhas após AÇÕES são analisadas; os dados cadastrais ficam protegidos e vão completos ao mural."
-                : `${sourceText.length}/12.000`}
+                : `${structuredMissionCount} ${structuredMissionCount === 1 ? "missão" : "missões"} · sem processamento de IA`}
             </span>
             <Button
               onClick={handleAnalyze}
               disabled={
-                pending || (!amendmentSummary && sourceText.trim().length < 10)
+                pending ||
+                (!flowId && !amendmentSummary
+                  ? !clanMissionGroupsAreValid(missionGroups)
+                  : !amendmentSummary && sourceText.trim().length < 10)
               }
             >
-              <ScanText className="size-4" aria-hidden /> Analisar
+              {!flowId && !amendmentSummary ? (
+                <ListChecks className="size-4" aria-hidden />
+              ) : (
+                <ScanText className="size-4" aria-hidden />
+              )}
+              {!flowId && !amendmentSummary ? "Gerar prévia" : "Analisar"}
             </Button>
           </div>
         </div>
