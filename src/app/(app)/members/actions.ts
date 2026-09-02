@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
+import { createUserWithPassword } from "@/lib/auth-admin";
 import { err, requireMemberContext } from "@/lib/action-context";
 import type { ActionResult } from "@/lib/action-context";
 
@@ -44,32 +45,21 @@ export async function createMemberWithTempPassword(
   const data = parsed.data;
   const email = data.email.toLowerCase();
 
-  const authCtx = await auth.$context;
-
-  const existing = await authCtx.internalAdapter.findUserByEmail(email);
-  if (existing) {
-    return err("Já existe uma conta com este e-mail.");
-  }
-
-  const hash = await authCtx.password.hash(data.tempPassword);
-  let newUser: { id: string };
-  try {
-    newUser = await authCtx.internalAdapter.createUser({
-      email,
-      name: data.name,
-      emailVerified: false,
-      mustChangePassword: true,
-    });
-  } catch {
-    return err("Não foi possível criar o usuário.");
-  }
-
-  await authCtx.internalAdapter.linkAccount({
-    userId: newUser.id,
-    providerId: "credential",
-    accountId: newUser.id,
-    password: hash,
+  const criado = await createUserWithPassword({
+    name: data.name,
+    email,
+    password: data.tempPassword,
+    // Quem escolheu a senha foi o admin, não a pessoa: trocar é obrigatório.
+    mustChangePassword: true,
   });
+  if (!criado.ok) {
+    return err(
+      criado.reason === "email_taken"
+        ? "Já existe uma conta com este e-mail."
+        : "Não foi possível criar o usuário.",
+    );
+  }
+  const newUser = { id: criado.userId };
 
   try {
     await auth.api.addMember({

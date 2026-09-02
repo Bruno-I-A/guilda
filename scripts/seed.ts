@@ -20,7 +20,7 @@ import { withOrgTx } from "../src/db/org-tx";
 import * as schema from "../src/db/schema";
 import type { TaskStatus } from "../src/domain/task-state";
 import { calculateTaskXp } from "../src/domain/xp";
-import { auth } from "../src/lib/auth";
+import { createUserWithPassword } from "../src/lib/auth-admin";
 
 const PASSWORD = process.env.SEED_PASSWORD?.trim() || "demo123456";
 const ORG_SLUG = "guilda-demo";
@@ -110,7 +110,15 @@ async function ensureUser(name: string, email: string): Promise<string> {
     where: eq(schema.user.email, email),
   });
   if (existing) return existing.id;
-  await auth.api.signUpEmail({ body: { name, email, password: PASSWORD } });
+  // O endpoint publico de cadastro esta desligado (auth.ts: disableSignUp);
+  // o seed cria pelo mesmo caminho administrativo da tela de Membros.
+  const criado = await createUserWithPassword({
+    name,
+    email,
+    password: PASSWORD,
+    mustChangePassword: false,
+  });
+  if (!criado.ok) throw new Error(`falha ao criar usuário ${email}: ${criado.reason}`);
   const created = await db.query.user.findFirst({
     where: eq(schema.user.email, email),
   });

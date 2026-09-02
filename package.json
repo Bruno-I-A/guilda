@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "seed": "node --conditions=react-server --import=tsx scripts/seed.ts",
+    "bootstrap:owner": "node --conditions=react-server --import=tsx scripts/bootstrap-owner.ts",
     "import:clients": "node --conditions=react-server --import=tsx scripts/import-clients.ts",
     "telegram:worker": "node --conditions=react-server --import=tsx scripts/telegram-worker.ts",
     "e2e:phase2": "node scripts/e2e-phase2.mjs",

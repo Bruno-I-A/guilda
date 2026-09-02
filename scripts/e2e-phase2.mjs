@@ -8,6 +8,18 @@
  */
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
+// ─────────────────────────────────────────────────────────────────────────
+// ATENÇÃO: este script está DESATUALIZADO desde a remoção do autocadastro.
+// Ele começa criando conta e organização em /sign-up, rota que não existe
+// mais (auth.ts: emailAndPassword.disableSignUp). Adaptar exige decidir com
+// que conta ele passa a rodar — a do seed, ou uma criada por um setup próprio.
+// Falha aqui, de propósito, para não gastar minutos num timeout obscuro.
+// ─────────────────────────────────────────────────────────────────────────
+if (!process.env.E2E_IGNORAR_DESATUALIZADO) {
+  console.error("E2E desatualizado: /sign-up foi removido. Veja o comentário no topo deste arquivo.");
+  process.exit(2);
+}
+
 
 const BASE = "http://localhost:4000";
 const SHOTS = "docs/screenshots";
