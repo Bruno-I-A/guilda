@@ -112,13 +112,28 @@ export async function enqueueTelegramOrgBroadcast(
     payload: TelegramNotificationPayload;
   },
 ): Promise<void> {
-  const connections = await tx.query.telegramConnections.findMany({
-    where: and(
-      eq(schema.telegramConnections.orgId, input.orgId),
-      isNull(schema.telegramConnections.revokedAt),
-    ),
-    columns: { userId: true },
-  });
+  // O INNER JOIN com `member` é a trava: quem saiu da organização para de
+  // receber mesmo que a conexão do bot tenha sobrevivido por algum caminho.
+  // O offboarding já revoga (cleanupRemovedOrganizationMemberClans), mas o
+  // broadcast enumera conexões, e enumerar sem provar o vínculo é o que
+  // fazia um ex-integrante continuar recebendo o Mural e os fechamentos.
+  const connections = await tx
+    .select({ userId: schema.telegramConnections.userId })
+    .from(schema.telegramConnections)
+    .innerJoin(
+      schema.member,
+      and(
+        eq(schema.member.organizationId, schema.telegramConnections.orgId),
+        eq(schema.member.userId, schema.telegramConnections.userId),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.telegramConnections.orgId, input.orgId),
+        isNull(schema.telegramConnections.revokedAt),
+        eq(schema.member.organizationId, input.orgId),
+      ),
+    );
   for (const connection of connections) {
     await enqueueTelegramNotificationIfEnabled(tx, {
       ...input,

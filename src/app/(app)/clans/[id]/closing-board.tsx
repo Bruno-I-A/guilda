@@ -87,12 +87,14 @@ interface ClosingFields {
 function ClosingFormDialog({
   open,
   onOpenChange,
+  clanId,
   company,
   year,
   initial,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  clanId: string;
   company: Pick<CompanyClosingView, "id" | "name">;
   year: number;
   initial?: ClosingView;
@@ -103,8 +105,8 @@ function ClosingFormDialog({
   function submit(fields: ClosingFields) {
     startTransition(async () => {
       const result = initial
-        ? await updateClosing({ closingId: initial.id, ...fields })
-        : await createClosing(fields);
+        ? await updateClosing({ clanId, closingId: initial.id, ...fields })
+        : await createClosing({ clanId, ...fields });
       if (!result.ok) {
         toast.error(result.error);
         return;
@@ -119,7 +121,7 @@ function ClosingFormDialog({
     if (!initial) return;
     if (!window.confirm(`Excluir o fechamento “${initial.title}”?`)) return;
     startTransition(async () => {
-      const result = await deleteClosing({ closingId: initial.id });
+      const result = await deleteClosing({ clanId, closingId: initial.id });
       if (!result.ok) {
         toast.error(result.error);
         return;
@@ -250,11 +252,13 @@ function ClosingFormDialog({
 function AnnualNotesDialog({
   open,
   onOpenChange,
+  clanId,
   company,
   year,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  clanId: string;
   company: CompanyClosingView;
   year: number;
 }) {
@@ -277,6 +281,7 @@ function AnnualNotesDialog({
             const form = new FormData(event.currentTarget);
             startTransition(async () => {
               const result = await updateYearNotes({
+                clanId,
                 clientId: company.id,
                 year,
                 notes: String(form.get("notes") ?? ""),
@@ -336,10 +341,12 @@ function formatDateTime(value: string): string {
 }
 
 function ClosingRow({
+  clanId,
   closing,
   company,
   year,
 }: {
+  clanId: string;
   closing: ClosingView;
   company: CompanyClosingView;
   year: number;
@@ -432,6 +439,7 @@ function ClosingRow({
         <ClosingFormDialog
           open={editOpen}
           onOpenChange={setEditOpen}
+          clanId={clanId}
           company={company}
           year={year}
           initial={closing}
@@ -442,9 +450,11 @@ function ClosingRow({
 }
 
 function CompanyCard({
+  clanId,
   company,
   year,
 }: {
+  clanId: string;
   company: CompanyClosingView;
   year: number;
 }) {
@@ -473,6 +483,7 @@ function CompanyCard({
     }
     startTransition(async () => {
       const result = await setYearClosed({
+        clanId,
         clientId: company.id,
         year,
         closed: !yearClosed,
@@ -492,6 +503,7 @@ function CompanyCard({
   function toggleDefis() {
     startTransition(async () => {
       const result = await setDefisCompleted({
+        clanId,
         clientId: company.id,
         year,
         completed: !defisCompleted,
@@ -705,6 +717,7 @@ function CompanyCard({
               {company.closings.map((closing) => (
                 <ClosingRow
                   key={closing.id}
+                  clanId={clanId}
                   closing={closing}
                   company={company}
                   year={year}
@@ -724,6 +737,7 @@ function CompanyCard({
         <ClosingFormDialog
           open={createOpen}
           onOpenChange={setCreateOpen}
+          clanId={clanId}
           company={company}
           year={year}
         />
@@ -732,6 +746,7 @@ function CompanyCard({
         <AnnualNotesDialog
           open={notesOpen}
           onOpenChange={setNotesOpen}
+          clanId={clanId}
           company={company}
           year={year}
         />
@@ -741,9 +756,11 @@ function CompanyCard({
 }
 
 export function CompanyClosingBoard({
+  clanId,
   companies,
   year,
 }: {
+  clanId: string;
   companies: CompanyClosingView[];
   year: number;
 }) {
@@ -752,6 +769,7 @@ export function CompanyClosingBoard({
       {companies.map((company) => (
         <CompanyCard
           key={company.id}
+          clanId={clanId}
           company={company}
           year={year}
         />

@@ -1,26 +1,12 @@
 import type { NextConfig } from "next";
 
 /**
- * CSP estática, sem 'unsafe-eval'. O App Router injeta scripts inline de
- * hidratação, então script-src precisa de 'unsafe-inline' (o upgrade para
- * CSP com nonce via proxy é o próximo passo natural — ver README).
+ * A Content-Security-Policy saiu daqui: agora é emitida por requisição no
+ * proxy (src/proxy.ts), com nonce + 'strict-dynamic' em produção (sem
+ * 'unsafe-inline'). Estes cabeçalhos são estáticos e valem para TODAS as
+ * rotas — inclusive as que o matcher do proxy não cobre.
  */
-const contentSecurityPolicy = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self'",
-  "connect-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-  "upgrade-insecure-requests",
-].join("; ");
-
 const securityHeaders = [
-  { key: "Content-Security-Policy", value: contentSecurityPolicy },
   // HSTS: efetivo atrás do Caddy com HTTPS
   {
     key: "Strict-Transport-Security",

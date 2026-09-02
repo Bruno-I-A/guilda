@@ -7,5 +7,11 @@ docs
 docker-compose*.yml
 Dockerfile
 scripts/e2e-*.mjs
+# Fora da imagem: criam conta owner com senha conhecida / dependem do Playwright.
+# A produção só precisa de start-production.mjs, telegram-worker.ts e load-env.ts.
+scripts/seed.ts
+scripts/screenshots.mjs
+scripts/check-rls.mjs
+scripts/generate-app-icons.mjs
 *.md
 .claude

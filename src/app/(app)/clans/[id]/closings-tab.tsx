@@ -377,7 +377,11 @@ export async function ClosingsTab({
       </div>
 
       {companies.length > 0 ? (
-        <CompanyClosingBoard companies={companies} year={year} />
+        <CompanyClosingBoard
+          clanId={clanId}
+          companies={companies}
+          year={year}
+        />
       ) : (
         <ClanEmptyState
           icon={<Building2 className="size-7" aria-hidden />}

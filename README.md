@@ -91,7 +91,13 @@ npm run dev
 
 A aplicação estará em `http://localhost:4000`.
 
-Contas criadas pelo seed local, todas com senha `demo123456`:
+O seed **só roda contra banco local**: ele cria uma conta `owner` com senha
+conhecida, o que em produção é uma conta administrativa de graça. Ele aborta se
+`NODE_ENV=production` ou se a `DATABASE_URL` não apontar para `localhost` —
+para ignorar a trava deliberadamente, `ALLOW_SEED=1`. A senha sai de
+`SEED_PASSWORD`; sem ela, cai no padrão local `demo123456`.
+
+Contas criadas pelo seed local (senha: o valor de `SEED_PASSWORD`, ou `demo123456` por padrão):
 
 | Papel | E-mail |
 | --- | --- |

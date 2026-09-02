@@ -55,6 +55,24 @@ jobs:
       - name: Gerar build de produção
         run: npm run build
 
+  deploy-staging:
+    name: Publicar homologação
+    needs: quality
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Acionar Easypanel
+        env:
+          DEPLOY_URL: ${{ secrets.EASYPANEL_STAGING_DEPLOY_URL }}
+        # Sem o secret cadastrado a homologação ainda não existe no Easypanel.
+        # Sair em 0 evita que todo push na develop falhe até o painel ficar de pé.
+        run: |
+          if [ -z "$DEPLOY_URL" ]; then
+            echo "EASYPANEL_STAGING_DEPLOY_URL não configurado; homologação ainda não existe. Nada a publicar."
+            exit 0
+          fi
+          curl --fail-with-body --silent --show-error --request POST "$DEPLOY_URL"
   deploy-production:
     name: Publicar produção
     needs: quality

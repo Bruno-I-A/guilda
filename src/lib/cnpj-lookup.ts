@@ -1,13 +1,13 @@
 import "server-only";
 
 /**
- * Consulta de CNPJ na Receita via BrasilAPI (gratuita, sem chave) — usada
+ * Consulta de CNPJ em fontes públicas gratuitas — usada
  * pelo fluxo "Novo cliente", pela conferência do Fluxo Societário e pela
  * aba de dados da empresa para exibir o retrato cadastral disponível (ver
  * docs/superpowers/specs/2026-08-18-cnpj-lookup-novo-cliente-design.md).
  */
 
-const BRASIL_API_TIMEOUT_MS = 8000;
+const PROVIDER_TIMEOUT_MS = 8000;
 
 export interface CnpjActivity {
   code: string;
@@ -130,9 +130,24 @@ function asCode(value: unknown): string | null {
   return null;
 }
 
+function asNormalizedCode(value: unknown): string | null {
+  const code = asCode(value);
+  if (!code) return null;
+  return code.replace(/\D/g, "") || code;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null
+    ? value as Record<string, unknown>
+    : null;
+}
+
 function asDate(value: unknown): string | null {
   const raw = asText(value);
-  return raw && /^\d{4}-\d{2}-\d{2}/.test(raw) ? raw.slice(0, 10) : null;
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const br = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw);
+  return br ? `${br[3]}-${br[2]}-${br[1]}` : null;
 }
 
 function asDecimal(value: unknown): string | null {
@@ -148,6 +163,23 @@ function asPercentage(value: unknown): string | null {
   const numeric = Number(raw);
   if (!raw || !Number.isFinite(numeric)) return null;
   return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 4 }).format(numeric)}%`;
+}
+
+function asBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  const normalized = asText(value)?.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (normalized === "sim") return true;
+  if (normalized === "nao") return false;
+  return null;
+}
+
+function usefulPhone(value: unknown): string | null {
+  const phone = asText(value);
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, "");
+  return /^\d{10,11}$/.test(digits) && !/^(\d)\1+$/.test(digits)
+    ? digits
+    : null;
 }
 
 /**
@@ -259,49 +291,216 @@ export function mapBrasilApiResponse(raw: unknown): CnpjLookupData | null {
   };
 }
 
-/**
- * Busca um CNPJ já normalizado (14 dígitos) na BrasilAPI.
- * Nunca lança — falha de rede/timeout vira `{ ok: false, reason: "service_error" }`
- * para o chamador decidir a mensagem (o preenchimento manual continua liberado).
- */
-export async function lookupCnpj(normalizedCnpj: string): Promise<CnpjLookupResult> {
+/** Mapeia a API pública do CNPJ.ws para o contrato interno da Guilda. */
+export function mapCnpjWsResponse(raw: unknown): CnpjLookupData | null {
+  const body = asRecord(raw);
+  const establishment = asRecord(body?.estabelecimento);
+  if (!body || !establishment) return null;
+
+  const legalName = asText(body.razao_social);
+  if (!legalName) return null;
+
+  const mainActivity = asRecord(establishment.atividade_principal);
+  const secondaryCnaes = (Array.isArray(establishment.atividades_secundarias)
+    ? establishment.atividades_secundarias
+    : [])
+    .map((entry): CnpjActivity | null => {
+      const item = asRecord(entry);
+      const code = asNormalizedCode(item?.id);
+      const description = asText(item?.descricao);
+      return code && description ? { code, description } : null;
+    })
+    .filter((entry): entry is CnpjActivity => entry !== null);
+
+  const qsa = (Array.isArray(body.socios) ? body.socios : [])
+    .map((entry): CnpjQsaMember | null => {
+      const item = asRecord(entry);
+      const name = asText(item?.nome);
+      if (!name) return null;
+      return {
+        name,
+        document: asText(item?.cpf_cnpj_socio),
+        qualification: asText(asRecord(item?.qualificacao_socio)?.descricao),
+        joinedAt: asDate(item?.data_entrada),
+        participation: null,
+      };
+    })
+    .filter((entry): entry is CnpjQsaMember => entry !== null);
+
+  const city = asRecord(establishment.cidade);
+  const state = asRecord(establishment.estado);
+  const street = [
+    asText(establishment.tipo_logradouro),
+    asText(establishment.logradouro),
+  ].filter(Boolean).join(" ") || null;
+  const address: CnpjAddress = {
+    street,
+    number: asText(establishment.numero),
+    complement: asText(establishment.complemento),
+    district: asText(establishment.bairro),
+    city: asText(city?.nome),
+    state: asText(state?.sigla),
+    zipCode: asText(establishment.cep),
+  };
+  const simples = asRecord(body.simples);
+  const phones = [
+    usefulPhone(`${asText(establishment.ddd1) ?? ""}${asText(establishment.telefone1) ?? ""}`),
+    usefulPhone(`${asText(establishment.ddd2) ?? ""}${asText(establishment.telefone2) ?? ""}`),
+  ].filter((phone): phone is string => phone !== null);
+
+  return {
+    legalName,
+    tradeName: asText(establishment.nome_fantasia),
+    cnaeCode: asNormalizedCode(mainActivity?.id),
+    cnaeDescription: asText(mainActivity?.descricao),
+    secondaryCnaes,
+    openedAt: asDate(establishment.data_inicio_atividade),
+    isSimplesOptant: asBoolean(simples?.simples),
+    isMeiOptant: asBoolean(simples?.mei),
+    cadastralSituation: asText(establishment.situacao_cadastral),
+    cadastralSituationDate: asDate(establishment.data_situacao_cadastral),
+    companySize: asText(asRecord(body.porte)?.descricao),
+    legalNature: asText(asRecord(body.natureza_juridica)?.descricao),
+    shareCapital: asDecimal(body.capital_social),
+    headquartersType: asText(establishment.tipo),
+    email: asText(establishment.email),
+    phones,
+    address: Object.values(address).some(Boolean) ? address : null,
+    qsa,
+    taxRegimes: [],
+  };
+}
+
+/** Mapeia a resposta gratuita da ReceitaWS para o contrato interno. */
+export function mapReceitaWsResponse(raw: unknown): CnpjLookupData | null {
+  const body = asRecord(raw);
+  if (!body || asText(body.status)?.toUpperCase() === "ERROR") return null;
+  const legalName = asText(body.nome);
+  if (!legalName) return null;
+
+  const primary = asRecord(
+    Array.isArray(body.atividade_principal) ? body.atividade_principal[0] : null,
+  );
+  const secondaryCnaes = (Array.isArray(body.atividades_secundarias)
+    ? body.atividades_secundarias
+    : [])
+    .map((entry): CnpjActivity | null => {
+      const item = asRecord(entry);
+      const code = asNormalizedCode(item?.code);
+      const description = asText(item?.text);
+      return code && description ? { code, description } : null;
+    })
+    .filter((entry): entry is CnpjActivity => entry !== null);
+  const qsa = (Array.isArray(body.qsa) ? body.qsa : [])
+    .map((entry): CnpjQsaMember | null => {
+      const item = asRecord(entry);
+      const name = asText(item?.nome);
+      return name ? {
+        name,
+        document: null,
+        qualification: asText(item?.qual),
+        joinedAt: null,
+        participation: null,
+      } : null;
+    })
+    .filter((entry): entry is CnpjQsaMember => entry !== null);
+  const address: CnpjAddress = {
+    street: asText(body.logradouro),
+    number: asText(body.numero),
+    complement: asText(body.complemento),
+    district: asText(body.bairro),
+    city: asText(body.municipio),
+    state: asText(body.uf),
+    zipCode: asText(body.cep),
+  };
+  const phones = (asText(body.telefone)?.split("/") ?? [])
+    .map(usefulPhone)
+    .filter((phone): phone is string => phone !== null);
+
+  return {
+    legalName,
+    tradeName: asText(body.fantasia),
+    cnaeCode: asNormalizedCode(primary?.code),
+    cnaeDescription: asText(primary?.text),
+    secondaryCnaes,
+    openedAt: asDate(body.abertura),
+    isSimplesOptant: asBoolean(asRecord(body.simples)?.optante),
+    isMeiOptant: asBoolean(asRecord(body.simei)?.optante),
+    cadastralSituation: asText(body.situacao),
+    cadastralSituationDate: asDate(body.data_situacao),
+    companySize: asText(body.porte),
+    legalNature: asText(body.natureza_juridica),
+    shareCapital: asDecimal(body.capital_social),
+    headquartersType: asText(body.tipo),
+    email: asText(body.email),
+    phones,
+    address: Object.values(address).some(Boolean) ? address : null,
+    qsa,
+    taxRegimes: [],
+  };
+}
+
+type LookupFailureReason = Exclude<CnpjLookupResult, { ok: true }>["reason"];
+
+const CNPJ_PROVIDERS = [
+  {
+    url: (cnpj: string) => `https://publica.cnpj.ws/cnpj/${cnpj}`,
+    map: mapCnpjWsResponse,
+  },
+  {
+    url: (cnpj: string) => `https://www.receitaws.com.br/v1/cnpj/${cnpj}`,
+    map: mapReceitaWsResponse,
+  },
+  {
+    url: (cnpj: string) => `https://brasilapi.com.br/api/cnpj/v1/${cnpj}`,
+    map: mapBrasilApiResponse,
+  },
+] as const;
+
+async function queryProvider(
+  provider: (typeof CNPJ_PROVIDERS)[number],
+  normalizedCnpj: string,
+): Promise<CnpjLookupResult> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), BRASIL_API_TIMEOUT_MS);
-
+  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
   try {
-    const response = await fetch(
-      `https://brasilapi.com.br/api/cnpj/v1/${normalizedCnpj}`,
-      {
-        signal: controller.signal,
-        // Sem User-Agent explícito, a proteção da BrasilAPI recusa o fetch
-        // padrão do Node com 403 — descoberto testando contra a API de
-        // verdade (nenhum teste automatizado pega isso, é comportamento do
-        // serviço externo).
-        headers: {
-          "User-Agent": "Guilda/1.0 (contabilidade; +https://github.com/Bruno-I-A/guilda)",
-          Accept: "application/json",
-        },
+    const response = await fetch(provider.url(normalizedCnpj), {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Guilda/1.0 (contabilidade; +https://github.com/Bruno-I-A/guilda)",
+        Accept: "application/json",
       },
-    );
-
-    if (response.status === 404) {
-      return { ok: false, reason: "not_found" };
-    }
+    });
+    if (response.status === 404) return { ok: false, reason: "not_found" };
     if (
       response.status === 429 ||
       (response.status === 403 && response.headers.get("x-vercel-mitigated") === "deny")
     ) {
       return { ok: false, reason: "rate_limited" };
     }
-    if (!response.ok) {
-      return { ok: false, reason: "service_error" };
-    }
-
-    const data = mapBrasilApiResponse(await response.json());
+    if (!response.ok) return { ok: false, reason: "service_error" };
+    const data = provider.map(await response.json());
     return data ? { ok: true, data } : { ok: false, reason: "service_error" };
   } catch {
     return { ok: false, reason: "service_error" };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * Busca um CNPJ já normalizado (14 dígitos), tentando fontes independentes.
+ * Nunca lança — falha de rede/timeout vira `{ ok: false, reason: "service_error" }`
+ * para o chamador decidir a mensagem (o preenchimento manual continua liberado).
+ */
+export async function lookupCnpj(normalizedCnpj: string): Promise<CnpjLookupResult> {
+  const failures: LookupFailureReason[] = [];
+  for (const provider of CNPJ_PROVIDERS) {
+    const result = await queryProvider(provider, normalizedCnpj);
+    if (result.ok) return result;
+    failures.push(result.reason);
+  }
+  if (failures.includes("rate_limited")) return { ok: false, reason: "rate_limited" };
+  if (failures.includes("service_error")) return { ok: false, reason: "service_error" };
+  return { ok: false, reason: "not_found" };
 }

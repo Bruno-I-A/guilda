@@ -55,7 +55,6 @@ export interface InlineKeyboardMarkup {
 export interface SendMessageOptions {
   replyMarkup?: InlineKeyboardMarkup;
   disableWebPagePreview?: boolean;
-  parseMode?: "HTML";
 }
 
 export interface TelegramApi {
@@ -112,7 +111,6 @@ export function createTelegramApi(botToken: string): TelegramApi {
         chat_id: chatId,
         text,
         disable_web_page_preview: options?.disableWebPagePreview ?? true,
-        ...(options?.parseMode ? { parse_mode: options.parseMode } : {}),
         ...(options?.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
       }),
     answerCallbackQuery: (callbackQueryId, options) =>

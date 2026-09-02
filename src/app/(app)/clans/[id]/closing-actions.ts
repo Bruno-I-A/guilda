@@ -4,21 +4,91 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { withOrgTx } from "@/db/org-tx";
+import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import {
+  canDeleteClanClosing,
+  canManageClanClosings,
+  type ClosingActorFacts,
+} from "@/domain/guild-permissions";
 import { CLOSING_YEAR_XP } from "@/domain/xp";
 import {
   err,
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
+import { isActiveClanMember, loadClanScopedFacts } from "@/lib/clans/facts";
+import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
+import { CONTABILIDADE_CLAN_SLUG } from "@/lib/clans/rules";
 import {
   enqueueTelegramNotificationIfEnabled,
   enqueueTelegramOrgBroadcast,
   notificationPayload,
 } from "@/lib/telegram/notifications";
 
+/**
+ * Server Actions dos Fechamentos da Contabilidade.
+ *
+ * Toda decisão de permissão sai de `canManageClanClosings` /
+ * `canDeleteClanClosing`, com os fatos (papel na organização, liderança e
+ * vínculo ativo com ESTE clã) carregados aqui do banco. A interface nunca
+ * informa quem é da Contabilidade — a aba só existir no clã certo é
+ * navegação, não autorização.
+ */
+
 const yearSchema = z.number().int().min(2000).max(2100);
+
+type MemberContext = {
+  orgId: string;
+  userId: string;
+  role: Parameters<typeof loadClanScopedFacts>[4];
+};
+
+/**
+ * Prova que o clã informado é a Contabilidade e devolve os fatos de
+ * autorização. O mutex de leitura de vínculo é o mesmo das demais mesas:
+ * fecha a janela entre validar a participação e gravar.
+ */
+async function requireClosingActor(
+  tx: OrgTx,
+  ctx: MemberContext,
+  clanId: string,
+): Promise<{ ok: true; facts: ClosingActorFacts } | { ok: false; error: string }> {
+  await lockActiveClansForMembershipRead(tx, ctx.orgId);
+  const { clan, facts } = await loadClanScopedFacts(
+    tx,
+    ctx.orgId,
+    clanId,
+    ctx.userId,
+    ctx.role,
+  );
+  if (!clan) return err("Clã não encontrado.");
+  if (clan.slug !== CONTABILIDADE_CLAN_SLUG) {
+    return err("Os fechamentos pertencem ao clã Contabilidade.");
+  }
+  const activeMember = await isActiveClanMember(
+    tx,
+    ctx.orgId,
+    clan.id,
+    ctx.userId,
+  );
+  return { ok: true, facts: { ...facts, isActiveClanMember: activeMember } };
+}
+
+const NAO_AUTORIZADO =
+  "Apenas quem integra a Contabilidade, sua liderança ou um admin pode alterar fechamentos.";
+
+/** Gate da rotina diária — usado por tudo, menos a exclusão. */
+async function requireClosingManager(
+  tx: OrgTx,
+  ctx: MemberContext,
+  clanId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const gate = await requireClosingActor(tx, ctx, clanId);
+  if (!gate.ok) return gate;
+  if (!canManageClanClosings(gate.facts)) return err(NAO_AUTORIZADO);
+  return { ok: true };
+}
 
 function optionalMoneySchema(
   label: string,
@@ -79,7 +149,11 @@ const closingFields = {
   }),
 };
 
+/** Presente em TODA action: é o clã cuja liderança/vínculo será conferido. */
+const clanIdField = { clanId: z.uuid("Clã inválido.") };
+
 const createClosingSchema = z.object({
+  ...clanIdField,
   ...closingFields,
   clientId: z.uuid(),
   year: yearSchema,
@@ -98,6 +172,9 @@ export async function createClosing(
   const data = parsed.data;
 
   const result = await withOrgTx(ctx.orgId, async (tx) => {
+    const gate = await requireClosingManager(tx, ctx, data.clanId);
+    if (!gate.ok) return gate;
+
     const client = await tx.query.clients.findFirst({
       where: and(
         eq(schema.clients.id, data.clientId),
@@ -137,6 +214,7 @@ export async function createClosing(
 }
 
 const updateClosingSchema = z.object({
+  ...clanIdField,
   ...closingFields,
   closingId: z.uuid(),
   clientId: z.uuid(),
@@ -156,6 +234,9 @@ export async function updateClosing(
   const data = parsed.data;
 
   const result = await withOrgTx(ctx.orgId, async (tx) => {
+    const gate = await requireClosingManager(tx, ctx, data.clanId);
+    if (!gate.ok) return gate;
+
     const closing = await tx.query.accountingClosings.findFirst({
       where: and(
         eq(schema.accountingClosings.id, data.closingId),
@@ -207,6 +288,7 @@ export async function updateClosing(
 }
 
 const setStatusSchema = z.object({
+  ...clanIdField,
   closingId: z.uuid(),
   status: z.enum(["pending", "blocked", "completed"]),
 });
@@ -221,7 +303,10 @@ export async function setClosingStatus(
   if (!parsed.success) return err("Situação inválida.");
 
   const completed = parsed.data.status === "completed";
-  const updated = await withOrgTx(ctx.orgId, async (tx) => {
+  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
+    const gate = await requireClosingManager(tx, ctx, parsed.data.clanId);
+    if (!gate.ok) return gate;
+
     const [row] = await tx
       .update(schema.accountingClosings)
       .set({
@@ -242,7 +327,7 @@ export async function setClosingStatus(
         title: schema.accountingClosings.title,
         clientId: schema.accountingClosings.clientId,
       });
-    if (!row) return [];
+    if (!row) return err("Fechamento não encontrado.");
     const client = await tx.query.clients.findFirst({
       where: and(
         eq(schema.clients.id, row.clientId),
@@ -268,15 +353,15 @@ export async function setClosingStatus(
           : undefined,
       ),
     });
-    return [row];
+    return { ok: true };
   });
 
-  if (updated.length === 0) return err("Fechamento não encontrado.");
+  if (!result.ok) return result;
   revalidatePath("/clans/[id]", "page");
   return { ok: true };
 }
 
-const deleteClosingSchema = z.object({ closingId: z.uuid() });
+const deleteClosingSchema = z.object({ ...clanIdField, closingId: z.uuid() });
 
 export async function deleteClosing(
   input: z.input<typeof deleteClosingSchema>,
@@ -287,8 +372,18 @@ export async function deleteClosing(
   const parsed = deleteClosingSchema.safeParse(input);
   if (!parsed.success) return err("Fechamento inválido.");
 
-  const deleted = await withOrgTx(ctx.orgId, (tx) =>
-    tx
+  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
+    // Exclusão é o degrau estreito: apaga o registro sem deixar rastro,
+    // diferente de reabrir o ano, que preserva o histórico.
+    const gate = await requireClosingActor(tx, ctx, parsed.data.clanId);
+    if (!gate.ok) return gate;
+    if (!canDeleteClanClosing(gate.facts)) {
+      return err(
+        "Apenas a liderança da Contabilidade ou um admin pode excluir um fechamento.",
+      );
+    }
+
+    const deleted = await tx
       .delete(schema.accountingClosings)
       .where(
         and(
@@ -296,15 +391,19 @@ export async function deleteClosing(
           eq(schema.accountingClosings.orgId, ctx.orgId),
         ),
       )
-      .returning({ id: schema.accountingClosings.id }),
-  );
+      .returning({ id: schema.accountingClosings.id });
 
-  if (deleted.length === 0) return err("Fechamento não encontrado.");
+    if (deleted.length === 0) return err("Fechamento não encontrado.");
+    return { ok: true };
+  });
+
+  if (!result.ok) return result;
   revalidatePath("/clans/[id]", "page");
   return { ok: true };
 }
 
 const closingYearSchema = z.object({
+  ...clanIdField,
   clientId: z.uuid(),
   year: z.number().int().min(2000).max(2100),
 });
@@ -324,6 +423,9 @@ export async function setYearClosed(
   const data = parsed.data;
 
   const result = await withOrgTx(ctx.orgId, async (tx) => {
+    const gate = await requireClosingManager(tx, ctx, data.clanId);
+    if (!gate.ok) return gate;
+
     const client = await tx.query.clients.findFirst({
       where: and(
         eq(schema.clients.id, data.clientId),
@@ -448,6 +550,9 @@ export async function setDefisCompleted(
   const data = parsed.data;
 
   const result = await withOrgTx(ctx.orgId, async (tx) => {
+    const gate = await requireClosingManager(tx, ctx, data.clanId);
+    if (!gate.ok) return gate;
+
     const client = await tx.query.clients.findFirst({
       where: and(
         eq(schema.clients.id, data.clientId),
@@ -516,6 +621,9 @@ export async function updateYearNotes(
   const data = parsed.data;
 
   const result = await withOrgTx(ctx.orgId, async (tx) => {
+    const gate = await requireClosingManager(tx, ctx, data.clanId);
+    if (!gate.ok) return gate;
+
     const client = await tx.query.clients.findFirst({
       where: and(
         eq(schema.clients.id, data.clientId),

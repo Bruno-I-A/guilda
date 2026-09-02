@@ -7,6 +7,9 @@ import { mkdirSync } from "node:fs";
 
 const BASE = "http://localhost:4000";
 const SHOTS = "docs/screenshots";
+// Mesma origem da senha usada pelo seed — se ele rodou com SEED_PASSWORD,
+// este script precisa da mesma variável para conseguir entrar.
+const PASSWORD = process.env.SEED_PASSWORD?.trim() || "demo123456";
 mkdirSync(SHOTS, { recursive: true });
 
 const browser = await chromium.launch();
@@ -14,7 +17,7 @@ const browser = await chromium.launch();
 async function login(page, email) {
   await page.goto(`${BASE}/sign-in`);
   await page.fill("#email", email);
-  await page.fill("#password", "demo123456");
+  await page.fill("#password", PASSWORD);
   await page.click("button[type=submit]");
   await page.waitForURL("**/dashboard", { timeout: 20_000 });
 }

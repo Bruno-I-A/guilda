@@ -14,8 +14,8 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { authClient } from "@/lib/auth-client";
-import { authErrorMessage } from "@/lib/auth-errors";
+
+import { changeOwnPassword } from "./actions";
 
 export function ChangePasswordForm({ forced }: { forced: boolean }) {
   const router = useRouter();
@@ -43,16 +43,19 @@ export function ChangePasswordForm({ forced }: { forced: boolean }) {
     setErrors({});
     setSubmitting(true);
 
-    const { error } = await authClient.changePassword({ currentPassword, newPassword });
-    if (error) {
-      setSubmitting(false);
-      toast.error(authErrorMessage(error));
+    // Uma chamada só: o servidor troca a senha E desliga a flag de rotação
+    // obrigatória na mesma action. O cliente não tem como desligá-la sozinho.
+    const result = await changeOwnPassword({
+      currentPassword,
+      newPassword,
+      confirmPassword,
+    });
+    setSubmitting(false);
+    if (!result.ok) {
+      toast.error(result.error);
       return;
     }
 
-    // Marca a troca como feita — deixa de ser redirecionado para cá.
-    await authClient.updateUser({ mustChangePassword: false });
-    setSubmitting(false);
     toast.success("Senha alterada!");
     router.push("/dashboard");
     router.refresh();

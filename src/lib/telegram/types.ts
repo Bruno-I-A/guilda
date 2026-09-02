@@ -32,7 +32,6 @@ export type TelegramNotificationEventType =
 /** Payload persistível na outbox; nenhuma credencial deve ser incluída. */
 export type TelegramOutboxPayload = Readonly<{
   text: string;
-  parseMode?: "HTML";
   replyMarkup?: import("./endpoint").InlineKeyboardMarkup;
   disableWebPagePreview?: boolean;
 }>;

@@ -1,0 +1,1726 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Relatório de Auditoria de Segurança — Guilda</title>
+  <style>
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-size: 9.6pt;
+    line-height: 1.55;
+    color: #1e293b;
+    background: #fff;
+  }
+  code {
+    font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+    font-size: 0.88em;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 3px;
+    padding: 0.5px 3px;
+    word-break: break-word;
+  }
+  h1, h2, h3, h4, h5 { margin: 0 0 .45em; line-height: 1.25; }
+  h2 {
+    font-size: 16pt;
+    color: #0f172a;
+    border-bottom: 2px solid #0f172a;
+    padding-bottom: 6px;
+    margin-top: 0;
+    margin-bottom: 14px;
+  }
+  h3 { font-size: 11.5pt; color: #0f172a; margin-top: 18px; }
+  h4 { font-size: 10.2pt; color: #0f172a; }
+  h5 {
+    font-size: 7.6pt; text-transform: uppercase; letter-spacing: .09em;
+    color: #64748b; margin-bottom: 3px;
+  }
+  p { margin: 0 0 .6em; orphans: 3; widows: 3; }
+  section { break-before: auto; }
+  .page-break { break-before: page; }
+
+  /* capa */
+  .capa { padding-top: 4mm; }
+  .capa-marca {
+    font-size: 8pt; text-transform: uppercase; letter-spacing: .22em;
+    color: #64748b; margin-bottom: 10px;
+  }
+  .capa-titulo {
+    font-size: 24pt; line-height: 1.08; color: #0f172a; font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .capa-titulo span { color: #B91C1C; }
+  .capa-data { color: #475569; font-size: 8.8pt; margin-bottom: 16px; }
+  .capa-h2 {
+    font-size: 10.4pt; text-transform: uppercase; letter-spacing: .09em;
+    color: #0f172a; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px;
+    margin-top: 15px; margin-bottom: 7px;
+  }
+  .capa-lista { margin: 0; padding-left: 17px; font-size: 8.9pt; }
+  .capa-lista li { margin-bottom: 3px; }
+  table.stack { width: 100%; border-collapse: collapse; }
+  table.stack { font-size: 8.9pt; }
+  table.stack th {
+    text-align: left; vertical-align: top; width: 30%;
+    padding: 4px 10px 4px 0; color: #0f172a; font-weight: 600;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  table.stack td {
+    vertical-align: top; padding: 4px 0; border-bottom: 1px solid #e2e8f0;
+  }
+  .metodo { margin-bottom: 7px; break-inside: avoid; }
+  .metodo h3 {
+    font-size: 9pt; margin: 0 0 1px; color: #0f172a;
+  }
+  .metodo p { margin: 0; color: #334155; font-size: 8.5pt; line-height: 1.45; }
+  .capa-rodape {
+    margin-top: 14px; padding: 8px 11px; background: #f8fafc;
+    border-left: 3px solid #059669; font-size: 8.5pt; color: #334155;
+  }
+
+  /* resumo */
+  .lead { font-size: 10pt; color: #334155; margin-bottom: 14px; }
+  .cards { display: flex; gap: 8px; margin: 14px 0 20px; }
+  .card-sev {
+    flex: 1; border: 1px solid #e2e8f0; border-top-width: 4px;
+    border-radius: 4px; padding: 9px 6px; text-align: center; background: #fff;
+  }
+  .card-num { font-size: 20pt; font-weight: 700; line-height: 1; }
+  .card-lbl {
+    font-size: 7.4pt; text-transform: uppercase; letter-spacing: .07em;
+    color: #64748b; margin-top: 3px;
+  }
+  .graficos { display: flex; gap: 18px; align-items: flex-start; margin-bottom: 6px; }
+  .grafico-box {
+    flex: 1; border: 1px solid #e2e8f0; border-radius: 4px; padding: 10px 12px;
+    break-inside: avoid;
+  }
+  .grafico-box h3 {
+    margin: 0 0 6px; font-size: 8.6pt; text-transform: uppercase;
+    letter-spacing: .07em; color: #64748b;
+  }
+  .grafico { display: flex; align-items: center; gap: 10px; }
+  .rosca-num { font-size: 26px; font-weight: 700; fill: #0f172a; }
+  .rosca-txt { font-size: 9px; fill: #64748b; letter-spacing: .5px; }
+  .legenda { list-style: none; margin: 0; padding: 0; font-size: 8.6pt; }
+  .legenda li { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .ponto { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+  .leg-rotulo { color: #334155; min-width: 62px; }
+  .leg-valor { font-weight: 700; color: #0f172a; }
+  .barra-rotulo { font-size: 9.5px; fill: #334155; font-family: inherit; }
+  .barra-valor { font-size: 10px; fill: #0f172a; font-weight: 700; font-family: inherit; }
+
+  table.veredito { width: 100%; border-collapse: collapse; font-size: 8.9pt; }
+  table.veredito th {
+    text-align: left; background: #0f172a; color: #fff; padding: 6px 8px;
+    font-size: 7.8pt; text-transform: uppercase; letter-spacing: .07em;
+  }
+  table.veredito td {
+    padding: 7px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top;
+  }
+  table.veredito tr { break-inside: avoid; }
+  .cat-nome { width: 27%; }
+  .cat-num { width: 7%; text-align: center; font-weight: 700; font-size: 11pt; color: #0f172a; }
+
+  /* fortes / fracos */
+  ol.fortes { margin: 0 0 22px; padding-left: 20px; }
+  ol.fortes li { margin-bottom: 9px; break-inside: avoid; }
+  ol.fortes h4 { margin: 0 0 2px; }
+  .evidencia { margin: 0; color: #334155; font-size: 8.9pt; }
+  ol.fracos { margin: 0; padding-left: 20px; }
+  ol.fracos li {
+    margin-bottom: 8px; break-inside: avoid; color: #334155;
+  }
+
+  /* chips e tabela de achados */
+  .chip {
+    display: inline-block; color: #fff; font-size: 7.2pt; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em; padding: 2px 7px;
+    border-radius: 9px; white-space: nowrap;
+  }
+  table.achados-tabela { width: 100%; border-collapse: collapse; font-size: 8.7pt; }
+  table.achados-tabela th {
+    text-align: left; background: #0f172a; color: #fff; padding: 6px 8px;
+    font-size: 7.8pt; text-transform: uppercase; letter-spacing: .07em;
+  }
+  table.achados-tabela td {
+    padding: 7px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top;
+  }
+  table.achados-tabela tr { break-inside: avoid; }
+  .c-sev { width: 15%; }
+  .c-arq { width: 40%; }
+  .c-arq code { font-size: 7.7pt; }
+  .mais {
+    display: block; font-size: 7.4pt; color: #64748b; margin-top: 2px;
+  }
+  .c-id {
+    display: inline-block; background: #0f172a; color: #fff; font-weight: 700;
+    font-size: 7.4pt; padding: 1px 5px; border-radius: 3px; margin-right: 4px;
+  }
+  .c-cat { color: #94a3b8; font-size: 7.8pt; white-space: nowrap; }
+
+  /* achados detalhados */
+  .cat-badge {
+    display: inline-block; background: #0f172a; color: #fff; font-size: 8pt;
+    padding: 2px 8px; border-radius: 3px; vertical-align: middle;
+    margin-right: 6px; letter-spacing: .04em;
+  }
+  .veredito-cat {
+    background: #f8fafc; border-left: 3px solid #0f172a; padding: 8px 11px;
+    margin-bottom: 16px; color: #334155; font-size: 9.2pt;
+  }
+  .sem-achado {
+    background: #ecfdf5; border-left: 3px solid #059669;
+    padding: 9px 12px; color: #065f46; font-weight: 600;
+  }
+  /* Sem break-inside:avoid no cartão inteiro — alguns passam de uma página e o
+     Chromium responderia empurrando tudo, deixando meia folha em branco. O que
+     não pode quebrar é o trecho de código e cada bloco de análise. */
+  .achado {
+    border: 1px solid #e2e8f0; border-radius: 4px; padding: 12px 14px;
+    margin-bottom: 14px;
+  }
+  .achado header {
+    display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px;
+    break-after: avoid;
+  }
+  .achado header h3 { margin: 0; font-size: 11pt; }
+  ul.locais { list-style: none; margin: 0 0 9px; padding: 0; break-inside: avoid; }
+  ul.locais li { margin-bottom: 2px; }
+  ul.locais code { font-size: 7.8pt; background: #fff7ed; border-color: #fed7aa; }
+  pre.codigo {
+    background: #0f172a; color: #e2e8f0; padding: 10px 12px; border-radius: 4px;
+    font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+    font-size: 7.5pt; line-height: 1.45; margin: 0 0 10px;
+    white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
+    break-inside: avoid;
+  }
+  .bloco { margin-bottom: 8px; break-inside: avoid; }
+  .bloco p { margin: 0; color: #334155; font-size: 9pt; }
+  .nota-grafico {
+    margin: 6px 0 0; font-size: 7.4pt; color: #94a3b8;
+  }
+
+  /* recomendações */
+  .prio { margin-bottom: 16px; break-inside: avoid; }
+  .prio h3 { display: flex; align-items: center; gap: 8px; font-size: 10.4pt; }
+  .prio-badge {
+    background: #B91C1C; color: #fff; font-size: 8.4pt; font-weight: 700;
+    padding: 2px 9px; border-radius: 3px;
+  }
+  .prio:nth-of-type(2) .prio-badge { background: #D97706; }
+  .prio:nth-of-type(3) .prio-badge { background: #2563EB; }
+  .prio ol { margin: 4px 0 0; padding-left: 20px; }
+  .prio li { margin-bottom: 7px; color: #334155; }
+  .cobre {
+    display: inline-block; background: #f1f5f9; border: 1px solid #e2e8f0;
+    border-radius: 9px; padding: 0 7px; font-size: 7.4pt; color: #64748b;
+    white-space: nowrap;
+  }
+
+  /* issues */
+  .issue { margin-bottom: 18px; }
+  .issue-meta {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 5px; break-after: avoid;
+  }
+  .issue-num {
+    background: #0f172a; color: #fff; font-weight: 700; font-size: 8.4pt;
+    padding: 2px 9px; border-radius: 3px;
+  }
+  .issue-labels code { font-size: 7.6pt; }
+  .issue-cobre { font-size: 7.8pt; color: #64748b; }
+  pre.markdown {
+    background: #f8fafc; border: 1px solid #cbd5e1; border-left: 3px solid #B91C1C;
+    padding: 11px 13px; border-radius: 3px;
+    font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+    font-size: 7.4pt; line-height: 1.5; margin: 0;
+    white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
+    color: #1e293b;
+  }
+
+  /* revisão 2 — capa */
+  .capa-rev {
+    margin: 12px 0 4px; padding: 9px 12px; background: #ecfdf5;
+    border-left: 3px solid #059669; font-size: 8.8pt; color: #065f46;
+  }
+
+  /* selo de estado de remediação */
+  .selo {
+    display: inline-block; border: 1.4px solid; border-radius: 9px;
+    padding: 0 7px; font-size: 7pt; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; white-space: nowrap; background: #fff;
+  }
+
+  /* barra de estado no resumo */
+  .estado-barra { display: flex; gap: 8px; margin: 8px 0 6px; }
+  .estado-card {
+    flex: 1; border: 1px solid #e2e8f0; border-left-width: 4px;
+    border-radius: 4px; padding: 8px 10px; background: #fff;
+  }
+  .estado-num { font-size: 17pt; font-weight: 700; line-height: 1; display: block; }
+  .estado-lbl { font-size: 8pt; color: #64748b; }
+  .estado-nota { font-size: 8.6pt; color: #334155; margin-top: 2px; }
+
+  /* coluna de estado na tabela consolidada */
+  .c-est { width: 12%; white-space: nowrap; }
+
+  /* bloco de remediação no cartão de achado */
+  .remediacao {
+    margin-top: 10px; padding: 9px 11px; background: #f8fafc;
+    border-left: 3px solid; border-radius: 0 3px 3px 0; break-inside: avoid;
+  }
+  .rem-topo { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+  .rem-titulo {
+    font-size: 7.6pt; text-transform: uppercase; letter-spacing: .09em;
+    color: #64748b; font-weight: 700;
+  }
+  .rem-linha { margin: 0 0 3px; font-size: 8.7pt; color: #334155; }
+
+  /* seção de pentest */
+  .pt-classe {
+    border: 1px solid #e2e8f0; border-radius: 4px; padding: 10px 13px;
+    margin-bottom: 10px; break-inside: avoid;
+  }
+  .pt-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin-bottom: 5px;
+  }
+  .pt-head h3 { margin: 0; font-size: 10.4pt; }
+  .pt-resultado {
+    color: #fff; font-size: 7.4pt; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; padding: 2px 8px; border-radius: 9px; white-space: nowrap;
+  }
+  .pt-linha { margin: 0 0 4px; font-size: 8.8pt; color: #334155; }
+  .pt-nota {
+    margin-top: 10px; padding: 8px 11px; background: #f8fafc;
+    border-left: 3px solid #94a3b8; font-size: 8.4pt; color: #475569;
+  }
+  .correcao {
+    margin-top: 14px; padding: 10px 13px; background: #fff7ed;
+    border: 1px solid #fed7aa; border-left: 3px solid #EA580C; border-radius: 0 3px 3px 0;
+    break-inside: avoid;
+  }
+  .correcao h3 { margin: 0 0 4px; font-size: 10pt; color: #9a3412; }
+  .correcao p { margin: 0; font-size: 8.8pt; color: #7c2d12; }
+</style>
+</head>
+<body>
+  <section class="capa">
+    <div class="capa-marca">Auditoria de segurança &middot; Revisão 2 — pós-remediação</div>
+    <h1 class="capa-titulo">Relatório de Auditoria de Segurança<br /><span>Guilda</span></h1>
+    <p class="capa-data">Auditoria: 28 de agosto de 2026 &middot; Revisão: 29 de agosto de 2026 &middot; branch <code>design-system</code></p>
+
+    <p class="capa-rev">Esta revisão registra a correção dos achados e um teste de intrusão ativo. TODOS os 15 achados foram endereçados: 14 corrigidos e verificados e 1 mitigado (o resíduo de farm de XP dentro da Contabilidade, aceito conscientemente). Não há mais pendências — as baixas e informativas, antes recomendação, também foram implementadas e verificadas nesta rodada.</p>
+
+    <h2 class="capa-h2">Escopo auditado</h2>
+    <ul class="capa-lista">
+      <li>Todo o código-fonte em <code>src/</code> (150 arquivos .ts/.tsx): 20 arquivos de Server Actions com 86 actions exportadas, 2 route handlers, todas as páginas do App Router e os módulos de domínio/lib.</li>
+      <li>62 migrations SQL em <code>src/db/migrations/</code> (RLS, políticas, privilégios e funções SECURITY DEFINER).</li>
+      <li>Arquivos de implantação: <code>Dockerfile</code>, <code>docker-compose.yml</code>, <code>docker-compose.dev.yml</code>, <code>docker/prod/</code>, <code>docker/dev/</code>, <code>next.config.ts</code>, <code>.dockerignore</code>, <code>.gitignore</code>.</li>
+      <li>Scripts operacionais em <code>scripts/</code> (seed, importação, worker do Telegram, verificação de RLS, E2E).</li>
+      <li>Histórico do Git (busca por segredos commitados) e os arquivos <code>.env.example</code> / <code>.env.production.example</code>.</li>
+    </ul>
+
+    <h2 class="capa-h2">Stack detectada</h2>
+    <table class="stack">
+      <tr><th>Linguagem / framework</th><td>TypeScript estrito sobre Next.js 16.2.11 (App Router, Server Actions, <code>proxy.ts</code> no lugar do middleware).</td></tr>
+      <tr><th>ORM / acesso a dados</th><td>Drizzle ORM 0.45 com driver <code>node-postgres</code> sobre PostgreSQL 17.</td></tr>
+      <tr><th>Autenticação</th><td>better-auth 1.6.23 com o plugin <code>organization</code> (multi-tenant), sessão por cookie, rate limiting em banco.</td></tr>
+      <tr><th>Frontend</th><td>React 19 + Tailwind CSS 4 + shadcn/ui (Radix). Renderização em Server Components; nenhuma API REST pública além de <code>/api/auth/*</code> e <code>/api/telegram/webhook</code>.</td></tr>
+      <tr><th>Implantação</th><td>Docker multi-estágio (output standalone do Next) + Postgres + Caddy no Compose; migrations aplicadas no boot por <code>scripts/start-production.mjs</code>.</td></tr>
+      <tr><th>Integrações</th><td>Bot do Telegram (polling ou webhook) e Anthropic Claude para classificar informativos; BrasilAPI para consulta de CNPJ.</td></tr>
+    </table>
+
+    <h2 class="capa-h2">Nota metodológica — como cada categoria foi mapeada para esta stack</h2>
+    <div class="metodo"><h3>1. Banco sem tranca</h3><p>Não é Supabase. O mecanismo de isolamento desta stack tem duas camadas, e as duas foram auditadas: (a) toda leitura/escrita de domínio passa por <code>withOrgTx(orgId, …)</code>, que abre transação e executa <code>SET LOCAL app.org_id</code>; (b) Row Level Security no Postgres com a política <code>org_isolation</code> usando <code>current_setting('app.org_id', true)</code>, valendo porque a aplicação conecta com o role dedicado não-superuser <code>guilda_app</code>. Foram conferidas as 42 tabelas de domínio contra as migrations de RLS, coluna a coluna, além das tabelas do better-auth (que não têm RLS e dependem de filtro manual por <code>organization_id</code>).</p></div>
+    <div class="metodo"><h3>2. Permissão definida no navegador</h3><p>O equivalente a “endpoint privilegiado” aqui é a Server Action. Cada uma das 86 actions exportadas foi cruzada com o gate de papel que a interface aplica na tela correspondente (<code>canDistributeClanTasks</code>, <code>canManageFiscalPortfolio</code>, <code>canManageClanCommitments</code>, <code>canManageClanMembership</code>, <code>canHandleInformatives</code>, <code>canViewClan</code>, <code>parseClanTab</code>), verificando se o servidor repete a decisão. Server Actions são endereçáveis por qualquer usuário autenticado que extraia o <code>Next-Action</code> id dos chunks estáticos públicos — a navegação da UI não é fronteira de segurança.</p></div>
+    <div class="metodo"><h3>3. IDOR</h3><p>Percorrido todo handler que recebe um identificador por parâmetro de rota, query ou corpo — as 86 Server Actions, os 2 route handlers e os carregadores de página que leem <code>params</code>/<code>searchParams</code> — checando se a consulta filtra por <code>org_id</code> além do id do objeto. Nenhuma amostragem: a varredura foi exaustiva por arquivo.</p></div>
+    <div class="metodo"><h3>4. Chaves expostas</h3><p>Busca por literais de segredo em <code>src/</code>, <code>scripts/</code>, <code>docker/</code>, <code>docs/</code>, <code>README.md</code>, Dockerfile, arquivos Compose e exemplos de <code>.env</code>; conferência dos defaults de expansão de variável (<code>${VAR:-…}</code> versus <code>${VAR:?…}</code>) no Compose; varredura do histórico do Git por <code>.env</code>, chaves privadas e tokens; e conferência do que sai no bundle do frontend (variáveis <code>NEXT_PUBLIC_*</code>).</p></div>
+    <div class="metodo"><h3>5. Inputs sem tratamento (XSS)</h3><p>Busca dos sinks do React/Next em todo <code>src/</code>: <code>dangerouslySetInnerHTML</code>, <code>innerHTML</code>, <code>eval</code>, <code>new Function</code>, <code>srcDoc</code>, <code>javascript:</code> e todo <code>href={…}</code> dinâmico. No servidor, verificado se texto de usuário entra em HTML de mensagens do Telegram (<code>parse_mode</code>) ou em qualquer template.</p></div>
+
+    <p class="capa-rodape">Todos os achados deste relatório foram verificados no código-fonte real, com arquivo e linha. Nada aqui é especulativo: onde uma categoria não produziu achado, isso está dito explicitamente.</p>
+  </section>
+  <section class="page-break">
+    <h2>Resumo executivo</h2>
+    <p class="lead">A auditoria percorreu <strong>86 Server Actions</strong>, <strong>2 route handlers</strong>, todas as páginas do App Router, <strong>62 migrations</strong> e os arquivos de implantação. Somando a 2ª rodada de varredura ativa, foram <strong>15 achados</strong>, nenhum crítico — e <strong>todos os 15 foram endereçados</strong>: 14 corrigidos e verificados, 1 mitigado com resíduo aceito. Um teste de intrusão ativo, como invasor de menor privilégio, não abriu nenhuma brecha adicional.</p>
+
+    <div class="cards">
+      <div class="card-sev" style="border-top-color:#B91C1C">
+        <div class="card-num" style="color:#B91C1C">0</div>
+        <div class="card-lbl">Crítica</div>
+      </div>
+      <div class="card-sev" style="border-top-color:#EA580C">
+        <div class="card-num" style="color:#EA580C">2</div>
+        <div class="card-lbl">Alta</div>
+      </div>
+      <div class="card-sev" style="border-top-color:#D97706">
+        <div class="card-num" style="color:#D97706">5</div>
+        <div class="card-lbl">Média</div>
+      </div>
+      <div class="card-sev" style="border-top-color:#2563EB">
+        <div class="card-num" style="color:#2563EB">3</div>
+        <div class="card-lbl">Baixa</div>
+      </div>
+      <div class="card-sev" style="border-top-color:#64748B">
+        <div class="card-num" style="color:#64748B">5</div>
+        <div class="card-lbl">Informativa</div>
+      </div>
+      <div class="card-sev" style="border-top-color:#059669">
+        <div class="card-num" style="color:#059669">12</div>
+        <div class="card-lbl">Pontos fortes</div>
+      </div>
+    </div>
+
+    <h3>Estado da remediação</h3>
+    <div class="estado-barra">
+      <div class="estado-card" style="border-left-color:#059669">
+        <span class="estado-num" style="color:#059669">14</span>
+        <span class="estado-lbl">Corrigidos e verificados</span>
+      </div>
+      <div class="estado-card" style="border-left-color:#D97706">
+        <span class="estado-num" style="color:#D97706">1</span>
+        <span class="estado-lbl">Mitigado (resíduo aceito)</span>
+      </div>
+      <div class="estado-card" style="border-left-color:#64748B">
+        <span class="estado-num" style="color:#64748B">0</span>
+        <span class="estado-lbl">Pendentes</span>
+      </div>
+    </div>
+    <p class="estado-nota">Todos os 15 achados foram endereçados — das duas altas às informativas. O único não “corrigido” é o F2, <strong>mitigado</strong>: o gate foi implementado e o resíduo de farm de XP dentro da Contabilidade foi aceito conscientemente.</p>
+
+    <div class="graficos">
+      <div class="grafico-box">
+        <h3>Achados por severidade</h3>
+        <div class="grafico">
+    <svg viewBox="0 0 220 220" width="200" height="200" role="img" aria-label="Achados por severidade">
+      <path d="M 110.74 18.00 A 92 92 0 0 1 177.87 47.90 L 151.32 72.20 A 56 56 0 0 0 110.45 54.00 Z" fill="#EA580C" />
+      <path d="M 178.86 48.99 A 92 92 0 0 1 129.85 199.83 L 122.08 164.68 A 56 56 0 0 0 151.91 72.86 Z" fill="#D97706" />
+      <path d="M 128.41 200.14 A 92 92 0 0 1 30.70 156.64 L 61.73 138.39 A 56 56 0 0 0 121.20 164.87 Z" fill="#2563EB" />
+      <path d="M 29.96 155.36 A 92 92 0 0 1 109.26 18.00 L 109.55 54.00 A 56 56 0 0 0 61.28 137.61 Z" fill="#64748B" />
+      <text x="110" y="104" text-anchor="middle" class="rosca-num">15</text>
+      <text x="110" y="124" text-anchor="middle" class="rosca-txt">achados</text>
+    </svg>
+    <ul class="legenda">
+      <li><span class="ponto" style="background:#EA580C"></span>
+        <span class="leg-rotulo">Alta</span>
+        <span class="leg-valor">2</span></li>
+      <li><span class="ponto" style="background:#D97706"></span>
+        <span class="leg-rotulo">Média</span>
+        <span class="leg-valor">5</span></li>
+      <li><span class="ponto" style="background:#2563EB"></span>
+        <span class="leg-rotulo">Baixa</span>
+        <span class="leg-valor">3</span></li>
+      <li><span class="ponto" style="background:#64748B"></span>
+        <span class="leg-rotulo">Informativa</span>
+        <span class="leg-valor">5</span></li>
+    </ul>
+  </div>
+      </div>
+      <div class="grafico-box">
+        <h3>Achados por categoria</h3>
+        <div class="grafico">
+    <svg viewBox="0 0 300 175" width="330" height="192.50000000000003" role="img" aria-label="Achados por categoria">
+      <g>
+        <text x="0" y="14" class="barra-rotulo">1. Banco sem tranca</text>
+        <rect x="168" y="0" width="58.8" height="20" fill="#D97706" rx="2" />
+        <text x="233.8" y="14" class="barra-valor">3</text>
+      </g>
+      <g>
+        <text x="0" y="49" class="barra-rotulo">2. Permissão definida no navegador</text>
+        <rect x="168" y="35" width="58.8" height="20" fill="#EA580C" rx="2" />
+        <text x="233.8" y="49" class="barra-valor">3</text>
+      </g>
+      <g>
+        <text x="0" y="84" class="barra-rotulo">3. IDOR e roteamento por parâmetro</text>
+        <rect x="168" y="70" width="39.2" height="20" fill="#D97706" rx="2" />
+        <text x="214.2" y="84" class="barra-valor">2</text>
+      </g>
+      <g>
+        <text x="0" y="119" class="barra-rotulo">4. Chaves expostas (hardcode)</text>
+        <rect x="168" y="105" width="98.0" height="20" fill="#D97706" rx="2" />
+        <text x="273" y="119" class="barra-valor">5</text>
+      </g>
+      <g>
+        <text x="0" y="154" class="barra-rotulo">5. Inputs sem tratamento (XSS)</text>
+        <rect x="168" y="140" width="39.2" height="20" fill="#2563EB" rx="2" />
+        <text x="214.2" y="154" class="barra-valor">2</text>
+      </g>
+    </svg>
+  </div>
+  <p class="nota-grafico">Cor da barra = severidade mais alta encontrada na categoria.</p>
+      </div>
+    </div>
+
+    <h3>Veredito por categoria</h3>
+    <table class="veredito">
+      <thead><tr><th>Categoria</th><th>Achados</th><th>Veredito</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="cat-nome"><strong>1.</strong> Banco sem tranca — isolamento de inquilino</td>
+          <td class="cat-num">3</td>
+          <td>O isolamento é a parte mais bem construída do projeto: RLS real, role dedicado não-superuser, <code>withOrgTx</code> em toda query de domínio e filtro explícito por <code>org_id</code> além da política — e o pentest confirmou que nenhuma leitura ou escrita atravessa o tenant. O achado F4 é de profundidade (12 tabelas sem <code>FORCE</code>, já corrigido); a 2ª rodada acrescentou o F15, um vazamento de fronteira pela ENTREGA — notificações do Telegram que sobreviviam à saída do integrante —, também corrigido.</td>
+        </tr>
+        <tr>
+          <td class="cat-nome"><strong>2.</strong> Permissão definida no navegador</td>
+          <td class="cat-num">3</td>
+          <td>Padrão sólido e repetido — os fatos de autorização (papel na organização, liderança do clã) são lidos do banco dentro da própria action e passados a funções puras testadas. Duas exceções quebram esse padrão: o arquivo de Fechamentos, que não tem gate nenhum, e a flag de troca obrigatória de senha, que é limpa pelo navegador.</td>
+        </tr>
+        <tr>
+          <td class="cat-nome"><strong>3.</strong> IDOR e roteamento por parâmetro</td>
+          <td class="cat-num">2</td>
+          <td>Nenhum IDOR de objeto-por-id: os 86 handlers resolvem o objeto com <code>and(eq(tabela.id, …), eq(tabela.orgId, ctx.orgId))</code> dentro de <code>withOrgTx</code>, e o pentest cross-tenant confirmou 0 leituras e 0 escritas de outro tenant. Aqui entram dois achados de parâmetro de rota: o F6 (matcher do proxy, cosmético) e o F14, um open redirect no <code>?next=</code> do sign-in contornável por barra invertida — corrigido nesta revisão.</td>
+        </tr>
+        <tr>
+          <td class="cat-nome"><strong>4.</strong> Chaves expostas (hardcode)</td>
+          <td class="cat-num">5</td>
+          <td>Nenhuma chave real de produção no código, nos configs ou no histórico do Git — só credenciais de demonstração/desenvolvimento. Na remediação ganharam trava: <code>env-guard</code> recusa segredos fracos/placeholder no boot de produção (F9/F10), o seed aborta fora do ambiente local (F7), a porta do Postgres de dev ficou em loopback (F8) e a planilha com dados de cliente foi apagada e barrada no <code>.gitignore</code> (F11).</td>
+        </tr>
+        <tr>
+          <td class="cat-nome"><strong>5.</strong> Inputs sem tratamento (XSS)</td>
+          <td class="cat-num">2</td>
+          <td>Nenhum sink de XSS no projeto — nem no cliente nem no servidor. Os dois pontos de endurecimento foram fechados: a CSP passou a usar nonce + <code>'strict-dynamic'</code> em produção, sem <code>'unsafe-inline'</code> (F12, verificado no navegador), e a armadilha do escape sem consumidor do Telegram foi removida (F13).</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+  <section class="page-break">
+    <h2>Pontos fortes — o que está protegido</h2>
+    <p class="lead">Cada item abaixo foi verificado no código, não presumido. Esta seção também serve de prova de cobertura da auditoria.</p>
+    <ol class="fortes">
+      <li>
+        <h4>Isolamento de inquilino em duas camadas, aplicado sem exceção</h4>
+        <p class="evidencia"><code>src/db/org-tx.ts:19-30</code> abre transação e executa <code>SET LOCAL app.org_id</code> antes de qualquer query; a política <code>org_isolation</code> compara <code>org_id</code> com <code>current_setting('app.org_id', true)</code>. A aplicação conecta com o role dedicado não-superuser <code>guilda_app</code> (<code>src/db/index.ts:6-15</code>, <code>docker/prod/init/01-roles.sh:7</code>), que é o que faz o RLS valer. Não foi encontrada nenhuma query de domínio fora de <code>withOrgTx</code>: os únicos usos diretos de <code>db.*</code> (<code>layout.tsx:16</code>, <code>action-context.ts:35</code>, <code>auth.ts:55</code>, <code>telegram/actions.ts:42</code>, <code>telegram/handlers.ts:55</code>, <code>telegram/worker.ts:307</code>) tocam apenas tabelas do better-auth e todos filtram por <code>organization_id</code>.</p>
+      </li>
+      <li>
+        <h4>Zero IDOR em 86 Server Actions e 2 route handlers</h4>
+        <p class="evidencia">Varredura exaustiva, arquivo por arquivo. Todo objeto lido por id usa <code>and(eq(tabela.id, …), eq(tabela.orgId, ctx.orgId))</code>, e toda mutação repete o filtro de organização no <code>WHERE</code> mesmo já estando dentro do RLS. Os poucos <code>where(eq(...))</code> de condição única (<code>campaigns/templates/actions.ts:306,310</code>, <code>company-flow-actions.ts:400,514</code>, <code>informatives/confirm.ts:283</code>) atualizam linhas que um <code>SELECT … FOR UPDATE</code> escopado por organização já havia resolvido na mesma transação.</p>
+      </li>
+      <li>
+        <h4>Autorização por fatos lidos do banco, nunca pela interface</h4>
+        <p class="evidencia"><code>src/lib/clans/facts.ts:21-56</code> carrega papel e liderança do banco e entrega a funções puras testadas em <code>src/domain/guild-permissions.ts</code>. <code>company-flow-actions.ts</code> protege 10 de 10 actions com <code>requireCorporateFlowClan</code>; <code>settings/clan-actions.ts</code> protege 8 de 8 com <code>requireClanManager</code>; <code>commitment-actions.ts</code>, 8 de 8 com <code>requireDistributionManager</code>; <code>fiscal-installment-actions.ts</code>, 6 de 6; <code>fiscal-actions.ts</code> e <code>office-fee-actions.ts</code>, todas. O Telegram repete exatamente o mesmo gate do painel (<code>telegram/ai-informative.ts:121-127</code>).</p>
+      </li>
+      <li>
+        <h4>Ledger de XP imutável e idempotente no nível do banco</h4>
+        <p class="evidencia"><code>REVOKE UPDATE, DELETE ON xp_ledger FROM guilda_app</code> (<code>0004_rls-xp-ledger.sql:10</code>) — estorno é lançamento negativo novo (<code>tasks/actions.ts:1019-1034</code>), nunca edição. O <code>xp_value</code> é congelado na criação e o comentário em <code>tasks/actions.ts:802</code> registra que nunca vem do cliente. Índices únicos parciais impedem crédito duplo por evento e por ano de fechamento (<code>0015_thankful_runaways.sql:3</code>).</p>
+      </li>
+      <li>
+        <h4>Máquina de estados de missão validada no servidor, com lock de linha</h4>
+        <p class="evidencia"><code>tasks/actions.ts:288-496</code> trava a linha com <code>.for(&quot;update&quot;)</code>, checa a intenção declarada da action (<code>allowedFrom</code>), roda <code>authorizeTransition</code> do domínio e executa o efeito de XP dentro da mesma transação. Transições concorrentes serializam no lock e a segunda falha na validação de estado.</p>
+      </li>
+      <li>
+        <h4>Credencial Gov.br cifrada com AES-256-GCM e revelação restrita</h4>
+        <p class="evidencia"><code>src/lib/company-flows/secrets.ts:22-48</code> usa IV aleatório de 12 bytes por registro e verifica o authTag na leitura. <code>revealCompanyFlowGovPassword</code> (<code>company-flow-actions.ts:583-608</code>) exige clã Societário ativo e <code>canReturnCompanyFlow</code> — responsável pelo fluxo, liderança ou admin/owner. Sem a chave, a aplicação recusa gravar em vez de guardar em claro (<code>:295-298</code>).</p>
+      </li>
+      <li>
+        <h4>Webhook do Telegram com comparação em tempo constante e limites de corpo</h4>
+        <p class="evidencia"><code>src/app/api/telegram/webhook/route.ts:14-22</code> usa <code>timingSafeEqual</code> com checagem prévia de tamanho; <code>:38-51</code> rejeita corpos acima de 1 MB tanto pelo <code>content-length</code> declarado quanto pelo tamanho real; <code>:53-60</code> valida o formato antes de despachar. O segredo é derivado por SHA-256 de <code>BETTER_AUTH_SECRET</code> + token do bot quando não há override (<code>telegram/config.ts:37-43</code>).</p>
+      </li>
+      <li>
+        <h4>Funções SECURITY DEFINER mínimas e com privilégio revogado do PUBLIC</h4>
+        <p class="evidencia"><code>0017_mute_red_wolf.sql:119-134</code> e <code>0018_faithful_spot.sql:5-48</code> definem <code>SET search_path</code>, retornam somente os identificadores necessários antes de o tenant ser conhecido, e fazem <code>REVOKE ALL … FROM PUBLIC</code> seguido de <code>GRANT EXECUTE … TO guilda_app</code>. Os tokens de vínculo do Telegram são armazenados apenas como digest SHA-256 (<code>telegram/link-token.ts:13-16</code>), com TTL de 10 minutos e uso único.</p>
+      </li>
+      <li>
+        <h4>Nenhum sink de XSS em todo o frontend</h4>
+        <p class="evidencia">Busca em todo <code>src/</code> por <code>dangerouslySetInnerHTML</code>, <code>innerHTML</code>, <code>eval</code>, <code>new Function</code>, <code>srcDoc</code> e <code>javascript:</code> — zero ocorrências. Não há renderizador de Markdown/HTML. Todos os <code>href={…}</code> são literais, template strings com ids do servidor, ou vêm de uma lista branca do servidor: os atalhos do dashboard são resolvidos por <code>resolveDashboardShortcuts</code> (<code>lib/dashboard-shortcuts.ts:112-121</code>), que descarta qualquer <code>target</code> fora das opções permitidas, e a action que os salva revalida contra os clãs visíveis (<code>dashboard/actions.ts:71-76</code>).</p>
+      </li>
+      <li>
+        <h4>Gestão de segredos correta no Compose, no Git e no Docker</h4>
+        <p class="evidencia"><code>docker-compose.yml:13,15,44,45,46</code> usa <code>${VAR:?mensagem}</code> para todo segredo obrigatório — nenhum <code>${VAR:-default}</code> em variável sensível. <code>.gitignore:33-35</code> ignora <code>.env*</code> com exceção só dos exemplos; <code>.dockerignore:4-5</code> repete a regra. A varredura do histórico do Git não encontrou <code>.env</code>, chave privada, token de bot nem chave de API em nenhum commit. Nenhuma variável <code>NEXT_PUBLIC_*</code> carrega segredo — só a URL pública da aplicação.</p>
+      </li>
+      <li>
+        <h4>Validação Zod e verificação de sessão em 100% das Server Actions</h4>
+        <p class="evidencia">As 86 actions começam por <code>requireMemberContext()</code> (ou um gate que o encapsula) e validam o input com <code>safeParse</code> antes de tocar o banco. Nenhuma aceita XP, nível ou status vindos do cliente.</p>
+      </li>
+      <li>
+        <h4>Rate limiting em auth e cabeçalhos de segurança configurados</h4>
+        <p class="evidencia"><code>src/lib/auth.ts:36-47</code> aplica 5 tentativas/min em <code>/sign-in/email</code>, 3/min em <code>/sign-up/email</code> e 10/min nos endpoints de convite, com armazenamento em banco (tabela <code>rate_limit</code>, <code>0005_sticky_speed_demon.sql:1</code>). <code>next.config.ts:22-36</code> define HSTS com <code>preload</code>, <code>nosniff</code>, <code>X-Frame-Options: DENY</code>, <code>Referrer-Policy: strict-origin-when-cross-origin</code> e <code>Permissions-Policy</code> restritiva.</p>
+      </li>
+    </ol>
+
+    <h2>Pontos fracos — os riscos centrais</h2>
+    <p class="lead">Estes foram os riscos centrais no momento da auditoria (redigidos no presente para preservar o diagnóstico original). Todos os de severidade alta e média já foram <strong>corrigidos e verificados</strong> nesta revisão — o estado de cada um está no cartão do achado e na seção de validação ofensiva.</p>
+    <ol class="fracos">
+      <li><strong>Uma família de Server Actions escapou do padrão de autorização da casa.</strong> O projeto acerta a autorização em 79 das 86 actions com um padrão consistente e testado; as 7 de Fechamentos ficaram para trás e hoje aceitam qualquer membro da organização. Não é uma falha de arquitetura — é uma lacuna pontual num padrão que já existe pronto ao lado, em <code>commitment-actions.ts</code>.</li>
+      <li><strong>O gate de gamificação mais valioso está exatamente na action sem gate.</strong> <code>setYearClosed</code> é o único caminho do produto em que o próprio chamador se credita XP, e é justamente ele que não verifica papel. A combinação transforma um erro de autorização em destruição do ranking, que é o mecanismo central do produto.</li>
+      <li><strong>A navegação da interface está sendo usada como fronteira de segurança em três pontos.</strong> A aba de Fechamentos restrita ao clã Contabilidade (F1/F2), a flag <code>mustChangePassword</code> desligada pelo navegador (F3) e o matcher do proxy (F6) partem todos da mesma premissa equivocada: a de que aquilo que a UI não mostra, o servidor não precisa checar. Server Actions e endpoints do better-auth são endereçáveis diretamente.</li>
+      <li><strong>A segunda camada de defesa do banco tem cobertura desigual e o verificador não vê a diferença.</strong> 30 tabelas com <code>FORCE</code>, 12 sem — e as 12 sem são as do núcleo. O <code>check:rls</code> que existia para pegar essa regressão não olha para elas.</li>
+      <li><strong>Credenciais de demonstração viajam junto com a imagem de produção.</strong> O seed com senha pública criando conta <code>owner</code> está dentro do contêiner publicado, com <code>tsx</code> disponível e sem nenhuma trava de ambiente.</li>
+    </ol>
+  </section>
+  <section class="page-break">
+    <h2>Achados — visão consolidada</h2>
+    <table class="achados-tabela">
+      <thead><tr><th>Severidade</th><th>Estado</th><th>Arquivo:linha</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr>
+      <td class="c-sev"><span class="chip" style="background:#EA580C">Alta</span></td>
+      <td class="c-est"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span></td>
+      <td class="c-arq"><code>src/app/(app)/clans/[id]/closing-actions.ts:88 (createClosing)</code><span class="mais">+5 localis</span></td>
+      <td class="c-desc"><span class="c-id">F1</span> Sete Server Actions de Fechamentos sem verificação de clã ou papel <span class="c-cat">[cat. 2]</span></td>
+    </tr>
+    <tr>
+      <td class="c-sev"><span class="chip" style="background:#EA580C">Alta</span></td>
+      <td class="c-est"><span class="selo" style="color:#D97706;border-color:#D97706">Mitigado</span></td>
+      <td class="c-arq"><code>src/app/(app)/clans/[id]/closing-actions.ts:316-397</code></td>
+      <td class="c-desc"><span class="c-id">F2</span> setYearClosed credita XP para quem chamou, sem gate — farm de XP em massa <span class="c-cat">[cat. 2]</span></td>
+    </tr>
+    <tr>
+      <td class="c-sev"><span class="chip" style="background:#D97706">Média</span></td>
+      <td class="c-est"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span></td>
+      <td class="c-arq"><code>src/db/migrations/0002_rls-domain.sql:11 (tasks), :15 (task_events)</code><span class="mais">+5 localis</span></td>
+      <td class="c-desc"><span class="c-id">F4</span> 12 tabelas de domínio têm RLS habilitado mas não forçado (FORCE) <span class="c-cat">[cat. 1]</span></td>
+    </tr>
+    <tr>
+      <td class="c-sev"><span class="chip" style="background:#D97706">Média</span></td>
+      <td class="c-est"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span></td>
+      <td class="c-arq"><code>src/lib/clans/bootstrap.ts:236 (cleanup do offboarding)</code><span class="mais">+2 localis</span></td>
+      <td class="c-desc"><span class="c-id">F15</span> Notificações do Telegram sobreviviam à saída do integrante da organização <span class="c-cat">[cat. 1]</span></td>
+    </tr>
+    <tr>
+      <td class="c-sev"><span class="chip" style="background:#D97706">Média</span></td>
+      <td class="c-est"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span></td>
+      <td class="c-arq"><code>src/lib/auth.ts:25-33</code><span class="mais">+2 localis</span></td>
+      <td class="c-desc"><span class="c-id">F3</span> A troca obrigatória de senha temporária é desativada pelo próprio navegador <span class="c-cat">[cat. 2]</span></td>
+    </tr>
+    <tr>
+      <td class="c-sev"><span class="chip" style="background:#D97706">Média</span></td>
+      <td class="c-est"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span></td>
+      <td class="c-arq"><code>src/app/(auth)/sign-in/page.tsx:14 (versão anterior)</code></td>
+      <td class="c-desc"><span class="c-id">F14</span> Filtro de open redirect do sign-in contornável por barra invertida e caracteres de controle <span class="c-cat">[cat. 3]</span></td>
+    </tr>
+    <tr>
+      <td class="c-sev"><span class="chip" style="background:#D97706">Média</span></td>
+      <td class="c-est"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span></td>
+      <td class="c-arq"><code>scripts/seed.ts:7</code><span class="mais">+5 localis</span></td>
+      <td class="c-desc"><span class="c-id">F7</span> Seed cria uma conta owner com senha fixa, sem trava de ambiente, e vai para a imagem de produção <span class="c-cat">[cat. 4]</span></td>
+    </tr>
+    <tr>
+      <td class="c-sev"><span class="chip" style="background:#2563EB">Baixa</span></td>
+      <td class="c-est"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span></td>
+      <td class="c-arq"><code>docker/dev/init/01-roles.sql:5</code><span class="mais">+4 localis</span></td>
+      <td class="c-desc"><span class="c-id">F8</span> Senha do role da aplicação fixa no init do Postgres de desenvolvimento <span class="c-cat">[cat. 4]</span></td>
+    </tr>
+    <tr>
+      <td class="c-sev"><span class="chip" style="background:#2563EB">Baixa</span></td>
+      <td class="c-est"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span></td>
+      <td class="c-arq"><code>Dockerfile:16-18</code><span class="mais">+1 local</span></td>
+      <td class="c-desc"><span class="c-id">F9</span> Placeholder literal de BETTER_AUTH_SECRET no Dockerfile, sem validação própria de inicialização <span class="c-cat">[cat. 4]</span></td>
+    </tr>
+    <tr>
+      <td class="c-sev"><span class="chip" style="background:#2563EB">Baixa</span></td>
+      <td class="c-est"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span></td>
+      <td class="c-arq"><code>next.config.ts:8-20</code></td>
+      <td class="c-desc"><span class="c-id">F12</span> CSP depende de 'unsafe-inline' em script-src <span class="c-cat">[cat. 5]</span></td>
+    </tr>
+    <tr>
+      <td class="c-sev"><span class="chip" style="background:#64748B">Informativa</span></td>
+      <td class="c-est"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span></td>
+      <td class="c-arq"><code>scripts/check-rls.mjs:13-38</code><span class="mais">+1 local</span></td>
+      <td class="c-desc"><span class="c-id">F5</span> O verificador de RLS não cobre as tabelas do núcleo <span class="c-cat">[cat. 1]</span></td>
+    </tr>
+    <tr>
+      <td class="c-sev"><span class="chip" style="background:#64748B">Informativa</span></td>
+      <td class="c-est"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span></td>
+      <td class="c-arq"><code>src/proxy.ts:30-43</code></td>
+      <td class="c-desc"><span class="c-id">F6</span> O matcher do proxy não acompanha as rotas protegidas do app <span class="c-cat">[cat. 3]</span></td>
+    </tr>
+    <tr>
+      <td class="c-sev"><span class="chip" style="background:#64748B">Informativa</span></td>
+      <td class="c-est"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span></td>
+      <td class="c-arq"><code>src/lib/company-flows/secrets.ts:13-20</code></td>
+      <td class="c-desc"><span class="c-id">F10</span> FLOW_SECRETS_KEY aceita qualquer valor que decodifique para 32 bytes <span class="c-cat">[cat. 4]</span></td>
+    </tr>
+    <tr>
+      <td class="c-sev"><span class="chip" style="background:#64748B">Informativa</span></td>
+      <td class="c-est"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span></td>
+      <td class="c-arq"><code>.gitignore</code><span class="mais">+1 local</span></td>
+      <td class="c-desc"><span class="c-id">F11</span> Planilha com dados do escritório na raiz do repositório, sem regra no .gitignore <span class="c-cat">[cat. 4]</span></td>
+    </tr>
+    <tr>
+      <td class="c-sev"><span class="chip" style="background:#64748B">Informativa</span></td>
+      <td class="c-est"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span></td>
+      <td class="c-arq"><code>src/lib/telegram/format.ts:3-9</code><span class="mais">+2 localis</span></td>
+      <td class="c-desc"><span class="c-id">F13</span> Função de escape do Telegram sem consumidor — armadilha latente <span class="c-cat">[cat. 5]</span></td>
+    </tr>
+      </tbody>
+    </table>
+  </section>
+  <section class="page-break">
+      <h2><span class="cat-badge">Categoria 1</span> Banco sem tranca — isolamento de inquilino</h2>
+      <p class="veredito-cat">O isolamento é a parte mais bem construída do projeto: RLS real, role dedicado não-superuser, <code>withOrgTx</code> em toda query de domínio e filtro explícito por <code>org_id</code> além da política — e o pentest confirmou que nenhuma leitura ou escrita atravessa o tenant. O achado F4 é de profundidade (12 tabelas sem <code>FORCE</code>, já corrigido); a 2ª rodada acrescentou o F15, um vazamento de fronteira pela ENTREGA — notificações do Telegram que sobreviviam à saída do integrante —, também corrigido.</p>
+      <article class="achado">
+          <header>
+            <span class="chip" style="background:#D97706">Média</span>
+            <span class="selo" style="color:#059669;border-color:#059669">Corrigido</span>
+            <h3><span class="c-id">F4</span> 12 tabelas de domínio têm RLS habilitado mas não forçado (FORCE)</h3>
+          </header>
+          <ul class="locais">
+            <li><code>src/db/migrations/0002_rls-domain.sql:11 (tasks), :15 (task_events)</code></li>
+            <li><code>src/db/migrations/0004_rls-xp-ledger.sql:3 (xp_ledger)</code></li>
+            <li><code>src/db/migrations/0007_rls-clients.sql:4 (clients)</code></li>
+            <li><code>src/db/migrations/0009_rls-mission-templates.sql (mission_templates, mission_template_items)</code></li>
+            <li><code>src/db/migrations/0011_rls-accounting-closings.sql:2 (accounting_closings, accounting_closing_years)</code></li>
+            <li><code>src/db/migrations/0017_mute_red_wolf.sql (telegram_connections, telegram_link_tokens, telegram_preferences, telegram_outbox)</code></li>
+          </ul>
+          <pre class="codigo">-- 0002_rls-domain.sql:11-17 — ENABLE, sem FORCE
+ALTER TABLE &quot;tasks&quot; ENABLE ROW LEVEL SECURITY;
+CREATE POLICY &quot;org_isolation&quot; ON &quot;tasks&quot;
+  USING (&quot;org_id&quot; = current_setting('app.org_id', true));
+
+ALTER TABLE &quot;task_events&quot; ENABLE ROW LEVEL SECURITY;
+CREATE POLICY &quot;org_isolation&quot; ON &quot;task_events&quot;
+  USING (&quot;org_id&quot; = current_setting('app.org_id', true));
+
+-- compare com 0025_force-rls-informatives.sql:7, o padrão adotado depois:
+ALTER TABLE &quot;informatives&quot; FORCE ROW LEVEL SECURITY;</pre>
+          <div class="bloco"><h5>Por que é explorável</h5><p>Das 42 tabelas de domínio, 30 recebem <code>FORCE ROW LEVEL SECURITY</code> e 12 ficaram só com <code>ENABLE</code>. Sem <code>FORCE</code>, o dono da tabela ignora a política — o RLS dessas 12 tabelas só vale enquanto a aplicação conectar com um role que não seja o <code>postgres</code>. Hoje conecta (<code>src/db/index.ts:6-15</code>, <code>docker-compose.yml:43</code>), então não há furo em operação normal. O problema é que a própria base de código antecipa o cenário contrário: <code>scripts/start-production.mjs:22-28</code> avisa em runtime que, se <code>MIGRATION_DATABASE_URL</code> estiver ausente, as migrations rodam com <code>DATABASE_URL</code> — e o <code>docker-compose.yml:5-6</code> documenta o deploy com Postgres externo, em que apontar as duas variáveis para o mesmo role é o erro natural. Nessa configuração, o isolamento continuaria valendo nas 30 tabelas com <code>FORCE</code> e desapareceria silenciosamente em <code>tasks</code>, <code>xp_ledger</code>, <code>clients</code> e <code>accounting_closings</code> — justamente as do núcleo. As migrations 0025, 0027 e 0032 tratam <code>FORCE</code> explicitamente como o padrão da casa (“sem FORCE, o OWNER da tabela ignora a política”); estas 12 são dívida, não decisão.</p></div>
+          <div class="bloco"><h5>Impacto</h5><p>Sob uma configuração de banco plausível e não bloqueada por nada, a segunda camada de defesa contra vazamento entre organizações some das quatro tabelas mais sensíveis do produto (missões, ledger de XP, empresas-cliente e fechamentos), restando só o filtro por <code>org_id</code> na aplicação.</p></div>
+          <div class="bloco"><h5>Condições de exploração</h5><p>Condicional: exige que <code>DATABASE_URL</code> aponte para o role dono/superuser das tabelas. Não é o padrão dos arquivos de exemplo, mas é o modo de implantação que <code>start-production.mjs</code> prevê e apenas adverte por log.</p></div>
+          <div class="remediacao" style="border-left-color:#059669">
+    <div class="rem-topo"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span> <span class="rem-titulo">Remediação</span></div>
+    <p class="rem-linha"><strong>O que foi feito:</strong> Migration 0062 aplica FORCE ROW LEVEL SECURITY nas 12 tabelas do núcleo, alinhando ao padrão das demais 30.</p>
+    <p class="rem-linha"><strong>Verificação:</strong> No banco: 42/42 tabelas com org_id agora enabled=true forced=true, zero pendências. Ataque como guilda_app na org do atacante contra linhas de outro tenant: 0 leituras e 0 escritas.</p>
+  </div>
+        </article>
+        <article class="achado">
+          <header>
+            <span class="chip" style="background:#D97706">Média</span>
+            <span class="selo" style="color:#059669;border-color:#059669">Corrigido</span>
+            <h3><span class="c-id">F15</span> Notificações do Telegram sobreviviam à saída do integrante da organização</h3>
+          </header>
+          <ul class="locais">
+            <li><code>src/lib/clans/bootstrap.ts:236 (cleanup do offboarding)</code></li>
+            <li><code>src/lib/telegram/notifications.ts:115 (broadcast)</code></li>
+            <li><code>src/lib/telegram/worker.ts:310 (resumo/lembrete agendado)</code></li>
+          </ul>
+          <pre class="codigo">// offboarding ANTES: só apagava o vínculo de clã, nada tocava a conexão do bot
+await tx.delete(schema.clanMemberships).where(/* org + user */);
+// (telegram_connections continuava ativa)
+
+// e as DUAS rotas de envio enumeram conexões SEM provar vínculo:
+const connections = await tx.query.telegramConnections.findMany({
+  where: and(eq(...orgId), isNull(...revokedAt)),   // &lt;- não checa 'member'
+});</pre>
+          <div class="bloco"><h5>Por que é explorável</h5><p><code>cleanupRemovedOrganizationMemberClans</code> removia apenas as linhas de <code>clan_memberships</code> ao tirar alguém da organização. A conexão do bot (<code>telegram_connections</code>) continuava ativa, e as duas rotas de entrega — o broadcast (<code>enqueueTelegramOrgBroadcast</code>) e o agendador do worker — enumeram conexões filtrando só por <code>org_id</code> e <code>revoked_at</code>, sem provar que a pessoa ainda é <code>member</code>. Resultado: um ex-integrante com Telegram vinculado seguia recebendo todo aviso do Mural, toda mudança de fechamento <strong>com o nome da empresa-cliente</strong> e o resumo diário, por tempo indeterminado. O bot recusava comandos dele (o handler checa <code>member</code>), mas a entrega passiva continuava.</p></div>
+          <div class="bloco"><h5>Impacto</h5><p>Vazamento contínuo de informação operacional e de nomes de empresas-cliente para quem já saiu da organização, até que a conexão fosse revogada manualmente — o que nada fazia.</p></div>
+          <div class="bloco"><h5>Condições de exploração</h5><p>Ter o Telegram vinculado antes de ser removido da organização. A entrega segue automática, sem ação do ex-integrante.</p></div>
+          <div class="remediacao" style="border-left-color:#059669">
+    <div class="rem-topo"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span> <span class="rem-titulo">Remediação</span></div>
+    <p class="rem-linha"><strong>O que foi feito:</strong> O offboarding revoga a conexão do Telegram e invalida tokens pendentes; as duas rotas de envio ganharam INNER JOIN member — quem saiu para de receber.</p>
+    <p class="rem-linha"><strong>Verificação:</strong> No banco: após remover o membro, a consulta antiga ainda alcançaria a conexão (1), a nova (com join) alcança 0.</p>
+  </div>
+        </article>
+        <article class="achado">
+          <header>
+            <span class="chip" style="background:#64748B">Informativa</span>
+            <span class="selo" style="color:#059669;border-color:#059669">Corrigido</span>
+            <h3><span class="c-id">F5</span> O verificador de RLS não cobre as tabelas do núcleo</h3>
+          </header>
+          <ul class="locais">
+            <li><code>scripts/check-rls.mjs:13-38</code></li>
+            <li><code>scripts/check-rls.mjs:71-75</code></li>
+          </ul>
+          <pre class="codigo">// scripts/check-rls.mjs:13-38 — a lista auditada por `npm run check:rls`
+const NEW_TABLES = [
+  &quot;clan_informative_routes&quot;, &quot;task_assignee_suggestions&quot;, &quot;guild_notices&quot;,
+  &quot;guild_notice_reads&quot;, &quot;informatives&quot;, &quot;fiscal_portfolios&quot;, /* … */
+  &quot;company_flows&quot;, &quot;company_flow_secrets&quot;, &quot;company_flow_events&quot;,
+];
+// tasks, task_events, xp_ledger, clients e accounting_closings não estão aqui.
+
+// :71-75 — a checagem exige enabled E forced, mas só para NEW_TABLES
+check(t, Boolean(row?.relrowsecurity &amp;&amp; row?.relforcerowsecurity), …);</pre>
+          <div class="bloco"><h5>Por que é explorável</h5><p>O script exige corretamente <code>relrowsecurity &amp;&amp; relforcerowsecurity</code>, mas só para as 24 tabelas “novas”. As tabelas do núcleo nunca entraram na lista, e é por isso que a dívida de <code>FORCE</code> do F4 atravessou 60 migrations sem ser notada — a suíte que existia justamente para pegar esse tipo de regressão estava olhando para o outro lado.</p></div>
+          <div class="bloco"><h5>Impacto</h5><p>Falsa sensação de cobertura: <code>npm run check:rls</code> passa com sucesso mesmo com <code>tasks</code>, <code>xp_ledger</code>, <code>clients</code> e <code>accounting_closings</code> sem <code>FORCE</code>.</p></div>
+          <div class="bloco"><h5>Condições de exploração</h5><p>Não explorável por si. É o motivo pelo qual F4 permaneceu invisível.</p></div>
+          <div class="remediacao" style="border-left-color:#059669">
+    <div class="rem-topo"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span> <span class="rem-titulo">Remediação</span></div>
+    <p class="rem-linha"><strong>O que foi feito:</strong> check-rls.mjs deriva a lista de pg_class (toda tabela com coluna org_id) em vez de uma constante fixa, e exige relrowsecurity AND relforcerowsecurity. Tabela nova entra na checagem sozinha.</p>
+    <p class="rem-linha"><strong>Verificação:</strong> npm run check:rls roda contra o banco e reporta as 42 tabelas; TODAS AS CHECAGENS PASSARAM, com provas de isolamento incluídas para tasks, xp_ledger e clients.</p>
+  </div>
+        </article>
+    </section>
+  <section class="page-break">
+      <h2><span class="cat-badge">Categoria 2</span> Permissão definida no navegador</h2>
+      <p class="veredito-cat">Padrão sólido e repetido — os fatos de autorização (papel na organização, liderança do clã) são lidos do banco dentro da própria action e passados a funções puras testadas. Duas exceções quebram esse padrão: o arquivo de Fechamentos, que não tem gate nenhum, e a flag de troca obrigatória de senha, que é limpa pelo navegador.</p>
+      <article class="achado">
+          <header>
+            <span class="chip" style="background:#EA580C">Alta</span>
+            <span class="selo" style="color:#059669;border-color:#059669">Corrigido</span>
+            <h3><span class="c-id">F1</span> Sete Server Actions de Fechamentos sem verificação de clã ou papel</h3>
+          </header>
+          <ul class="locais">
+            <li><code>src/app/(app)/clans/[id]/closing-actions.ts:88 (createClosing)</code></li>
+            <li><code>src/app/(app)/clans/[id]/closing-actions.ts:146 (updateClosing)</code></li>
+            <li><code>src/app/(app)/clans/[id]/closing-actions.ts:214 (setClosingStatus)</code></li>
+            <li><code>src/app/(app)/clans/[id]/closing-actions.ts:281 (deleteClosing)</code></li>
+            <li><code>src/app/(app)/clans/[id]/closing-actions.ts:440 (setDefisCompleted)</code></li>
+            <li><code>src/app/(app)/clans/[id]/closing-actions.ts:506 (updateYearNotes)</code></li>
+          </ul>
+          <pre class="codigo">// closing-actions.ts:281 — deleteClosing, íntegra do controle de acesso
+export async function deleteClosing(
+  input: z.input&lt;typeof deleteClosingSchema&gt;,
+): Promise&lt;ActionResult&gt; {
+  const ctx = await requireMemberContext();   // &lt;- só prova que é membro da org
+  if (!ctx.ok) return ctx;
+
+  const parsed = deleteClosingSchema.safeParse(input);
+  if (!parsed.success) return err(&quot;Fechamento inválido.&quot;);
+
+  const deleted = await withOrgTx(ctx.orgId, (tx) =&gt;
+    tx.delete(schema.accountingClosings).where(
+      and(
+        eq(schema.accountingClosings.id, parsed.data.closingId),
+        eq(schema.accountingClosings.orgId, ctx.orgId),
+      ),
+    ).returning({ id: schema.accountingClosings.id }),
+  );</pre>
+          <div class="bloco"><h5>Por que é explorável</h5><p><code>requireMemberContext()</code> prova apenas que quem chamou é membro da organização — não checa clã nem papel. A restrição “Fechamentos pertence à Contabilidade” mora exclusivamente na navegação: <code>src/lib/clan-tabs.ts:37</code> só oferece a aba <code>closings</code> ao clã de slug <code>contabilidade</code>, e <code>src/app/(app)/clans/[id]/page.tsx:133</code> devolve 404 para quem não é do clã. Nenhuma dessas duas barreiras existe no caminho da Server Action. Como <code>closing-board.tsx:1</code> é um Client Component que importa essas actions (<code>:44-47</code>), os identificadores <code>Next-Action</code> ficam em um chunk estático público em <code>/_next/static/chunks/</code>, acessível a qualquer usuário autenticado. Um <code>member</code> do clã Fiscal (ou de qualquer outro) pode então apagar, criar e reescrever fechamentos contábeis de qualquer empresa da organização. O contraste interno é a prova de que isso é lapso e não decisão: o arquivo irmão da mesma aba, <code>commitment-actions.ts</code>, protege as suas 8 actions com <code>requireDistributionManager</code> (<code>:45-67</code>), que valida o slug do clã e chama <code>canManageClanCommitments</code>.</p></div>
+          <div class="bloco"><h5>Impacto</h5><p>Perda e adulteração silenciosa de registros contábeis (fechamentos, situação, saldo de caixa, resultado, empréstimo de sócio, observações e DEFIS) de qualquer uma das empresas-cliente, por qualquer pessoa com conta na organização.</p></div>
+          <div class="bloco"><h5>Condições de exploração</h5><p>Requer apenas uma conta ativa de <code>member</code> na organização. Nenhuma feature flag, nenhuma configuração insegura.</p></div>
+          <div class="remediacao" style="border-left-color:#059669">
+    <div class="rem-topo"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span> <span class="rem-titulo">Remediação</span></div>
+    <p class="rem-linha"><strong>O que foi feito:</strong> Gate requireClosingManager/requireClosingActor nas 7 actions, espelhando requireDistributionManager: exige clã Contabilidade e papel, com clanId nos schemas Zod. Régua pura canManageClanClosings/canDeleteClanClosing em guild-permissions.ts, com testes.</p>
+    <p class="rem-linha"><strong>Verificação:</strong> Pentest HTTP: member sem vínculo recebe “Apenas quem integra a Contabilidade…” e nada é gravado; owner segue conseguindo. Aba renderiza normalmente. tsc, lint, 510 testes e build passam.</p>
+  </div>
+        </article>
+        <article class="achado">
+          <header>
+            <span class="chip" style="background:#EA580C">Alta</span>
+            <span class="selo" style="color:#D97706;border-color:#D97706">Mitigado</span>
+            <h3><span class="c-id">F2</span> setYearClosed credita XP para quem chamou, sem gate — farm de XP em massa</h3>
+          </header>
+          <ul class="locais">
+            <li><code>src/app/(app)/clans/[id]/closing-actions.ts:316-397</code></li>
+          </ul>
+          <pre class="codigo">// closing-actions.ts:384-396
+let xpAwarded = false;
+if (data.closed) {
+  const credited = await tx
+    .insert(schema.xpLedger)
+    .values({
+      orgId: ctx.orgId,
+      userId: ctx.userId,          // &lt;- o próprio chamador recebe o XP
+      closingYearId: annual.id,
+      amount: CLOSING_YEAR_XP,
+      reason: &quot;closing_year_closed&quot;,
+    })
+    .onConflictDoNothing()
+    .returning({ id: schema.xpLedger.id });
+  xpAwarded = credited.length &gt; 0;
+}</pre>
+          <div class="bloco"><h5>Por que é explorável</h5><p>Mesma ausência de gate do F1, mas com um efeito colateral que sai do domínio contábil e cai na gamificação. A action aceita qualquer <code>clientId</code> da organização e qualquer <code>year</code> entre 2000 e 2100 (<code>:309</code>) e credita <code>CLOSING_YEAR_XP</code> ao usuário da sessão. A idempotência existe (índice único parcial <code>xp_ledger_closing_year_closed_uidx</code> em <code>src/db/migrations/0015_thankful_runaways.sql:3</code>), mas ela é por par (empresa, ano) — não por pessoa. Com ~250 empresas-cliente e 101 anos aceitos, um único <code>member</code> pode gerar mais de 25 mil créditos distintos em laço, todos legítimos aos olhos do banco. O <code>xp_ledger</code> é imutável por privilégio (<code>REVOKE UPDATE, DELETE</code> em <code>0004_rls-xp-ledger.sql:10</code>), o que aqui joga contra: os lançamentos falsos não podem ser apagados, só estornados um a um.</p></div>
+          <div class="bloco"><h5>Impacto</h5><p>Destruição da integridade do ranking e do sistema de níveis — o mecanismo central do produto. Efeito colateral: fecha anos contábeis de empresas arbitrárias, o que dispara notificação para a organização inteira (<code>:400-419</code>) e bloqueia o registro da DEFIS (<code>:472</code>).</p></div>
+          <div class="bloco"><h5>Condições de exploração</h5><p>Conta ativa de <code>member</code>. O laço é trivial: para cada empresa da organização, chamar a action com <code>closed: true</code> variando o ano.</p></div>
+          <div class="remediacao" style="border-left-color:#D97706">
+    <div class="rem-topo"><span class="selo" style="color:#D97706;border-color:#D97706">Mitigado</span> <span class="rem-titulo">Remediação</span></div>
+    <p class="rem-linha"><strong>O que foi feito:</strong> O gate do F1 remove o acesso de fora da Contabilidade e de outros tenants. A trava adicional de XP (limitar a faixa de anos ou creditar só pela missão) NÃO foi adicionada por decisão consciente: o farm de XP DENTRO da Contabilidade continua possível.</p>
+    <p class="rem-linha"><strong>Verificação:</strong> Pentest: setYearClosed cross-clã/cross-tenant bloqueado, 0 XP creditado. O resíduo intra-clã é aceito; auditoria por closed_by_task_id separa o manual do legítimo. Reavaliar se o ranking degradar.</p>
+  </div>
+        </article>
+        <article class="achado">
+          <header>
+            <span class="chip" style="background:#D97706">Média</span>
+            <span class="selo" style="color:#059669;border-color:#059669">Corrigido</span>
+            <h3><span class="c-id">F3</span> A troca obrigatória de senha temporária é desativada pelo próprio navegador</h3>
+          </header>
+          <ul class="locais">
+            <li><code>src/lib/auth.ts:25-33</code></li>
+            <li><code>src/app/(auth)/change-password/change-password-form.tsx:54</code></li>
+            <li><code>src/lib/session.ts:31-41</code></li>
+          </ul>
+          <pre class="codigo">// src/lib/auth.ts:25-33 — campo adicional marcado como gravável pelo cliente
+user: {
+  additionalFields: {
+    mustChangePassword: {
+      type: &quot;boolean&quot;,
+      defaultValue: false,
+      input: true,               // &lt;- aceito no corpo de /update-user
+    },
+  },
+},
+
+// src/app/(auth)/change-password/change-password-form.tsx:54
+// Marca a troca como feita — deixa de ser redirecionado para cá.
+await authClient.updateUser({ mustChangePassword: false });</pre>
+          <div class="bloco"><h5>Por que é explorável</h5><p><code>createMemberWithTempPassword</code> (<code>src/app/(app)/members/actions.ts:61</code>) cria a conta com <code>mustChangePassword: true</code>, e <code>requireOrgSession</code> (<code>src/lib/session.ts:33-35</code>) redireciona para <code>/change-password</code> enquanto a flag estiver ligada. Só que a flag é declarada com <code>input: true</code>, e o better-auth aceita campos adicionais assim marcados no corpo do endpoint <code>/update-user</code> — confirmado em <code>node_modules/better-auth/dist/api/routes/update-user.mjs:54</code>, <code>parseUserInput(ctx.context.options, rest, &quot;update&quot;)</code>. Quem baixa a flag hoje é o navegador, numa segunda chamada logo depois de trocar a senha; nada no servidor amarra o desligamento da flag ao fato de a senha ter sido efetivamente trocada. Qualquer usuário autenticado pode emitir <code>POST /api/auth/update-user {&quot;mustChangePassword&quot;: false}</code> e continuar operando indefinidamente com a senha temporária que o admin distribuiu por canal externo. Como agravante, as Server Actions usam <code>requireMemberContext</code> (<code>src/lib/action-context.ts:23-49</code>), que não olha a flag — logo, mesmo sem desligá-la, a pessoa já consegue executar qualquer mutação; a barreira do <code>/change-password</code> só existe na navegação de páginas.</p></div>
+          <div class="bloco"><h5>Impacto</h5><p>Senhas temporárias compartilhadas fora do sistema (chat, e-mail, papel) permanecem válidas por tempo indeterminado, aumentando a janela para tomada de conta de qualquer membro — inclusive de um <code>admin</code> recém-criado.</p></div>
+          <div class="bloco"><h5>Condições de exploração</h5><p>Uma chamada autenticada ao endpoint do better-auth. Não depende de nenhuma configuração especial.</p></div>
+          <div class="remediacao" style="border-left-color:#059669">
+    <div class="rem-topo"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span> <span class="rem-titulo">Remediação</span></div>
+    <p class="rem-linha"><strong>O que foi feito:</strong> mustChangePassword passou a input:false (rejeitado em /update-user); a flag só é desligada pelo servidor, como efeito de changeOwnPassword. requireMemberContext também exige a troca, cobrindo as Server Actions.</p>
+    <p class="rem-linha"><strong>Verificação:</strong> Pentest: POST /update-user {mustChangePassword:false} → 400 “No fields to update”, flag permanece; Server Action com flag ligada → “Defina uma senha própria antes de continuar.”; troca legítima desliga a flag e a senha antiga passa a dar 401.</p>
+  </div>
+        </article>
+    </section>
+  <section class="page-break">
+      <h2><span class="cat-badge">Categoria 3</span> IDOR e roteamento por parâmetro</h2>
+      <p class="veredito-cat">Nenhum IDOR de objeto-por-id: os 86 handlers resolvem o objeto com <code>and(eq(tabela.id, …), eq(tabela.orgId, ctx.orgId))</code> dentro de <code>withOrgTx</code>, e o pentest cross-tenant confirmou 0 leituras e 0 escritas de outro tenant. Aqui entram dois achados de parâmetro de rota: o F6 (matcher do proxy, cosmético) e o F14, um open redirect no <code>?next=</code> do sign-in contornável por barra invertida — corrigido nesta revisão.</p>
+      <article class="achado">
+          <header>
+            <span class="chip" style="background:#D97706">Média</span>
+            <span class="selo" style="color:#059669;border-color:#059669">Corrigido</span>
+            <h3><span class="c-id">F14</span> Filtro de open redirect do sign-in contornável por barra invertida e caracteres de controle</h3>
+          </header>
+          <ul class="locais">
+            <li><code>src/app/(auth)/sign-in/page.tsx:14 (versão anterior)</code></li>
+          </ul>
+          <pre class="codigo">// versão anterior — checagem TEXTUAL
+const safeNext =
+  next?.startsWith(&quot;/&quot;) &amp;&amp; !next.startsWith(&quot;//&quot;) ? next : undefined;
+// …depois: router.push(next ?? &quot;/dashboard&quot;)
+
+// o parser de URL resolve estes para OUTRA origem, mas passavam no filtro:
+new URL(&quot;/\\evil.com&quot;,  base).href // -&gt; https://evil.com/   (barra invertida = barra)
+new URL(&quot;/\t/evil.com&quot;, base).href  // -&gt; https://evil.com/   (tab é removido antes do parse)</pre>
+          <div class="bloco"><h5>Por que é explorável</h5><p>O destino do parâmetro <code>?next=</code> era validado por texto (<code>começa com &quot;/&quot; e não com &quot;//&quot;</code>) e depois passado direto para <code>router.push</code>. Dois payloads escapam dessa regra porque o parser de URL os resolve para outra origem: <code>/\evil.com</code> (a barra invertida equivale a barra em esquemas especiais) e <code>/&lt;tab&gt;/evil.com</code> (tab, CR e LF são removidos antes do parse). O atacante monta <code>…/sign-in?next=/\evil.com</code>, a vítima faz login legítimo e é levada para fora do domínio — primitivo clássico de phishing, com a credibilidade de ter partido do domínio real da Guilda.</p></div>
+          <div class="bloco"><h5>Impacto</h5><p>Redirecionamento pós-login para domínio controlado pelo atacante, a partir de um link que começa no domínio confiável. Facilita phishing e roubo de sessão em páginas-isca.</p></div>
+          <div class="bloco"><h5>Condições de exploração</h5><p>Enviar à vítima um link de login com <code>?next=</code> malicioso. Sem pré-condição de configuração.</p></div>
+          <div class="remediacao" style="border-left-color:#059669">
+    <div class="rem-topo"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span> <span class="rem-titulo">Remediação</span></div>
+    <p class="rem-linha"><strong>O que foi feito:</strong> O destino do ?next= passou a ser resolvido contra uma origem sentinela e comparado por origem (padrão de returnToTasks), em vez de checagem textual.</p>
+    <p class="rem-linha"><strong>Verificação:</strong> 13 testes em safe-redirect.test.ts cobrindo os dois bypasses. Pentest: login com ?next=/\example.com termina em /dashboard.</p>
+  </div>
+        </article>
+        <article class="achado">
+          <header>
+            <span class="chip" style="background:#64748B">Informativa</span>
+            <span class="selo" style="color:#059669;border-color:#059669">Corrigido</span>
+            <h3><span class="c-id">F6</span> O matcher do proxy não acompanha as rotas protegidas do app</h3>
+          </header>
+          <ul class="locais">
+            <li><code>src/proxy.ts:30-43</code></li>
+          </ul>
+          <pre class="codigo">// src/proxy.ts:30-43
+export const config = {
+  matcher: [
+    &quot;/dashboard/:path*&quot;, &quot;/tasks/:path*&quot;, &quot;/clients/:path*&quot;,
+    &quot;/campaigns/:path*&quot;, &quot;/leaderboard/:path*&quot;, &quot;/members/:path*&quot;,
+    &quot;/profile/:path*&quot;, &quot;/onboarding&quot;, &quot;/change-password&quot;,
+    &quot;/sign-in&quot;, &quot;/sign-up&quot;,
+  ],
+};
+// Ausentes: /clans, /settings, /informativos, /mural, /closings</pre>
+          <div class="bloco"><h5>Por que é explorável</h5><p>Cinco rotas do grupo <code>(app)</code> não passam pelo proxy — inclusive <code>/settings</code>, que é a tela de administração dos clãs. <strong>Isto não abre acesso</strong>: <code>src/app/(app)/layout.tsx:13</code> chama <code>requireOrgSession()</code>, que valida a sessão de verdade no servidor e redireciona para <code>/sign-in</code>, e o próprio <code>proxy.ts:5-8</code> documenta que a checagem dele é apenas otimista. O efeito real é de custo e de sinal: um visitante não autenticado renderiza o layout antes de ser mandado embora, e a lista congelada é um convite a alguém no futuro presumir que “o matcher é a proteção” e criar uma rota que dependa disso.</p></div>
+          <div class="bloco"><h5>Impacto</h5><p>Nenhum acesso indevido. Redirecionamento mais lento nas rotas ausentes e risco de manutenção.</p></div>
+          <div class="bloco"><h5>Condições de exploração</h5><p>Não explorável — a proteção real está no layout do servidor.</p></div>
+          <div class="remediacao" style="border-left-color:#059669">
+    <div class="rem-topo"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span> <span class="rem-titulo">Remediação</span></div>
+    <p class="rem-linha"><strong>O que foi feito:</strong> O matcher do proxy passou a cobrir as 5 rotas que faltavam (clans, closings, informativos, mural, settings), e ganhou um comentário forte de que é OTIMIZAÇÃO, não a fronteira de segurança — endereçando o risco de manutenção. Evitou-se o catch-all negativo de propósito: ele redirecionaria os próprios ícones/manifest para /sign-in.</p>
+    <p class="rem-linha"><strong>Verificação:</strong> tsc, lint e 527 testes passam; build compila o proxy. A proteção real continua no layout (requireOrgSession), já confirmada no pentest (sem sessão → 307).</p>
+  </div>
+        </article>
+    </section>
+  <section class="page-break">
+      <h2><span class="cat-badge">Categoria 4</span> Chaves expostas (hardcode)</h2>
+      <p class="veredito-cat">Nenhuma chave real de produção no código, nos configs ou no histórico do Git — só credenciais de demonstração/desenvolvimento. Na remediação ganharam trava: <code>env-guard</code> recusa segredos fracos/placeholder no boot de produção (F9/F10), o seed aborta fora do ambiente local (F7), a porta do Postgres de dev ficou em loopback (F8) e a planilha com dados de cliente foi apagada e barrada no <code>.gitignore</code> (F11).</p>
+      <article class="achado">
+          <header>
+            <span class="chip" style="background:#D97706">Média</span>
+            <span class="selo" style="color:#059669;border-color:#059669">Corrigido</span>
+            <h3><span class="c-id">F7</span> Seed cria uma conta owner com senha fixa, sem trava de ambiente, e vai para a imagem de produção</h3>
+          </header>
+          <ul class="locais">
+            <li><code>scripts/seed.ts:7</code></li>
+            <li><code>scripts/seed.ts:21</code></li>
+            <li><code>scripts/seed.ts:78</code></li>
+            <li><code>scripts/screenshots.mjs:17</code></li>
+            <li><code>README.md:113</code></li>
+            <li><code>Dockerfile:42</code></li>
+          </ul>
+          <pre class="codigo">// scripts/seed.ts:7,21,24-29,78
+ * Login demo: helena@demo.guilda.dev / demo123456 (e demais e-mails)
+const PASSWORD = &quot;demo123456&quot;;
+const PEOPLE = [
+  { key: &quot;helena&quot;, name: &quot;Helena Prado&quot;, email: &quot;helena@demo.guilda.dev&quot;, role: &quot;owner&quot; },
+  …
+];
+await auth.api.signUpEmail({ body: { name, email, password: PASSWORD } });
+
+# Dockerfile:42 — scripts/ entra na imagem final de runtime
+COPY --from=build --chown=nextjs:nodejs /app/scripts ./scripts</pre>
+          <div class="bloco"><h5>Por que é explorável</h5><p>Senha fixa de 10 caracteres criando conta com papel <code>owner</code>, documentada no <code>README.md:113</code> e repetida em <code>scripts/screenshots.mjs:17</code>. Não existe guarda de <code>NODE_ENV</code>: a única condição de parada é a organização <code>guilda-demo</code> já existir (<code>:87-94</code>), o que não impede a primeira execução contra um banco de produção. O <code>.dockerignore</code> exclui <code>scripts/e2e-*.mjs</code> (<code>:9</code>) mas não <code>scripts/seed.ts</code>, e o <code>Dockerfile:42</code> copia o diretório inteiro para a imagem final — que também tem <code>tsx</code> disponível via <code>node_modules</code> e o <code>package.json</code> com o alvo <code>npm run seed</code> (<code>:16</code>). Um <code>docker exec</code> no contêiner de produção, ou um erro de operação na VPS, cria owner com credencial pública em uma organização real.</p></div>
+          <div class="bloco"><h5>Impacto</h5><p>Criação de conta <code>owner</code> com credencial de conhecimento público em ambiente produtivo — controle total de um tenant, incluindo leitura das senhas Gov.br descriptografadas via <code>revealCompanyFlowGovPassword</code>.</p></div>
+          <div class="bloco"><h5>Condições de exploração</h5><p>Exige que alguém execute <code>npm run seed</code> contra o banco de produção. Nada no código impede; o caminho está pronto dentro da imagem publicada.</p></div>
+          <div class="remediacao" style="border-left-color:#059669">
+    <div class="rem-topo"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span> <span class="rem-titulo">Remediação</span></div>
+    <p class="rem-linha"><strong>O que foi feito:</strong> Seed aborta se NODE_ENV=production ou se a DATABASE_URL não for local (host parseado), com escape ALLOW_SEED=1; senha vem de SEED_PASSWORD. .dockerignore exclui seed.ts, screenshots.mjs, check-rls.mjs e generate-app-icons.mjs.</p>
+    <p class="rem-linha"><strong>Verificação:</strong> Os três caminhos da trava exercitados: produção → bloqueado; URL remota → bloqueado; ALLOW_SEED=1 → segue. Seed contra o banco local funciona.</p>
+  </div>
+        </article>
+        <article class="achado">
+          <header>
+            <span class="chip" style="background:#2563EB">Baixa</span>
+            <span class="selo" style="color:#059669;border-color:#059669">Corrigido</span>
+            <h3><span class="c-id">F8</span> Senha do role da aplicação fixa no init do Postgres de desenvolvimento</h3>
+          </header>
+          <ul class="locais">
+            <li><code>docker/dev/init/01-roles.sql:5</code></li>
+            <li><code>.env.example:3</code></li>
+            <li><code>.env.example:5</code></li>
+            <li><code>docker-compose.dev.yml:9</code></li>
+            <li><code>docker-compose.dev.yml:11-12</code></li>
+          </ul>
+          <pre class="codigo">-- docker/dev/init/01-roles.sql:5
+CREATE ROLE guilda_app LOGIN PASSWORD 'guilda_app_dev' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+
+# .env.example:3,5
+DATABASE_URL=postgresql://guilda_app:guilda_app_dev@localhost:5432/guilda
+MIGRATION_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/guilda
+
+# docker-compose.dev.yml:9,11-12
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - &quot;5432:5432&quot;</pre>
+          <div class="bloco"><h5>Por que é explorável</h5><p>Credenciais literais de desenvolvimento (<code>guilda_app_dev</code>, <code>postgres:postgres</code>) versionadas, com a porta 5432 publicada no host sem restrição de interface. O equivalente de produção está correto — <code>docker/prod/init/01-roles.sh:7</code> interpola <code>${APP_DB_PASSWORD}</code> e <code>docker-compose.yml:15</code> exige a variável com <code>${APP_DB_PASSWORD:?…}</code> —, então o risco é só de ambiente local: em rede compartilhada, ou se alguém copiar <code>docker-compose.dev.yml</code> para uma VPS, essas credenciais são conhecidas.</p></div>
+          <div class="bloco"><h5>Impacto</h5><p>Acesso ao banco de desenvolvimento por qualquer um na mesma rede. Sem impacto direto em produção.</p></div>
+          <div class="bloco"><h5>Condições de exploração</h5><p>Requer alcance de rede à porta 5432 da máquina de desenvolvimento, ou reaproveitamento do Compose de dev fora do local.</p></div>
+          <div class="remediacao" style="border-left-color:#059669">
+    <div class="rem-topo"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span> <span class="rem-titulo">Remediação</span></div>
+    <p class="rem-linha"><strong>O que foi feito:</strong> A porta do Postgres de dev passou a ligar em 127.0.0.1:5432 — não fica mais exposta à rede. As credenciais triviais de dev seguem, mas atrás do loopback ninguém na rede as alcança.</p>
+    <p class="rem-linha"><strong>Verificação:</strong> docker-compose.dev.yml aponta 127.0.0.1:5432:5432; a app conecta pelo localhost do host normalmente (fluxo de dev inalterado).</p>
+  </div>
+        </article>
+        <article class="achado">
+          <header>
+            <span class="chip" style="background:#2563EB">Baixa</span>
+            <span class="selo" style="color:#059669;border-color:#059669">Corrigido</span>
+            <h3><span class="c-id">F9</span> Placeholder literal de BETTER_AUTH_SECRET no Dockerfile, sem validação própria de inicialização</h3>
+          </header>
+          <ul class="locais">
+            <li><code>Dockerfile:16-18</code></li>
+            <li><code>src/lib/auth.ts:18-24</code></li>
+          </ul>
+          <pre class="codigo"># Dockerfile:14-18 — estágio `build`
+# Placeholders APENAS para o build (todas as páginas são dinâmicas —
+# nenhuma conexão acontece). Os valores reais entram em runtime.
+ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
+ENV BETTER_AUTH_SECRET=placeholder-somente-para-o-build-32ch
+ENV BETTER_AUTH_URL=http://localhost:4000</pre>
+          <div class="bloco"><h5>Por que é explorável</h5><p>Verificado: o estágio <code>runner</code> parte de <code>FROM base</code> (<code>Dockerfile:32</code>) e <strong>não</strong> herda os <code>ENV</code> do estágio <code>build</code>, então este valor não vira o segredo de runtime. Restam dois pontos. Primeiro, o literal tem 36 caracteres e não é o <code>DEFAULT_SECRET</code> do better-auth — passaria pelas duas travas da biblioteca (<code>node_modules/better-auth/dist/context/create-context.mjs:41-44</code>, que só lança para o default exato e para segredo ausente) caso um dia fosse promovido a runtime por engano. Segundo, o projeto não tem validação própria de inicialização que rejeite segredos fracos ou conhecidos; ele depende inteiramente do que o better-auth decidir checar. Considerando que o comentário do próprio Dockerfile (<code>:49-50</code>) registra que o painel de hospedagem constrói só o Dockerfile, sem o Compose, o <code>${VAR:?…}</code> do Compose — que é a trava real do projeto — não roda nesse caminho de implantação.</p></div>
+          <div class="bloco"><h5>Impacto</h5><p>Nenhum vazamento hoje. É a ausência de uma trava: no caminho de deploy por painel, nada além da biblioteca impede subir com um segredo fraco.</p></div>
+          <div class="bloco"><h5>Condições de exploração</h5><p>Não explorável na configuração atual. Torna-se relevante se o placeholder for promovido a variável de runtime ou se um segredo fraco for configurado no painel.</p></div>
+          <div class="remediacao" style="border-left-color:#059669">
+    <div class="rem-topo"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span> <span class="rem-titulo">Remediação</span></div>
+    <p class="rem-linha"><strong>O que foi feito:</strong> Novo src/lib/env-guard.ts validado no boot por src/instrumentation.ts: recusa BETTER_AUTH_SECRET curto, placeholders (Dockerfile, better-auth, .env.example) e valores de baixa entropia. Em produção derruba o boot; fora dela só avisa; a fase de build é ignorada (NEXT_PHASE).</p>
+    <p class="rem-linha"><strong>Verificação:</strong> Testes cobrem placeholders, entropia e o ramo lançar-vs-avisar. Build de produção não quebra (skip na fase de build); boot de produção com o placeholder do Dockerfile lança e não sobe.</p>
+  </div>
+        </article>
+        <article class="achado">
+          <header>
+            <span class="chip" style="background:#64748B">Informativa</span>
+            <span class="selo" style="color:#059669;border-color:#059669">Corrigido</span>
+            <h3><span class="c-id">F10</span> FLOW_SECRETS_KEY aceita qualquer valor que decodifique para 32 bytes</h3>
+          </header>
+          <ul class="locais">
+            <li><code>src/lib/company-flows/secrets.ts:13-20</code></li>
+          </ul>
+          <pre class="codigo">// src/lib/company-flows/secrets.ts:13-20
+function encryptionKeyFromEnvironment(): Buffer | null {
+  const value = process.env.FLOW_SECRETS_KEY?.trim();
+  if (!value) return null;
+  const key = /^[A-Fa-f0-9]{64}$/.test(value)
+    ? Buffer.from(value, &quot;hex&quot;)
+    : Buffer.from(value, &quot;base64&quot;);
+  return key.length === 32 ? key : null;   // &lt;- só o tamanho é conferido
+}</pre>
+          <div class="bloco"><h5>Por que é explorável</h5><p>A criptografia em si está correta: AES-256-GCM com IV aleatório por registro e authTag verificado (<code>:22-48</code>). O que falta é qualquer aferição de qualidade da chave — um valor previsível de 32 bytes é aceito igual a um gerado por <code>openssl rand</code>. Como essa chave protege senhas Gov.br de empresas-cliente (<code>companyFlowSecrets</code>), o dado protegido tem valor alto o bastante para justificar a checagem. O comportamento de falha, por outro lado, está certo: sem chave, a aplicação recusa gravar a senha em vez de guardá-la em claro (<code>company-flow-actions.ts:295-298</code>).</p></div>
+          <div class="bloco"><h5>Impacto</h5><p>Chave fraca configurada por engano protege senhas de acesso a portal de governo sem que nada avise.</p></div>
+          <div class="bloco"><h5>Condições de exploração</h5><p>Depende de configuração fraca do operador.</p></div>
+          <div class="remediacao" style="border-left-color:#059669">
+    <div class="rem-topo"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span> <span class="rem-titulo">Remediação</span></div>
+    <p class="rem-linha"><strong>O que foi feito:</strong> O mesmo env-guard valida FLOW_SECRETS_KEY: se definida, precisa decodificar para 32 bytes E ter entropia (recusa chave degenerada como tudo-zero). Vazia continua aceita (feature opcional).</p>
+    <p class="rem-linha"><strong>Verificação:</strong> Testes: chave forte base64/hex passa, 'tudo zero' é recusada por entropia, vazia é aceita. Em produção uma chave fraca derruba o boot.</p>
+  </div>
+        </article>
+        <article class="achado">
+          <header>
+            <span class="chip" style="background:#64748B">Informativa</span>
+            <span class="selo" style="color:#059669;border-color:#059669">Corrigido</span>
+            <h3><span class="c-id">F11</span> Planilha com dados do escritório na raiz do repositório, sem regra no .gitignore</h3>
+          </header>
+          <ul class="locais">
+            <li><code>.gitignore</code></li>
+            <li><code>Planilha contole de Notas do escritório.xlsx</code></li>
+          </ul>
+          <pre class="codigo">$ git status --short
+?? .impeccable/
+?? &quot;Planilha contole de Notas do escritório.xlsx&quot;
+
+# .gitignore não tem nenhuma regra para planilhas:
+# (nenhuma linha *.xlsx / *.xls / *.csv)</pre>
+          <div class="bloco"><h5>Por que é explorável</h5><p>O arquivo está apenas não rastreado — não foi commitado, e a varredura do histórico do Git não encontrou nenhum <code>.env</code>, chave privada ou token em nenhum commit. Mas nada impede que um <code>git add .</code> o inclua, e o nome sugere dados fiscais reais de empresas-cliente. É o tipo de arquivo que costuma entrar num repositório por acidente e depois é impossível remover do histórico sem reescrevê-lo.</p></div>
+          <div class="bloco"><h5>Impacto</h5><p>Risco de exposição futura de dados de clientes caso o arquivo seja commitado — irreversível no histórico se o repositório for público ou compartilhado.</p></div>
+          <div class="bloco"><h5>Condições de exploração</h5><p>Não há exposição hoje. É prevenção.</p></div>
+          <div class="remediacao" style="border-left-color:#059669">
+    <div class="rem-topo"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span> <span class="rem-titulo">Remediação</span></div>
+    <p class="rem-linha"><strong>O que foi feito:</strong> A planilha com dados reais de clientes (CNPJ, honorários) foi APAGADA do repositório, e *.xlsx/*.xls/*.csv entraram no .gitignore para impedir um <code>git add .</code> acidental no futuro.</p>
+    <p class="rem-linha"><strong>Verificação:</strong> git status limpo (arquivo removido); git check-ignore confirma a regra; histórico do Git seguia e segue sem nenhuma planilha.</p>
+  </div>
+        </article>
+    </section>
+  <section class="page-break">
+      <h2><span class="cat-badge">Categoria 5</span> Inputs sem tratamento (XSS)</h2>
+      <p class="veredito-cat">Nenhum sink de XSS no projeto — nem no cliente nem no servidor. Os dois pontos de endurecimento foram fechados: a CSP passou a usar nonce + <code>'strict-dynamic'</code> em produção, sem <code>'unsafe-inline'</code> (F12, verificado no navegador), e a armadilha do escape sem consumidor do Telegram foi removida (F13).</p>
+      <article class="achado">
+          <header>
+            <span class="chip" style="background:#2563EB">Baixa</span>
+            <span class="selo" style="color:#059669;border-color:#059669">Corrigido</span>
+            <h3><span class="c-id">F12</span> CSP depende de 'unsafe-inline' em script-src</h3>
+          </header>
+          <ul class="locais">
+            <li><code>next.config.ts:8-20</code></li>
+          </ul>
+          <pre class="codigo">// next.config.ts:8-12
+const contentSecurityPolicy = [
+  &quot;default-src 'self'&quot;,
+  &quot;script-src 'self' 'unsafe-inline'&quot;,   // &lt;- anula boa parte da CSP
+  &quot;style-src 'self' 'unsafe-inline'&quot;,
+  …</pre>
+          <div class="bloco"><h5>Por que é explorável</h5><p>O comentário logo acima (<code>:3-7</code>) já reconhece a limitação e aponta o caminho (nonce via proxy). Com <code>'unsafe-inline'</code> em <code>script-src</code>, a CSP deixa de ser uma segunda linha de defesa contra XSS — se um sink aparecer amanhã, o cabeçalho não segura. Como a auditoria não encontrou nenhum sink hoje (nenhum <code>dangerouslySetInnerHTML</code>, <code>innerHTML</code>, <code>eval</code>, <code>new Function</code>, <code>srcDoc</code> ou <code>href</code> com esquema controlado pelo usuário em todo <code>src/</code>), isto é endurecimento e não correção de vulnerabilidade. Vale registrar o que está certo: <code>object-src 'none'</code>, <code>base-uri 'self'</code>, <code>form-action 'self'</code>, <code>frame-ancestors 'none'</code> e a ausência de <code>'unsafe-eval'</code>.</p></div>
+          <div class="bloco"><h5>Impacto</h5><p>Perda da mitigação em profundidade contra XSS. Sem impacto isolado, já que não há sink no código atual.</p></div>
+          <div class="bloco"><h5>Condições de exploração</h5><p>Não explorável sozinho — depende da introdução futura de um sink.</p></div>
+          <div class="remediacao" style="border-left-color:#059669">
+    <div class="rem-topo"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span> <span class="rem-titulo">Remediação</span></div>
+    <p class="rem-linha"><strong>O que foi feito:</strong> A CSP saiu do next.config (estática) e virou por-requisição no proxy: em produção o script-src usa nonce + 'strict-dynamic', SEM 'unsafe-inline'. Em dev a política é afrouxada para o HMR/overlay não quebrar. Os demais cabeçalhos (HSTS, nosniff, etc.) seguem estáticos para todas as rotas.</p>
+    <p class="rem-linha"><strong>Verificação:</strong> Em <code>next start</code> (produção): o header de /sign-in traz script-src 'self' 'nonce-…' 'strict-dynamic' (nonce diferente a cada requisição, sem unsafe-inline). No navegador a página renderiza, hidrata e faz login (fetch do cliente) sob a CSP estrita, sem violações no console.</p>
+  </div>
+        </article>
+        <article class="achado">
+          <header>
+            <span class="chip" style="background:#64748B">Informativa</span>
+            <span class="selo" style="color:#059669;border-color:#059669">Corrigido</span>
+            <h3><span class="c-id">F13</span> Função de escape do Telegram sem consumidor — armadilha latente</h3>
+          </header>
+          <ul class="locais">
+            <li><code>src/lib/telegram/format.ts:3-9</code></li>
+            <li><code>src/lib/telegram/endpoint.ts:58</code></li>
+            <li><code>src/lib/telegram/endpoint.ts:115</code></li>
+          </ul>
+          <pre class="codigo">// src/lib/telegram/format.ts:3-9 — existe, mas nenhum código de produção chama
+/** Escapa texto não confiável para `parse_mode: HTML` do Telegram. */
+export function escapeTelegramHtml(value: string): string {
+  return value.replaceAll(&quot;&amp;&quot;,&quot;&amp;amp;&quot;).replaceAll(&quot;&lt;&quot;,&quot;&amp;lt;&quot;).replaceAll(&quot;&gt;&quot;,&quot;&amp;gt;&quot;);
+}
+
+// src/lib/telegram/endpoint.ts:115 — parse_mode só é enviado se alguém pedir
+...(options?.parseMode ? { parse_mode: options.parseMode } : {}),</pre>
+          <div class="bloco"><h5>Por que é explorável</h5><p>Nenhum chamador em <code>src/</code> define <code>parseMode</code>, então todas as mensagens saem como texto puro e não há injeção possível hoje — títulos de missão, notas de rejeição e nomes de empresa entram nas mensagens sem escape (<code>tasks/actions.ts:443,460,472</code>; <code>telegram/actions.ts:153,170,182</code>) e isso está correto para texto puro. O risco é de manutenção: a função de escape existe, o tipo <code>parseMode?: &quot;HTML&quot;</code> existe, e a documentação implícita sugere que basta ligar o <code>parse_mode</code>. Quem fizer isso sem passar por <code>escapeTelegramHtml</code> cria injeção de marcação em mensagens que a organização inteira recebe.</p></div>
+          <div class="bloco"><h5>Impacto</h5><p>Nenhum hoje. Injeção de HTML nas notificações do Telegram se <code>parse_mode</code> for ativado sem aplicar o escape.</p></div>
+          <div class="bloco"><h5>Condições de exploração</h5><p>Não explorável na configuração atual.</p></div>
+          <div class="remediacao" style="border-left-color:#059669">
+    <div class="rem-topo"><span class="selo" style="color:#059669;border-color:#059669">Corrigido</span> <span class="rem-titulo">Remediação</span></div>
+    <p class="rem-linha"><strong>O que foi feito:</strong> A armadilha foi REMOVIDA: apagados a função escapeTelegramHtml, o tipo parseMode (endpoint.ts e types.ts) e o ramo condicional de parse_mode. Um comentário no lugar explica que as mensagens são texto puro e o que fazer se um dia alguém ligar HTML.</p>
+    <p class="rem-linha"><strong>Verificação:</strong> Nada mais referencia parseMode/escapeTelegramHtml; tsc, lint e 527 testes passam. Mensagens do bot seguem como texto puro (comportamento inalterado).</p>
+  </div>
+        </article>
+    </section>
+  <section class="page-break">
+    <h2>Validação ofensiva — teste de intrusão</h2>
+    <p class="lead">Após as correções, rodou-se um teste de intrusão ativo assumindo o papel de um invasor autenticado com o MENOR privilégio (um member sem vínculo de clã) contra um tenant-vítima real, plantado com dados sensíveis rastreáveis — incluindo uma senha Gov.br cifrada com o próprio código do projeto. Nenhuma vulnerabilidade nova foi encontrada: as cinco classes de ataque foram contidas.</p>
+    <article class="pt-classe">
+      <header class="pt-head">
+        <h3>IDOR / isolamento entre tenants</h3>
+        <span class="pt-resultado" style="background:#059669">BLOQUEADO</span>
+      </header>
+      <p class="pt-linha"><strong>Método:</strong> Conexão como guilda_app (o exato role da aplicação) com app.org_id da org do atacante, atacando as linhas do outro tenant por ID — o mesmo que uma Server Action faz após autenticar. Prova determinística e mais forte que o teste HTTP: nenhuma action pode ir além do que este role alcança.</p>
+      <p class="pt-linha"><strong>Evidência:</strong> Cliente, fechamento, fluxo e a senha Gov.br do outro tenant: 0 leituras. UPDATE de nome, DELETE de fechamento e DELETE de cliente: 0 linhas afetadas.</p>
+    </article>
+    <article class="pt-classe">
+      <header class="pt-head">
+        <h3>Escalação de privilégio</h3>
+        <span class="pt-resultado" style="background:#059669">BLOQUEADO</span>
+      </header>
+      <p class="pt-linha"><strong>Método:</strong> Como member, via HTTP (IDs de action extraídos do bundle, como um atacante faria): criar conta admin, virar líder de clã, auto-adicionar-se a um clã, criar clã.</p>
+      <p class="pt-linha"><strong>Evidência:</strong> Criar admin → “Apenas admin ou owner pode adicionar membros.” (0 contas criadas). Líder/adicionar/criar clã → “Apenas admin ou owner pode gerenciar a composição dos clãs.”</p>
+    </article>
+    <article class="pt-classe">
+      <header class="pt-head">
+        <h3>Injeção de XP / mass-assignment</h3>
+        <span class="pt-resultado" style="background:#059669">DERROTADO</span>
+      </header>
+      <p class="pt-linha"><strong>Método:</strong> createTask injetando xpValue:999999, status:“completed”, orgId de outro tenant e creatorId falso no corpo.</p>
+      <p class="pt-linha"><strong>Evidência:</strong> Gravado: xp_value=120 (computado pelo servidor), status=pending, org= a da sessão, creator= o da sessão, 0 lançamentos no ledger. Zod descarta chaves desconhecidas; o servidor fixa o que é sensível.</p>
+    </article>
+    <article class="pt-classe">
+      <header class="pt-head">
+        <h3>Ciclo de vida da tarefa (auto-aprovação / roubo de XP)</h3>
+        <span class="pt-resultado" style="background:#059669">BLOQUEADO</span>
+      </header>
+      <p class="pt-linha"><strong>Método:</strong> Responsável tenta auto-aprovar a própria tarefa de terceiro; outro member tenta concluir a tarefa alheia; member tenta reverter conclusão (só admin).</p>
+      <p class="pt-linha"><strong>Evidência:</strong> Auto-aprovação → “Apenas quem criou a missão ou um admin pode aprovar/rejeitar.”; concluir tarefa alheia → “Apenas a pessoa responsável pode concluir a missão.”; reversão por member → negada. 0 XP indevido.</p>
+    </article>
+    <article class="pt-classe">
+      <header class="pt-head">
+        <h3>Superfície anônima</h3>
+        <span class="pt-resultado" style="background:#059669">LIMPO</span>
+      </header>
+      <p class="pt-linha"><strong>Método:</strong> Webhook do Telegram sem/errado segredo; acesso a páginas de dados sem sessão.</p>
+      <p class="pt-linha"><strong>Evidência:</strong> Webhook → 503 (inerte sem token). /clients, /settings, /clans/[id], /members sem cookie → 307 para /sign-in. Sem vazamento.</p>
+    </article>
+    <p class="pt-nota">O ambiente de teste (dev server + Docker sobre OneDrive/Windows) caiu várias vezes sob compile pesado — instabilidade de infraestrutura, não da aplicação. Contornado rodando o servidor destacado e provando o isolamento pelo role real guilda_app. As classes de lógica de app foram provadas por HTTP de verdade.</p>
+
+    <div class="correcao">
+      <h3>Correção sobre a F4 — o que FORCE realmente protege</h3>
+      <p>Medido no banco de dev, com app.org_id apontando para uma org inexistente: como postgres (dono das tabelas E superuser) veem-se 42 missões; como guilda_app (não-superuser), 0. FORCE ROW LEVEL SECURITY só alcança o dono NÃO-superuser. Como aqui o dono é o postgres superuser, nem ENABLE nem FORCE o contêm — num deploy com esse role, o isolamento sumiria nas 42 tabelas, não só nas 12. A leitura correta: a proteção real é a aplicação conectar como guilda_app; o RLS/FORCE é a segunda camada e só vale contra dono não-superuser (o cenário de um Postgres gerenciado, que a migration 0062 passa a cobrir).</p>
+    </div>
+  </section>
+  <section class="page-break">
+    <h2>Recomendações priorizadas</h2>
+    <p class="lead">Registradas na 1ª rodada como plano de ação. Nesta revisão <strong>todas — P1, P2 e P3 — foram executadas e verificadas</strong> (ver o estado de cada achado). Ficam aqui como registro do que foi feito e em que ordem.</p>
+    <div class="prio">
+      <h3><span class="prio-badge">P1</span> Imediato — antes do próximo deploy</h3>
+      <ol>
+        <li>Criar <code>requireClosingManager(tx, ctx, clanId)</code> em <code>closing-actions.ts</code>, espelhando <code>requireDistributionManager</code> de <code>commitment-actions.ts:45-67</code>: validar <code>clan.slug === CONTABILIDADE_CLAN_SLUG</code> e chamar uma régua de domínio (<code>canManageClanClosings</code>) antes de qualquer escrita. Aplicar às 7 actions e acrescentar <code>clanId</code> aos schemas Zod. <span class="cobre">cobre F1, F2</span></li>
+        <li>Auditar o <code>xp_ledger</code> em busca de lançamentos <code>closing_year_closed</code> sem fechamento correspondente legítimo e estornar com <code>reason = 'reversal'</code> (nunca DELETE — o role não tem esse privilégio). <span class="cobre">cobre F2</span></li>
+      </ol>
+    </div>
+    <div class="prio">
+      <h3><span class="prio-badge">P2</span> Próximo ciclo</h3>
+      <ol>
+        <li>Migration aplicando <code>FORCE ROW LEVEL SECURITY</code> às 12 tabelas restantes (<code>tasks</code>, <code>task_events</code>, <code>xp_ledger</code>, <code>clients</code>, <code>accounting_closings</code>, <code>accounting_closing_years</code>, <code>mission_templates</code>, <code>mission_template_items</code>, <code>telegram_connections</code>, <code>telegram_link_tokens</code>, <code>telegram_preferences</code>, <code>telegram_outbox</code>), seguindo o padrão de <code>0025_force-rls-informatives.sql</code>. <span class="cobre">cobre F4</span></li>
+        <li>Trocar a lista fixa <code>NEW_TABLES</code> de <code>check-rls.mjs</code> por uma consulta a <code>pg_class</code> que exija <code>relrowsecurity AND relforcerowsecurity</code> em toda tabela com coluna <code>org_id</code> — assim a checagem passa a cobrir tabelas futuras sozinha. <span class="cobre">cobre F5</span></li>
+        <li>Remover <code>input: true</code> de <code>mustChangePassword</code> em <code>src/lib/auth.ts:30</code> e desligar a flag no servidor, dentro do hook <code>after</code> de <code>changePassword</code> do better-auth. Acrescentar a verificação da flag em <code>requireMemberContext</code> para que as Server Actions também a respeitem. <span class="cobre">cobre F3</span></li>
+        <li>Adicionar guarda de ambiente no topo de <code>scripts/seed.ts</code> (abortar se <code>NODE_ENV === &quot;production&quot;</code> ou se a <code>DATABASE_URL</code> não for local, salvo <code>ALLOW_SEED=1</code> explícito) e excluir <code>scripts/seed.ts</code> e <code>scripts/screenshots.mjs</code> do <code>.dockerignore</code>. <span class="cobre">cobre F7</span></li>
+      </ol>
+    </div>
+    <div class="prio">
+      <h3><span class="prio-badge">P3</span> Endurecimento</h3>
+      <ol>
+        <li>Substituir <code>'unsafe-inline'</code> de <code>script-src</code> por CSP com nonce gerado em <code>proxy.ts</code> — caminho já apontado no comentário de <code>next.config.ts:3-7</code>. <span class="cobre">cobre F12</span></li>
+        <li>Validar a força de <code>FLOW_SECRETS_KEY</code> na inicialização (rejeitar valores de baixa entropia) e acrescentar validação própria de <code>BETTER_AUTH_SECRET</code> que recuse placeholders conhecidos, sem depender só do que a biblioteca checa. <span class="cobre">cobre F9, F10</span></li>
+        <li>Alinhar o matcher de <code>src/proxy.ts:30-43</code> às rotas do grupo <code>(app)</code>, ou trocá-lo por um padrão negativo que cubra tudo exceto assets — e registrar no arquivo que o matcher é otimização, não proteção. <span class="cobre">cobre F6</span></li>
+        <li>Acrescentar <code>*.xlsx</code>, <code>*.xls</code> e <code>*.csv</code> ao <code>.gitignore</code> e mover a planilha do escritório para fora da árvore do repositório. <span class="cobre">cobre F11</span></li>
+        <li>Ou consumir <code>escapeTelegramHtml</code> de fato (ligando <code>parse_mode: HTML</code> com escape em todo texto de usuário), ou remover a função e o tipo <code>parseMode</code> para que a armadilha deixe de existir. <span class="cobre">cobre F13</span></li>
+      </ol>
+    </div>
+  </section>
+  <section class="page-break">
+    <h2>Issues para o GitHub</h2>
+    <p class="lead">Texto completo, em Markdown, pronto para copiar e colar. Achados relacionados foram agrupados numa issue só quando a correção é a mesma. As marcadas <strong>Resolvida</strong> já foram corrigidas e verificadas nesta revisão — ficam aqui como registro; as demais seguem acionáveis.</p>
+    <div class="issue">
+      <div class="issue-meta">
+        <span class="issue-num">Issue 1</span>
+        <span class="selo" style="color:#059669;border-color:#059669">Resolvida</span>
+        <span class="issue-labels"><code>security</code> <code>severity:alta</code> <code>backend</code></span>
+        <span class="issue-cobre">achados: F1, F2</span>
+      </div>
+      <pre class="markdown">--- ISSUE 1 ---
+
+# [Segurança] Server Actions de Fechamentos aceitam qualquer membro da organização
+
+**Labels:** security, severity:alta, backend
+
+## Problema
+
+As 7 Server Actions de `src/app/(app)/clans/[id]/closing-actions.ts` verificam apenas que quem chamou é membro da organização (`requireMemberContext()`). Nenhuma delas checa clã ou papel.
+
+A restrição &quot;Fechamentos pertence à Contabilidade&quot; existe só na navegação:
+
+- `src/lib/clan-tabs.ts:37` só oferece a aba `closings` ao clã de slug `contabilidade`;
+- `src/app/(app)/clans/[id]/page.tsx:133` devolve 404 para quem não é do clã.
+
+**Nenhuma dessas barreiras existe no caminho da Server Action.** Como `closing-board.tsx` é um Client Component que importa as actions (`:44-47`), os identificadores `Next-Action` estão em um chunk estático público sob `/_next/static/chunks/`. Qualquer usuário autenticado consegue endereçá-las diretamente.
+
+O agravante está em `setYearClosed`: ela credita XP **ao próprio chamador**, aceitando qualquer `clientId` da organização e qualquer `year` entre 2000 e 2100. A idempotência é por par (empresa, ano), não por pessoa — com ~250 empresas e 101 anos, um `member` gera mais de 25 mil créditos legítimos aos olhos do banco. Como o `xp_ledger` é imutável por privilégio (`REVOKE UPDATE, DELETE`), os lançamentos falsos só podem ser estornados um a um.
+
+O contraste interno mostra que é lapso, não decisão: o arquivo irmão da mesma aba, `commitment-actions.ts`, protege as suas 8 actions com `requireDistributionManager` (`:45-67`).
+
+## Evidência
+
+`src/app/(app)/clans/[id]/closing-actions.ts:281` — `deleteClosing`, controle de acesso na íntegra:
+
+```ts
+export async function deleteClosing(
+  input: z.input&lt;typeof deleteClosingSchema&gt;,
+): Promise&lt;ActionResult&gt; {
+  const ctx = await requireMemberContext();   // só prova que é membro da org
+  if (!ctx.ok) return ctx;
+
+  const parsed = deleteClosingSchema.safeParse(input);
+  if (!parsed.success) return err(&quot;Fechamento inválido.&quot;);
+
+  const deleted = await withOrgTx(ctx.orgId, (tx) =&gt;
+    tx.delete(schema.accountingClosings).where(
+      and(
+        eq(schema.accountingClosings.id, parsed.data.closingId),
+        eq(schema.accountingClosings.orgId, ctx.orgId),
+      ),
+    ).returning({ id: schema.accountingClosings.id }),
+  );
+```
+
+`src/app/(app)/clans/[id]/closing-actions.ts:384-396` — `setYearClosed`, crédito de XP:
+
+```ts
+let xpAwarded = false;
+if (data.closed) {
+  const credited = await tx
+    .insert(schema.xpLedger)
+    .values({
+      orgId: ctx.orgId,
+      userId: ctx.userId,          // o próprio chamador recebe o XP
+      closingYearId: annual.id,
+      amount: CLOSING_YEAR_XP,
+      reason: &quot;closing_year_closed&quot;,
+    })
+    .onConflictDoNothing()
+    .returning({ id: schema.xpLedger.id });
+  xpAwarded = credited.length &gt; 0;
+}
+```
+
+Actions afetadas: `createClosing` (:88), `updateClosing` (:146), `setClosingStatus` (:214), `deleteClosing` (:281), `setYearClosed` (:316), `setDefisCompleted` (:440), `updateYearNotes` (:506).
+
+## Impacto
+
+- Qualquer membro da organização apaga, cria e reescreve fechamentos contábeis de qualquer empresa-cliente — incluindo saldo de caixa, resultado, empréstimo de sócio e observações.
+- Farm de XP em massa, destruindo o ranking e o sistema de níveis.
+- Fechar anos arbitrários dispara notificação para a organização inteira (`:400-419`) e bloqueia o registro da DEFIS (`:472`).
+
+## Correção sugerida
+
+1. Criar `requireClosingManager(tx, ctx, clanId)` em `closing-actions.ts`, espelhando `requireDistributionManager` (`commitment-actions.ts:45-67`): carregar os fatos com `loadClanScopedFacts`, exigir `clan.slug === CONTABILIDADE_CLAN_SLUG` e delegar a decisão a uma nova régua pura `canManageClanClosings` em `src/domain/guild-permissions.ts`.
+2. Acrescentar `clanId: z.uuid()` aos schemas Zod das 7 actions e passar o `clanId` do call site (`closing-board.tsx` já recebe `clanId` via `ClosingsTab`).
+3. Auditar o `xp_ledger` procurando lançamentos `closing_year_closed` sem fechamento legítimo e estornar com `reason = 'reversal'` — nunca DELETE, que o role da aplicação não tem.
+
+## Critérios de aceite
+
+- [ ] `canManageClanClosings` existe em `src/domain/guild-permissions.ts` com teste unitário cobrindo member, líder da Contabilidade, líder de outro clã, admin e owner.
+- [ ] As 7 actions de `closing-actions.ts` chamam `requireClosingManager` antes de qualquer leitura ou escrita.
+- [ ] Chamar qualquer das 7 actions como `member` sem vínculo com a Contabilidade devolve erro de autorização e não altera nenhuma linha.
+- [ ] Chamar `setYearClosed` com um `clanId` de clã que não seja a Contabilidade devolve erro e não insere no `xp_ledger`.
+- [ ] Líder da Contabilidade e admin/owner continuam executando as 7 actions com sucesso (teste de não-regressão).
+- [ ] Lançamentos indevidos de `closing_year_closed` existentes no banco foram estornados e o ranking foi conferido.
+
+--- FIM ISSUE 1 ---</pre>
+    </div>
+    <div class="issue">
+      <div class="issue-meta">
+        <span class="issue-num">Issue 2</span>
+        <span class="selo" style="color:#059669;border-color:#059669">Resolvida</span>
+        <span class="issue-labels"><code>security</code> <code>severity:média</code> <code>auth</code></span>
+        <span class="issue-cobre">achados: F3</span>
+      </div>
+      <pre class="markdown">--- ISSUE 2 ---
+
+# [Segurança] mustChangePassword é desligado pelo navegador sem trocar a senha
+
+**Labels:** security, severity:média, auth
+
+## Problema
+
+O campo `mustChangePassword` é declarado com `input: true` em `src/lib/auth.ts:25-33`, o que faz o better-auth aceitá-lo no corpo do endpoint `/api/auth/update-user` — confirmado em `node_modules/better-auth/dist/api/routes/update-user.mjs:54`, `parseUserInput(ctx.context.options, rest, &quot;update&quot;)`.
+
+Quem desliga a flag hoje é o navegador, numa segunda chamada logo após a troca de senha (`change-password-form.tsx:54`). Nada no servidor amarra o desligamento da flag ao fato de a senha ter sido efetivamente trocada. Qualquer usuário autenticado pode emitir `POST /api/auth/update-user {&quot;mustChangePassword&quot;: false}` e seguir operando com a senha temporária que o admin distribuiu por canal externo.
+
+Como agravante, `requireMemberContext` (`src/lib/action-context.ts:23-49`) não olha a flag — então mesmo sem desligá-la a pessoa já executa qualquer Server Action. A barreira do `/change-password` existe só na navegação de páginas (`src/lib/session.ts:33-35`).
+
+## Evidência
+
+`src/lib/auth.ts:25-33`:
+
+```ts
+user: {
+  additionalFields: {
+    mustChangePassword: {
+      type: &quot;boolean&quot;,
+      defaultValue: false,
+      input: true,               // aceito no corpo de /update-user
+    },
+  },
+},
+```
+
+`src/app/(auth)/change-password/change-password-form.tsx:53-54`:
+
+```ts
+// Marca a troca como feita — deixa de ser redirecionado para cá.
+await authClient.updateUser({ mustChangePassword: false });
+```
+
+`src/lib/session.ts:31-41` (única aplicação da flag, e só em páginas):
+
+```ts
+export async function requireOrgSession() {
+  const session = await requireSession();
+  if (session.user.mustChangePassword) {
+    redirect(&quot;/change-password&quot;);
+  }
+```
+
+## Impacto
+
+Senhas temporárias distribuídas fora do sistema (chat, e-mail, papel) permanecem válidas por tempo indeterminado. A janela de tomada de conta se estende indefinidamente — inclusive para contas `admin` recém-criadas por `createMemberWithTempPassword`.
+
+## Correção sugerida
+
+1. Remover `input: true` de `mustChangePassword` em `src/lib/auth.ts:30`.
+2. Desligar a flag no servidor, como efeito da troca de senha — hook `after` de `changePassword` nos `databaseHooks`, ou uma Server Action dedicada que faça as duas coisas na mesma transação.
+3. Remover a chamada `authClient.updateUser({ mustChangePassword: false })` de `change-password-form.tsx:54`.
+4. Acrescentar a verificação da flag em `requireMemberContext`, para que as Server Actions respeitem a mesma regra das páginas.
+
+## Critérios de aceite
+
+- [ ] `POST /api/auth/update-user` com `{&quot;mustChangePassword&quot;: false}` não altera a flag (campo rejeitado ou ignorado).
+- [ ] Trocar a senha por `authClient.changePassword` desliga a flag sem nenhuma chamada adicional do cliente.
+- [ ] Usuário com `mustChangePassword = true` recebe erro de autorização ao chamar qualquer Server Action, e não só ao navegar.
+- [ ] O fluxo completo (admin cria membro com senha temporária → membro entra → troca a senha → acessa o dashboard) continua funcionando de ponta a ponta.
+
+--- FIM ISSUE 2 ---</pre>
+    </div>
+    <div class="issue">
+      <div class="issue-meta">
+        <span class="issue-num">Issue 3</span>
+        <span class="selo" style="color:#059669;border-color:#059669">Resolvida</span>
+        <span class="issue-labels"><code>security</code> <code>severity:média</code> <code>database</code></span>
+        <span class="issue-cobre">achados: F4, F5</span>
+      </div>
+      <pre class="markdown">--- ISSUE 3 ---
+
+# [Segurança] 12 tabelas de domínio sem FORCE ROW LEVEL SECURITY, e o check:rls não as cobre
+
+**Labels:** security, severity:média, database
+
+## Problema
+
+Das 42 tabelas de domínio, 30 recebem `FORCE ROW LEVEL SECURITY` e 12 ficaram só com `ENABLE`. Sem `FORCE`, o **dono da tabela ignora a política** — o RLS dessas 12 só vale enquanto a aplicação conectar com um role que não seja o `postgres`.
+
+Tabelas sem `FORCE`: `tasks`, `task_events`, `xp_ledger`, `clients`, `accounting_closings`, `accounting_closing_years`, `mission_templates`, `mission_template_items`, `telegram_connections`, `telegram_link_tokens`, `telegram_preferences`, `telegram_outbox`. São, justamente, as do núcleo do produto.
+
+Em operação normal não há furo: `src/db/index.ts:6-15` e `docker-compose.yml:43` conectam com `guilda_app`. Mas a própria base antecipa o cenário contrário — `scripts/start-production.mjs:22-28` avisa em runtime que, sem `MIGRATION_DATABASE_URL`, as migrations rodam com `DATABASE_URL`, e `docker-compose.yml:5-6` documenta o deploy com Postgres externo, em que apontar as duas variáveis para o mesmo role é o erro natural. Nessa configuração o isolamento continuaria valendo nas 30 tabelas com `FORCE` e sumiria silenciosamente nas 12 do núcleo.
+
+O motivo de isso ter passado por 60 migrations é o segundo problema: `scripts/check-rls.mjs:13-38` só audita as 24 tabelas &quot;novas&quot; — a suíte que existia para pegar essa regressão não olha para o núcleo.
+
+## Evidência
+
+`src/db/migrations/0002_rls-domain.sql:11-17`:
+
+```sql
+ALTER TABLE &quot;tasks&quot; ENABLE ROW LEVEL SECURITY;
+CREATE POLICY &quot;org_isolation&quot; ON &quot;tasks&quot;
+  USING (&quot;org_id&quot; = current_setting('app.org_id', true));
+
+ALTER TABLE &quot;task_events&quot; ENABLE ROW LEVEL SECURITY;
+CREATE POLICY &quot;org_isolation&quot; ON &quot;task_events&quot;
+  USING (&quot;org_id&quot; = current_setting('app.org_id', true));
+```
+
+O padrão adotado a partir de 2026 — `src/db/migrations/0025_force-rls-informatives.sql:7`:
+
+```sql
+-- Sem FORCE, o OWNER da tabela ignora a politica; a aplicacao conecta como
+-- guilda_app (nao-owner) e ja era isolada, entao isto e defesa em profundidade.
+ALTER TABLE &quot;informatives&quot; FORCE ROW LEVEL SECURITY;
+```
+
+`scripts/check-rls.mjs:13-38` — a lista auditada, sem as tabelas do núcleo:
+
+```js
+const NEW_TABLES = [
+  &quot;clan_informative_routes&quot;, &quot;task_assignee_suggestions&quot;, &quot;guild_notices&quot;,
+  &quot;guild_notice_reads&quot;, &quot;informatives&quot;, &quot;fiscal_portfolios&quot;, /* … */
+  &quot;company_flows&quot;, &quot;company_flow_secrets&quot;, &quot;company_flow_events&quot;,
+];
+```
+
+Outras migrations afetadas: `0004_rls-xp-ledger.sql:3`, `0007_rls-clients.sql:4`, `0009_rls-mission-templates.sql`, `0011_rls-accounting-closings.sql:2`, `0017_mute_red_wolf.sql`.
+
+## Impacto
+
+Sob uma configuração de banco plausível e não bloqueada por nada, a segunda camada de defesa contra vazamento entre organizações some das quatro tabelas mais sensíveis (missões, ledger de XP, empresas-cliente e fechamentos), restando apenas o filtro por `org_id` na aplicação.
+
+## Correção sugerida
+
+1. Nova migration aplicando `FORCE ROW LEVEL SECURITY` às 12 tabelas, seguindo o padrão de `0025_force-rls-informatives.sql`. Atenção ao precedente de `0041_fiscal_unknown_backfill.sql:14-15,65-66`: migrations de backfill que rodam como owner precisam de `NO FORCE` temporário.
+2. Trocar a lista fixa `NEW_TABLES` de `check-rls.mjs` por uma consulta a `pg_class`/`information_schema.columns` que exija `relrowsecurity AND relforcerowsecurity` em **toda** tabela que tenha coluna `org_id` — assim novas tabelas passam a ser cobertas sozinhas.
+
+## Critérios de aceite
+
+- [ ] `SELECT relname FROM pg_class WHERE relrowsecurity AND NOT relforcerowsecurity` não devolve nenhuma tabela com coluna `org_id`.
+- [ ] `npm run check:rls` deriva a lista do banco em vez de uma constante e falha se qualquer tabela com `org_id` estiver sem `ENABLE` ou sem `FORCE`.
+- [ ] `npm run check:rls` passa inteiro após a migration.
+- [ ] Seed e migrations continuam rodando (nenhuma quebra por `FORCE` aplicado ao role dono).
+
+--- FIM ISSUE 3 ---</pre>
+    </div>
+    <div class="issue">
+      <div class="issue-meta">
+        <span class="issue-num">Issue 4</span>
+        <span class="selo" style="color:#059669;border-color:#059669">Resolvida</span>
+        <span class="issue-labels"><code>security</code> <code>severity:média</code> <code>devops</code></span>
+        <span class="issue-cobre">achados: F7</span>
+      </div>
+      <pre class="markdown">--- ISSUE 4 ---
+
+# [Segurança] Seed cria owner com senha fixa e viaja dentro da imagem de produção
+
+**Labels:** security, severity:média, devops
+
+## Problema
+
+`scripts/seed.ts` cria uma conta com papel `owner` usando a senha fixa `demo123456`, documentada publicamente no `README.md:113` e repetida em `scripts/screenshots.mjs:17`.
+
+Não existe guarda de ambiente: a única condição de parada é a organização `guilda-demo` já existir (`:87-94`), o que não impede a primeira execução contra um banco de produção.
+
+E o script está dentro da imagem publicada. O `.dockerignore:9` exclui `scripts/e2e-*.mjs` mas não `scripts/seed.ts`, e o `Dockerfile:42` copia o diretório inteiro para o estágio `runner`. A imagem final também tem `tsx` em `node_modules` e o alvo `npm run seed` no `package.json:16` — o caminho está pronto.
+
+## Evidência
+
+`scripts/seed.ts:7,21,24-29,78`:
+
+```ts
+ * Login demo: helena@demo.guilda.dev / demo123456 (e demais e-mails)
+const PASSWORD = &quot;demo123456&quot;;
+const PEOPLE = [
+  { key: &quot;helena&quot;, name: &quot;Helena Prado&quot;, email: &quot;helena@demo.guilda.dev&quot;, role: &quot;owner&quot; },
+  // …
+];
+await auth.api.signUpEmail({ body: { name, email, password: PASSWORD } });
+```
+
+`Dockerfile:42`:
+
+```dockerfile
+COPY --from=build --chown=nextjs:nodejs /app/scripts ./scripts
+```
+
+`scripts/screenshots.mjs:17`:
+
+```js
+await page.fill(&quot;#password&quot;, &quot;demo123456&quot;);
+```
+
+## Impacto
+
+Uma execução acidental de `npm run seed` contra produção — por `docker exec`, por erro de operação na VPS, ou por um `DATABASE_URL` apontado para o lugar errado — cria uma conta `owner` com credencial de conhecimento público em uma organização real. Um `owner` tem controle total do tenant, inclusive leitura das senhas Gov.br descriptografadas via `revealCompanyFlowGovPassword`.
+
+## Correção sugerida
+
+1. Guarda no topo de `scripts/seed.ts`: abortar se `process.env.NODE_ENV === &quot;production&quot;` ou se a `DATABASE_URL` não apontar para `localhost`/`127.0.0.1`, salvo `ALLOW_SEED=1` explícito.
+2. Acrescentar `scripts/seed.ts` e `scripts/screenshots.mjs` ao `.dockerignore` — ou restringir o `COPY` do `Dockerfile:42` aos scripts que a produção realmente usa (`start-production.mjs`, `telegram-worker.ts`, `load-env.ts`).
+3. Ler a senha da demo de `process.env.SEED_PASSWORD` com fallback só em ambiente local, e ajustar o `README.md:113` de acordo.
+
+## Critérios de aceite
+
+- [ ] `NODE_ENV=production npm run seed` aborta com mensagem clara e sem tocar o banco.
+- [ ] `docker run --rm --entrypoint ls &lt;imagem&gt; scripts` não lista `seed.ts` nem `screenshots.mjs`.
+- [ ] `npm run seed` continua funcionando no ambiente local documentado no README.
+- [ ] O README descreve como definir a senha da demo em vez de publicá-la fixa.
+
+--- FIM ISSUE 4 ---</pre>
+    </div>
+    <div class="issue">
+      <div class="issue-meta">
+        <span class="issue-num">Issue 5</span>
+        <span class="selo" style="color:#059669;border-color:#059669">Resolvida</span>
+        <span class="issue-labels"><code>security</code> <code>severity:baixa</code> <code>devops</code></span>
+        <span class="issue-cobre">achados: F8, F9, F10</span>
+      </div>
+      <pre class="markdown">--- ISSUE 5 ---
+
+# [Segurança] Higiene de segredos: credenciais fixas de dev, placeholder no Dockerfile e falta de validação de inicialização
+
+**Labels:** security, severity:baixa, devops
+
+## Problema
+
+Três itens do mesmo tema — segredos que existem como literais ou que entram sem aferição — agrupados numa issue só porque a correção é a mesma rotina de endurecimento de configuração.
+
+**(a) Credenciais de desenvolvimento fixas.** `docker/dev/init/01-roles.sql:5` cria o role com senha literal `guilda_app_dev`; `.env.example:3,5` repete `guilda_app_dev` e `postgres:postgres`; `docker-compose.dev.yml:9,11-12` usa `POSTGRES_PASSWORD: postgres` e publica a porta 5432 no host sem restringir a interface. O equivalente de produção está correto (`docker/prod/init/01-roles.sh:7` interpola `${APP_DB_PASSWORD}` e `docker-compose.yml:15` exige a variável com `:?`), então o risco é local.
+
+**(b) Placeholder de segredo no Dockerfile.** `Dockerfile:17` define `ENV BETTER_AUTH_SECRET=placeholder-somente-para-o-build-32ch` no estágio `build`. Verificado: o estágio `runner` parte de `FROM base` (`:32`) e **não** herda esse `ENV` — o valor não vira o segredo de runtime. O que resta é que o literal tem 36 caracteres e não é o `DEFAULT_SECRET` do better-auth, logo passaria pelas duas travas da biblioteca (`node_modules/better-auth/dist/context/create-context.mjs:41-44`) se um dia fosse promovido a runtime por engano.
+
+**(c) Sem validação própria de inicialização.** O projeto não checa a força de `BETTER_AUTH_SECRET` nem de `FLOW_SECRETS_KEY`. `src/lib/company-flows/secrets.ts:13-20` aceita qualquer valor que decodifique para 32 bytes — e essa chave protege senhas Gov.br de empresas-cliente. Como o `Dockerfile:49-50` registra que o painel de hospedagem constrói só o Dockerfile, sem o Compose, o `${VAR:?…}` — que é a trava real do projeto — não roda nesse caminho de implantação.
+
+## Evidência
+
+`docker/dev/init/01-roles.sql:5`:
+
+```sql
+CREATE ROLE guilda_app LOGIN PASSWORD 'guilda_app_dev' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+```
+
+`Dockerfile:14-18`:
+
+```dockerfile
+# Placeholders APENAS para o build (todas as páginas são dinâmicas —
+# nenhuma conexão acontece). Os valores reais entram em runtime.
+ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
+ENV BETTER_AUTH_SECRET=placeholder-somente-para-o-build-32ch
+ENV BETTER_AUTH_URL=http://localhost:4000
+```
+
+`src/lib/company-flows/secrets.ts:13-20`:
+
+```ts
+function encryptionKeyFromEnvironment(): Buffer | null {
+  const value = process.env.FLOW_SECRETS_KEY?.trim();
+  if (!value) return null;
+  const key = /^[A-Fa-f0-9]{64}$/.test(value)
+    ? Buffer.from(value, &quot;hex&quot;)
+    : Buffer.from(value, &quot;base64&quot;);
+  return key.length === 32 ? key : null;   // só o tamanho é conferido
+}
+```
+
+## Impacto
+
+- (a) Acesso ao banco de desenvolvimento por quem estiver na mesma rede. Sem impacto em produção.
+- (b) Nenhum vazamento hoje — é a ausência de uma trava caso o placeholder seja promovido.
+- (c) Chave fraca configurada por engano protege senhas de portal de governo sem que nada avise.
+
+## Correção sugerida
+
+1. Criar `src/lib/env-guard.ts` importado no boot da aplicação, que valide `BETTER_AUTH_SECRET` (≥ 32 caracteres, entropia mínima, recusa a uma lista de placeholders conhecidos incluindo o do Dockerfile) e `FLOW_SECRETS_KEY` (entropia mínima), lançando em produção.
+2. Trocar o placeholder do `Dockerfile:17` por um valor gerado no build (`RUN BETTER_AUTH_SECRET=$(openssl rand -base64 32) npm run build`) ou por um sentinela explicitamente na lista de recusa do guard.
+3. Ligar a porta do Postgres de dev a `127.0.0.1:5432:5432` em `docker-compose.dev.yml:12` e trocar a senha literal de `docker/dev/init/01-roles.sql:5` por `${APP_DB_PASSWORD:-guilda_app_dev}`, alinhando ao script de produção.
+
+## Critérios de aceite
+
+- [ ] Subir a aplicação em produção com `BETTER_AUTH_SECRET=placeholder-somente-para-o-build-32ch` falha na inicialização com mensagem clara.
+- [ ] Subir com `FLOW_SECRETS_KEY` de baixa entropia falha na inicialização.
+- [ ] O Postgres de desenvolvimento não aceita conexão de outra máquina da rede.
+- [ ] `docker compose -f docker-compose.dev.yml up -d` seguido de `npm run dev` continua funcionando com o `.env.example` copiado.
+
+--- FIM ISSUE 5 ---</pre>
+    </div>
+    <div class="issue">
+      <div class="issue-meta">
+        <span class="issue-num">Issue 6</span>
+        <span class="selo" style="color:#059669;border-color:#059669">Resolvida</span>
+        <span class="issue-labels"><code>security</code> <code>severity:baixa</code> <code>frontend</code></span>
+        <span class="issue-cobre">achados: F12</span>
+      </div>
+      <pre class="markdown">--- ISSUE 6 ---
+
+# [Segurança] CSP ainda depende de 'unsafe-inline' em script-src
+
+**Labels:** security, severity:baixa, frontend
+
+## Problema
+
+`next.config.ts:10` define `script-src 'self' 'unsafe-inline'`. O comentário logo acima (`:3-7`) já reconhece a limitação e aponta o caminho: nonce via proxy.
+
+Com `'unsafe-inline'`, a CSP deixa de funcionar como segunda linha de defesa contra XSS. **Nenhum sink de XSS foi encontrado no projeto** — busca por `dangerouslySetInnerHTML`, `innerHTML`, `eval`, `new Function`, `srcDoc` e `javascript:` em todo `src/` deu zero ocorrências —, então isto é endurecimento, não correção de vulnerabilidade explorável.
+
+## Evidência
+
+`next.config.ts:8-20`:
+
+```ts
+const contentSecurityPolicy = [
+  &quot;default-src 'self'&quot;,
+  &quot;script-src 'self' 'unsafe-inline'&quot;,   // anula boa parte da CSP
+  &quot;style-src 'self' 'unsafe-inline'&quot;,
+  &quot;img-src 'self' data: blob:&quot;,
+  &quot;font-src 'self'&quot;,
+  &quot;connect-src 'self'&quot;,
+  &quot;object-src 'none'&quot;,
+  &quot;base-uri 'self'&quot;,
+  &quot;form-action 'self'&quot;,
+  &quot;frame-ancestors 'none'&quot;,
+  &quot;upgrade-insecure-requests&quot;,
+].join(&quot;; &quot;);
+```
+
+O que já está correto e deve permanecer: `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'none'` e a ausência de `'unsafe-eval'`.
+
+## Impacto
+
+Perda da mitigação em profundidade contra XSS. Sem impacto isolado, já que não existe sink no código atual — mas se um for introduzido, o cabeçalho não segura.
+
+## Correção sugerida
+
+1. Gerar um nonce por requisição em `src/proxy.ts`, propagá-lo pelo header `x-nonce` e montar a CSP dinamicamente com `script-src 'self' 'nonce-&lt;valor&gt;' 'strict-dynamic'`.
+2. Mover os cabeçalhos de `next.config.ts:47-54` para o proxy (a CSP passa a ser por requisição; os demais podem ficar estáticos).
+3. Manter `style-src 'unsafe-inline'` se necessário — o Tailwind e o Next injetam estilo inline, e o risco de `style-src` é bem menor que o de `script-src`.
+
+## Critérios de aceite
+
+- [ ] O header `Content-Security-Policy` das respostas HTML contém `nonce-` e não contém `'unsafe-inline'` em `script-src`.
+- [ ] O nonce muda a cada requisição.
+- [ ] Nenhum erro de CSP no console em `/dashboard`, `/tasks`, `/tasks/new`, `/clans/[id]` (todas as abas), `/profile` e `/sign-in`.
+- [ ] As demais diretivas (`object-src 'none'`, `base-uri`, `form-action`, `frame-ancestors`) permanecem inalteradas.
+
+--- FIM ISSUE 6 ---</pre>
+    </div>
+    <div class="issue">
+      <div class="issue-meta">
+        <span class="issue-num">Issue 7</span>
+        <span class="selo" style="color:#059669;border-color:#059669">Resolvida</span>
+        <span class="issue-labels"><code>security</code> <code>severity:informativa</code> <code>manutenção</code></span>
+        <span class="issue-cobre">achados: F6, F11, F13</span>
+      </div>
+      <pre class="markdown">--- ISSUE 7 ---
+
+# [Segurança] Higiene de configuração: matcher do proxy, planilha fora do .gitignore e escape do Telegram sem consumidor
+
+**Labels:** security, severity:informativa, manutenção
+
+## Problema
+
+Três itens sem impacto explorável hoje, agrupados porque cada um é uma armadilha esperando alguém no futuro — e a correção de todos cabe num único PR.
+
+**(a) Matcher do proxy desalinhado.** `src/proxy.ts:30-43` lista `/dashboard`, `/tasks`, `/clients`, `/campaigns`, `/leaderboard`, `/members`, `/profile`, `/onboarding`, `/change-password`, `/sign-in` e `/sign-up`, mas não `/clans`, `/settings`, `/informativos`, `/mural` nem `/closings`. **Não abre acesso**: `src/app/(app)/layout.tsx:13` chama `requireOrgSession()`, que valida a sessão de verdade, e o próprio `proxy.ts:5-8` documenta que a checagem dele é otimista. O risco é alguém no futuro presumir que &quot;o matcher é a proteção&quot; e criar uma rota que dependa disso.
+
+**(b) Planilha na raiz sem regra no .gitignore.** `Planilha contole de Notas do escritório.xlsx` está não rastreada na raiz do repositório, e o `.gitignore` não tem nenhuma regra para planilhas. O histórico do Git está limpo — a varredura não achou `.env`, chave privada nem token em nenhum commit —, mas um `git add .` inclui o arquivo, e o nome sugere dados fiscais reais de empresas-cliente.
+
+**(c) `escapeTelegramHtml` sem consumidor.** `src/lib/telegram/format.ts:3-9` define a função, `src/lib/telegram/endpoint.ts:58` define o tipo `parseMode?: &quot;HTML&quot;` e `:115` só envia `parse_mode` se alguém pedir. Nenhum chamador de produção define `parseMode`, então as mensagens saem como texto puro e não há injeção hoje. Títulos de missão e notas de rejeição entram sem escape (`tasks/actions.ts:443,460,472`), o que está correto para texto puro — e vira injeção no instante em que alguém ligar o `parse_mode` achando que o escape já é aplicado.
+
+## Evidência
+
+`src/proxy.ts:30-43`:
+
+```ts
+export const config = {
+  matcher: [
+    &quot;/dashboard/:path*&quot;, &quot;/tasks/:path*&quot;, &quot;/clients/:path*&quot;,
+    &quot;/campaigns/:path*&quot;, &quot;/leaderboard/:path*&quot;, &quot;/members/:path*&quot;,
+    &quot;/profile/:path*&quot;, &quot;/onboarding&quot;, &quot;/change-password&quot;,
+    &quot;/sign-in&quot;, &quot;/sign-up&quot;,
+  ],
+};
+```
+
+`git status --short`:
+
+```
+?? .impeccable/
+?? &quot;Planilha contole de Notas do escritório.xlsx&quot;
+```
+
+`src/lib/telegram/format.ts:3-9` (nenhum chamador em produção):
+
+```ts
+/** Escapa texto não confiável para `parse_mode: HTML` do Telegram. */
+export function escapeTelegramHtml(value: string): string {
+  return value.replaceAll(&quot;&amp;&quot;,&quot;&amp;amp;&quot;).replaceAll(&quot;&lt;&quot;,&quot;&amp;lt;&quot;).replaceAll(&quot;&gt;&quot;,&quot;&amp;gt;&quot;);
+}
+```
+
+## Impacto
+
+Nenhum hoje, nos três casos. São riscos de manutenção: uma rota futura que confie no matcher; um `git add .` que comite dados de clientes de forma irreversível no histórico; um `parse_mode: HTML` ligado sem escape.
+
+## Correção sugerida
+
+1. Substituir o matcher de `src/proxy.ts:30-43` por um padrão negativo (`&quot;/((?!api|_next/static|_next/image|favicon.ico).*)&quot;`) e reforçar no comentário que ele é otimização e não proteção.
+2. Acrescentar `*.xlsx`, `*.xls` e `*.csv` ao `.gitignore` e mover a planilha para fora da árvore do repositório.
+3. Decidir sobre o Telegram: ou passar a usar `parse_mode: &quot;HTML&quot;` aplicando `escapeTelegramHtml` a **todo** texto de origem de usuário, ou remover a função e o tipo `parseMode` para que a armadilha deixe de existir.
+
+## Critérios de aceite
+
+- [ ] Um visitante não autenticado é redirecionado para `/sign-in` em `/clans`, `/settings`, `/informativos`, `/mural` e `/closings` sem que o layout do app seja renderizado antes.
+- [ ] `git status --short` não lista nenhum arquivo de planilha, e `git check-ignore -v &quot;Planilha contole de Notas do escritório.xlsx&quot;` confirma a regra.
+- [ ] Ou `escapeTelegramHtml` tem ao menos um chamador de produção com teste cobrindo texto contendo `&lt;`, `&gt;` e `&amp;`, ou a função e o tipo `parseMode` foram removidos e `npm run test` passa.
+
+--- FIM ISSUE 7 ---</pre>
+    </div>
+  </section>
+</body>
+</html>

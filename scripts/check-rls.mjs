@@ -10,32 +10,28 @@ if (!url) throw new Error("Defina DATABASE_URL ou crie um arquivo .env.");
 const client = new pg.Client({ connectionString: url });
 await client.connect();
 
-const NEW_TABLES = [
-  "clan_informative_routes",
-  "task_assignee_suggestions",
-  "guild_notices",
-  "guild_notice_reads",
-  "informatives",
-  "fiscal_portfolios",
-  "fiscal_portfolio_events",
-  "clan_campaigns",
-  "client_commitments",
-  "client_commitment_periods",
-  "fiscal_client_profiles",
-  "fiscal_client_profile_events",
-  "fiscal_client_aliases",
-  "fiscal_import_batches",
-  "fiscal_import_rows",
-  "fiscal_control_periods",
-  "fiscal_control_events",
-  "office_fee_profiles",
-  "office_fee_profile_events",
-  "office_fee_control_periods",
-  "office_fee_control_events",
-  "company_flows",
-  "company_flow_secrets",
-  "company_flow_events",
-];
+// A lista NAO e mais fixa. Antes ela enumerava so as tabelas "novas", e por
+// isso as do nucleo (tasks, xp_ledger, clients, accounting_closings) passaram
+// 60 migrations sem FORCE sem ninguem notar. O criterio agora e estrutural:
+// toda tabela com coluna org_id e tabela de dominio e precisa de RLS.
+// Tabela nova entra na checagem sozinha, sem editar este arquivo.
+const dominio = await client.query(
+  `SELECT c.relname            AS tabela,
+          c.relrowsecurity     AS habilitado,
+          c.relforcerowsecurity AS forcado
+     FROM pg_class AS c
+     JOIN pg_namespace AS n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind = 'r'
+      AND EXISTS (
+        SELECT 1 FROM information_schema.columns AS col
+         WHERE col.table_schema = 'public'
+           AND col.table_name = c.relname
+           AND col.column_name = 'org_id'
+      )
+    ORDER BY c.relname`,
+);
+const DOMAIN_TABLES = dominio.rows.map((row) => row.tabela);
 
 const APPEND_ONLY_TABLES = [
   "guild_notice_reads",
@@ -62,25 +58,27 @@ const check = (label, ok, detail = "") => {
   if (!ok) failures += 1;
 };
 
-console.log("\n== 1. RLS habilitado e forcado nas tabelas novas ==");
-const rls = await client.query(
-  `SELECT relname, relrowsecurity, relforcerowsecurity
-     FROM pg_class WHERE relname = ANY($1)`,
-  [NEW_TABLES],
+console.log(
+  `\n== 1. RLS habilitado e forcado em TODA tabela com org_id (${DOMAIN_TABLES.length} encontradas) ==`,
 );
-for (const t of NEW_TABLES) {
-  const row = rls.rows.find((r) => r.relname === t);
-  check(t, Boolean(row?.relrowsecurity && row?.relforcerowsecurity),
-    row ? `enabled=${row.relrowsecurity} forced=${row.relforcerowsecurity}` : "tabela ausente");
+if (DOMAIN_TABLES.length === 0) {
+  check("tabelas de dominio localizadas", false, "nenhuma tabela com org_id");
+}
+for (const row of dominio.rows) {
+  check(
+    row.tabela,
+    Boolean(row.habilitado && row.forcado),
+    `enabled=${row.habilitado} forced=${row.forcado}`,
+  );
 }
 
 console.log("\n== 2. Politicas de isolamento presentes ==");
 const pol = await client.query(
   `SELECT tablename, policyname FROM pg_policies
-    WHERE tablename = ANY($1)`,
-  [NEW_TABLES],
+    WHERE schemaname = 'public' AND tablename = ANY($1)`,
+  [DOMAIN_TABLES],
 );
-for (const t of NEW_TABLES) {
+for (const t of DOMAIN_TABLES) {
   const policies = pol.rows
     .filter((r) => r.tablename === t)
     .map((r) => r.policyname);
@@ -102,6 +100,22 @@ for (const table of APPEND_ONLY_TABLES) {
   check(`${table}: INSERT`, granted.includes("INSERT"));
   check(`${table}: UPDATE revogado`, !granted.includes("UPDATE"));
   check(`${table}: DELETE revogado`, !granted.includes("DELETE"));
+}
+
+// O ledger de XP nao esta na lista acima porque aceita SELECT/INSERT como as
+// demais, mas UPDATE/DELETE foram revogados na 0004 — estorno e lancamento
+// negativo novo, nunca edicao do credito original.
+console.log("\n== 3b. Ledger de XP imutavel ==");
+{
+  const priv = await client.query(
+    `SELECT privilege_type FROM information_schema.role_table_grants
+      WHERE table_name = 'xp_ledger' AND grantee = current_user`,
+  );
+  const granted = priv.rows.map((r) => r.privilege_type);
+  check("xp_ledger: SELECT", granted.includes("SELECT"), granted.join(","));
+  check("xp_ledger: INSERT", granted.includes("INSERT"));
+  check("xp_ledger: UPDATE revogado", !granted.includes("UPDATE"));
+  check("xp_ledger: DELETE revogado", !granted.includes("DELETE"));
 }
 
 console.log("\n== 4. Isolamento entre tenants (tudo com ROLLBACK) ==");
@@ -159,6 +173,24 @@ try {
   }
   await client.query("RELEASE SAVEPOINT foreign_insert_probe");
   check("gravar em tenant alheio e BLOQUEADO", blocked);
+
+  // As tabelas do nucleo ganharam FORCE na 0062; a prova de isolamento agora
+  // vale para elas tambem, e nao so para as criadas a partir da 0022.
+  await client.query(`SELECT set_config('app.org_id', $1, true)`, [orgId]);
+  const tarefasMinhas = await client.query(`SELECT count(*)::int AS n FROM tasks`);
+  await client.query(`SELECT set_config('app.org_id', $1, true)`, [OTHER]);
+  const tarefasAlheias = await client.query(`SELECT count(*)::int AS n FROM tasks`);
+  check(
+    "missoes do outro tenant ficam INVISIVEIS",
+    tarefasAlheias.rows[0].n === 0,
+    `proprio=${tarefasMinhas.rows[0].n} alheio=${tarefasAlheias.rows[0].n}`,
+  );
+  const ledgerAlheio = await client.query(`SELECT count(*)::int AS n FROM xp_ledger`);
+  check("ledger de XP do outro tenant fica INVISIVEL", ledgerAlheio.rows[0].n === 0,
+    `viu ${ledgerAlheio.rows[0].n} lancamento(s)`);
+  const clientesAlheios = await client.query(`SELECT count(*)::int AS n FROM clients`);
+  check("empresas do outro tenant ficam INVISIVEIS", clientesAlheios.rows[0].n === 0,
+    `viu ${clientesAlheios.rows[0].n} empresa(s)`);
 
   await client.query(`SELECT set_config('app.org_id', $1, true)`, [orgId]);
   const fiscalMine = await client.query(`SELECT id FROM fiscal_client_profiles`);

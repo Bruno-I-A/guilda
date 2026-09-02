@@ -113,6 +113,31 @@ export function canAppointClanLeader(
   return isAdminRole(actor.role);
 }
 
+export interface ClosingActorFacts extends ClanScopedFacts {
+  /** A pessoa continua como integrante ativa do clã Contabilidade. */
+  isActiveClanMember: boolean;
+}
+
+/**
+ * Excluir um fechamento apaga o registro contábil sem deixar rastro —
+ * diferente de reabrir o ano, que preserva o histórico. Fica com quem
+ * responde pelo clã.
+ */
+export function canDeleteClanClosing(actor: ClosingActorFacts): boolean {
+  return isAdminRole(actor.role) || actor.leadsThisClan;
+}
+
+/**
+ * Registrar período, fechar o ano, marcar a DEFIS e anotar observações é o
+ * trabalho DIÁRIO da Contabilidade, e quem faz é quem recebe o XP — por isso
+ * a régua alcança o integrante comum do clã, não só a liderança. Prender o
+ * fechamento no líder tiraria da equipe justamente a tarefa que a remunera.
+ * Mesmo espírito de `canUpdateFiscalControl`.
+ */
+export function canManageClanClosings(actor: ClosingActorFacts): boolean {
+  return canDeleteClanClosing(actor) || actor.isActiveClanMember;
+}
+
 /** Qualquer integrante ativo distribui as missões do próprio clã. */
 export function canDistributeClanTasks(actor: ClanScopedFacts): boolean {
   return canOperateClan(actor);
@@ -172,9 +197,19 @@ export function canReturnCompanyFlow(actor: CompanyFlowActorFacts): boolean {
   return isAdminRole(actor.role) || actor.isActiveCorporateMember;
 }
 
-/** A ponte para Informativos continua sendo uma decisão do dono/admin. */
+export interface CompanyFlowInformativeFacts
+  extends Pick<CompanyFlowActorFacts, "role"> {
+  /** É a pessoa designada no clã como responsável por redigir Informativos. */
+  holdsInformativeDuty: boolean;
+}
+
+/**
+ * A ponte para Informativos era decisão exclusiva de dono/admin. Com a
+ * atribuição nominal, quem foi designado para redigir também abre a prévia —
+ * senão a missão que ele recebe seria impossível de executar por quem a recebeu.
+ */
 export function canPrepareCompanyFlowInformative(
-  actor: Pick<CompanyFlowActorFacts, "role">,
+  actor: CompanyFlowInformativeFacts,
 ): boolean {
-  return isAdminRole(actor.role);
+  return isAdminRole(actor.role) || actor.holdsInformativeDuty;
 }

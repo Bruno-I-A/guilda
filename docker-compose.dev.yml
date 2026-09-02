@@ -9,7 +9,11 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: guilda
     ports:
-      - "5432:5432"
+      # Só localhost: o banco de dev não fica exposto à rede. As credenciais
+      # abaixo são deliberadamente triviais (uso local); ligá-las a 127.0.0.1
+      # garante que ninguém na mesma rede alcance a porta. A app conecta pelo
+      # localhost do host (DATABASE_URL em .env), então isto não muda o fluxo.
+      - "127.0.0.1:5432:5432"
     volumes:
       - guilda_pgdata_dev:/var/lib/postgresql/data
       - ./docker/dev/init:/docker-entrypoint-initdb.d:ro

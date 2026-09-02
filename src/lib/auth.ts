@@ -27,7 +27,13 @@ export const auth = betterAuth({
       mustChangePassword: {
         type: "boolean",
         defaultValue: false,
-        input: true,
+        // `input: false` é a trava: com `true`, /update-user aceitava o campo
+        // no corpo e qualquer pessoa desligava a rotação obrigatória sem
+        // nunca trocar a senha temporária. Quem desliga agora é o servidor,
+        // como consequência da troca (src/app/(auth)/change-password/actions.ts).
+        // A criação do membro continua funcionando: `createMemberWithTempPassword`
+        // usa internalAdapter.createUser, que não passa por parseUserInput.
+        input: false,
       },
     },
   },

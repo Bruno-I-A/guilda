@@ -4,7 +4,11 @@
  * estorno) espalhados no tempo para preencher os períodos do ranking.
  *
  * Uso: npm run seed   (idempotente: aborta se a org demo já existe)
- * Login demo: helena@demo.guilda.dev / demo123456 (e demais e-mails)
+ * A senha sai de SEED_PASSWORD; sem ela, cai no padrão local abaixo.
+ *
+ * SÓ RODA CONTRA BANCO LOCAL. A conta criada é `owner` com senha conhecida —
+ * em produção isso é uma conta administrativa de graça para quem souber o
+ * e-mail. Para rodar deliberadamente contra outro banco, exporte ALLOW_SEED=1.
  */
 import "./load-env";
 
@@ -18,8 +22,39 @@ import type { TaskStatus } from "../src/domain/task-state";
 import { calculateTaskXp } from "../src/domain/xp";
 import { auth } from "../src/lib/auth";
 
-const PASSWORD = "demo123456";
+const PASSWORD = process.env.SEED_PASSWORD?.trim() || "demo123456";
 const ORG_SLUG = "guilda-demo";
+
+/** Só localhost conta como local — nome de host, não string solta na URL. */
+function apontaParaBancoLocal(connectionString: string): boolean {
+  try {
+    const host = new URL(connectionString).hostname.toLowerCase();
+    return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "";
+  } catch {
+    return false;
+  }
+}
+
+function exigirAmbienteDeDemonstracao(): void {
+  if (process.env.ALLOW_SEED === "1") {
+    console.warn("ALLOW_SEED=1 — trava de ambiente ignorada deliberadamente.");
+    return;
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Seed bloqueado: NODE_ENV=production. Ele cria uma conta owner com senha conhecida. " +
+        "Se for mesmo intencional, rode com ALLOW_SEED=1.",
+    );
+  }
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL não definida.");
+  if (!apontaParaBancoLocal(url)) {
+    throw new Error(
+      "Seed bloqueado: DATABASE_URL não aponta para um banco local. Ele cria uma conta " +
+        "owner com senha conhecida. Se for mesmo intencional, rode com ALLOW_SEED=1.",
+    );
+  }
+}
 
 const PEOPLE = [
   { key: "helena", name: "Helena Prado", email: "helena@demo.guilda.dev", role: "owner" },
@@ -84,6 +119,8 @@ async function ensureUser(name: string, email: string): Promise<string> {
 }
 
 async function main() {
+  exigirAmbienteDeDemonstracao();
+
   const existingOrg = await db.query.organization.findFirst({
     where: eq(schema.organization.slug, ORG_SLUG),
   });

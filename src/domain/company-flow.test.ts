@@ -9,6 +9,10 @@ import {
   companyFlowAmendmentNoticeBody,
   companyFlowBillingAction,
   companyFlowActionsText,
+  companyFlowDisplayName,
+  companyFlowInformativeTaskTitle,
+  companyFlowTaskTitle,
+  COMPANY_FLOW_TASK_DIFFICULTY,
   companyFlowInformativeText,
   companyFlowInformativeNoticeTitle,
   companyFlowRhVerificationState,
@@ -513,5 +517,90 @@ describe("Fluxo Societário", () => {
       requestedLegalName: "EMPRESA NOVA LTDA",
       taxRegime: "simples",
     })).toBeNull();
+  });
+});
+
+describe("nome de exibição do Fluxo", () => {
+  const base = {
+    existingClientName: null,
+    approvedLegalName: null,
+    requestedLegalName: null,
+  };
+
+  test("abertura prefere o nome aprovado na Junta ao solicitado", () => {
+    expect(
+      companyFlowDisplayName({
+        ...base,
+        kind: "opening",
+        approvedLegalName: "PADARIA AURORA LTDA",
+        requestedLegalName: "Padaria Aurora",
+      }),
+    ).toBe("PADARIA AURORA LTDA");
+  });
+
+  test("abertura ainda sem retorno cai no nome solicitado", () => {
+    expect(
+      companyFlowDisplayName({
+        ...base,
+        kind: "opening",
+        requestedLegalName: "Padaria Aurora",
+      }),
+    ).toBe("Padaria Aurora");
+  });
+
+  test.each(["amendment", "closure"] as const)(
+    "%s prefere o cadastro, que é a fonte de verdade da empresa existente",
+    (kind) => {
+      expect(
+        companyFlowDisplayName({
+          ...base,
+          kind,
+          existingClientName: "Padaria Aurora ME",
+          approvedLegalName: "OUTRO NOME LTDA",
+        }),
+      ).toBe("Padaria Aurora ME");
+    },
+  );
+
+  test("sem nenhum nome, não devolve string vazia", () => {
+    expect(companyFlowDisplayName({ ...base, kind: "closure" })).toBe(
+      "Empresa não informada",
+    );
+  });
+});
+
+describe("missões geradas pelo Fluxo", () => {
+  test("o título diz o tipo do fluxo, que é o que a pessoa precisa saber antes de abrir", () => {
+    expect(companyFlowTaskTitle("opening", "Padaria Aurora")).toBe(
+      "Novo fluxo — Abertura: Padaria Aurora",
+    );
+    expect(companyFlowTaskTitle("amendment", "Padaria Aurora")).toBe(
+      "Novo fluxo — Alteração: Padaria Aurora",
+    );
+    expect(companyFlowTaskTitle("closure", "Padaria Aurora")).toBe(
+      "Novo fluxo — Baixa: Padaria Aurora",
+    );
+  });
+
+  test("o Informativo nomeia a empresa", () => {
+    expect(companyFlowInformativeTaskTitle("Padaria Aurora")).toBe(
+      "Gerar o Informativo — Padaria Aurora",
+    );
+  });
+
+  test("abertura vale mais XP que alteração — ela dá mais trabalho", () => {
+    expect(COMPANY_FLOW_TASK_DIFFICULTY.opening).toBeGreaterThan(
+      COMPANY_FLOW_TASK_DIFFICULTY.closure,
+    );
+    expect(COMPANY_FLOW_TASK_DIFFICULTY.closure).toBeGreaterThan(
+      COMPANY_FLOW_TASK_DIFFICULTY.amendment,
+    );
+  });
+
+  test("toda dificuldade cabe na escala 1..5 da fórmula de XP", () => {
+    for (const value of Object.values(COMPANY_FLOW_TASK_DIFFICULTY)) {
+      expect(value).toBeGreaterThanOrEqual(1);
+      expect(value).toBeLessThanOrEqual(5);
+    }
   });
 });

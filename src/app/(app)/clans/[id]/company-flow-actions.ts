@@ -27,6 +27,7 @@ import {
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
+import { holdsClanDuty } from "@/lib/clans/duties";
 import { isActiveClanMember, loadClanScopedFacts } from "@/lib/clans/facts";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 import { RH_CLAN_SLUG, SOCIETARIO_CLAN_SLUG } from "@/lib/clans/rules";
@@ -705,7 +706,12 @@ export async function prepareCompanyFlowInformative(
   const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<{ sourceText: string }>> => {
     const corporate = await requireCorporateFlowClan(tx, { ...ctx, clanId: data.clanId });
     if (!corporate) return err("Clã Societário não encontrado.");
-    if (!canPrepareCompanyFlowInformative(corporate.facts)) return err("Apenas owner ou admin pode preparar o Informativo.");
+    // A atribuicao nominal existe justamente para que o Informativo saia sem
+    // depender de um admin: quem recebe a missao precisa poder executa-la.
+    const holdsInformativeDuty = await holdsClanDuty(tx, ctx.orgId, data.clanId, ctx.userId, "informative");
+    if (!canPrepareCompanyFlowInformative({ ...corporate.facts, holdsInformativeDuty })) {
+      return err("Só owner, admin ou o responsável por Informativos do clã pode preparar o Informativo.");
+    }
     const [flow] = await tx
       .select({
         flow: schema.companyFlows,
