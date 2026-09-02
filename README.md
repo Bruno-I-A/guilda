@@ -1,114 +1,95 @@
-# Guilda — Gestão de Tarefas Gamificada
+# Guilda
 
-Plataforma **multi-tenant** de gestão de tarefas com sistema de recompensa:
-cada missão concluída vale **XP**, XP acumulado vira **nível**, e o
-**leaderboard** mostra quem está carregando a guilda. Cada empresa
-(organização) tem usuários, tarefas e ranking totalmente isolados.
+Plataforma operacional multi-tenant para escritórios contábeis. O Guilda reúne
+missões, clientes, clãs especializados, controles fiscais e contábeis,
+informativos e automações em uma única aplicação.
 
-> Projeto de portfólio com foco em **segurança em profundidade**:
-> Row Level Security no Postgres, ledger imutável de XP e máquina de
-> estados validada no servidor.
+[![Pipeline](https://github.com/Bruno-I-A/guilda/actions/workflows/pipeline.yml/badge.svg?branch=develop)](https://github.com/Bruno-I-A/guilda/actions/workflows/pipeline.yml)
+![Next.js](https://img.shields.io/badge/Next.js-16-black)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1)
 
-## Screenshots
+> O projeto está entrando em operação real. Dados, segredos e bancos de
+> produção não fazem parte deste repositório.
 
-| Fluxo de aprovação | Ranking da guilda |
+## O que o sistema resolve
+
+- Organiza o trabalho em clãs: Fiscal, Contabilidade, RH, Societário,
+  Financeiro e Sucesso do Cliente.
+- Distribui missões, acompanha estados, registra auditoria e premia entregas
+  com XP e níveis.
+- Mantém cadastro de empresas com consulta de CNPJ e isolamento por organização.
+- Controla carteira e fichas fiscais, competências mensais, parcelamentos,
+  honorários e declarações anuais do MEI.
+- Acompanha fechamentos contábeis e distribuição de lucros.
+- Conduz fluxos societários de abertura, alteração e baixa de empresas.
+- Transforma informativos em trabalho estruturado com apoio de IA e Telegram.
+
+## Visão rápida
+
+| Fluxo de aprovação | Ranking da Guilda |
 | --- | --- |
-| ![Tarefa aguardando aprovação, com linha do tempo e recompensa](docs/screenshots/task-completed.png) | ![Leaderboard por período](docs/screenshots/leaderboard.png) |
+| ![Missão com linha do tempo e recompensa](docs/screenshots/task-completed.png) | ![Leaderboard por período](docs/screenshots/leaderboard.png) |
 
-| Mobile-first (dashboard, tarefa, perfil) |
+| Experiência mobile |
 | --- |
-| <img src="docs/screenshots/mobile-dashboard.png" width="220" /> <img src="docs/screenshots/mobile-task-awaiting.png" width="220" /> <img src="docs/screenshots/mobile-profile.png" width="220" /> |
+| <img src="docs/screenshots/mobile-dashboard.png" width="220" alt="Dashboard mobile" /> <img src="docs/screenshots/mobile-task-awaiting.png" width="220" alt="Missão mobile" /> <img src="docs/screenshots/mobile-profile.png" width="220" alt="Perfil mobile" /> |
+
+## Arquitetura
+
+```mermaid
+flowchart LR
+    U[Usuário] --> N[Next.js 16]
+    T[Telegram] --> N
+    N --> A[Server Actions e APIs]
+    A --> R[Regras de domínio]
+    A --> P[(PostgreSQL 17)]
+    P --> I[RLS por organização]
+    A --> C[Claude API]
+```
+
+Decisões importantes:
+
+- Next.js App Router e TypeScript estrito no mesmo deploy;
+- PostgreSQL e Drizzle ORM com migrations versionadas;
+- Row Level Security baseada em `org_id`, além dos filtros da aplicação;
+- Better Auth para sessões, organizações, papéis e convites;
+- máquina de estados e permissões validadas no servidor;
+- ledger imutável para XP e trilha de eventos para auditoria;
+- Docker multi-stage, processo sem privilégio e HTTPS no proxy da hospedagem.
+
+Veja os detalhes em [Arquitetura](docs/architecture.md) e
+[Ambientes](docs/environments.md).
 
 ## Stack
 
-- **Next.js 16 (App Router) + TypeScript estrito** — full-stack, deploy único
-- **Drizzle ORM + PostgreSQL 17** — migrations versionadas + RLS
-- **better-auth** com plugin de organizations — sessões, membros, convites por link, papéis
-- **Tailwind CSS 4 + shadcn/ui** — mobile-first
-- **Zod** validando todo input externo nas Server Actions
-- **Vitest** + **Playwright** (E2E com 2 usuários)
-- **Docker** (output standalone) + **Caddy** com HTTPS automático
+| Camada | Tecnologia |
+| --- | --- |
+| Aplicação | Next.js 16, React 19, TypeScript |
+| Interface | Tailwind CSS 4, shadcn/ui, Radix UI |
+| Dados | PostgreSQL 17, Drizzle ORM |
+| Autenticação | Better Auth |
+| Validação | Zod |
+| Testes | Vitest, Playwright |
+| Integrações | Telegram, Claude API, BrasilAPI |
+| Operação | Docker, Easypanel, GitHub Actions |
 
-## Decisões de arquitetura
+## Executando localmente
 
-### 1. Isolamento multi-tenant com RLS (defesa em profundidade)
-
-Toda tabela de domínio tem `org_id` e **duas** camadas garantem o isolamento:
-
-1. A aplicação filtra por `org_id` em toda query;
-2. O Postgres aplica Row Level Security com política baseada em
-   `current_setting('app.org_id')`, setado por transação:
-
-```ts
-// src/db/org-tx.ts — toda query de domínio passa por aqui
-await tx.execute(sql`SELECT set_config('app.org_id', ${orgId}, true)`);
-```
-
-Detalhe importante: **RLS não se aplica a superuser nem ao owner das
-tabelas**. Por isso a aplicação conecta com um role dedicado
-(`guilda_app`, não-superuser e não-owner), enquanto migrations rodam como
-owner. Um `INSERT` cruzando organizações morre no banco com
-`new row violates row-level security policy`.
-
-### 2. XP é um ledger imutável
-
-Saldo de XP **nunca sofre UPDATE**. Crédito e estorno são lançamentos
-novos em `xp_ledger`:
-
-- Concluiu → `+xp` (`reason = 'task_completed'`), **na mesma transação**
-  da transição de status;
-- Admin reverteu → `-xp` (`reason = 'reversal'`), sem apagar o crédito;
-- Índice único parcial por `task_event_id` torna cada transição
-  **idempotente**, permitindo um novo crédito após reversão e reconclusão;
-- O role da aplicação tem `UPDATE/DELETE` **revogados** na tabela —
-  imutabilidade garantida pelo banco, não por disciplina.
-
-O nível deriva do total: `levelFromXp` puro, com thresholds
-`floor(100 · n^1.5)` e testes de borda (0→0, 100→1, 282→2…).
-
-### 3. Máquina de estados no servidor
-
-```
-pending → in_progress → completed
-   ↘          ↘          ↓ (reversão, admin)
-    cancelled  cancelled → in_progress
-
-Legado: in_progress → awaiting_approval → completed | rejected
-                                                   ↳ in_progress (retomar)
-```
-
-- Só o **responsável** inicia, retoma e conclui diretamente sua missão.
-- Estados antigos em `awaiting_approval` continuam operáveis: somente o
-  criador ou admin/owner aprova/rejeita; rejeição exige nota.
-- O criador ou admin/owner pode cancelar; admin/owner pode reverter conclusão.
-- Transições concorrentes serializam com `SELECT … FOR UPDATE`; a
-  segunda falha na validação de estado.
-- Cada Server Action revalida **sessão + papel + input (Zod)** — a UI
-  apenas reflete as permissões, nunca as define.
-- Toda transição vira evento em `task_events` (auditoria completa).
-
-### 4. Produção
-
-- **Rate limiting** nas rotas de auth (login 5/min, registro 3/min,
-  convite 10/min) com storage no banco;
-- **Headers de segurança**: CSP sem `unsafe-eval`, HSTS, `nosniff`,
-  `frame-ancestors 'none'` (upgrade natural: CSP com nonce via proxy);
-- **Docker multi-stage**: imagem final só com o standalone do Next
-  rodando como usuário sem privilégio; serviço `migrate` aplica as
-  migrations antes do app subir; **Caddy** cuida do TLS.
-
-## Rodando localmente
-
-Pré-requisitos: Node 22+, Docker.
+Pré-requisitos: Node.js 22+, npm e Docker.
 
 ```bash
-cp .env.example .env          # ajuste BETTER_AUTH_SECRET e FLOW_SECRETS_KEY (openssl rand -base64 32)
-npm install
-npm run db:up                 # Postgres 17 em container (cria o role guilda_app)
-npm run db:migrate            # aplica migrations (como owner)
-npm run seed                  # organização demo com tarefas e XP (opcional)
+git clone https://github.com/Bruno-I-A/guilda.git
+cd guilda
+cp .env.example .env
+npm ci
+npm run db:up
+npm run db:migrate
+npm run seed
 npm run dev
 ```
+
+A aplicação estará em `http://localhost:4000`.
 
 O seed **só roda contra banco local**: ele cria uma conta `owner` com senha
 conhecida, o que em produção é uma conta administrativa de graça. Ele aborta se
@@ -116,116 +97,63 @@ conhecida, o que em produção é uma conta administrativa de graça. Ele aborta
 para ignorar a trava deliberadamente, `ALLOW_SEED=1`. A senha sai de
 `SEED_PASSWORD`; sem ela, cai no padrão local `demo123456`.
 
-Logins da demo (senha: o valor de `SEED_PASSWORD`, ou `demo123456` por padrão):
+Contas criadas pelo seed local (senha: o valor de `SEED_PASSWORD`, ou `demo123456` por padrão):
 
-| Papel  | E-mail                  |
-| ------ | ----------------------- |
-| owner  | helena@demo.guilda.dev  |
-| admin  | rafael@demo.guilda.dev  |
-| member | juliana@demo.guilda.dev |
-| member | tiago@demo.guilda.dev   |
+| Papel | E-mail |
+| --- | --- |
+| Owner | `helena@demo.guilda.dev` |
+| Admin | `rafael@demo.guilda.dev` |
+| Membro | `juliana@demo.guilda.dev` |
+| Membro | `tiago@demo.guilda.dev` |
 
-### Testes
+Essas credenciais existem apenas na base fictícia criada pelo seed.
 
-```bash
-npm test             # domínio, clãs, IA, Telegram e integrações puras
-npm run build && npm start
-npm run e2e:phase2   # fluxo completo de aprovação com 2 usuários (Playwright)
-npm run e2e:phase3   # gamificação: crédito, níveis, ranking, reversão
-```
-
-## Deploy na VPS
+## Qualidade
 
 ```bash
-cp .env.production.example .env   # DOMAIN, senhas, BETTER_AUTH_SECRET e FLOW_SECRETS_KEY
-docker compose up -d --build --remove-orphans
+npm test
+npm run lint
+npx tsc --noEmit
+npm run build
 ```
 
-Sobe Postgres (com role dedicado), roda as migrations, inicia o app
-standalone e o Caddy publica `https://$DOMAIN` com certificado
-automático. Postgres já provisionado fora do Docker? Remova o serviço
-`db` e aponte as URLs — instruções no próprio `docker-compose.yml`.
-A migration `0022` deve entrar antes da nova imagem do app, pois o hook de
-criação de organização já inicializa os cinco clãs.
+A pipeline executa as quatro verificações em todo push para `develop` e em
+Pull Requests destinados a `main`.
 
-### Telegram (opcional, sem IA)
+## Ambientes e publicação
 
-1. Crie um bot pelo `@BotFather` e copie o token para
-   `TELEGRAM_BOT_TOKEN` no `.env`.
-2. Aplique as migrations e suba o serviço normalmente. A imagem da Guilda
-   inicia a aplicação e o `telegram-worker` juntos; o worker recebe comandos
-   por long polling, entrega a fila com retry e agenda lembretes/resumos. Assim
-   o vínculo funciona também em painéis que constroem apenas o `Dockerfile` e
-   não executam o `docker-compose.yml`.
-3. Cada pessoa acessa **Perfil → Telegram** e abre o link temporário para
-   conectar sua conversa privada.
+| Branch | Ambiente | Publicação |
+| --- | --- | --- |
+| Branch de trabalho | Desenvolvimento local | Não publica |
+| `develop` | Homologação isolada | Após a pipeline |
+| `main` | Produção real | Acionamento manual após aprovação |
 
-O bot opera somente com informativos classificados por IA. O `/start` existe
-apenas no deep link técnico que conecta a conta; não há menu nem comandos
-operacionais. Os botões enviados em notificações continuam movimentando
-missões. Sem `TELEGRAM_BOT_TOKEN`, aplicação e worker continuam operando
-normalmente, com a integração inativa. Em desenvolvimento,
-rode `npm run telegram:worker` junto do app. Para usar webhook em vez de long
-polling, defina `TELEGRAM_UPDATE_MODE=webhook`; esse modo exige uma URL pública
-HTTPS (use um túnel ao testar localmente).
+O procedimento, os cuidados com migrations e a separação dos bancos estão em
+[docs/environments.md](docs/environments.md).
 
-Em produção, mantenha uma única réplica do serviço com polling. Os logs do
-container devem mostrar `Telegram worker iniciado em modo polling` e
-`Recepção do Telegram configurada por long polling` logo após a inicialização.
-
-### IA: mensagens empresariais → missões
-
-Com `ANTHROPIC_API_KEY` configurada, qualquer membro conectado pode escrever ao
-bot em linguagem natural. A mensagem precisa informar a ação e os responsáveis;
-quando o trabalho estiver ligado a um cliente, também deve trazer o nome da
-empresa. Não há cabeçalho, ordem, rótulos ou formatação obrigatórios. Por exemplo:
+## Estrutura do projeto
 
 ```text
-Fiz a abertura da PICCOLI AGRO SERVIÇOS LTDA. O Bruno deve encaminhar na
-prefeitura e solicitar o certificado digital.
-```
-
-Cada ação independente vira uma missão para o responsável informado. Se faltar
-uma informação essencial, o bot pede que a pessoa complemente a mensagem; nomes
-ambíguos ou inexistentes bloqueiam a confirmação.
-
-Solicitações gerais também são aceitas, como `Bruno, organize os documentos
-internos até sexta`. Uma solicitação como `Bruno, fecha o balanço da Scharff até
-31/07` cria um item pendente em **Períodos e demandas**; ao concluir (ou aprovar
-uma entrega legada), a
-missão, somente esse período é marcado como fechado. O encerramento do ano
-inteiro só é vinculado quando a mensagem disser explicitamente `encerramento
-anual`, `exercício inteiro` ou um intervalo anual completo. A prévia sempre
-mostra qual dos dois controles será afetado antes da confirmação.
-
-O bot usa Claude Sonnet com Structured Outputs para interpretar a intenção,
-extrair empresa, alteração, ações e responsáveis, resolver os nomes contra os
-membros reais da Guilda e mostrar uma prévia. A
-criação só acontece depois de tocar em **Criar missões**; nomes não reconhecidos
-bloqueiam a confirmação. Se o cliente já existe, as missões ficam vinculadas a
-ele; nos informativos detalhados de novo cliente, o cadastro é feito
-automaticamente quando CNPJ e regime forem válidos. Caso contrário, a prévia avisa e permite criar as missões sem
-vínculo. Para responsáveis múltiplos (`Rafa/Bruno`), é criada uma missão para
-cada pessoa. Itens meramente informativos como “segue sem alterações” não viram
-missão.
-
-## Estrutura
-
-```
 src/
-  domain/        máquina de estados + XP/níveis (puros, testados)
-  db/            schema Drizzle, migrations (incl. RLS), withOrgTx
-  lib/           auth (better-auth), sessão, queries de XP/leaderboard
-  app/
-    (auth)/      login e cadastro (com aceite de convite)
-    (app)/       dashboard, tarefas, ranking, membros, perfil
-    invite/[id]  página pública do convite
-  proxy.ts       proteção de rotas (checagem otimista de cookie)
-scripts/         seed de demonstração + E2E Playwright
-docker/          init do Postgres (roles) + Caddyfile
+  app/          páginas, layouts, APIs e Server Actions
+  components/   componentes compartilhados de interface
+  db/           schema, migrations e transações com contexto da organização
+  domain/       regras de negócio puras e testáveis
+  lib/          autenticação, integrações e serviços de aplicação
+scripts/        seed, workers, auditorias e testes E2E
+docker/         inicialização dos ambientes Docker
+docs/           arquitetura, ambientes e imagens
 ```
 
-## Fora do escopo da v1
+## Contribuição e segurança
 
-Badges/conquistas, notificações, tarefas recorrentes, calendário,
-comentários, billing — decisões registradas no `CLAUDE.md`.
+- Leia [CONTRIBUTING.md](CONTRIBUTING.md) antes de propor uma alteração.
+- Vulnerabilidades não devem ser abertas como issue pública; siga
+  [SECURITY.md](SECURITY.md).
+- `.env`, tokens, dumps de banco e dados de clientes nunca devem ser commitados.
+
+## Licença
+
+Uma licença de redistribuição ainda não foi definida. O código está público
+para avaliação técnica; a ausência de uma licença mantém reservados os demais
+direitos autorais.

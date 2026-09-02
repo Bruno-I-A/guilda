@@ -104,6 +104,7 @@ export default async function InformativosPage({
             existingClientName: schema.clients.name,
             existingClientCnpj: schema.clients.cnpj,
             existingClientTaxRegime: schema.clients.taxRegime,
+            rhVerificationTaskStatus: schema.tasks.status,
           })
           .from(schema.companyFlows)
           .leftJoin(
@@ -111,6 +112,13 @@ export default async function InformativosPage({
             and(
               eq(schema.clients.orgId, schema.companyFlows.orgId),
               eq(schema.clients.id, schema.companyFlows.existingClientId),
+            ),
+          )
+          .leftJoin(
+            schema.tasks,
+            and(
+              eq(schema.tasks.orgId, schema.companyFlows.orgId),
+              eq(schema.tasks.id, schema.companyFlows.rhVerificationTaskId),
             ),
           )
           .where(
@@ -130,6 +138,9 @@ export default async function InformativosPage({
         existingClientName: flowForInformative.existingClientName ?? null,
         existingClientCnpj: flowForInformative.existingClientCnpj ?? null,
         existingClientTaxRegime: flowForInformative.existingClientTaxRegime ?? null,
+        rhVerificationConfirmed:
+          Boolean(flowForInformative.flow.rhVerificationTaskId) &&
+          flowForInformative.rhVerificationTaskStatus === "completed",
       }
     : null;
   const initialFlowText = flowInput ? companyFlowInformativeText(flowInput) : "";

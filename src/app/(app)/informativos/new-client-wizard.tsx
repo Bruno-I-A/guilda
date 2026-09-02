@@ -72,6 +72,13 @@ export function NewClientWizard({ onDone }: { onDone: () => void }) {
         });
         return;
       }
+      if (result.data.kind === "existing") {
+        setCompany(null);
+        toast.error(
+          `Este CNPJ já está cadastrado como ${result.data.legalName}${result.data.active ? "" : " (empresa inativa)"}. Use a empresa existente em vez de criar outra.`,
+        );
+        return;
+      }
       setCompany({
         legalName: result.data.legalName,
         normalizedCnpj: result.data.normalizedCnpj,
@@ -191,9 +198,11 @@ export function NewClientWizard({ onDone }: { onDone: () => void }) {
                 </Select>
                 {!company.cadastralSituation ? null : (
                   <p className="text-xs text-muted-foreground">
-                    {company.taxRegime === "simples"
-                      ? "Sugerido pela Receita — a empresa é optante do Simples Nacional."
-                      : "A Receita não indica opção pelo Simples; escolha o regime."}
+                    {company.taxRegime === "mei"
+                      ? "Sugerido pela Receita — a empresa é optante pelo MEI."
+                      : company.taxRegime === "simples"
+                        ? "Sugerido pela Receita — a empresa é optante do Simples Nacional."
+                        : "A Receita não indica opção pelo Simples; escolha o regime."}
                   </p>
                 )}
               </div>

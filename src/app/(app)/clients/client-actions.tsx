@@ -1,11 +1,12 @@
 "use client";
 
-import { Archive, ArchiveRestore, LoaderCircle, Pencil, Plus, Upload } from "lucide-react";
+import { AlertTriangle, Archive, ArchiveRestore, CheckCircle2, Eye, LoaderCircle, Pencil, Plus, RefreshCw, Search, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -30,20 +31,25 @@ import type { ActionResult } from "@/lib/action-context";
 
 import {
   createClient,
-  importClientsFromSpreadsheet,
+  finalizeClientReplacementImport,
+  getLatestClientReplacementImport,
+  lookupClientRegistrationCnpj,
+  processClientReplacementImport,
+  retryClientReplacementLookups,
+  setClientReplacementRowRegime,
   setClientActive,
+  startClientReplacementImport,
   updateClient,
-  type ImportClientsResult,
+  type ClientImportProgress,
+  type ClientRegistrationLookupView,
 } from "./actions";
+import {
+  ClientDetailsDialog,
+  type ClientDetailsView,
+} from "./client-details-dialog";
 import { DeleteClientButton } from "./delete-client-dialog";
 
-interface ClientView {
-  id: string;
-  name: string;
-  taxRegime: TaxRegime;
-  cnpj: string | null;
-  active: boolean;
-}
+type ClientView = ClientDetailsView;
 
 function ClientFormDialog({
   open,
@@ -54,6 +60,7 @@ function ClientFormDialog({
   submitLabel,
   onSubmit,
   pending,
+  cnpjLookup = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -65,12 +72,39 @@ function ClientFormDialog({
     name: string;
     taxRegime: TaxRegime;
     cnpj: string;
+    operationalEmail: string;
+    operationalPhone: string;
   }) => void;
   pending: boolean;
+  cnpjLookup?: boolean;
 }) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [cnpj, setCnpj] = useState(initial?.cnpj ? formatCnpj(initial.cnpj) : "");
   const [taxRegime, setTaxRegime] = useState<TaxRegime>(
     initial?.taxRegime ?? "simples",
   );
+  const [lookup, setLookup] = useState<ClientRegistrationLookupView | null>(null);
+  const [lookupPending, startLookupTransition] = useTransition();
+  const cnpjDigits = cnpj.replace(/\D/g, "");
+  const lookupReady = !cnpjLookup || cnpjDigits.length === 0 || lookup?.normalizedCnpj === cnpjDigits;
+
+  function consultCnpj() {
+    startLookupTransition(async () => {
+      const result = await lookupClientRegistrationCnpj({ cnpj });
+      if (!result.ok || !result.data) {
+        toast.error(result.ok ? "Consulta sem dados." : result.error);
+        setLookup(null);
+        return;
+      }
+      setLookup(result.data);
+      setCnpj(formatCnpj(result.data.normalizedCnpj));
+      setName(result.data.legalName);
+      if (result.data.suggestedTaxRegime) {
+        setTaxRegime(result.data.suggestedTaxRegime);
+      }
+    });
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -86,7 +120,9 @@ function ClientFormDialog({
             onSubmit({
               name: String(form.get("name") ?? ""),
               taxRegime,
-              cnpj: String(form.get("cnpj") ?? ""),
+              cnpj,
+              operationalEmail: String(form.get("operationalEmail") ?? ""),
+              operationalPhone: String(form.get("operationalPhone") ?? ""),
             });
           }}
         >
@@ -95,7 +131,8 @@ function ClientFormDialog({
             <Input
               id="client-name"
               name="name"
-              defaultValue={initial?.name ?? ""}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
               placeholder="Ex.: Padaria Estrela do Norte LTDA"
               maxLength={200}
               required
@@ -121,16 +158,76 @@ function ClientFormDialog({
           </div>
           <div className="grid gap-2">
             <Label htmlFor="client-cnpj">CNPJ (opcional)</Label>
-            <Input
-              id="client-cnpj"
-              name="cnpj"
-              defaultValue={initial?.cnpj ? formatCnpj(initial.cnpj) : ""}
-              placeholder="00.000.000/0000-00"
-              inputMode="numeric"
-            />
+            <div className={cnpjLookup ? "grid gap-2 sm:grid-cols-[1fr_auto]" : undefined}>
+              <Input
+                id="client-cnpj"
+                name="cnpj"
+                value={cnpj}
+                onChange={(event) => {
+                  setCnpj(event.target.value);
+                  setLookup(null);
+                }}
+                placeholder="00.000.000/0000-00"
+                inputMode="numeric"
+              />
+              {cnpjLookup ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={lookupPending || cnpjDigits.length !== 14}
+                  onClick={consultCnpj}
+                >
+                  {lookupPending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Search aria-hidden />}
+                  Consultar
+                </Button>
+              ) : null}
+            </div>
+          </div>
+          {lookup ? (
+            <section className="grid gap-2 border border-success/35 bg-success/5 p-3" aria-live="polite">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-medium">{lookup.legalName}</p>
+                <Badge variant="outline" className="border-success/40 text-success">
+                  {lookup.cadastralSituation ?? "Consultada"}
+                </Badge>
+              </div>
+              {lookup.tradeName ? <p className="text-xs text-muted-foreground">Nome fantasia: {lookup.tradeName}</p> : null}
+              {lookup.cnaeDescription ? (
+                <p className="text-xs">
+                  <span className="font-mono text-muted-foreground">{lookup.cnaeCode}</span> · {lookup.cnaeDescription}
+                  {lookup.secondaryCnaes.length > 0 ? ` · +${lookup.secondaryCnaes.length} secundária${lookup.secondaryCnaes.length === 1 ? "" : "s"}` : ""}
+                </p>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                Ao cadastrar, endereço, atividades, QSA, capital social e contatos públicos também serão salvos.
+              </p>
+            </section>
+          ) : null}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="client-email">E-mail operacional</Label>
+              <Input
+                id="client-email"
+                name="operationalEmail"
+                type="email"
+                defaultValue={initial?.operationalEmail ?? ""}
+                placeholder="contato@empresa.com"
+                maxLength={200}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="client-phone">Celular operacional</Label>
+              <Input
+                id="client-phone"
+                name="operationalPhone"
+                defaultValue={initial?.operationalPhone ?? ""}
+                placeholder="(00) 00000-0000"
+                inputMode="tel"
+              />
+            </div>
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending || lookupPending || !lookupReady}>
               {submitLabel}
             </Button>
           </DialogFooter>
@@ -150,26 +247,29 @@ export function NewClientButton() {
       <Button onClick={() => setOpen(true)}>
         <Plus aria-hidden /> Nova empresa
       </Button>
-      <ClientFormDialog
-        open={open}
-        onOpenChange={setOpen}
-        title="Nova empresa-cliente"
-        description="Cadastre as empresas que serão acompanhadas nos fechamentos."
-        submitLabel="Cadastrar"
-        pending={pending}
-        onSubmit={(fields) =>
-          startTransition(async () => {
-            const result = await createClient(fields);
-            if (!result.ok) {
-              toast.error(result.error);
-              return;
-            }
-            toast.success("Empresa cadastrada!");
-            setOpen(false);
-            router.refresh();
-          })
-        }
-      />
+      {open ? (
+        <ClientFormDialog
+          open={open}
+          onOpenChange={setOpen}
+          title="Nova empresa-cliente"
+          description="Consulte o CNPJ para preencher e salvar a ficha cadastral completa."
+          submitLabel="Cadastrar empresa"
+          pending={pending}
+          cnpjLookup
+          onSubmit={(fields) =>
+            startTransition(async () => {
+              const result = await createClient(fields);
+              if (!result.ok) {
+                toast.error(result.error);
+                return;
+              }
+              toast.success("Empresa cadastrada com os dados da consulta!");
+              setOpen(false);
+              router.refresh();
+            })
+          }
+        />
+      ) : null}
     </>
   );
 }
@@ -177,152 +277,285 @@ export function NewClientButton() {
 export function ImportClientsButton() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [taxRegime, setTaxRegime] = useState<TaxRegime>("simples");
   const [pending, startTransition] = useTransition();
-  const [summary, setSummary] = useState<ImportClientsResult | null>(null);
+  const [progress, setProgress] = useState<ClientImportProgress | null>(null);
+  const [retryIn, setRetryIn] = useState(0);
+
+  async function wait(seconds: number) {
+    for (let remaining = seconds; remaining > 0; remaining--) {
+      setRetryIn(remaining);
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    }
+    setRetryIn(0);
+  }
+
+  async function processUntilReview(initial: ClientImportProgress) {
+    let current = initial;
+    setProgress(current);
+    while (current.status === "processing" || current.status === "cooldown") {
+      if (current.status === "cooldown") {
+        await wait(current.retryAfterSeconds);
+      }
+      const result = await processClientReplacementImport({ batchId: current.batchId });
+      if (!result.ok || !result.data) {
+        toast.error(result.ok ? "Consulta sem progresso." : result.error);
+        return;
+      }
+      current = result.data;
+      setProgress(current);
+      if (current.status === "processing") {
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      }
+    }
+  }
 
   return (
     <>
-      <Button variant="outline" onClick={() => setOpen(true)}>
+      <Button
+        variant="outline"
+        onClick={() => {
+          setOpen(true);
+          startTransition(async () => {
+            const result = await getLatestClientReplacementImport();
+            if (!result.ok) {
+              toast.error(result.error);
+              return;
+            }
+            if (!result.data) return;
+            if (
+              result.data.status === "processing" ||
+              result.data.status === "cooldown"
+            ) {
+              await processUntilReview(result.data);
+            } else {
+              setProgress(result.data);
+            }
+          });
+        }}
+      >
         <Upload aria-hidden /> Importar Excel
       </Button>
+
       <Dialog
         open={open}
         onOpenChange={(nextOpen) => {
           setOpen(nextOpen);
-          if (!nextOpen) setSummary(null);
+          if (!nextOpen) {
+            setProgress(null);
+            setRetryIn(0);
+          }
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Importar empresas</DialogTitle>
+            <DialogTitle>Importar novas empresas</DialogTitle>
             <DialogDescription>
-              Envie uma planilha por regime. Use uma coluna de nome e, se tiver,
-              uma coluna de CNPJ.
+              A planilha adiciona somente CNPJs novos. Empresas e dados já
+              cadastrados permanecem sem alterações.
             </DialogDescription>
           </DialogHeader>
-          <form
-            className="grid gap-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const formData = new FormData(event.currentTarget);
-              formData.set("taxRegime", taxRegime);
-              startTransition(async () => {
-                const result = await importClientsFromSpreadsheet(formData);
-                if (!result.ok) {
-                  toast.error(result.error);
-                  return;
-                }
 
-                const data = result.data;
-                if (!data) {
-                  toast.error("Importação sem resumo.");
-                  return;
-                }
+          {!progress ? (
+            <form
+              className="grid gap-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const formData = new FormData(event.currentTarget);
+                startTransition(async () => {
+                  const result = await startClientReplacementImport(formData);
+                  if (!result.ok || !result.data) {
+                    toast.error(result.ok ? "Importação sem lote." : result.error);
+                    return;
+                  }
+                  await processUntilReview(result.data);
+                });
+              }}
+            >
+              <div className="grid gap-2">
+                <Label htmlFor="import-file">Planilha</Label>
+                <Input
+                  id="import-file"
+                  name="file"
+                  type="file"
+                  accept=".xlsx,.csv"
+                  required
+                />
+              </div>
+              <DialogFooter>
+                <Button type="submit" disabled={pending}>
+                  {pending ? (
+                    <LoaderCircle className="animate-spin" aria-hidden />
+                  ) : null}
+                  Validar e consultar CNPJs
+                </Button>
+              </DialogFooter>
+            </form>
+          ) : (
+            <div className="grid gap-4" aria-live="polite" aria-busy={pending}>
+              <div className="panel-cut panel-cut-sm grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
+                <div>
+                  <p className="font-mono font-semibold tabular-nums">{progress.total}</p>
+                  <p className="hud-label">empresas</p>
+                </div>
+                <div>
+                  <p className="font-mono font-semibold tabular-nums text-success">{progress.consulted}</p>
+                  <p className="hud-label">consultadas</p>
+                </div>
+                <div>
+                  <p className="font-mono font-semibold tabular-nums text-warning">{progress.excluded}</p>
+                  <p className="hud-label">não importadas</p>
+                </div>
+                <div>
+                  <p className="font-mono font-semibold tabular-nums text-destructive">{progress.errors}</p>
+                  <p className="hud-label">com erro</p>
+                </div>
+              </div>
 
-                setSummary(data);
-                toast.success(
-                  `${data.created} ${data.created === 1 ? "criada" : "criadas"}, ` +
-                    `${data.updated} ${data.updated === 1 ? "atualizada" : "atualizadas"}.`,
-                );
-                router.refresh();
-              });
-            }}
-          >
-            <div className="grid gap-2">
-              <Label htmlFor="import-regime">Regime deste arquivo</Label>
-              <Select
-                value={taxRegime}
-                onValueChange={(v) => setTaxRegime(v as TaxRegime)}
-              >
-                <SelectTrigger id="import-regime" className="w-full">
-                  <SelectValue>{TAX_REGIME_LABELS[taxRegime]}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {TAX_REGIMES.filter((regime) => regime !== "association").map(
-                    (regime) => (
-                      <SelectItem key={regime} value={regime}>
-                        {TAX_REGIME_LABELS[regime]}
-                      </SelectItem>
-                    ),
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
+              {!pending ? (
+                <Button variant="ghost" onClick={() => setProgress(null)}>
+                  Enviar outra planilha
+                </Button>
+              ) : null}
 
-            <div className="grid gap-2">
-              <Label htmlFor="import-file">Planilha</Label>
-              <Input
-                id="import-file"
-                name="file"
-                type="file"
-                accept=".xlsx,.csv"
-                required
-              />
-            </div>
+              {pending ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <LoaderCircle className="animate-spin" aria-hidden />
+                  {retryIn > 0
+                    ? `Limite temporário atingido. Retomando em ${retryIn}s…`
+                    : "Consultando um CNPJ por vez…"}
+                </div>
+              ) : null}
 
-            {/* Placar da importação: número em mono tabular, o que ele conta
-                em `hud-label` (é rótulo de dado, não título). */}
-            {summary ? (
-              <div className="panel-cut panel-cut-sm p-3 text-sm">
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <div>
-                    <p className="font-mono text-lg font-semibold tabular-nums text-foreground">
-                      {summary.created}
-                    </p>
-                    <p className="hud-label">criadas</p>
-                  </div>
-                  <div>
-                    <p className="font-mono text-lg font-semibold tabular-nums text-foreground">
-                      {summary.updated}
-                    </p>
-                    <p className="hud-label">atualizadas</p>
-                  </div>
-                  <div>
-                    <p className="font-mono text-lg font-semibold tabular-nums text-foreground">
-                      {summary.unchanged}
-                    </p>
-                    <p className="hud-label">sem mudança</p>
-                  </div>
-                  <div>
-                    <p className="font-mono text-lg font-semibold tabular-nums text-foreground">
-                      {summary.rejected.length}
-                    </p>
-                    <p className="hud-label">rejeitadas</p>
+              {progress.review.length > 0 ? (
+                <div className="grid gap-2">
+                  <h3>Itens que exigem atenção</h3>
+                  <div className="grid max-h-72 gap-2 overflow-y-auto">
+                    {progress.review.map((row) => (
+                      <div
+                        key={row.rowNumber}
+                        className="panel-cut panel-cut-sm grid gap-2 p-3 text-sm"
+                      >
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle
+                            className="mt-0.5 size-4 shrink-0 text-warning"
+                            aria-hidden
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium">{row.name}</p>
+                            <p className="font-mono text-xs text-muted-foreground">
+                              {formatCnpj(row.cnpj)}
+                            </p>
+                            {row.error ? (
+                              <p className="mt-1 text-destructive">{row.error}</p>
+                            ) : null}
+                            {row.excluded ? (
+                              <p className="mt-1 text-warning">
+                                {row.exclusionReason}. Esta empresa não será importada.
+                              </p>
+                            ) : row.cadastralSituation &&
+                              row.cadastralSituation.toUpperCase() !== "ATIVA" ? (
+                              <p className="mt-1 text-warning">
+                                Situação na Receita: {row.cadastralSituation}. Será
+                                cadastrada como inativa.
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                        {!row.error && !row.excluded && !row.taxRegime ? (
+                          <Select
+                            onValueChange={(value) =>
+                              startTransition(async () => {
+                                const result = await setClientReplacementRowRegime({
+                                  batchId: progress.batchId,
+                                  rowNumber: row.rowNumber,
+                                  taxRegime: value as TaxRegime,
+                                });
+                                if (!result.ok || !result.data) {
+                                  toast.error(
+                                    result.ok ? "Revisão sem retorno." : result.error,
+                                  );
+                                  return;
+                                }
+                                setProgress(result.data);
+                              })
+                            }
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Definir regime tributário" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {TAX_REGIMES.map((regime) => (
+                                <SelectItem key={regime} value={regime}>
+                                  {TAX_REGIME_LABELS[regime]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : null}
+                      </div>
+                    ))}
                   </div>
                 </div>
-                {summary.rejected.length > 0 ? (
-                  <ul className="mt-3 grid max-h-28 gap-1 overflow-auto border-t pt-3 text-xs text-muted-foreground">
-                    {summary.rejected.slice(0, 8).map((item) => (
-                      <li key={`${item.rowNumber}-${item.error}`}>
-                        Linha{" "}
-                        <span className="font-mono tabular-nums">
-                          {item.rowNumber}
-                        </span>
-                        : {item.error}
-                      </li>
-                    ))}
-                    {summary.rejected.length > 8 ? (
-                      <li>
-                        Mais {summary.rejected.length - 8}{" "}
-                        {summary.rejected.length - 8 === 1
-                          ? "linha rejeitada"
-                          : "linhas rejeitadas"}
-                        .
-                      </li>
-                    ) : null}
-                  </ul>
-                ) : null}
-              </div>
-            ) : null}
+              ) : null}
 
-            <DialogFooter>
-              <Button type="submit" disabled={pending}>
-                {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : null}
-                Importar
-              </Button>
-            </DialogFooter>
-          </form>
+              {progress.errors > 0 && !pending ? (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    startTransition(async () => {
+                      const reset = await retryClientReplacementLookups({
+                        batchId: progress.batchId,
+                      });
+                      if (!reset.ok || !reset.data) {
+                        toast.error(reset.ok ? "Reconsulta sem retorno." : reset.error);
+                        return;
+                      }
+                      await processUntilReview(reset.data);
+                    })
+                  }
+                >
+                  <RefreshCw aria-hidden /> Tentar consultas novamente
+                </Button>
+              ) : null}
+
+              {progress.status === "ready" ? (
+                <div className="grid gap-3 border-t border-border pt-4">
+                  <div className="flex gap-2 text-sm text-success">
+                    <CheckCircle2 className="size-4 shrink-0" aria-hidden />
+                    Empresas válidas prontas para inclusão.
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Nenhum dado atual será apagado ou atualizado. CNPJs já cadastrados,
+                    baixados, inexistentes ou inválidos serão ignorados.
+                  </p>
+                  <Button
+                    className="touch-target"
+                    disabled={pending}
+                    onClick={() =>
+                      startTransition(async () => {
+                        const result = await finalizeClientReplacementImport({
+                          batchId: progress.batchId,
+                        });
+                        if (!result.ok || !result.data) {
+                          toast.error(
+                            result.ok ? "Importação sem resumo." : result.error,
+                          );
+                          return;
+                        }
+                        toast.success(
+                          `${result.data.imported} nova${result.data.imported === 1 ? "" : "s"} empresa${result.data.imported === 1 ? "" : "s"} importada${result.data.imported === 1 ? "" : "s"}; ${result.data.alreadyExisting} já cadastrada${result.data.alreadyExisting === 1 ? "" : "s"} e ${result.data.skipped} desconsiderada${result.data.skipped === 1 ? "" : "s"}.`,
+                        );
+                        setOpen(false);
+                        router.refresh();
+                      })
+                    }
+                  >
+                    Importar somente empresas novas
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </>
@@ -337,6 +570,7 @@ export function ClientRowActions({
   isAdmin: boolean;
 }) {
   const router = useRouter();
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -357,6 +591,15 @@ export function ClientRowActions({
     // `touch-target` em cada ícone: são controles de 32px dentro de uma linha
     // de lista, e no celular o dedo não acerta isso.
     <div className="flex shrink-0 items-center gap-1">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="touch-target"
+        aria-label={`Ver dados de ${client.name}`}
+        onClick={() => setDetailsOpen(true)}
+      >
+        <Eye aria-hidden />
+      </Button>
       <Button
         variant="ghost"
         size="icon"
@@ -384,6 +627,14 @@ export function ClientRowActions({
       </Button>
       {isAdmin ? (
         <DeleteClientButton clientId={client.id} clientName={client.name} />
+      ) : null}
+
+      {detailsOpen ? (
+        <ClientDetailsDialog
+          client={client}
+          open={detailsOpen}
+          onOpenChange={setDetailsOpen}
+        />
       ) : null}
 
       {editOpen ? (

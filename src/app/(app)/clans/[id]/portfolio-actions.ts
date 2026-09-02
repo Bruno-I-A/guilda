@@ -1,6 +1,6 @@
 "use server";
 
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -72,7 +72,7 @@ export async function assignPortfolioClients(
       }
       if (!canManageFiscalPortfolio(facts)) {
         return err(
-          "Apenas o líder deste clã ou um admin pode remanejar a carteira.",
+          "Apenas integrantes do Fiscal ou um admin podem remanejar a carteira.",
         );
       }
 
@@ -98,6 +98,7 @@ export async function assignPortfolioClients(
         .where(
           and(
             eq(schema.clients.orgId, ctx.orgId),
+            ne(schema.clients.taxRegime, "mei"),
             inArray(schema.clients.id, clientIds),
           ),
         )
@@ -217,7 +218,7 @@ const NEW_CLIENT_PORTFOLIO_XP = 30;
  * CNPJ dos Informativos, com `pending_fiscal_note`/`suggested_fiscal_owner_id`
  * em aberto). Diferente de `assignPortfolioClients` (remanejamento do dia a
  * dia, sem XP): aqui é a primeira atribuição de uma empresa que acabou de
- * nascer, então a decisão do líder também credita XP a quem recebeu —
+ * nascer, então a decisão da equipe também credita XP a quem recebeu —
  * incorporar um cliente novo é responsabilidade de verdade, e uma missão já
  * `completed` fica no histórico da pessoa como registro dessa decisão.
  */
@@ -247,7 +248,7 @@ export async function confirmNewClientPortfolio(
       return err("Este clã não trabalha por carteira.");
     }
     if (!canManageFiscalPortfolio(facts)) {
-      return err("Apenas o líder deste clã ou um admin pode definir a carteira.");
+      return err("Apenas integrantes do Fiscal ou um admin podem definir a carteira.");
     }
 
     const targetIsActiveClanMember = await isActiveClanMember(
@@ -267,6 +268,7 @@ export async function confirmNewClientPortfolio(
         id: schema.clients.id,
         name: schema.clients.name,
         active: schema.clients.active,
+        taxRegime: schema.clients.taxRegime,
         pendingFiscalNote: schema.clients.pendingFiscalNote,
         pendingFiscalAssignment: schema.clients.pendingFiscalAssignment,
       })
@@ -275,6 +277,9 @@ export async function confirmNewClientPortfolio(
       .for("update");
     if (!client) return err("Empresa não encontrada.");
     if (!client.active) return err("Empresa inativa não entra em carteira.");
+    if (client.taxRegime === "mei") {
+      return err("Empresas MEI são controladas exclusivamente na aba MEI.");
+    }
     if (!client.pendingFiscalAssignment) {
       return err("Esta empresa já teve a entrada na carteira confirmada.");
     }

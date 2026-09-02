@@ -11,9 +11,38 @@ import {
   companyFlowActionsText,
   companyFlowInformativeText,
   companyFlowInformativeNoticeTitle,
+  companyFlowRhVerificationState,
+  directCompanyInformativeText,
+  parseQsaParticipation,
+  qsaDistributionIsComplete,
+  qsaFinalParticipationTotal,
+  qsaMemberCapitalValue,
 } from "./company-flow";
 
 describe("Fluxo Societário", () => {
+  test("trava somente baixas novas enquanto o RH ainda não concluiu a verificação", () => {
+    expect(companyFlowRhVerificationState({
+      kind: "closure",
+      taskId: "task-rh",
+      taskStatus: "pending",
+    })).toBe("pending");
+    expect(companyFlowRhVerificationState({
+      kind: "closure",
+      taskId: "task-rh",
+      taskStatus: "completed",
+    })).toBe("confirmed");
+    expect(companyFlowRhVerificationState({
+      kind: "closure",
+      taskId: null,
+      taskStatus: null,
+    })).toBe("not_required");
+    expect(companyFlowRhVerificationState({
+      kind: "amendment",
+      taskId: "task-rh",
+      taskStatus: "pending",
+    })).toBe("not_required");
+  });
+
   test("leva os dados aprovados ao informativo sem vazar credencial", () => {
     const text = companyFlowInformativeText({
       kind: "opening",
@@ -71,7 +100,14 @@ describe("Fluxo Societário", () => {
       roomSize: null,
       address: "Rua Nova, 200, São Paulo/SP",
       clientResponsible: null,
-      qsa: [{ name: "Ana", changeType: "entered", qualification: "Sócia administradora", participation: "100%" }],
+      qsa: [{
+        name: "Ana",
+        changeType: "entered",
+        qualification: "Sócia administradora",
+        previousParticipation: "0%",
+        participation: "100%",
+        quotaTransferDetails: "aumento de capital",
+      }],
       contactName: null,
       contactPhone: null,
       contactEmail: null,
@@ -91,7 +127,8 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("Atividades a retirar: Comércio atacadista");
     expect(text).toContain("Novo regime tributário: Lucro Presumido");
     expect(text).toContain("Novo endereço: Rua Nova, 200, São Paulo/SP");
-    expect(text).toContain("QSA: Entrada — Ana — Sócia administradora — 100%");
+    expect(text).toContain("Composição societária final: Entrada — Ana — Sócia administradora — Participação: 0% → 100% — Capital final: R$");
+    expect(text).toContain("Movimentação de quotas: aumento de capital");
     expect(text).toContain("Societário - Atualizar alvará, Inscrição Estadual");
     expect(text).not.toContain("CNPJ:");
   });
@@ -199,7 +236,11 @@ describe("Fluxo Societário", () => {
         next: "Lucro Real",
       },
       { label: "Endereço", previous: null, next: "Rua Nova, 200" },
-      { label: "QSA", previous: null, next: "Entrada — Ana — 50%" },
+      {
+        label: "Composição societária final",
+        previous: null,
+        next: expect.stringContaining("Entrada — Ana — Participação final: 50% — Capital final: R$"),
+      },
     ]));
 
     const body = companyFlowAmendmentNoticeBody({
@@ -235,6 +276,20 @@ describe("Fluxo Societário", () => {
     expect(body).toContain("1 missão foi criada a partir desta alteração.");
   });
 
+  test("confere a composição final do QSA e calcula o capital de cada sócio", () => {
+    const qsa = [
+      { participation: "60,5%" },
+      { participation: "39.5" },
+      { participation: "0%" },
+    ];
+
+    expect(parseQsaParticipation("60,5%")).toBe(60.5);
+    expect(qsaFinalParticipationTotal(qsa)).toBe(100);
+    expect(qsaDistributionIsComplete(qsa)).toBe(true);
+    expect(qsaDistributionIsComplete([{ participation: "99,9%" }])).toBe(false);
+    expect(qsaMemberCapitalValue("50000.00", "60,5%")).toBe("30250.00");
+  });
+
   test("prepara a baixa no modelo operacional padrão", () => {
     const text = companyFlowInformativeText({
       kind: "closure",
@@ -262,6 +317,7 @@ describe("Fluxo Societário", () => {
       approvedAddress: null,
       approvedQsa: [],
       processingNotes: "Baixa concluída pelo Societário.",
+      rhVerificationConfirmed: true,
     });
 
     expect(text).toContain("INFORMATIVO DE BAIXA DE CLIENTE");
@@ -271,13 +327,47 @@ describe("Fluxo Societário", () => {
     expect(text).toContain("OBSERVAÇÕES:\nEMPRESA BAIXADA 30/06/2026");
     expect(text).toContain("SOCIETÁRIO – Baixar o Alvará.");
     expect(text).toContain("CONTABIL – Rafa/Bruno – Finalizar lançamentos até a data da baixa");
-    expect(text).toContain("RH – Carol/Jenifer – Baixar o pró-labore.");
+    expect(text).toContain("VALIDAÇÃO PRÉVIA – Folha e pró-labore confirmados pelo RH antes da baixa.");
+    expect(text).not.toContain("RH – Carol/Jenifer – Baixar o pró-labore.");
     expect(text).not.toContain("(efetuado)");
     expect(text).toContain("SUCESSO DO CLIENTE – Separar toda a documentação");
     expect(text).not.toContain("ATENDIMENTO – Jessica");
     expect(text).toContain("SUCESSO DO CLIENTE – Retirar empresa do E-Auditoria.");
     expect(text).toContain("SUCESSO DO CLIENTE – Retirar empresa do Onvio.");
     expect(text).not.toContain("SERVIDOR");
+  });
+
+  test("mantém a missão de RH apenas para baixas legadas sem verificação preventiva", () => {
+    const text = companyFlowInformativeText({
+      kind: "closure",
+      existingClientName: "EMPRESA LEGADA LTDA",
+      existingClientCnpj: null,
+      existingClientTaxRegime: "simples",
+      requestedLegalName: null,
+      requestedActivities: [],
+      removedActivities: [],
+      taxRegime: null,
+      iptu: null,
+      socialCapital: null,
+      roomSize: null,
+      address: null,
+      clientResponsible: null,
+      qsa: [],
+      contactName: null,
+      contactPhone: null,
+      contactEmail: null,
+      requestDetails: null,
+      resultCnpj: null,
+      approvedLegalName: null,
+      approvedActivities: [],
+      approvedTaxRegime: null,
+      approvedAddress: null,
+      approvedQsa: [],
+      processingNotes: null,
+    });
+
+    expect(text).toContain("RH – Carol/Jenifer – Baixar o pró-labore.");
+    expect(text).not.toContain("VALIDAÇÃO PRÉVIA");
   });
 
   test("prepara a cobrança de alteração e baixa para o Financeiro", () => {
@@ -384,6 +474,32 @@ describe("Fluxo Societário", () => {
     expect(accountantChangeNoticeTitle("ADONIRAN")).toBe(
       "Desligamento de cliente: ADONIRAN — troca de contabilidade",
     );
+  });
+
+  test("monta atalhos diretos de alteração e baixa sem criar fluxo", () => {
+    const amendment = directCompanyInformativeText({
+      kind: "amendment",
+      companyName: "EMPRESA TESTE LTDA",
+      cnpj: "11222333000181",
+      taxRegime: "simples",
+      details: "Mudança de endereço",
+      actions: "Fiscal – Atualizar cadastro",
+    });
+    expect(amendment).toContain("INFORMATIVO DE ALTERAÇÃO DE EMPRESA");
+    expect(amendment).toContain("OBSERVAÇÕES:\nO que foi alterado: Mudança de endereço");
+    expect(amendment).toContain("AÇÕES\nFiscal – Atualizar cadastro");
+
+    const closure = directCompanyInformativeText({
+      kind: "closure",
+      companyName: "EMPRESA TESTE LTDA",
+      cnpj: null,
+      taxRegime: "real",
+      details: "Baixa concluída em 31/08/2026",
+      actions: "",
+    });
+    expect(closure).toContain("INFORMATIVO DE BAIXA DE CLIENTE");
+    expect(closure).toContain("CNPJ – NÃO INFORMADO");
+    expect(closure).toContain("AÇÕES\nNenhuma missão adicional.");
   });
 
   test("reflete razão social e regime no cadastro apenas após uma alteração", () => {

@@ -28,10 +28,11 @@ describe("abas específicas de cada clã", () => {
     expect(keys("rh")).not.toContain("portfolio");
   });
 
-  test("Parcelamentos e Honorários ficam no menu principal do Fiscal", () => {
+  test("MEI, Parcelamentos e Honorários ficam no menu principal do Fiscal", () => {
     expect(keys("fiscal")).toEqual(
-      expect.arrayContaining(["portfolio", "installments", "fees"]),
+      expect.arrayContaining(["portfolio", "mei", "installments", "fees"]),
     );
+    expect(keys("contabilidade")).not.toContain("mei");
     expect(keys("contabilidade")).not.toContain("installments");
     expect(keys("rh")).not.toContain("fees");
   });
@@ -78,6 +79,7 @@ describe("aba pedida na URL", () => {
   test("aba válida do clã é respeitada", () => {
     expect(parseClanTab("closings", "contabilidade")).toBe("closings");
     expect(parseClanTab("portfolio", "fiscal")).toBe("portfolio");
+    expect(parseClanTab("mei", "fiscal")).toBe("mei");
     expect(parseClanTab("installments", "fiscal")).toBe("installments");
     expect(parseClanTab("fees", "fiscal")).toBe("fees");
     expect(parseClanTab("members", "rh")).toBe("members");

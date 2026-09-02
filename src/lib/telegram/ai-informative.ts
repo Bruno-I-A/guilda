@@ -33,6 +33,7 @@ function taxRegimeLabel(
 ): string {
   return value
     ? {
+        mei: "MEI",
         simples: "Simples Nacional",
         presumido: "Lucro Presumido",
         association: "Associação",

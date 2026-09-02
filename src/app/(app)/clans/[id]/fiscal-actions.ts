@@ -22,7 +22,7 @@ import {
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
-import { isActiveClanMember, loadClanScopedFacts } from "@/lib/clans/facts";
+import { loadClanScopedFacts } from "@/lib/clans/facts";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 import { FISCAL_CLAN_SLUG } from "@/lib/clans/rules";
 import {
@@ -134,15 +134,18 @@ export async function saveFiscalClientProfile(
     });
     if (!fiscal) return err("Clã Fiscal não encontrado.");
     if (!canManageFiscalOperations(fiscal.facts)) {
-      return err("Apenas a liderança do Fiscal ou um admin pode editar fichas.");
+      return err("Apenas integrantes do Fiscal ou um admin podem editar fichas.");
     }
 
     const [client] = await tx
-      .select({ id: schema.clients.id })
+      .select({ id: schema.clients.id, taxRegime: schema.clients.taxRegime })
       .from(schema.clients)
       .where(and(eq(schema.clients.orgId, ctx.orgId), eq(schema.clients.id, data.clientId)))
       .for("update");
     if (!client) return err("Empresa não encontrada.");
+    if (client.taxRegime === "mei") {
+      return err("Empresas MEI são controladas exclusivamente na aba MEI.");
+    }
 
     const [current] = await tx
       .select()
@@ -261,7 +264,7 @@ export async function openFiscalControlPeriod(
     });
     if (!fiscal) return err("Clã Fiscal não encontrado.");
     if (!canManageFiscalOperations(fiscal.facts)) {
-      return err("Apenas a liderança do Fiscal ou um admin pode abrir competências.");
+      return err("Apenas integrantes do Fiscal ou um admin podem abrir competências.");
     }
 
     if (data.campaignId) {
@@ -348,20 +351,8 @@ export async function updateFiscalControl(
       .for("update");
     if (!control) return err("Controle mensal não encontrado.");
 
-    const activeMember = await isActiveClanMember(
-      tx,
-      ctx.orgId,
-      data.clanId,
-      ctx.userId,
-    );
-    if (
-      !canUpdateFiscalControl({
-        ...fiscal.facts,
-        isActiveClanMember: activeMember,
-        ownsControlSnapshot: control.responsibleUserId === ctx.userId,
-      })
-    ) {
-      return err("Você só pode atualizar empresas da sua responsabilidade.");
+    if (!canUpdateFiscalControl(fiscal.facts)) {
+      return err("Apenas integrantes do Fiscal ou um admin podem atualizar controles.");
     }
 
     const nextSteps: Record<FiscalStage, FiscalStepStatus> = {
@@ -528,12 +519,9 @@ export async function createFiscalExceptionMission(
       )
       .for("update");
     if (!control) return err("Controle mensal não encontrado.");
-    const activeMember = await isActiveClanMember(tx, ctx.orgId, data.clanId, ctx.userId);
-    if (!canUpdateFiscalControl({
-      ...fiscal.facts,
-      isActiveClanMember: activeMember,
-      ownsControlSnapshot: control.responsibleUserId === ctx.userId,
-    })) return err("Você só pode gerar missões para empresas da sua responsabilidade.");
+    if (!canUpdateFiscalControl(fiscal.facts)) {
+      return err("Apenas integrantes do Fiscal ou um admin podem gerar missões.");
+    }
 
     const period = `${String(control.periodMonth).padStart(2, "0")}/${control.periodYear}`;
     const title = data.title || `Pendência fiscal — ${control.clientName} — ${period}`;

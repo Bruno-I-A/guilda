@@ -146,7 +146,7 @@ export function DistributionBoard({
 
       {!canDistribute ? (
         <p className="panel-cut panel-cut-sm bg-card/35 p-3 text-center text-xs text-muted-foreground">
-          Só o líder deste clã ou um admin distribui as missões. Você pode
+          Integrantes deste clã e administradores distribuem as missões. Você pode
           assumir uma missão pela página dela.
         </p>
       ) : null}

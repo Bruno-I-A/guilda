@@ -37,7 +37,21 @@ const NAME_HEADERS = new Set([
   "fantasia",
 ]);
 
-const CNPJ_HEADERS = new Set(["cnpj", "cpf/cnpj", "documento"]);
+const CNPJ_HEADERS = new Set([
+  "cnpj",
+  "cpf/cnpj",
+  "cpf ou cnpj",
+  "cnpj/cpf/cei",
+  "documento",
+]);
+const EMAIL_HEADERS = new Set(["email", "e-mail", "email do cliente"]);
+const PHONE_HEADERS = new Set([
+  "celular",
+  "telefone",
+  "fone",
+  "whatsapp",
+  "telefone/celular",
+]);
 
 function normalizeHeader(value: string): string {
   return value
@@ -45,6 +59,78 @@ function normalizeHeader(value: string): string {
     .toLowerCase()
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "");
+}
+
+export interface ClientReplacementRow {
+  rowNumber: number;
+  spreadsheetName: string;
+  operationalEmail: string | null;
+  operationalPhone: string | null;
+  cnpj: string;
+}
+
+export function parseClientReplacementRows(
+  rows: ClientImportCellValue[][],
+): { rows: ClientReplacementRow[]; rejected: ClientImportRejectedRow[] } {
+  let headerIndex = -1;
+  let nameIndex = -1;
+  let cnpjIndex = -1;
+  let emailIndex = -1;
+  let phoneIndex = -1;
+
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const normalized = rows[i].map((cell) => normalizeHeader(cellText(cell)));
+    const candidateName = normalized.findIndex((value) => NAME_HEADERS.has(value));
+    const candidateCnpj = normalized.findIndex((value) => CNPJ_HEADERS.has(value));
+    if (candidateName === -1 || candidateCnpj === -1) continue;
+    headerIndex = i;
+    nameIndex = candidateName;
+    cnpjIndex = candidateCnpj;
+    emailIndex = normalized.findIndex((value) => EMAIL_HEADERS.has(value));
+    phoneIndex = normalized.findIndex((value) => PHONE_HEADERS.has(value));
+    break;
+  }
+
+  if (headerIndex === -1) {
+    return {
+      rows: [],
+      rejected: [{ rowNumber: 1, error: "não encontrei as colunas de Nome/Razão Social e CNPJ" }],
+    };
+  }
+
+  const parsed: ClientReplacementRow[] = [];
+  const rejected: ClientImportRejectedRow[] = [];
+  const seen = new Set<string>();
+  for (let i = headerIndex + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (isEmptyRow(row)) continue;
+    const spreadsheetName = cellText(row[nameIndex]);
+    const cnpj = normalizeCnpj(cellText(row[cnpjIndex]));
+    if (spreadsheetName.length < 2 || spreadsheetName.length > 200) {
+      rejected.push({ rowNumber: i + 1, error: "razão social inválida" });
+      continue;
+    }
+    const validCnpj = validateCnpj(cnpj);
+    if (validCnpj && seen.has(cnpj)) {
+      rejected.push({ rowNumber: i + 1, error: "CNPJ repetido na planilha" });
+      continue;
+    }
+    if (validCnpj) seen.add(cnpj);
+    const operationalEmail = emailIndex === -1 ? null : cellText(row[emailIndex]) || null;
+    const operationalPhone = phoneIndex === -1
+      ? null
+      : cellText(row[phoneIndex]).replace(/\D/g, "") || null;
+    if (operationalEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(operationalEmail)) {
+      rejected.push({ rowNumber: i + 1, error: "e-mail inválido" });
+      continue;
+    }
+    if (operationalPhone && !/^\d{10,11}$/.test(operationalPhone)) {
+      rejected.push({ rowNumber: i + 1, error: "celular deve ter 10 ou 11 dígitos" });
+      continue;
+    }
+    parsed.push({ rowNumber: i + 1, spreadsheetName, operationalEmail, operationalPhone, cnpj });
+  }
+  return { rows: parsed, rejected };
 }
 
 function cellText(value: ClientImportCellValue): string {

@@ -3,7 +3,7 @@
  *
  * Uso: npm run import:clients -- caminho/arquivo.csv --org <slug>
  * Formato: nome;cnpj;regime  (cabeçalho opcional; cnpj pode ficar vazio;
- * regime aceita simples/presumido/association/real ou os rótulos humanos)
+ * regime aceita mei/simples/presumido/association/real ou os rótulos humanos)
  *
  * Idempotente: upsert por CNPJ (sem CNPJ, casa por nome exato). Reimportar
  * o mesmo arquivo não duplica nada. Relatório no console ao final.

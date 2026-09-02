@@ -1,6 +1,6 @@
 "use server";
 
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { readSheet } from "read-excel-file/node";
 import { z } from "zod";
@@ -136,7 +136,7 @@ export async function previewFiscalSpreadsheet(
     assertFiscalManager(tx, ctx, clanId),
   );
   if (!authorized) {
-    return err("Apenas a liderança do Fiscal ou um admin pode importar a planilha.");
+    return err("Apenas integrantes do Fiscal ou um admin podem importar a planilha.");
   }
 
   const file = formData.get("file");
@@ -166,7 +166,7 @@ export async function previewFiscalSpreadsheet(
 
   const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<FiscalImportPreview>> => {
     if (!(await assertFiscalManager(tx, ctx, clanId))) {
-      return err("Apenas a liderança do Fiscal ou um admin pode importar a planilha.");
+      return err("Apenas integrantes do Fiscal ou um admin podem importar a planilha.");
     }
     const clients = await tx
       .select({
@@ -191,7 +191,12 @@ export async function previewFiscalSpreadsheet(
           eq(schema.fiscalClientProfiles.clientId, schema.clients.id),
         ),
       )
-      .where(eq(schema.clients.orgId, ctx.orgId))
+      .where(
+        and(
+          eq(schema.clients.orgId, ctx.orgId),
+          ne(schema.clients.taxRegime, "mei"),
+        ),
+      )
       .orderBy(asc(schema.clients.name));
     const aliases = await tx
       .select({
@@ -385,7 +390,7 @@ export async function applyFiscalImport(
 
   const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<FiscalImportApplyResult>> => {
     if (!(await assertFiscalManager(tx, ctx, data.clanId))) {
-      return err("Apenas a liderança do Fiscal ou um admin pode concluir a importação.");
+      return err("Apenas integrantes do Fiscal ou um admin podem concluir a importação.");
     }
     const [batch] = await tx
       .select()
@@ -445,6 +450,7 @@ export async function applyFiscalImport(
           .where(
             and(
               eq(schema.clients.orgId, ctx.orgId),
+              ne(schema.clients.taxRegime, "mei"),
               inArray(schema.clients.id, [...new Set(targetIds)]),
             ),
           )

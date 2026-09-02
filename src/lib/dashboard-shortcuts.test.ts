@@ -10,6 +10,7 @@ describe("atalhos do dashboard", () => {
     const options = dashboardShortcutOptions([
       { id: "societario-id", name: "Societário", slug: "societario" },
       { id: "contabilidade-id", name: "Contabilidade", slug: "contabilidade" },
+      { id: "fiscal-id", name: "Fiscal", slug: "fiscal" },
     ]);
 
     expect(options).toContainEqual(expect.objectContaining({
@@ -19,6 +20,10 @@ describe("atalhos do dashboard", () => {
     expect(options).toContainEqual(expect.objectContaining({
       target: "clan:contabilidade-id:closings",
       href: "/clans/contabilidade-id?tab=closings",
+    }));
+    expect(options).toContainEqual(expect.objectContaining({
+      target: "clan:fiscal-id:mei",
+      href: "/clans/fiscal-id?tab=mei",
     }));
   });
 

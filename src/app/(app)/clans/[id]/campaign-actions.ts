@@ -88,7 +88,7 @@ export async function createClanCampaign(
       if (!clan) return err("Clã não encontrado.");
       if (!clan.active) return err("Clã inativo não recebe campanha nova.");
       if (!canDistributeClanTasks(facts)) {
-        return err("Apenas o líder deste clã ou um admin pode abrir campanha.");
+        return err("Apenas integrantes deste clã ou um admin podem abrir campanha.");
       }
 
       const [existing] = await tx
@@ -182,7 +182,7 @@ export async function setClanCampaignStatus(
     );
     if (!clan) return err("Clã não encontrado.");
     if (!canDistributeClanTasks(facts)) {
-      return err("Apenas o líder deste clã ou um admin pode conduzir campanha.");
+      return err("Apenas integrantes deste clã ou um admin podem conduzir campanha.");
     }
 
     // A campanha é travada: dois cliques concorrentes serializam aqui em vez

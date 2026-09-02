@@ -5,6 +5,7 @@ import type { Client } from "@/db/schema";
 export type TaxRegime = Client["taxRegime"];
 
 export const TAX_REGIMES = [
+  "mei",
   "simples",
   "presumido",
   "association",
@@ -12,6 +13,7 @@ export const TAX_REGIMES = [
 ] as const;
 
 export const TAX_REGIME_LABELS: Record<TaxRegime, string> = {
+  mei: "MEI",
   simples: "Simples Nacional",
   presumido: "Lucro Presumido",
   association: "Associação",
@@ -26,6 +28,7 @@ export const TAX_REGIME_LABELS: Record<TaxRegime, string> = {
  * é cobre SATURADO justamente para não se confundir com o ouro fosco do XP.
  */
 export const TAX_REGIME_BADGE_CLASSES: Record<TaxRegime, string> = {
+  mei: "bg-secondary text-silver border-transparent",
   simples: "bg-secondary text-silver border-transparent",
   presumido: "bg-primary/15 text-primary border-transparent",
   association: "bg-primary/15 text-primary border-transparent",

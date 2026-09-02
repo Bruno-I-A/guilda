@@ -64,7 +64,7 @@ async function requireClanManager() {
   const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
   // A régua mora no domínio (`canManageClanMembership`), testada à parte.
-  if (!canManageClanMembership({ role: ctx.role, leadsThisClan: false })) {
+  if (!canManageClanMembership({ role: ctx.role })) {
     return err("Apenas admin ou owner pode gerenciar a composição dos clãs.");
   }
   return ctx;

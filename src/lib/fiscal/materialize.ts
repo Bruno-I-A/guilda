@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, ne } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -132,6 +132,7 @@ export async function materializeFiscalControl(
       and(
         eq(schema.clients.orgId, input.orgId),
         eq(schema.clients.active, true),
+        ne(schema.clients.taxRegime, "mei"),
       ),
     )
     .orderBy(asc(schema.clients.id))
@@ -213,7 +214,7 @@ export async function materializeFiscalControl(
         .for("update")
         .limit(1);
 
-      // A liderança pode corrigir a Ficha antes de o mês começar. Ao
+      // A equipe pode corrigir a Ficha antes de o mês começar. Ao
       // atualizar empresas, a linha ainda não iniciada acompanha a ficha
       // atual; depois do primeiro andamento, o snapshot permanece histórico.
       if (

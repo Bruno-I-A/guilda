@@ -22,7 +22,7 @@ function ctx(
       clanId: "clan-1",
       assigneeIsActiveMember: true,
     },
-    actorIsActiveLeaderOfTaskClan: false,
+    actorIsActiveMemberOfTaskClan: false,
     ...overrides,
   };
 }
@@ -100,11 +100,11 @@ describe("autorização de transferência", () => {
     expect(authorizeTaskTransfer(ctx()).allowed).toBe(true);
   });
 
-  test("líder transfere qualquer missão do seu clã dentro dele", () => {
+  test("integrante transfere qualquer missão do seu clã dentro dele", () => {
     const decision = authorizeTaskTransfer(
       ctx({
         actor: { id: "leader-1", role: "member" },
-        actorIsActiveLeaderOfTaskClan: true,
+        actorIsActiveMemberOfTaskClan: true,
       }),
     );
     expect(decision.allowed).toBe(true);
@@ -140,11 +140,11 @@ describe("autorização de transferência", () => {
     expect(decision.allowed).toBe(false);
   });
 
-  test("líder não transfere entre clãs", () => {
+  test("integrante não transfere entre clãs", () => {
     const decision = authorizeTaskTransfer(
       ctx({
         actor: { id: "leader-1", role: "member" },
-        actorIsActiveLeaderOfTaskClan: true,
+        actorIsActiveMemberOfTaskClan: true,
         destination: {
           assigneeId: "assignee-3",
           clanId: "clan-2",
@@ -155,7 +155,7 @@ describe("autorização de transferência", () => {
     expect(decision.allowed).toBe(false);
   });
 
-  test("membro sem relação com a missão não transfere", () => {
+  test("membro fora do clã da missão não transfere", () => {
     const decision = authorizeTaskTransfer(
       ctx({ actor: { id: "other-1", role: "member" } }),
     );

@@ -36,6 +36,8 @@ export async function CompanyFlowTab({
           existingClientName: schema.clients.name,
           assignedName: schema.user.name,
           secretId: schema.companyFlowSecrets.id,
+          rhVerificationTaskStatus: schema.tasks.status,
+          rhVerificationCompletedAt: schema.tasks.completedAt,
           createdByName: schema.user.name,
         })
         .from(schema.companyFlows)
@@ -52,6 +54,13 @@ export async function CompanyFlowTab({
           and(
             eq(schema.companyFlowSecrets.orgId, schema.companyFlows.orgId),
             eq(schema.companyFlowSecrets.flowId, schema.companyFlows.id),
+          ),
+        )
+        .leftJoin(
+          schema.tasks,
+          and(
+            eq(schema.tasks.orgId, schema.companyFlows.orgId),
+            eq(schema.tasks.id, schema.companyFlows.rhVerificationTaskId),
           ),
         )
         .where(
@@ -105,6 +114,7 @@ export async function CompanyFlowTab({
   const actorFacts = {
     role,
     leadsThisClan,
+    isActiveClanMember: viewerIsCorporateMember,
     isActiveCorporateMember: viewerIsCorporateMember,
   };
   const rows: CompanyFlowView[] = flows.map((row) => ({
@@ -116,6 +126,8 @@ export async function CompanyFlowTab({
     updatedAt: row.flow.updatedAt.toISOString(),
     returnedAt: row.flow.returnedAt?.toISOString() ?? null,
     completedAt: row.flow.completedAt?.toISOString() ?? null,
+    rhVerificationTaskStatus: row.rhVerificationTaskStatus ?? null,
+    rhVerificationCompletedAt: row.rhVerificationCompletedAt?.toISOString() ?? null,
     hasGovSecret: Boolean(row.secretId),
     canClaim: canClaimCompanyFlow({
       ...actorFacts,

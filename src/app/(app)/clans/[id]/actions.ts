@@ -20,11 +20,11 @@ import {
 } from "@/lib/action-context";
 
 /**
- * Server Actions da Mesa do Líder — a distribuição das missões do clã.
+ * Server Actions da mesa do clã — a distribuição das missões.
  *
  * Toda decisão de permissão sai de `canDistributeClanTasks`, com os fatos
- * (papel na organização, liderança DESTE clã ativo) carregados aqui do banco.
- * A interface nunca informa quem é líder.
+ * (papel na organização e vínculo com ESTE clã ativo) carregados aqui do banco.
+ * A interface nunca informa quem integra o clã.
  */
 
 const assignSchema = z.object({
@@ -70,7 +70,7 @@ export async function assignClanTasks(input: {
       if (!clan) return err("Clã não encontrado.");
       if (!clan.active) return err("Este clã está inativo.");
       if (!canDistributeClanTasks(facts)) {
-        return err("Apenas o líder deste clã ou um admin pode distribuir as missões.");
+        return err("Apenas integrantes deste clã ou um admin podem distribuir as missões.");
       }
 
       await lockActiveClansForMembershipRead(tx, ctx.orgId);
@@ -147,7 +147,7 @@ const acceptSchema = z.object({
  * Só entra missão órfã cuja sugestão seja ÚNICA e reconhecida (um único
  * `user_id` não nulo) e cuja pessoa ainda seja integrante ativa do clã.
  * "Att. Carol/Jenifer" tem duas sugestões: fica de fora, porque escolher
- * entre as duas é exatamente a decisão que cabe ao líder.
+ * entre as duas continua sendo uma decisão humana da equipe.
  */
 export async function acceptClanSuggestions(input: {
   clanId: string;
@@ -175,7 +175,7 @@ export async function acceptClanSuggestions(input: {
       if (!clan) return err("Clã não encontrado.");
       if (!clan.active) return err("Este clã está inativo.");
       if (!canDistributeClanTasks(facts)) {
-        return err("Apenas o líder deste clã ou um admin pode distribuir as missões.");
+        return err("Apenas integrantes deste clã ou um admin podem distribuir as missões.");
       }
 
       await lockActiveClansForMembershipRead(tx, ctx.orgId);

@@ -279,6 +279,22 @@ export async function updateTask(
 
 type Tx = OrgTx;
 
+async function findRhVerificationFlow(
+  tx: Tx,
+  orgId: string,
+  taskId: string,
+) {
+  const [flow] = await tx
+    .select({ id: schema.companyFlows.id, status: schema.companyFlows.status })
+    .from(schema.companyFlows)
+    .where(and(
+      eq(schema.companyFlows.orgId, orgId),
+      eq(schema.companyFlows.rhVerificationTaskId, taskId),
+    ))
+    .limit(1);
+  return flow ?? null;
+}
+
 /**
  * Núcleo compartilhado das transições de status.
  * `allowedFrom` declara a intenção da action (dupla validação: intenção
@@ -310,6 +326,26 @@ async function transitionTask(options: {
     if (!task) return err("Missão não encontrada.");
     if (!options.allowedFrom.includes(task.status)) {
       return err("A missão não está mais neste estado — atualize a página.");
+    }
+    const linkedRhVerificationFlow =
+      options.to === "cancelled" ||
+      (task.status === "completed" && options.to === "in_progress")
+        ? await findRhVerificationFlow(tx, ctx.orgId, task.id)
+        : null;
+    if (
+      options.to === "cancelled" &&
+      linkedRhVerificationFlow &&
+      linkedRhVerificationFlow.status !== "cancelled"
+    ) {
+      return err("Esta é a verificação obrigatória do RH. Cancele o Fluxo de baixa para cancelar a missão.");
+    }
+    if (
+      task.status === "completed" &&
+      options.to === "in_progress" &&
+      linkedRhVerificationFlow &&
+      !["sent_to_corporate", "in_progress"].includes(linkedRhVerificationFlow.status)
+    ) {
+      return err("A confirmação do RH não pode ser revertida porque o Fluxo de baixa já avançou para o dono.");
     }
     if (options.to === "completed" && !task.assigneeId) {
       return err("A missão precisa ter uma pessoa responsável antes da conclusão.");
@@ -646,31 +682,29 @@ export async function transferTask(input: {
       data.clanId,
     );
     if (!destination.ok) return err(destination.reason);
+    const linkedRhVerificationFlow = await findRhVerificationFlow(
+      tx,
+      ctx.orgId,
+      task.id,
+    );
+    if (
+      linkedRhVerificationFlow &&
+      task.clanId &&
+      destination.clanId !== task.clanId
+    ) {
+      return err("A verificação da folha e do pró-labore deve permanecer no clã RH.");
+    }
 
-    let actorIsLeader = false;
+    let actorIsClanMember = false;
     if (task.clanId) {
-      const [leaderMembership] = await tx
-        .select({ id: schema.clanMemberships.id })
-        .from(schema.clanMemberships)
-        .innerJoin(
-          schema.clans,
-          and(
-            eq(schema.clans.id, schema.clanMemberships.clanId),
-            eq(schema.clans.orgId, schema.clanMemberships.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(schema.clanMemberships.orgId, ctx.orgId),
-            eq(schema.clanMemberships.clanId, task.clanId),
-            eq(schema.clanMemberships.userId, ctx.userId),
-            eq(schema.clanMemberships.isLeader, true),
-            eq(schema.clans.orgId, ctx.orgId),
-            eq(schema.clans.active, true),
-          ),
-        )
-        .limit(1);
-      actorIsLeader = Boolean(leaderMembership);
+      const actorClan = await loadClanScopedFacts(
+        tx,
+        ctx.orgId,
+        task.clanId,
+        ctx.userId,
+        ctx.role,
+      );
+      actorIsClanMember = actorClan.facts.isActiveClanMember;
     }
 
     const decision = authorizeTaskTransfer({
@@ -685,7 +719,7 @@ export async function transferTask(input: {
         clanId: destination.clanId,
         assigneeIsActiveMember: true,
       },
-      actorIsActiveLeaderOfTaskClan: actorIsLeader,
+      actorIsActiveMemberOfTaskClan: actorIsClanMember,
     });
     if (!decision.allowed) return err(decision.reason);
 
@@ -1121,6 +1155,15 @@ export async function deleteTask(input: {
       .where(and(eq(schema.tasks.id, parsed.data.taskId), eq(schema.tasks.orgId, ctx.orgId)))
       .for("update");
     if (!task) return err("Missão não encontrada.");
+
+    const linkedRhVerificationFlow = await findRhVerificationFlow(
+      tx,
+      ctx.orgId,
+      task.id,
+    );
+    if (linkedRhVerificationFlow) {
+      return err("Esta missão é a verificação obrigatória de um Fluxo de baixa e não pode ser excluída separadamente.");
+    }
 
     const [completedEvent] = await tx
       .select({ id: schema.taskEvents.id })

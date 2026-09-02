@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { mapBrasilApiResponse } from "./cnpj-lookup";
+import { lookupCnpj, mapBrasilApiResponse } from "./cnpj-lookup";
 
 function rawResponse(overrides: Record<string, unknown> = {}) {
   return {
@@ -162,5 +162,34 @@ describe("mapBrasilApiResponse", () => {
       }),
     );
     expect(data?.secondaryCnaes).toEqual([{ code: "6201501", description: "Válida" }]);
+  });
+});
+
+describe("lookupCnpj", () => {
+  test("distingue o limite temporário de uma falha definitiva", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response("Too Many Requests", { status: 429 }),
+    ));
+
+    await expect(lookupCnpj("11222333000181")).resolves.toEqual({
+      ok: false,
+      reason: "rate_limited",
+    });
+    vi.unstubAllGlobals();
+  });
+
+  test("reconhece a mitigação antiabuso da Vercel", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response("Forbidden", {
+        status: 403,
+        headers: { "x-vercel-mitigated": "deny" },
+      }),
+    ));
+
+    await expect(lookupCnpj("11222333000181")).resolves.toEqual({
+      ok: false,
+      reason: "rate_limited",
+    });
+    vi.unstubAllGlobals();
   });
 });

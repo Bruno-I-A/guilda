@@ -8,10 +8,12 @@ import {
   canQuickCompleteUnassignedInformativeTask,
   canEmphasizeNotice,
   canHandleInformatives,
+  canManageClanCommitments,
   canManageClanMembership,
   canManageFiscalPortfolio,
   canManageFiscalOperations,
   canSeeNoticeAcknowledgements,
+  canReturnCompanyFlow,
   canUpdateFiscalControl,
 } from "./guild-permissions";
 
@@ -73,7 +75,7 @@ describe("clã — composição é das Configurações", () => {
   test.each(["admin", "owner"] as const)(
     "%s gerencia a composição do clã",
     (role) => {
-      expect(canManageClanMembership({ role, leadsThisClan: false })).toBe(true);
+      expect(canManageClanMembership({ role })).toBe(true);
     },
   );
 
@@ -81,63 +83,119 @@ describe("clã — composição é das Configurações", () => {
   // vê, então nem o líder do próprio clã mexe nisso.
   test("líder do próprio clã NÃO gerencia mais a composição", () => {
     expect(
-      canManageClanMembership({ role: "member", leadsThisClan: true }),
+      canManageClanMembership({ role: "member" }),
     ).toBe(false);
   });
 
   test("member comum não gerencia composição", () => {
     expect(
-      canManageClanMembership({ role: "member", leadsThisClan: false }),
+      canManageClanMembership({ role: "member" }),
     ).toBe(false);
   });
 
   test("nomear líder continua exclusivo de admin/owner", () => {
-    expect(canAppointClanLeader({ role: "member", leadsThisClan: true })).toBe(
+    expect(canAppointClanLeader({ role: "member" })).toBe(
       false,
     );
-    expect(canAppointClanLeader({ role: "admin", leadsThisClan: false })).toBe(
+    expect(canAppointClanLeader({ role: "admin" })).toBe(
       true,
     );
   });
 
-  test("a Mesa distribui para líder do clã e para admin", () => {
-    expect(canDistributeClanTasks({ role: "member", leadsThisClan: true })).toBe(
-      true,
-    );
-    expect(canDistributeClanTasks({ role: "owner", leadsThisClan: false })).toBe(
-      true,
-    );
+  test("qualquer integrante ativo distribui missões do próprio clã", () => {
     expect(
-      canDistributeClanTasks({ role: "member", leadsThisClan: false }),
+      canDistributeClanTasks({
+        role: "member",
+        leadsThisClan: false,
+        isActiveClanMember: true,
+      }),
+    ).toBe(true);
+    expect(
+      canDistributeClanTasks({
+        role: "owner",
+        leadsThisClan: false,
+        isActiveClanMember: false,
+      }),
+    ).toBe(true);
+    expect(
+      canDistributeClanTasks({
+        role: "member",
+        leadsThisClan: false,
+        isActiveClanMember: false,
+      }),
     ).toBe(false);
+  });
+
+  test("qualquer integrante ativo gerencia as rotinas da Contabilidade", () => {
+    expect(
+      canManageClanCommitments({
+        role: "member",
+        leadsThisClan: false,
+        isActiveClanMember: true,
+      }),
+    ).toBe(true);
+  });
+
+  test("qualquer integrante ativo do Societário devolve um Fluxo", () => {
+    expect(
+      canReturnCompanyFlow({
+        role: "member",
+        leadsThisClan: false,
+        isActiveClanMember: true,
+        isActiveCorporateMember: true,
+        isAssignedToFlow: false,
+      }),
+    ).toBe(true);
   });
 });
 
 describe("carteira fiscal — quem remaneja empresa", () => {
-  test("líder do clã remaneja a carteira do próprio clã", () => {
+  test("integrante ativo remaneja a carteira do próprio clã", () => {
     expect(
-      canManageFiscalPortfolio({ role: "member", leadsThisClan: true }),
+      canManageFiscalPortfolio({
+        role: "member",
+        leadsThisClan: false,
+        isActiveClanMember: true,
+      }),
     ).toBe(true);
   });
 
   test.each(["admin", "owner"] as const)("%s remaneja qualquer carteira", (role) => {
-    expect(canManageFiscalPortfolio({ role, leadsThisClan: false })).toBe(true);
+    expect(
+      canManageFiscalPortfolio({
+        role,
+        leadsThisClan: false,
+        isActiveClanMember: false,
+      }),
+    ).toBe(true);
   });
 
-  test("member comum só enxerga, não remaneja", () => {
+  test("member fora do clã não remaneja", () => {
     expect(
-      canManageFiscalPortfolio({ role: "member", leadsThisClan: false }),
+      canManageFiscalPortfolio({
+        role: "member",
+        leadsThisClan: false,
+        isActiveClanMember: false,
+      }),
     ).toBe(false);
   });
 });
 
 describe("operação fiscal — ficha, importação e competência", () => {
-  test("somente liderança/admin gerencia ficha e importação", () => {
+  test("qualquer integrante ativo gerencia ficha e importação", () => {
     expect(
-      canManageFiscalOperations({ role: "member", leadsThisClan: true }),
+      canManageFiscalOperations({
+        role: "member",
+        leadsThisClan: false,
+        isActiveClanMember: true,
+      }),
     ).toBe(true);
     expect(
-      canManageFiscalOperations({ role: "member", leadsThisClan: false }),
+      canManageFiscalOperations({
+        role: "member",
+        leadsThisClan: false,
+        isActiveClanMember: false,
+      }),
     ).toBe(false);
   });
 
@@ -147,37 +205,36 @@ describe("operação fiscal — ficha, importação e competência", () => {
         role: "member",
         leadsThisClan: false,
         isActiveClanMember: true,
-        ownsControlSnapshot: true,
       }),
     ).toBe(true);
   });
 
-  test("integrante não atualiza snapshot alheio nem depois de sair do clã", () => {
+  test("integrante ativo atualiza snapshot alheio", () => {
     expect(
       canUpdateFiscalControl({
         role: "member",
         leadsThisClan: false,
         isActiveClanMember: true,
-        ownsControlSnapshot: false,
       }),
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  test("integrante não atualiza controles depois de sair do clã", () => {
     expect(
       canUpdateFiscalControl({
         role: "member",
         leadsThisClan: false,
         isActiveClanMember: false,
-        ownsControlSnapshot: true,
       }),
     ).toBe(false);
   });
 
-  test("admin e líder corrigem qualquer controle", () => {
+  test("admin e qualquer integrante ativo corrigem qualquer controle", () => {
     expect(
       canUpdateFiscalControl({
         role: "admin",
         leadsThisClan: false,
         isActiveClanMember: false,
-        ownsControlSnapshot: false,
       }),
     ).toBe(true);
     expect(
@@ -185,7 +242,6 @@ describe("operação fiscal — ficha, importação e competência", () => {
         role: "member",
         leadsThisClan: true,
         isActiveClanMember: true,
-        ownsControlSnapshot: false,
       }),
     ).toBe(true);
   });
@@ -214,7 +270,7 @@ describe("operação fiscal — ficha, importação e competência", () => {
         isActiveClanMember: true,
         isCustomerSuccessClan: true,
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       canQuickCompleteUnassignedInformativeTask({
         role: "member",

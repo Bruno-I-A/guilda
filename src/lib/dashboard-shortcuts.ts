@@ -13,6 +13,7 @@ export type DashboardShortcutIcon =
   | "campaigns"
   | "commitments"
   | "portfolio"
+  | "mei"
   | "installments"
   | "fees"
   | "closings"
@@ -83,6 +84,7 @@ const TAB_DESCRIPTION: Record<ClanTab, string> = {
   campaigns: "Campanhas e rotinas recorrentes",
   commitments: "Planejamento de distribuição de lucros",
   portfolio: "Carteira e fichas fiscais",
+  mei: "Declarações anuais do MEI",
   installments: "Controle dos parcelamentos",
   fees: "Controle mensal de honorários",
   closings: "Fechamentos da Contabilidade",

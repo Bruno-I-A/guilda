@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -96,12 +95,6 @@ export function SignInForm({ next }: { next?: string }) {
           <Button type="submit" disabled={submitting} className="w-full">
             {submitting ? "Entrando…" : "Entrar"}
           </Button>
-          <p className="text-center text-sm text-muted-foreground">
-            Não tem conta?{" "}
-            <Link href="/sign-up" className="font-medium text-foreground underline-offset-4 hover:underline">
-              Criar conta
-            </Link>
-          </p>
         </form>
       </CardContent>
     </Card>

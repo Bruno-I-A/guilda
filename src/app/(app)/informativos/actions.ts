@@ -8,6 +8,7 @@ import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import { companyFlowActionsText } from "@/domain/company-flow";
 import * as schema from "@/db/schema";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
+import { inferTaxRegimeFromCnpj } from "@/domain/client-tax-regime";
 import { canHandleInformatives, isAdminRole } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
 import {
@@ -88,7 +89,8 @@ async function requireInformativeActor(): Promise<
 
 const cnpjLookupSchema = z.object({ cnpj: z.string().min(1, "Informe o CNPJ.") });
 
-export interface CnpjLookupView {
+interface ConsultedCnpjLookupView {
+  kind: "consulted";
   legalName: string;
   normalizedCnpj: string;
   cnaeCode: string | null;
@@ -100,6 +102,16 @@ export interface CnpjLookupView {
   /** Ex.: "ATIVA", "BAIXADA" — a tela decide se avisa, a action nunca bloqueia. */
   cadastralSituation: string | null;
 }
+
+interface ExistingCnpjLookupView {
+  kind: "existing";
+  clientId: string;
+  legalName: string;
+  normalizedCnpj: string;
+  active: boolean;
+}
+
+export type CnpjLookupView = ConsultedCnpjLookupView | ExistingCnpjLookupView;
 
 /**
  * Passo 1 do fluxo "Novo cliente": busca o CNPJ na Receita (via BrasilAPI).
@@ -123,6 +135,28 @@ export async function lookupClientCnpj(input: {
     return err("CNPJ inválido — confira os dígitos.");
   }
 
+  const existing = await withOrgTx(gate.actor.orgId, (tx) =>
+    tx.query.clients.findFirst({
+      columns: { id: true, name: true, active: true },
+      where: and(
+        eq(schema.clients.orgId, gate.actor.orgId),
+        eq(schema.clients.cnpj, normalized),
+      ),
+    }),
+  );
+  if (existing) {
+    return {
+      ok: true,
+      data: {
+        kind: "existing",
+        clientId: existing.id,
+        legalName: existing.name,
+        normalizedCnpj: normalized,
+        active: existing.active,
+      },
+    };
+  }
+
   const result = await lookupCnpj(normalized);
   if (!result.ok) {
     return err(
@@ -135,13 +169,14 @@ export async function lookupClientCnpj(input: {
   return {
     ok: true,
     data: {
+      kind: "consulted",
       legalName: result.data.legalName,
       normalizedCnpj: normalized,
       cnaeCode: result.data.cnaeCode,
       cnaeDescription: result.data.cnaeDescription,
       secondaryCnaes: result.data.secondaryCnaes,
       openedAt: result.data.openedAt,
-      suggestedTaxRegime: result.data.isSimplesOptant ? "simples" : null,
+      suggestedTaxRegime: inferTaxRegimeFromCnpj(result.data),
       cadastralSituation: result.data.cadastralSituation,
     },
   };
@@ -172,6 +207,24 @@ const analyzeSchema = z.object({
   resolvedCompany: resolvedCompanySchema.optional(),
   /** Presente quando a prévia nasceu de um Fluxo devolvido pelo Societário. */
   flowId: z.uuid("Fluxo inválido.").optional(),
+  /** Atalho direto: vincula empresa e tipo sem criar Fluxo Societário. */
+  directCompany: z.object({
+    clientId: z.uuid("Empresa inválida."),
+    kind: z.enum(["amendment", "closure"]),
+  }).optional(),
+}).superRefine((data, ctx) => {
+  const origins = [
+    Boolean(data.flowId),
+    Boolean(data.directCompany),
+    Boolean(data.resolvedCompany),
+  ].filter(Boolean).length;
+  if (origins > 1) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["directCompany"],
+      message: "Escolha apenas uma origem para o Informativo.",
+    });
+  }
 });
 
 /**
@@ -183,6 +236,7 @@ export async function analyzeInformative(input: {
   sourceText: string;
   resolvedCompany?: ResolvedCompany;
   flowId?: string;
+  directCompany?: { clientId: string; kind: "amendment" | "closure" };
 }): Promise<ActionResult<{ informativeId: string }>> {
   const gate = await requireInformativeActor();
   if (!gate.ok) return gate;
@@ -194,6 +248,7 @@ export async function analyzeInformative(input: {
 
   let flowContext: CompanyFlowDraftContext | undefined;
   let sourceForAi = parsed.data.sourceText;
+  let sourceToSave = parsed.data.sourceText;
   const flowId = parsed.data.flowId;
   if (flowId) {
     if (!isAdminRole(gate.actor.role)) {
@@ -240,6 +295,37 @@ export async function analyzeInformative(input: {
       billingDescription: flow.billingDescription,
     };
     sourceForAi = actions;
+    sourceToSave = actions;
+  } else if (parsed.data.directCompany) {
+    const directCompany = await withOrgTx(gate.actor.orgId, (tx) =>
+      tx.query.clients.findFirst({
+        where: and(
+          eq(schema.clients.orgId, gate.actor.orgId),
+          eq(schema.clients.id, parsed.data.directCompany!.clientId),
+          eq(schema.clients.active, true),
+        ),
+        columns: {
+          id: true,
+          name: true,
+          cnpj: true,
+          taxRegime: true,
+        },
+      }),
+    );
+    if (!directCompany) return err("Empresa ativa não encontrada.");
+    flowContext = {
+      kind: parsed.data.directCompany.kind,
+      existingClientId: directCompany.id,
+      legalName: directCompany.name,
+      normalizedCnpj: directCompany.cnpj,
+      taxRegime: directCompany.taxRegime,
+      billingAmount: null,
+      billingDescription: null,
+      noticeSourceText: parsed.data.sourceText,
+    };
+    sourceForAi =
+      companyFlowActionsText(parsed.data.sourceText) ??
+      "Nenhuma missão adicional.";
   }
 
   let draft;
@@ -264,7 +350,7 @@ export async function analyzeInformative(input: {
     model: draft.model,
     // No Fluxo, persiste somente o bloco enviado à IA; a ficha societária
     // continua sendo a fonte dos dados cadastrais e sensíveis.
-    sourceText: sourceForAi,
+    sourceText: sourceToSave,
     source: "panel",
     connectionId: null,
   });

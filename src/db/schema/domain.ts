@@ -291,9 +291,9 @@ export const taskTransfers = pgTable(
 /**
  * Sugestões de responsável extraídas do informativo ("Att. FULANO").
  * São SUGESTÃO, nunca atribuição: a missão de clã nasce sem responsável e o
- * líder decide. Uma linha pode citar duas pessoas ("Rafa/Bruno"), por isso é
+ * equipe decide. Uma linha pode citar duas pessoas ("Rafa/Bruno"), por isso é
  * tabela e não coluna. `user_id` fica nulo quando o nome não casa com ninguém
- * do diretório — o registro do nome cru é a trilha para o líder entender.
+ * do diretório — o registro do nome cru é a trilha para a equipe entender.
  */
 export const taskAssigneeSuggestions = pgTable(
   "task_assignee_suggestions",
@@ -482,6 +482,7 @@ export type TaskTransfer = typeof taskTransfers.$inferSelect;
 
 /** Regime tributário — chave que casa template→cliente nas Campanhas (Fase 5). */
 export const taxRegime = pgEnum("tax_regime", [
+  "mei",
   "simples",
   "presumido",
   "association",
@@ -511,6 +512,38 @@ export const clients = pgTable(
     name: varchar("name", { length: 200 }).notNull(),
     taxRegime: taxRegime("tax_regime").notNull(),
     cnpj: varchar("cnpj", { length: 14 }), // opcional; normalizado (só dígitos)
+    tradeName: varchar("trade_name", { length: 200 }),
+    operationalEmail: varchar("operational_email", { length: 200 }),
+    operationalPhone: varchar("operational_phone", { length: 20 }),
+    revenueEmail: varchar("revenue_email", { length: 200 }),
+    revenuePhones: jsonb("revenue_phones").$type<string[]>().notNull().default([]),
+    address: jsonb("address").$type<{
+      street: string | null;
+      number: string | null;
+      complement: string | null;
+      district: string | null;
+      city: string | null;
+      state: string | null;
+      zipCode: string | null;
+    }>(),
+    cadastralSituation: varchar("cadastral_situation", { length: 80 }),
+    cadastralSituationDate: date("cadastral_situation_date", { mode: "string" }),
+    companySize: varchar("company_size", { length: 120 }),
+    legalNature: varchar("legal_nature", { length: 200 }),
+    shareCapital: numeric("share_capital", { precision: 15, scale: 2 }),
+    headquartersType: varchar("headquarters_type", { length: 40 }),
+    qsa: jsonb("qsa").$type<{
+      name: string;
+      document: string | null;
+      qualification: string | null;
+      joinedAt: string | null;
+      participation: string | null;
+    }[]>().notNull().default([]),
+    taxRegimeHistory: jsonb("tax_regime_history").$type<{
+      year: number | null;
+      form: string;
+    }[]>().notNull().default([]),
+    cnpjSyncedAt: timestamp("cnpj_synced_at", { withTimezone: true }),
     // Preenchidos só pelo fluxo "Novo cliente" dos Informativos (consulta de
     // CNPJ na Receita via BrasilAPI) — nulos no cadastro manual/import CSV.
     cnaeCode: varchar("cnae_code", { length: 10 }),
@@ -520,18 +553,16 @@ export const clients = pgTable(
     >(),
     openedAt: date("opened_at", { mode: "string" }),
     // Combinado do Fiscal extraído do informativo de cliente novo (ex.: Fator
-    // R, faturamento) — mora aqui só até o líder confirmar a carteira. A Ficha
+    // R, faturamento) — mora aqui só até a equipe confirmar a carteira. A Ficha
     // Fiscal permanente recebe o texto antes de estes campos serem limpos;
     // trocar o responsável não altera a ficha.
     pendingFiscalNote: text("pending_fiscal_note"),
     suggestedFiscalOwnerId: text("suggested_fiscal_owner_id").references(
       () => user.id,
     ),
-    // true em TODO cliente recém-criado (qualquer via, não só o fluxo de
-    // CNPJ) — inclusive quando não há nota nenhuma (ex.: "FISCAL - sem
-    // particularidades"). Sem isto, esse caso ficaria indistinguível de
-    // qualquer empresa antiga sem responsável na aba Carteira. Zerado junto
-    // com os dois campos acima quando o líder confirma quem assume.
+    // true em cliente não-MEI recém-criado pelo fluxo de Informativos —
+    // inclusive quando não há nota nenhuma. MEIs seguem diretamente para a
+    // planilha anual e nunca entram nessa fila de carteira.
     pendingFiscalAssignment: boolean("pending_fiscal_assignment")
       .notNull()
       .default(false),
@@ -551,6 +582,90 @@ export const clients = pgTable(
 );
 
 export type Client = typeof clients.$inferSelect;
+
+/** Situação da declaração anual DASN-SIMEI no ano-calendário. */
+export const meiDeclarationStatus = pgEnum("mei_declaration_status", [
+  "pending",
+  "in_progress",
+  "submitted",
+]);
+
+/**
+ * Controle anual exclusivo das empresas MEI. A ausência de uma linha significa
+ * "pendente"; ela é criada no primeiro salvamento da planilha.
+ */
+export const meiAnnualDeclarations = pgTable(
+  "mei_annual_declarations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    year: smallint("year").notNull(),
+    status: meiDeclarationStatus("status").notNull().default("pending"),
+    submittedAt: date("submitted_at", { mode: "string" }),
+    notes: text("notes"),
+    updatedBy: text("updated_by")
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+      name: "mei_annual_declarations_org_client_fk",
+    }).onDelete("cascade"),
+    uniqueIndex("mei_annual_declarations_org_client_year_uidx").on(
+      t.orgId,
+      t.clientId,
+      t.year,
+    ),
+    index("mei_annual_declarations_org_year_status_idx").on(
+      t.orgId,
+      t.year,
+      t.status,
+    ),
+    check(
+      "mei_annual_declarations_year_check",
+      sql`${t.year} BETWEEN 2000 AND 2100`,
+    ),
+    check(
+      "mei_annual_declarations_submission_check",
+      sql`(${t.status} = 'submitted' AND ${t.submittedAt} IS NOT NULL) OR (${t.status} <> 'submitted' AND ${t.submittedAt} IS NULL)`,
+    ),
+  ],
+);
+
+export type MeiAnnualDeclaration = typeof meiAnnualDeclarations.$inferSelect;
+
+/**
+ * Lote durável da importação de clientes. As consultas externas são feitas em
+ * pequenos blocos; somente a confirmação final inclui os CNPJs ainda ausentes,
+ * dentro de uma única transação.
+ */
+export const clientImportBatches = pgTable(
+  "client_import_batches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id),
+    fileName: varchar("file_name", { length: 255 }).notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("processing"),
+    rows: jsonb("rows").$type<unknown[]>().notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("client_import_batches_org_created_idx").on(t.orgId, t.createdAt),
+  ],
+);
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
   creator: one(user, { fields: [tasks.creatorId], references: [user.id] }),
@@ -818,8 +933,10 @@ export interface CompanyFlowQsaMember {
   name: string;
   document?: string | null;
   qualification?: string | null;
+  previousParticipation?: string | null;
   participation?: string | null;
-  changeType?: "entered" | "left" | "updated" | null;
+  quotaTransferDetails?: string | null;
+  changeType?: "entered" | "left" | "updated" | "remaining" | null;
 }
 
 /**
@@ -863,6 +980,8 @@ export const companyFlows = pgTable(
     /** Cobrança do serviço de alteração/baixa, destinada ao Financeiro. */
     billingAmount: numeric("billing_amount", { precision: 15, scale: 2 }),
     billingDescription: text("billing_description"),
+    /** Missão preventiva do RH que libera a conclusão de uma baixa. */
+    rhVerificationTaskId: uuid("rh_verification_task_id"),
     assignedTo: text("assigned_to").references(() => user.id),
     resultCnpj: varchar("result_cnpj", { length: 14 }),
     approvedLegalName: varchar("approved_legal_name", { length: 200 }),
@@ -907,6 +1026,11 @@ export const companyFlows = pgTable(
       columns: [t.orgId, t.informativeId],
       foreignColumns: [informatives.orgId, informatives.id],
     }).onDelete("restrict"),
+    foreignKey({
+      name: "company_flows_org_rh_verification_task_fk",
+      columns: [t.orgId, t.rhVerificationTaskId],
+      foreignColumns: [tasks.orgId, tasks.id],
+    }).onDelete("restrict"),
     uniqueIndex("company_flows_org_id_uidx").on(t.orgId, t.id),
     index("company_flows_org_clan_status_idx").on(
       t.orgId,
@@ -923,6 +1047,9 @@ export const companyFlows = pgTable(
     uniqueIndex("company_flows_org_informative_uidx")
       .on(t.orgId, t.informativeId)
       .where(sql`${t.informativeId} IS NOT NULL`),
+    uniqueIndex("company_flows_org_rh_verification_task_uidx")
+      .on(t.orgId, t.rhVerificationTaskId)
+      .where(sql`${t.rhVerificationTaskId} IS NOT NULL`),
     check(
       "company_flows_kind_client_check",
       sql`(${t.kind} = 'opening' AND ${t.existingClientId} IS NULL) OR (${t.kind} <> 'opening' AND ${t.existingClientId} IS NOT NULL)`,
@@ -938,6 +1065,10 @@ export const companyFlows = pgTable(
     check(
       "company_flows_billing_kind_check",
       sql`${t.kind} <> 'opening' OR (${t.billingAmount} IS NULL AND ${t.billingDescription} IS NULL)`,
+    ),
+    check(
+      "company_flows_rh_verification_kind_check",
+      sql`${t.kind} = 'closure' OR ${t.rhVerificationTaskId} IS NULL`,
     ),
   ],
 );

@@ -19,6 +19,7 @@ export const CLAN_TABS = [
   { key: "campaigns", label: "Campanhas" },
   { key: "commitments", label: "Distribuição de lucros" },
   { key: "portfolio", label: "Carteira" },
+  { key: "mei", label: "MEI" },
   { key: "installments", label: "Parcelamentos" },
   { key: "fees", label: "Honorários" },
   { key: "closings", label: "Fechamentos" },
@@ -32,6 +33,7 @@ export type ClanTab = (typeof CLAN_TABS)[number]["key"];
 const TAB_OWNER_SLUG: Partial<Record<ClanTab, string>> = {
   commitments: CONTABILIDADE_CLAN_SLUG,
   portfolio: FISCAL_CLAN_SLUG,
+  mei: FISCAL_CLAN_SLUG,
   installments: FISCAL_CLAN_SLUG,
   fees: FISCAL_CLAN_SLUG,
   closings: CONTABILIDADE_CLAN_SLUG,

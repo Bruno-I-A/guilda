@@ -19,6 +19,8 @@ export type ClientCsvLineResult =
 
 /** Aceita a chave do enum ou o rótulo humano (com/sem acento, qualquer caixa). */
 const REGIME_ALIASES: Record<string, TaxRegime> = {
+  mei: "mei",
+  "microempreendedor individual": "mei",
   simples: "simples",
   "simples nacional": "simples",
   presumido: "presumido",
@@ -59,7 +61,7 @@ export function parseClientCsvLine(line: string): ClientCsvLineResult {
   if (!taxRegime) {
     return {
       kind: "error",
-      error: `regime desconhecido "${rawRegime}" (use simples, presumido, associação ou real)`,
+      error: `regime desconhecido "${rawRegime}" (use MEI, simples, presumido, associação ou real)`,
     };
   }
 

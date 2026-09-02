@@ -158,7 +158,7 @@ export default async function TaskDetailPage({
     },
   };
   const isAdmin = member.role === "admin" || member.role === "owner";
-  const viewerIsLeader = Boolean(viewerClanMembership?.isLeader);
+  const viewerIsClanMember = Boolean(viewerClanMembership);
   const can = {
     claim:
       task.status === "pending" &&
@@ -204,7 +204,7 @@ export default async function TaskDetailPage({
       authorizeTransition("in_progress", context).allowed,
     transfer:
       isTransferableTaskStatus(task.status) &&
-      (isAdmin || viewerIsLeader || task.assigneeId === session.user.id),
+      (isAdmin || viewerIsClanMember || task.assigneeId === session.user.id),
   };
 
   const membershipsByUser = new Map<

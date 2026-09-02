@@ -18,7 +18,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -46,13 +46,21 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   COMPANY_FLOW_KIND_LABELS,
   COMPANY_FLOW_STATUS_LABELS,
+  companyFlowRhVerificationState,
+  formatQsaParticipation,
+  parseQsaParticipation,
+  qsaDistributionIsComplete,
+  qsaFinalParticipationTotal,
+  qsaMemberCapitalValue,
   type CompanyFlowKind,
+  type CompanyFlowRhVerificationState,
   type CompanyFlowSource,
   type CompanyFlowStatus,
   type FlowActivity,
   type FlowQsaMember,
 } from "@/domain/company-flow";
 import { formatCnpj } from "@/domain/cnpj";
+import type { TaskStatus } from "@/domain/task-state";
 import { TAX_REGIME_LABELS, TAX_REGIMES, type TaxRegime } from "@/lib/clients-ui";
 import { formatBRLCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
@@ -93,6 +101,9 @@ export interface CompanyFlowView {
   requestDetails: string | null;
   billingAmount: string | null;
   billingDescription: string | null;
+  rhVerificationTaskId: string | null;
+  rhVerificationTaskStatus: TaskStatus | null;
+  rhVerificationCompletedAt: string | null;
   assignedTo: string | null;
   assignedName: string | null;
   resultCnpj: string | null;
@@ -151,6 +162,37 @@ const HISTORY_FLOW_STATUSES: readonly CompanyFlowStatus[] = [
   "cancelled",
 ];
 
+function RhVerificationBadge({
+  state,
+}: {
+  state: CompanyFlowRhVerificationState;
+}) {
+  if (state === "not_required") return null;
+  return state === "confirmed" ? (
+    <Badge variant="outline" className="border-success/45 bg-success/10 text-success">
+      <ShieldCheck aria-hidden /> Confirmado pelo RH
+    </Badge>
+  ) : (
+    <Badge variant="outline" className="border-warning/50 bg-warning/10 text-warning">
+      <Clock3 aria-hidden /> RH ainda não verificou
+    </Badge>
+  );
+}
+
+function getRhVerificationState(
+  row: Pick<
+    CompanyFlowView,
+    "kind" | "status" | "rhVerificationTaskId" | "rhVerificationTaskStatus"
+  >,
+): CompanyFlowRhVerificationState {
+  if (row.status === "cancelled") return "not_required";
+  return companyFlowRhVerificationState({
+    kind: row.kind,
+    taskId: row.rhVerificationTaskId,
+    taskStatus: row.rhVerificationTaskStatus,
+  });
+}
+
 function flowStageDescription(row: CompanyFlowView): string {
   switch (row.status) {
     case "sent_to_corporate":
@@ -160,7 +202,9 @@ function flowStageDescription(row: CompanyFlowView): string {
         ? `Em processamento por ${row.assignedName}`
         : "Em processamento no Societário";
     case "awaiting_owner":
-      return "Retornado ao dono para preparar o Informativo";
+      return row.kind === "amendment"
+        ? "Alteração confirmada; Informativo pendente"
+        : "Processo confirmado; Informativo pendente";
     case "informative_drafting":
       return "Informativo em preparação";
     case "completed":
@@ -192,8 +236,7 @@ type AmendmentField =
   | "taxRegime"
   | "activities"
   | "address"
-  | "socialCapital"
-  | "qsa"
+  | "ownership"
   | "contact";
 
 const AMENDMENT_FIELDS: readonly {
@@ -205,17 +248,20 @@ const AMENDMENT_FIELDS: readonly {
   { key: "taxRegime", label: "Regime tributário", description: "Troca de enquadramento" },
   { key: "activities", label: "Atividades", description: "Adicionar ou retirar CNAEs" },
   { key: "address", label: "Endereço", description: "Novo endereço e IPTU" },
-  { key: "socialCapital", label: "Capital social", description: "Alteração do valor" },
-  { key: "qsa", label: "QSA", description: "Entrada, saída ou participação" },
+  { key: "ownership", label: "Capital social e QSA", description: "Sócios, quotas e participação final" },
   { key: "contact", label: "Contato", description: "Nome, telefone ou e-mail" },
 ];
 
-function eventLabel(eventType: string): string {
+function eventLabel(eventType: string, kind: CompanyFlowKind): string {
   const labels: Record<string, string> = {
     created: "Fluxo enviado ao Societário",
     claimed: "Fluxo assumido",
     assigned: "Responsável alterado",
-    returned_to_owner: "Devolvido ao dono",
+    returned_to_owner: kind === "amendment"
+      ? "Informativo confirmado"
+      : kind === "closure"
+        ? "Baixa confirmada"
+        : "Dados aprovados confirmados",
     informative_prepared: "Informativo preparado",
     informative_cancelled: "Prévia de informativo cancelada",
     informative_confirmed: "Informativo confirmado",
@@ -227,11 +273,9 @@ function eventLabel(eventType: string): string {
 function QsaFields({
   value,
   onChange,
-  showChangeType = false,
 }: {
   value: FlowQsaMember[];
   onChange: (value: FlowQsaMember[]) => void;
-  showChangeType?: boolean;
 }) {
   function change(index: number, field: keyof FlowQsaMember, next: string) {
     onChange(value.map((member, current) => current === index ? { ...member, [field]: next } : member));
@@ -240,15 +284,14 @@ function QsaFields({
   return (
     <div className="grid gap-2">
       <div className="flex items-center justify-between gap-2">
-        <Label>{showChangeType ? "Alterações no QSA" : "QSA"}</Label>
-        <Button type="button" variant="outline" size="sm" onClick={() => onChange([...value, { name: "", changeType: showChangeType ? "entered" : null }])}>
+        <Label>QSA</Label>
+        <Button type="button" variant="outline" size="sm" onClick={() => onChange([...value, { name: "", changeType: null }])}>
           <Plus aria-hidden /> Adicionar sócio
         </Button>
       </div>
-      {value.length === 0 ? <p className="text-xs text-muted-foreground">{showChangeType ? "Registre entradas, saídas ou mudanças de participação." : "Inclua os integrantes do quadro societário."}</p> : null}
+      {value.length === 0 ? <p className="text-xs text-muted-foreground">Inclua os integrantes do quadro societário.</p> : null}
       {value.map((member, index) => (
         <div key={index} className="grid gap-2 rounded-md border bg-muted/20 p-2 sm:grid-cols-2">
-          {showChangeType ? <Select value={member.changeType ?? "entered"} onValueChange={(value) => change(index, "changeType", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="entered">Entrou no QSA</SelectItem><SelectItem value="left">Saiu do QSA</SelectItem><SelectItem value="updated">Participação / dados alterados</SelectItem></SelectContent></Select> : null}
           <Input value={member.name} onChange={(event) => change(index, "name", event.target.value)} placeholder="Nome / razão social" />
           <Input value={member.document ?? ""} onChange={(event) => change(index, "document", event.target.value)} placeholder="CPF ou CNPJ (opcional)" />
           <Input value={member.qualification ?? ""} onChange={(event) => change(index, "qualification", event.target.value)} placeholder="Qualificação" />
@@ -264,6 +307,162 @@ function QsaFields({
   );
 }
 
+function AmendmentOwnershipFields({
+  socialCapital,
+  onSocialCapitalChange,
+  value,
+  onChange,
+}: {
+  socialCapital: string;
+  onSocialCapitalChange: (value: string) => void;
+  value: FlowQsaMember[];
+  onChange: (value: FlowQsaMember[]) => void;
+}) {
+  const participationTotal = qsaFinalParticipationTotal(value);
+  const distributionComplete = qsaDistributionIsComplete(value);
+
+  function change(index: number, field: keyof FlowQsaMember, next: string) {
+    onChange(value.map((member, current) => {
+      if (current !== index) return member;
+      if (field === "changeType" && next === "left") {
+        return { ...member, changeType: "left" as const, participation: "0" };
+      }
+      if (field === "changeType" && next === "entered") {
+        return { ...member, changeType: "entered" as const, previousParticipation: "0" };
+      }
+      return { ...member, [field]: next };
+    }));
+  }
+
+  function addMember() {
+    onChange([
+      ...value,
+      {
+        name: "",
+        changeType: "entered",
+        previousParticipation: "0",
+        participation: "",
+        quotaTransferDetails: "",
+      },
+    ]);
+  }
+
+  return (
+    <section className="grid gap-4 rounded-md border border-primary/35 bg-background/45 p-3">
+      <div>
+        <Label>Capital social e composição societária final</Label>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Registre a movimentação das quotas e como ficará o capital de cada sócio depois da alteração.
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,0.8fr)]">
+        <div className="grid gap-1.5">
+          <Label>Capital social após a alteração</Label>
+          <CurrencyInput value={socialCapital} onValueChange={onSocialCapitalChange} placeholder="R$ 0,00" />
+          <p className="text-xs text-muted-foreground">Mesmo que o total não mude, confirme aqui o valor que ficará no contrato.</p>
+        </div>
+        <div className={cn(
+          "grid content-center gap-1 rounded-md border p-3",
+          distributionComplete
+            ? "border-success/35 bg-success/5"
+            : "border-warning/35 bg-warning/5",
+        )}>
+          <span className="hud-label">Conferência da participação final</span>
+          <strong className={distributionComplete ? "text-success" : "text-warning"}>
+            {new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 4 }).format(participationTotal)}% de 100%
+          </strong>
+          <span className="text-xs text-muted-foreground">
+            {distributionComplete ? "Composição fechada em 100%." : "Ajuste os percentuais até fechar em 100%."}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+        <div>
+          <Label>Movimentação dos sócios e das quotas</Label>
+          <p className="mt-1 text-xs text-muted-foreground">Inclua também quem permanece para registrar a composição final completa.</p>
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={addMember}>
+          <Plus aria-hidden /> Adicionar sócio
+        </Button>
+      </div>
+
+      {value.length === 0 ? (
+        <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+          Adicione todos os sócios que entrarão, sairão ou permanecerão após a alteração.
+        </p>
+      ) : null}
+
+      {value.map((member, index) => {
+        const capitalValue = qsaMemberCapitalValue(socialCapital, member.participation);
+        const movementLabel = member.changeType === "entered"
+          ? "De quem recebeu as quotas ou houve aumento de capital?"
+          : member.changeType === "left"
+            ? "Para quem transferiu as quotas?"
+            : "Como as quotas foram movimentadas?";
+        return (
+          <div key={index} className="grid gap-3 rounded-md border bg-muted/15 p-3">
+            <div className="flex items-start justify-between gap-2">
+              <Badge variant="outline">Sócio {index + 1}</Badge>
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remover sócio ${index + 1}`} onClick={() => onChange(value.filter((_, current) => current !== index))}>
+                <XCircle aria-hidden />
+              </Button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-1.5">
+                <Label>Situação após a alteração</Label>
+                <Select value={member.changeType ?? "remaining"} onValueChange={(next) => change(index, "changeType", next)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="remaining">Permanece no QSA</SelectItem>
+                    <SelectItem value="entered">Entrou no QSA</SelectItem>
+                    <SelectItem value="left">Saiu do QSA</SelectItem>
+                    <SelectItem value="updated">Alterou a participação</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Nome / razão social</Label>
+                <Input value={member.name} onChange={(event) => change(index, "name", event.target.value)} placeholder="Nome completo do sócio" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>CPF ou CNPJ</Label>
+                <Input value={member.document ?? ""} onChange={(event) => change(index, "document", event.target.value)} placeholder="Opcional" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Qualificação</Label>
+                <Input value={member.qualification ?? ""} onChange={(event) => change(index, "qualification", event.target.value)} placeholder="Ex.: sócio administrador" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Participação anterior{member.changeType === "left" || member.changeType === "updated" ? " *" : ""}</Label>
+                <Input value={member.previousParticipation ?? ""} onChange={(event) => change(index, "previousParticipation", event.target.value)} placeholder="0,00%" inputMode="decimal" disabled={member.changeType === "entered"} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Participação final *</Label>
+                <Input value={member.participation ?? ""} onChange={(event) => change(index, "participation", event.target.value)} placeholder="0,00%" inputMode="decimal" disabled={member.changeType === "left"} />
+                <p className="text-xs text-muted-foreground">
+                  Capital final: {capitalValue ? formatBRLCurrency(capitalValue) : "preencha o capital e o percentual"}
+                </p>
+              </div>
+            </div>
+            {member.changeType && member.changeType !== "remaining" ? (
+              <div className="grid gap-1.5">
+                <Label>{movementLabel} *</Label>
+                <Input
+                  value={member.quotaTransferDetails ?? ""}
+                  onChange={(event) => change(index, "quotaTransferDetails", event.target.value)}
+                  placeholder={member.changeType === "left" ? "Ex.: transferiu 40% para Maria" : "Ex.: recebeu 30% de João ou aumento de capital"}
+                />
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
   const officialLegalName = row.approvedLegalName ?? row.existingClientName;
   const taxRegime = row.approvedTaxRegime ?? row.taxRegime;
@@ -275,8 +474,7 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
     row.requestedActivities.length > 0 || row.removedActivities.length > 0,
     Boolean(taxRegime),
     Boolean(address || row.iptu),
-    Boolean(row.socialCapital),
-    qsa.length > 0,
+    Boolean(row.socialCapital) || qsa.length > 0,
     contactValues.length > 0,
   ].filter(Boolean).length;
   const requestedNameDiffers = Boolean(
@@ -331,14 +529,6 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
             </div>
           ) : null}
 
-          {row.socialCapital ? (
-            <div className="rounded-md border border-primary/30 bg-background/65 p-3">
-              <Badge className="mb-2">Capital social</Badge>
-              <p className="text-[10px] font-medium tracking-wider text-primary uppercase">Novo valor</p>
-              <p className="mt-1 font-semibold">{formatBRLCurrency(row.socialCapital)}</p>
-            </div>
-          ) : null}
-
           {row.requestedActivities.length > 0 || row.removedActivities.length > 0 ? (
             <div className="grid gap-2 rounded-md border border-primary/30 bg-background/65 p-3 sm:col-span-2">
               <Badge className="w-fit">Atividades econômicas</Badge>
@@ -373,19 +563,32 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
             </div>
           ) : null}
 
-          {qsa.length > 0 ? (
+          {row.socialCapital || qsa.length > 0 ? (
             <div className="grid gap-2 rounded-md border border-primary/30 bg-background/65 p-3 sm:col-span-2">
-              <Badge className="w-fit">Quadro societário</Badge>
-              {qsa.map((member, index) => (
-                <div key={`${member.name}-${index}`} className="rounded-md bg-muted/25 p-2.5">
-                  <p className="font-semibold">
-                    {member.changeType === "entered" ? "Entrada" : member.changeType === "left" ? "Saída" : "Alteração"} · {member.name}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {[member.document && `CPF/CNPJ: ${member.document}`, member.qualification, member.participation && `Participação: ${member.participation}`].filter(Boolean).join(" · ") || "Sem dados complementares"}
-                  </p>
-                </div>
-              ))}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Badge className="w-fit">Capital social e QSA</Badge>
+                {row.socialCapital ? <strong>Capital total: {formatBRLCurrency(row.socialCapital)}</strong> : null}
+              </div>
+              {qsa.map((member, index) => {
+                const capitalValue = qsaMemberCapitalValue(row.socialCapital, member.participation);
+                return (
+                  <div key={`${member.name}-${index}`} className="rounded-md bg-muted/25 p-2.5">
+                    <p className="font-semibold">
+                      {member.changeType === "entered" ? "Entrada" : member.changeType === "left" ? "Saída" : member.changeType === "remaining" ? "Permanece" : "Alteração"} · {member.name}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {[
+                        member.document && `CPF/CNPJ: ${member.document}`,
+                        member.qualification,
+                        member.previousParticipation && `Antes: ${formatQsaParticipation(member.previousParticipation)}`,
+                        member.participation && `Final: ${formatQsaParticipation(member.participation)}`,
+                        capitalValue && `Capital: ${formatBRLCurrency(capitalValue)}`,
+                      ].filter(Boolean).join(" · ") || "Sem dados complementares"}
+                    </p>
+                    {member.quotaTransferDetails ? <p className="mt-1 text-xs"><strong>Quotas:</strong> {member.quotaTransferDetails}</p> : null}
+                  </div>
+                );
+              })}
             </div>
           ) : null}
 
@@ -475,6 +678,7 @@ function NewCompanyFlowDialog({
   const [kind, setKind] = useState<CompanyFlowKind>("opening");
   const [existingClientId, setExistingClientId] = useState("");
   const [companyCnpj, setCompanyCnpj] = useState("");
+  const companyCnpjRef = useRef("");
   const [consultedCompany, setConsultedCompany] =
     useState<CompanyFlowClientLookupView | null>(null);
   const [legalName, setLegalName] = useState("");
@@ -510,7 +714,74 @@ function NewCompanyFlowDialog({
   const closing = kind === "closure";
   const amendmentHas = (field: AmendmentField) => amendmentFields.includes(field);
 
+  function clearFlowValues() {
+    setExistingClientId("");
+    setConsultedCompany(null);
+    setLegalName("");
+    setActivities("");
+    setRemovedActivities("");
+    setTaxRegime("");
+    setIptu("");
+    setSocialCapital("");
+    setRoomSize("");
+    setAddress("");
+    setQsa([]);
+    setContactName("");
+    setContactPhone("");
+    setContactEmail("");
+    setDetails("");
+    setBillingAmount("");
+    setBillingDescription("");
+    setGovPassword("");
+    setAmendmentFields([]);
+  }
+
+  function resetFlowForm() {
+    setKind("opening");
+    setCompanyCnpj("");
+    companyCnpjRef.current = "";
+    clearFlowValues();
+  }
+
+  function handleDialogOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen);
+    if (!nextOpen) resetFlowForm();
+  }
+
+  function handleKindChange(nextKind: CompanyFlowKind) {
+    setKind(nextKind);
+    setCompanyCnpj("");
+    companyCnpjRef.current = "";
+    clearFlowValues();
+  }
+
+  function handleCompanyCnpjChange(nextCnpj: string) {
+    setCompanyCnpj(nextCnpj);
+    companyCnpjRef.current = nextCnpj.replace(/\D/g, "");
+    clearFlowValues();
+  }
+
+  function seedOwnershipFromLookup(company: CompanyFlowClientLookupView["company"]) {
+    if (!socialCapital && company.shareCapital) {
+      setSocialCapital(company.shareCapital);
+    }
+    if (qsa.length === 0 && company.qsa.length > 0) {
+      setQsa(company.qsa.map((member) => ({
+        name: member.name,
+        document: member.document,
+        qualification: member.qualification,
+        previousParticipation: member.participation,
+        participation: member.participation,
+        quotaTransferDetails: null,
+        changeType: "remaining" as const,
+      })));
+    }
+  }
+
   function toggleAmendmentField(field: AmendmentField) {
+    if (field === "ownership" && !amendmentFields.includes(field) && consultedCompany) {
+      seedOwnershipFromLookup(consultedCompany.company);
+    }
     setAmendmentFields((current) =>
       current.includes(field)
         ? current.filter((item) => item !== field)
@@ -519,18 +790,24 @@ function NewCompanyFlowDialog({
   }
 
   function lookupFlowCompany() {
+    const requestedCnpj = companyCnpj.replace(/\D/g, "");
     startTransition(async () => {
       const result = await lookupCompanyFlowClientCnpj({
         clanId,
-        cnpj: companyCnpj,
+        cnpj: requestedCnpj,
       });
+      if (companyCnpjRef.current !== requestedCnpj) return;
       if (!result.ok || !result.data) {
         toast.error(result.ok ? "A consulta não retornou dados." : result.error);
         return;
       }
       setConsultedCompany(result.data);
       setCompanyCnpj(formatCnpj(result.data.company.normalizedCnpj));
+      companyCnpjRef.current = result.data.company.normalizedCnpj;
       setExistingClientId(result.data.client?.id ?? "");
+      if (amendment && amendmentHas("ownership")) {
+        seedOwnershipFromLookup(result.data.company);
+      }
       if (result.data.client) {
         toast.success("Empresa localizada e vinculada ao Fluxo.");
       } else {
@@ -540,6 +817,47 @@ function NewCompanyFlowDialog({
   }
 
   function submit() {
+    if (amendment && amendmentHas("ownership")) {
+      if (!socialCapital || Number(socialCapital) <= 0) {
+        toast.error("Informe o capital social após a alteração.");
+        return;
+      }
+      if (qsa.length === 0 || qsa.some((member) => !member.name.trim())) {
+        toast.error("Inclua todos os sócios da composição final e informe os nomes.");
+        return;
+      }
+      if (qsa.some((member) => parseQsaParticipation(member.participation) === null)) {
+        toast.error("Informe uma participação final válida para cada sócio.");
+        return;
+      }
+      if (qsa.some((member) => (
+        member.changeType === "left" || member.changeType === "updated"
+      ) && (parseQsaParticipation(member.previousParticipation) ?? 0) <= 0)) {
+        toast.error("Informe a participação anterior de quem saiu ou alterou suas quotas.");
+        return;
+      }
+      if (qsa.some((member) => member.changeType === "left" && parseQsaParticipation(member.participation) !== 0)) {
+        toast.error("Quem saiu do QSA precisa ficar com participação final de 0%.");
+        return;
+      }
+      if (!qsaDistributionIsComplete(qsa)) {
+        toast.error("A participação final dos sócios precisa fechar em 100%.");
+        return;
+      }
+      if (qsa.some((member) => member.changeType !== "remaining" && !member.quotaTransferDetails?.trim())) {
+        toast.error("Informe a origem ou o destino das quotas de cada sócio movimentado.");
+        return;
+      }
+      if (qsa.some((member) => {
+        if (member.changeType !== "remaining") return false;
+        const previous = parseQsaParticipation(member.previousParticipation);
+        const next = parseQsaParticipation(member.participation);
+        return previous !== null && next !== null && Math.abs(previous - next) >= 0.001;
+      })) {
+        toast.error("Quando o percentual mudar, marque o sócio como “Alterou a participação”.");
+        return;
+      }
+    }
     startTransition(async () => {
       const result = await createCompanyFlow({
         clanId,
@@ -562,12 +880,12 @@ function NewCompanyFlowDialog({
             : null,
         iptu: opening || (amendment && amendmentHas("address")) ? iptu : "",
         socialCapital:
-          opening || (amendment && amendmentHas("socialCapital"))
+          opening || (amendment && amendmentHas("ownership"))
             ? socialCapital
             : "",
         roomSize: opening ? roomSize : "",
         address: opening || (amendment && amendmentHas("address")) ? address : "",
-        qsa: opening || (amendment && amendmentHas("qsa")) ? qsa : [],
+        qsa: opening || (amendment && amendmentHas("ownership")) ? qsa : [],
         contactName:
           opening || (amendment && amendmentHas("contact")) ? contactName : "",
         contactPhone:
@@ -585,12 +903,13 @@ function NewCompanyFlowDialog({
       }
       toast.success("Fluxo enviado ao Societário.");
       setOpen(false);
+      resetFlowForm();
       router.refresh();
     });
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogTrigger asChild>
         <Button type="button" size="lg" className="shadow-sm"><Plus aria-hidden /> Criar novo fluxo</Button>
       </DialogTrigger>
@@ -601,7 +920,7 @@ function NewCompanyFlowDialog({
         </DialogHeader>
         <div className="grid gap-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-1.5"><Label>Tipo</Label><Select value={kind} onValueChange={(value) => setKind(value as CompanyFlowKind)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="opening">Abertura</SelectItem><SelectItem value="amendment">Alteração</SelectItem><SelectItem value="closure">Baixa</SelectItem></SelectContent></Select></div>
+            <div className="grid gap-1.5"><Label>Tipo</Label><Select value={kind} onValueChange={(value) => handleKindChange(value as CompanyFlowKind)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="opening">Abertura</SelectItem><SelectItem value="amendment">Alteração</SelectItem><SelectItem value="closure">Baixa</SelectItem></SelectContent></Select></div>
             {opening ? null : (
               <div className="grid gap-1.5">
                 <Label htmlFor="flow-company-cnpj">CNPJ da empresa {kind === "amendment" ? "que será alterada" : "que será baixada"}</Label>
@@ -610,11 +929,7 @@ function NewCompanyFlowDialog({
                     id="flow-company-cnpj"
                     className="font-mono"
                     value={companyCnpj}
-                    onChange={(event) => {
-                      setCompanyCnpj(event.target.value);
-                      setExistingClientId("");
-                      setConsultedCompany(null);
-                    }}
+                    onChange={(event) => handleCompanyCnpjChange(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && companyCnpj.replace(/\D/g, "").length === 14) {
                         event.preventDefault();
@@ -773,8 +1088,7 @@ function NewCompanyFlowDialog({
               {amendmentHas("taxRegime") ? <div className="grid gap-1.5"><Label>Novo regime tributário</Label><Select value={taxRegime || undefined} onValueChange={(value) => setTaxRegime(value as TaxRegime)}><SelectTrigger><SelectValue placeholder="Selecione o novo regime" /></SelectTrigger><SelectContent>{TAX_REGIMES.map((value) => <SelectItem key={value} value={value}>{TAX_REGIME_LABELS[value]}</SelectItem>)}</SelectContent></Select></div> : null}
               {amendmentHas("activities") ? <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-1.5"><Label>Atividades a adicionar</Label><Textarea value={activities} onChange={(event) => setActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div><div className="grid gap-1.5"><Label>Atividades a retirar</Label><Textarea value={removedActivities} onChange={(event) => setRemovedActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div></div> : null}
               {amendmentHas("address") ? <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-1.5"><Label>Novo endereço</Label><Textarea value={address} onChange={(event) => setAddress(event.target.value)} rows={3} placeholder="Rua, número, complemento, bairro, cidade/UF e CEP" /></div><div className="grid gap-1.5"><Label>IPTU do novo endereço</Label><Input value={iptu} onChange={(event) => setIptu(event.target.value)} placeholder="Inscrição ou referência do IPTU" /></div></div> : null}
-              {amendmentHas("socialCapital") ? <div className="grid gap-1.5"><Label>Novo capital social</Label><CurrencyInput value={socialCapital} onValueChange={setSocialCapital} placeholder="R$ 0,00" /></div> : null}
-              {amendmentHas("qsa") ? <QsaFields value={qsa} onChange={setQsa} showChangeType /> : null}
+              {amendmentHas("ownership") ? <AmendmentOwnershipFields socialCapital={socialCapital} onSocialCapitalChange={setSocialCapital} value={qsa} onChange={setQsa} /> : null}
               {amendmentHas("contact") ? <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-1.5"><Label>Contato</Label><Input value={contactName} onChange={(event) => setContactName(event.target.value)} placeholder="Nome do contato" /></div><div className="grid gap-1.5"><Label>Telefone</Label><Input value={contactPhone} onChange={(event) => setContactPhone(event.target.value)} placeholder="(00) 00000-0000" /></div><div className="grid gap-1.5 sm:col-span-2"><Label>E-mail</Label><Input type="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} placeholder="contato@empresa.com" /></div></div> : null}
               <div className="grid gap-1.5"><Label>Observações</Label><Textarea value={details} onChange={(event) => setDetails(event.target.value)} rows={5} placeholder="Descreva informações, cuidados ou outras alterações solicitadas" /></div>
             </section>
@@ -805,7 +1119,7 @@ function NewCompanyFlowDialog({
               </div>
             </section>
           ) : null}
-          {closing ? null : <div className="grid gap-1.5 rounded-md border border-primary/30 bg-primary/5 p-3"><Label htmlFor="gov-password" className="flex items-center gap-1.5"><ShieldCheck className="size-4" aria-hidden /> Senha Gov.br (opcional)</Label><Input id="gov-password" type="password" autoComplete="new-password" value={govPassword} onChange={(event) => setGovPassword(event.target.value)} placeholder="Fica cifrada e não entra no histórico" /><p className="text-xs text-muted-foreground">Somente o dono, o responsável societário e a liderança do Societário podem revelar esta senha.</p></div>}
+          {closing ? null : <div className="grid gap-1.5 rounded-md border border-primary/30 bg-primary/5 p-3"><Label htmlFor="gov-password" className="flex items-center gap-1.5"><ShieldCheck className="size-4" aria-hidden /> Senha Gov.br (opcional)</Label><Input id="gov-password" type="password" autoComplete="new-password" value={govPassword} onChange={(event) => setGovPassword(event.target.value)} placeholder="Fica cifrada e não entra no histórico" /><p className="text-xs text-muted-foreground">Integrantes do Societário e owner/admin podem revelar esta senha.</p></div>}
         </div>
         <DialogFooter><Button type="button" disabled={pending || (!opening && !existingClientId)} onClick={submit}>{pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Send aria-hidden />} Enviar ao Societário</Button></DialogFooter>
       </DialogContent>
@@ -825,6 +1139,7 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
   const amendment = row.kind === "amendment";
   const closure = row.kind === "closure";
   const simpleConfirmation = amendment || closure;
+  const rhVerificationState = getRhVerificationState(row);
   const companyName = amendment
     ? row.existingClientName ?? row.approvedLegalName ?? row.requestedLegalName ?? "Empresa"
     : row.approvedLegalName ?? row.requestedLegalName ?? row.existingClientName ?? "Empresa";
@@ -854,10 +1169,10 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
       setCnpj(result.data.cnpj);
       setApprovedName(result.data.legalName);
       setApprovedActivities(result.data.activities.map((activity) => activity.description).join("\n"));
-      toast.success("Dados consultados na Receita. Revise antes de devolver.");
+      toast.success("Dados consultados na Receita. Revise antes de confirmar.");
     });
   }
-  function returnToOwner() {
+  function confirmProcessing() {
     startTransition(async () => {
       const result = await returnCompanyFlowToOwner({
         clanId,
@@ -874,7 +1189,7 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
         toast.error(result.error);
         return;
       }
-      toast.success("Fluxo devolvido ao dono.");
+      toast.success(amendment ? "Informativo confirmado." : closure ? "Baixa confirmada." : "Dados aprovados confirmados.");
       router.refresh();
     });
   }
@@ -934,14 +1249,25 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader><DialogTitle>{COMPANY_FLOW_KIND_LABELS[row.kind]} · {companyName}</DialogTitle><DialogDescription>Criado por {row.createdByName} em {new Date(row.createdAt).toLocaleString("pt-BR")}</DialogDescription></DialogHeader>
         <div className="grid gap-4 text-sm">
-          <div className="flex flex-wrap gap-2"><Badge variant="outline" className={STATUS_CLASS[row.status]}>{COMPANY_FLOW_STATUS_LABELS[row.status]}</Badge><Badge variant="outline">Origem: {FLOW_SOURCE_LABELS[row.source]}</Badge>{row.assignedName ? <Badge variant="outline">Societário: {row.assignedName}</Badge> : null}</div>
+          <div className="flex flex-wrap gap-2"><Badge variant="outline" className={STATUS_CLASS[row.status]}>{COMPANY_FLOW_STATUS_LABELS[row.status]}</Badge><Badge variant="outline">Origem: {FLOW_SOURCE_LABELS[row.source]}</Badge>{row.assignedName ? <Badge variant="outline">Societário: {row.assignedName}</Badge> : null}<RhVerificationBadge state={rhVerificationState} /></div>
           <FlowRequestSummary row={row} />
+          {rhVerificationState === "pending" ? (
+            <section className="rounded-md border border-warning/45 bg-warning/10 p-3" role="status">
+              <h3 className="flex items-center gap-2 text-warning"><Clock3 className="size-4" aria-hidden /> Verificação obrigatória do RH pendente</h3>
+              <p className="mt-1 max-w-prose text-xs text-muted-foreground">O RH precisa baixar a folha e o pró-labore, ou confirmar que já estão regularizados. O Societário pode trabalhar no processo, mas não consegue confirmar a baixa enquanto essa missão estiver pendente.</p>
+            </section>
+          ) : rhVerificationState === "confirmed" ? (
+            <section className="rounded-md border border-success/35 bg-success/5 p-3" role="status">
+              <h3 className="flex items-center gap-2 text-success"><ShieldCheck className="size-4" aria-hidden /> Folha e pró-labore confirmados pelo RH</h3>
+              <p className="mt-1 text-xs text-muted-foreground">Validação concluída{row.rhVerificationCompletedAt ? ` em ${new Date(row.rhVerificationCompletedAt).toLocaleString("pt-BR")}` : ""}. A confirmação da baixa está liberada para o Societário.</p>
+            </section>
+          ) : null}
           {row.hasGovSecret ? <section className="rounded-md border border-primary/30 bg-primary/5 p-3"><p className="flex items-center gap-1.5 font-medium"><KeyRound className="size-4" aria-hidden /> Acesso Gov.br protegido</p>{revealedSecret ? <p className="mt-2 rounded bg-background px-2 py-1 font-mono text-sm break-all">{revealedSecret}</p> : <Button type="button" className="mt-2" variant="outline" size="sm" disabled={pending || !row.canReturn} onClick={revealSecret}><Eye aria-hidden /> Revelar senha</Button>}</section> : null}
           {row.status === "in_progress" && row.canReturn ? (
             <section className="grid gap-3 border-t pt-4">
               <div>
-                <h3 className="font-medium">{amendment ? "Confirmação da alteração" : closure ? "Confirmação da baixa" : "Retorno do Societário"}</h3>
-                <p className="text-xs text-muted-foreground">{simpleConfirmation ? "Confirme quando o processo estiver concluído. O dono seguirá para o Informativo." : "Registre os dados aprovados antes de devolver ao dono."}</p>
+                <h3 className="font-medium">{amendment ? "Confirmação do informativo" : closure ? "Confirmação da baixa" : "Confirmação dos dados aprovados"}</h3>
+                <p className="text-xs text-muted-foreground">{amendment ? "Confira as informações e confirme quando todas as alterações estiverem concluídas." : closure ? "Confirme quando o processo de baixa estiver concluído." : "Registre e confirme os dados aprovados."}</p>
               </div>
               {simpleConfirmation ? (
                 <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">{amendment ? "Confira as alterações destacadas acima. Ao confirmar, você registra que todos esses itens foram concluídos pelo Societário." : "Esta confirmação registra que a baixa foi concluída pelo Societário."}</div>
@@ -953,14 +1279,17 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
                 </>
               )}
               {simpleConfirmation ? null : <div className="grid gap-1.5"><Label>Retorno e observações</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder="O que foi deferido, pendências ou cuidados" /></div>}
-              <Button type="button" disabled={pending || (!simpleConfirmation && !notes.trim())} onClick={returnToOwner}><Send aria-hidden /> {amendment ? "Confirmar alteração e devolver ao dono" : closure ? "Confirmar baixa e devolver ao dono" : "Devolver ao dono"}</Button>
+              <Button type="button" disabled={pending || (!simpleConfirmation && !notes.trim()) || (closure && rhVerificationState === "pending")} onClick={confirmProcessing}>
+                {closure && rhVerificationState === "pending" ? <Clock3 aria-hidden /> : <Send aria-hidden />}
+                {amendment ? "Confirmar informativo" : closure ? rhVerificationState === "pending" ? "Aguardando confirmação do RH" : "Confirmar baixa" : "Confirmar dados aprovados"}
+              </Button>
             </section>
           ) : null}
-          {["awaiting_owner", "informative_drafting"].includes(row.status) && row.canPrepareInformative ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Próximo passo</h3><p className="text-xs text-muted-foreground">O Informativo mostrará o resumo da alteração para conferência; o dono só precisa escrever se houver alguma missão ou observação adicional.</p><Button type="button" disabled={pending} onClick={prepareInformative}><ClipboardPenLine aria-hidden /> {row.status === "informative_drafting" ? "Gerar Informativo novamente" : "Preparar Informativo"}</Button></section> : null}
+          {["awaiting_owner", "informative_drafting"].includes(row.status) && row.canPrepareInformative ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Próximo passo</h3><p className="text-xs text-muted-foreground">O Informativo mostrará o resumo da alteração para conferência; acrescente somente alguma missão ou observação adicional, se necessário.</p><Button type="button" disabled={pending} onClick={prepareInformative}><ClipboardPenLine aria-hidden /> {row.status === "informative_drafting" ? "Gerar Informativo novamente" : "Preparar Informativo"}</Button></section> : null}
           {row.status === "informative_drafting" ? <p className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">A preparação do Informativo está aberta. Você pode gerar o texto novamente até criar a prévia em Informativos.</p> : null}
           {row.status === "sent_to_corporate" && row.canClaim ? <Button type="button" disabled={pending} onClick={claim}><UserRoundCheck aria-hidden /> Assumir processamento</Button> : null}
           {row.status === "completed" ? <div className="rounded-md border border-success/30 bg-success/5 p-3 text-sm text-success"><CheckCircle2 className="mr-1 inline size-4" aria-hidden /> Informativo gerado e Fluxo concluído. A confirmação das missões segue em Informativos.</div> : null}
-          {row.history.length > 0 ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Histórico</h3>{row.history.map((event) => <div key={event.id} className="rounded-md bg-muted/35 px-3 py-2 text-xs"><span className="font-medium">{eventLabel(event.eventType)}</span><span className="text-muted-foreground"> · {event.actorName} · {new Date(event.createdAt).toLocaleString("pt-BR")}</span>{event.note ? <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{event.note}</p> : null}</div>)}</section> : null}
+          {row.history.length > 0 ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Histórico</h3>{row.history.map((event) => <div key={event.id} className="rounded-md bg-muted/35 px-3 py-2 text-xs"><span className="font-medium">{eventLabel(event.eventType, row.kind)}</span><span className="text-muted-foreground"> · {event.actorName} · {new Date(event.createdAt).toLocaleString("pt-BR")}</span>{event.note ? <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{event.note}</p> : null}</div>)}</section> : null}
         </div>
         <DialogFooter className="gap-2 sm:justify-between">
           <p className="mr-auto text-xs text-muted-foreground">Cancelar preserva o histórico; excluir remove o Fluxo definitivamente.</p>
@@ -1061,7 +1390,7 @@ export function CompanyFlowBoard({
             <strong className="mt-1 block font-mono text-xl">{openRows.filter((row) => row.status === "in_progress").length}</strong>
           </div>
           <div className="rounded-lg border bg-card/35 p-3">
-            <span className="text-xs text-muted-foreground">Com o dono / Informativo</span>
+            <span className="text-xs text-muted-foreground">Aguardando Informativo</span>
             <strong className="mt-1 block font-mono text-xl">{openRows.filter((row) => ["awaiting_owner", "informative_drafting"].includes(row.status)).length}</strong>
           </div>
         </div>
@@ -1099,6 +1428,7 @@ export function CompanyFlowBoard({
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline">{COMPANY_FLOW_KIND_LABELS[row.kind]}</Badge>
                 <Badge variant="outline" className={STATUS_CLASS[row.status]}>{COMPANY_FLOW_STATUS_LABELS[row.status]}</Badge>
+                <RhVerificationBadge state={getRhVerificationState(row)} />
               </div>
               <h3 className="mt-2 truncate text-base font-medium">{row.approvedLegalName ?? row.requestedLegalName ?? row.existingClientName ?? "Empresa"}</h3>
               <p className="mt-1 text-sm text-muted-foreground">{flowStageDescription(row)}</p>

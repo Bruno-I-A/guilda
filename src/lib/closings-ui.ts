@@ -1,7 +1,7 @@
 import type { AccountingClosing } from "@/db/schema";
 
 export type ClosingStatus = AccountingClosing["status"];
-export type ClosingGroup = "simples" | "presumido_association" | "real";
+export type ClosingGroup = "mei" | "simples" | "presumido_association" | "real";
 
 export const CLOSING_STATUSES = ["pending", "blocked", "completed"] as const;
 
@@ -22,6 +22,7 @@ export const CLOSING_GROUPS: {
   label: string;
   shortLabel: string;
 }[] = [
+  { key: "mei", label: "MEI", shortLabel: "MEI" },
   { key: "simples", label: "Simples Nacional", shortLabel: "Simples" },
   {
     key: "presumido_association",

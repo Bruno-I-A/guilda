@@ -2,7 +2,7 @@ export type ResolvedClient = Readonly<{
   id: string;
   name: string;
   cnpj?: string | null;
-  taxRegime?: "simples" | "presumido" | "association" | "real";
+  taxRegime?: "mei" | "simples" | "presumido" | "association" | "real";
 }>;
 
 const LEGAL_SUFFIXES = new Set([

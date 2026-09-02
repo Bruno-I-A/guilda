@@ -8,8 +8,8 @@
     Então o escudo vira sólido e a árvore é cortada fora dele — contraste máximo,
     e funciona tanto em aba clara quanto escura. A geometria é a mesma do selo.
 
-    Cores literais (um arquivo estático não resolve os tokens --crest-*):
-    #7FB3D1 = --crest-mark · #151F2A = --crest-plate. Ver globals.css.
+    Cores literais (um arquivo estático não resolve os tokens CSS do brasão):
+    #7FB3D1 = crest-mark · #151F2A = crest-plate. Ver globals.css.
   -->
   <path d="M17 7H47L57 17V30C57 43.5 46.6 53.6 32 59C17.4 53.6 7 43.5 7 30V17Z" fill="#7FB3D1"/>
   <g stroke="#151F2A" stroke-width="4.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
