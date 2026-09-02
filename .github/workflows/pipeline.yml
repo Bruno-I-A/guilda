@@ -58,7 +58,7 @@ jobs:
   deploy-staging:
     name: Publicar homologação
     needs: quality
-    if: github.event_name == push && github.ref == refs/heads/develop
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
