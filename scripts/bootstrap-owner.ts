@@ -79,16 +79,19 @@ async function main() {
   }
 
   const orgId = randomUUID();
+  const createdAt = new Date();
   await db.insert(schema.organization).values({
     id: orgId,
     name: org!,
     slug: orgSlug(org!),
+    createdAt,
   });
   await db.insert(schema.member).values({
     id: randomUUID(),
     organizationId: orgId,
     userId: criado.userId,
     role: "owner",
+    createdAt,
   });
 
   const confere = await db.query.member.findFirst({
