@@ -2,7 +2,12 @@ import { describe, expect, test, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { lookupCnpj, mapBrasilApiResponse } from "./cnpj-lookup";
+import {
+  lookupCnpj,
+  mapBrasilApiResponse,
+  mapCnpjWsResponse,
+  mapReceitaWsResponse,
+} from "./cnpj-lookup";
 
 function rawResponse(overrides: Record<string, unknown> = {}) {
   return {
@@ -165,7 +170,100 @@ describe("mapBrasilApiResponse", () => {
   });
 });
 
+describe("fontes alternativas", () => {
+  test("mapeia uma empresa retornada pelo CNPJ.ws", () => {
+    const data = mapCnpjWsResponse({
+      razao_social: "EMPRESA NOVA LTDA",
+      capital_social: "15000.00",
+      porte: { descricao: "MICRO EMPRESA" },
+      natureza_juridica: { descricao: "Sociedade Empresária Limitada" },
+      simples: { simples: "Sim", mei: "Não" },
+      socios: [{
+        nome: "JOÃO TESTE",
+        cpf_cnpj_socio: "***123456**",
+        data_entrada: "2026-08-27",
+        qualificacao_socio: { descricao: "Sócio-Administrador" },
+      }],
+      estabelecimento: {
+        nome_fantasia: "EMPRESA NOVA",
+        data_inicio_atividade: "2026-08-27",
+        situacao_cadastral: "Ativa",
+        data_situacao_cadastral: "2026-08-27",
+        tipo: "Matriz",
+        email: "contato@empresa.test",
+        ddd1: "54",
+        telefone1: "999998888",
+        tipo_logradouro: "Rua",
+        logradouro: "Teste",
+        numero: "100",
+        bairro: "Centro",
+        cep: "99000000",
+        cidade: { nome: "Passo Fundo" },
+        estado: { sigla: "RS" },
+        atividade_principal: { id: "69.20-6-01", descricao: "Contabilidade" },
+        atividades_secundarias: [{ id: "62.01-5-01", descricao: "Software" }],
+      },
+    });
+
+    expect(data).toMatchObject({
+      legalName: "EMPRESA NOVA LTDA",
+      tradeName: "EMPRESA NOVA",
+      cnaeCode: "6920601",
+      openedAt: "2026-08-27",
+      isSimplesOptant: true,
+      isMeiOptant: false,
+      phones: ["54999998888"],
+      secondaryCnaes: [{ code: "6201501", description: "Software" }],
+      address: { city: "Passo Fundo", state: "RS" },
+    });
+    expect(data?.qsa[0]?.name).toBe("JOÃO TESTE");
+  });
+
+  test("mapeia datas brasileiras e dados da ReceitaWS", () => {
+    const data = mapReceitaWsResponse({
+      status: "OK",
+      nome: "EMPRESA NOVA LTDA",
+      fantasia: "EMPRESA NOVA",
+      abertura: "27/08/2026",
+      situacao: "ATIVA",
+      data_situacao: "27/08/2026",
+      atividade_principal: [{ code: "69.20-6-01", text: "Contabilidade" }],
+      atividades_secundarias: [],
+      simples: { optante: true },
+      simei: { optante: false },
+      telefone: "(54) 99999-8888 / (54) 3333-2222",
+      qsa: [{ nome: "JOÃO TESTE", qual: "Sócio-Administrador" }],
+    });
+
+    expect(data).toMatchObject({
+      legalName: "EMPRESA NOVA LTDA",
+      openedAt: "2026-08-27",
+      cnaeCode: "6920601",
+      isSimplesOptant: true,
+      isMeiOptant: false,
+      phones: ["54999998888", "5433332222"],
+    });
+  });
+});
+
 describe("lookupCnpj", () => {
+  test("usa a próxima fonte quando a primeira ainda não possui o CNPJ", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("Not Found", { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        status: "OK",
+        nome: "EMPRESA RECENTE LTDA",
+        abertura: "27/08/2026",
+      }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await lookupCnpj("68860648000171");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.legalName).toBe("EMPRESA RECENTE LTDA");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
+
   test("distingue o limite temporário de uma falha definitiva", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
       new Response("Too Many Requests", { status: 429 }),

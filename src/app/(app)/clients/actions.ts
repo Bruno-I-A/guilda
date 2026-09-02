@@ -208,14 +208,7 @@ export async function createClient(
     }
 
     const lookup = await lookupCnpj(data.cnpj);
-    if (!lookup.ok) {
-      return err(
-        lookup.reason === "not_found"
-          ? "CNPJ não encontrado na Receita. Confira os dígitos."
-          : "Não foi possível confirmar o CNPJ agora. Consulte novamente antes de cadastrar.",
-      );
-    }
-    official = lookup.data;
+    if (lookup.ok) official = lookup.data;
   }
 
   try {
@@ -297,10 +290,10 @@ export async function lookupClientRegistrationCnpj(
   if (!result.ok) {
     return err(
       result.reason === "not_found"
-        ? "CNPJ não encontrado na Receita."
+        ? "CNPJ ainda não encontrado nas bases públicas. Se for recente, preencha manualmente."
         : result.reason === "rate_limited"
-          ? "A consulta pública atingiu o limite temporário. Aguarde um pouco e tente novamente."
-          : "Não foi possível consultar a Receita agora.",
+          ? "A consulta pública atingiu o limite temporário. Você pode preencher manualmente ou tentar novamente depois."
+          : "Não foi possível consultar as bases públicas agora. Você pode preencher manualmente.",
     );
   }
 

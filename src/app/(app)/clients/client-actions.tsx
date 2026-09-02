@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatCnpj } from "@/domain/cnpj";
+import { formatCnpj, validateCnpj } from "@/domain/cnpj";
 import { TAX_REGIME_LABELS, TAX_REGIMES, type TaxRegime } from "@/lib/clients-ui";
 
 import type { ActionResult } from "@/lib/action-context";
@@ -84,9 +84,13 @@ function ClientFormDialog({
     initial?.taxRegime ?? "simples",
   );
   const [lookup, setLookup] = useState<ClientRegistrationLookupView | null>(null);
+  const [manualCnpj, setManualCnpj] = useState<string | null>(null);
   const [lookupPending, startLookupTransition] = useTransition();
   const cnpjDigits = cnpj.replace(/\D/g, "");
-  const lookupReady = !cnpjLookup || cnpjDigits.length === 0 || lookup?.normalizedCnpj === cnpjDigits;
+  const lookupReady = !cnpjLookup
+    || cnpjDigits.length === 0
+    || lookup?.normalizedCnpj === cnpjDigits
+    || manualCnpj === cnpjDigits;
 
   function consultCnpj() {
     startLookupTransition(async () => {
@@ -94,9 +98,11 @@ function ClientFormDialog({
       if (!result.ok || !result.data) {
         toast.error(result.ok ? "Consulta sem dados." : result.error);
         setLookup(null);
+        setManualCnpj(validateCnpj(cnpjDigits) ? cnpjDigits : null);
         return;
       }
       setLookup(result.data);
+      setManualCnpj(null);
       setCnpj(formatCnpj(result.data.normalizedCnpj));
       setName(result.data.legalName);
       if (result.data.suggestedTaxRegime) {
@@ -166,6 +172,7 @@ function ClientFormDialog({
                 onChange={(event) => {
                   setCnpj(event.target.value);
                   setLookup(null);
+                  setManualCnpj(null);
                 }}
                 placeholder="00.000.000/0000-00"
                 inputMode="numeric"
@@ -200,6 +207,14 @@ function ClientFormDialog({
               ) : null}
               <p className="text-xs text-muted-foreground">
                 Ao cadastrar, endereço, atividades, QSA, capital social e contatos públicos também serão salvos.
+              </p>
+            </section>
+          ) : null}
+          {manualCnpj === cnpjDigits ? (
+            <section className="border border-warning/35 bg-warning/5 p-3 text-xs" aria-live="polite">
+              <p className="font-medium">Cadastro manual liberado</p>
+              <p className="mt-1 text-muted-foreground">
+                As bases públicas ainda não encontraram este CNPJ. Preencha o nome e o regime tributário; os dados oficiais poderão ser atualizados depois.
               </p>
             </section>
           ) : null}
