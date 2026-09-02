@@ -191,19 +191,6 @@ export default async function SettingsPage() {
                       }))}
                       orgMembers={orgMembers}
                     />
-                    <ClanDutiesManager
-                      clanId={clan.id}
-                      clanName={clan.name}
-                      members={memberships.map((membership) => ({
-                        userId: membership.userId,
-                        name: membership.user.name,
-                        functionTitle: membership.functionTitle,
-                      }))}
-                      duties={clan.memberDuties.map((entry) => ({
-                        duty: entry.duty,
-                        userId: entry.userId,
-                      }))}
-                    />
                     <ClanRoutingManager
                       clanId={clan.id}
                       clanName={clan.name}
@@ -228,6 +215,25 @@ export default async function SettingsPage() {
           </div>
         )}
       </section>
+
+      <ClanDutiesManager
+        clans={clans.map((clan) => ({
+          id: clan.id,
+          slug: clan.slug,
+          name: clan.name,
+          members: clan.memberships
+            .filter((membership) => membership.user)
+            .map((membership) => ({
+              userId: membership.userId,
+              name: membership.user.name,
+              functionTitle: membership.functionTitle,
+            })),
+          duties: clan.memberDuties.map((entry) => ({
+            duty: entry.duty,
+            userId: entry.userId,
+          })),
+        }))}
+      />
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import { SOCIETARIO_CLAN_SLUG } from "@/lib/clans/rules";
+
 /**
  * Atribuições nominais dentro de um clã: quem responde por uma etapa do
  * trabalho recorrente.
@@ -43,4 +45,24 @@ export function findDutyHolder<T extends { duty: ClanDuty; userId: string }>(
   duty: ClanDuty,
 ): T | null {
   return duties.find((entry) => entry.duty === duty) ?? null;
+}
+
+/**
+ * Atribuição → clã dono dela. Mesmo desenho de `TAB_OWNER_SLUG` em
+ * `lib/clan-tabs.ts`, e pela mesma razão: atender Fluxo e redigir Informativo
+ * só existem no Societário. Oferecer as duas em todo clã encheria a tela de
+ * configuração morta, exatamente como aba morta enche a navegação.
+ *
+ * Atribuição futura que valha para qualquer clã fica FORA deste mapa.
+ */
+export const CLAN_DUTY_OWNER_SLUG: Record<ClanDuty, string> = {
+  company_flow: SOCIETARIO_CLAN_SLUG,
+  informative: SOCIETARIO_CLAN_SLUG,
+};
+
+/** As atribuições que este clã oferece. */
+export function clanDutiesFor(clanSlug: string): ClanDuty[] {
+  return CLAN_DUTIES.filter(
+    (duty) => CLAN_DUTY_OWNER_SLUG[duty] === clanSlug,
+  );
 }
