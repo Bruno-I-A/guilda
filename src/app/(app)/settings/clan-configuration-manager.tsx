@@ -1,11 +1,17 @@
 "use client";
 
-import { Pencil, Plus, Route, Save, Trash2 } from "lucide-react";
+import { Pencil, Plus, Route, Save, Trash2, UserRoundCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import {
+  CLAN_DUTIES,
+  CLAN_DUTY_DESCRIPTIONS,
+  CLAN_DUTY_LABELS,
+  type ClanDuty,
+} from "@/domain/clan-duties";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +32,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-import { createClan, replaceClanRoutingRules, updateClan } from "./clan-actions";
+import {
+  createClan,
+  replaceClanRoutingRules,
+  setClanDuty,
+  updateClan,
+} from "./clan-actions";
 
 export function CreateClanDialog() {
   const router = useRouter();
@@ -294,6 +305,102 @@ export function ClanRoutingManager({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </section>
+  );
+}
+
+const SEM_RESPONSAVEL = "__sem_responsavel__";
+
+/**
+ * Quem responde por cada atribuição do clã.
+ *
+ * Sem diálogo de propósito: são poucas atribuições e a troca é de um campo só —
+ * abrir modal para mudar um seletor é fricção sem ganho. Salva na hora.
+ */
+export function ClanDutiesManager({
+  clanId,
+  clanName,
+  members,
+  duties,
+}: {
+  clanId: string;
+  clanName: string;
+  members: RoutingMember[];
+  duties: { duty: ClanDuty; userId: string }[];
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+
+  const donoDe = new Map(duties.map((entry) => [entry.duty, entry.userId]));
+
+  function salvar(duty: ClanDuty, valor: string) {
+    const userId = valor === SEM_RESPONSAVEL ? null : valor;
+    startTransition(async () => {
+      const result = await setClanDuty({ clanId, duty, userId });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      const nome = members.find((m) => m.userId === userId)?.name;
+      toast.success(
+        userId
+          ? `${nome} agora responde por “${CLAN_DUTY_LABELS[duty]}” em ${clanName}.`
+          : `“${CLAN_DUTY_LABELS[duty]}” voltou para a fila de ${clanName}.`,
+      );
+      router.refresh();
+    });
+  }
+
+  return (
+    <section className="grid gap-3 border-t border-border/70 pt-4">
+      <div>
+        <h3 className="flex items-center gap-2 text-sm font-semibold">
+          <UserRoundCheck className="size-4 text-primary" aria-hidden /> Atribuições
+        </h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Quem recebe nominalmente cada etapa recorrente. Sem responsável, o
+          trabalho cai na fila de distribuição do clã.
+        </p>
+      </div>
+
+      {members.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Este clã ainda não tem integrantes para receber atribuições.
+        </p>
+      ) : (
+        <div className="grid gap-3">
+          {CLAN_DUTIES.map((duty) => (
+            <div key={duty} className="grid gap-1.5">
+              <Label htmlFor={`duty-${clanId}-${duty}`}>
+                {CLAN_DUTY_LABELS[duty]}
+              </Label>
+              <Select
+                value={donoDe.get(duty) ?? SEM_RESPONSAVEL}
+                onValueChange={(valor) => salvar(duty, valor)}
+                disabled={pending}
+              >
+                <SelectTrigger id={`duty-${clanId}-${duty}`} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SEM_RESPONSAVEL}>
+                    Ninguém — cai na fila do clã
+                  </SelectItem>
+                  {members.map((member) => (
+                    <SelectItem key={member.userId} value={member.userId}>
+                      {member.name}
+                      {member.functionTitle ? ` · ${member.functionTitle}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {CLAN_DUTY_DESCRIPTIONS[duty]}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
