@@ -115,6 +115,31 @@ export function canAppointClanLeader(actor: ClanScopedFacts): boolean {
   return isAdminRole(actor.role);
 }
 
+export interface ClosingActorFacts extends ClanScopedFacts {
+  /** A pessoa continua como integrante ativa do clã Contabilidade. */
+  isActiveClanMember: boolean;
+}
+
+/**
+ * Excluir um fechamento apaga o registro contábil sem deixar rastro —
+ * diferente de reabrir o ano, que preserva o histórico. Fica com quem
+ * responde pelo clã.
+ */
+export function canDeleteClanClosing(actor: ClosingActorFacts): boolean {
+  return isAdminRole(actor.role) || actor.leadsThisClan;
+}
+
+/**
+ * Registrar período, fechar o ano, marcar a DEFIS e anotar observações é o
+ * trabalho DIÁRIO da Contabilidade, e quem faz é quem recebe o XP — por isso
+ * a régua alcança o integrante comum do clã, não só a liderança. Prender o
+ * fechamento no líder tiraria da equipe justamente a tarefa que a remunera.
+ * Mesmo espírito de `canUpdateFiscalControl`.
+ */
+export function canManageClanClosings(actor: ClosingActorFacts): boolean {
+  return canDeleteClanClosing(actor) || actor.isActiveClanMember;
+}
+
 /** A Mesa distribui as missões do clã: líder do clã ou admin/owner. */
 export function canDistributeClanTasks(actor: ClanScopedFacts): boolean {
   return isAdminRole(actor.role) || actor.leadsThisClan;

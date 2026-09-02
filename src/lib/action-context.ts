@@ -28,6 +28,12 @@ export async function requireMemberContext(): Promise<
   if (!session) {
     return err("Sessão expirada. Entre novamente.");
   }
+  // A rotação obrigatória valia só para a navegação de páginas
+  // (`requireOrgSession`), então quem entrava com senha temporária já operava
+  // tudo por Server Action sem nunca passar por /change-password.
+  if (session.user.mustChangePassword) {
+    return err("Defina uma senha própria antes de continuar.");
+  }
   const orgId = session.session.activeOrganizationId;
   if (!orgId) {
     return err("Nenhuma organização ativa.");

@@ -13,6 +13,10 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 # Placeholders APENAS para o build (todas as páginas são dinâmicas —
 # nenhuma conexão acontece). Os valores reais entram em runtime.
+# O estágio `runner` (FROM base) NÃO herda estes ENV. Ainda assim, este
+# BETTER_AUTH_SECRET está na denylist de src/lib/env-guard.ts: se algum dia
+# vazar para o runtime, o guarda de inicialização derruba o boot em produção.
+# NEXT_PHASE=phase-production-build faz o guarda pular durante o build.
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
 ENV BETTER_AUTH_SECRET=placeholder-somente-para-o-build-32ch
 ENV BETTER_AUTH_URL=http://localhost:4000

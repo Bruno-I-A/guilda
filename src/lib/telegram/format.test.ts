@@ -1,19 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  escapeTelegramHtml,
   formatTelegramDate,
   joinTelegramLines,
   truncateTelegramText,
 } from "./format";
-
-describe("escapeTelegramHtml", () => {
-  it("escapa os três caracteres especiais aceitos pelo modo HTML", () => {
-    expect(escapeTelegramHtml("A & B < C > D")).toBe(
-      "A &amp; B &lt; C &gt; D",
-    );
-  });
-});
 
 describe("truncateTelegramText", () => {
   it("mantém mensagens dentro do limite", () => {

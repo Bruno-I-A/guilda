@@ -45,3 +45,10 @@ next-env.d.ts
 # agent skills (regenerate with: npx skills add vercel-labs/agent-browser)
 /.agents
 /.claude
+
+# planilhas: podem conter dados reais de clientes (honorários, CNPJ, cobrança).
+# Nunca versionar. Nenhuma é rastreada hoje; se um dia precisar de uma fixture,
+# adicione uma exceção explícita com "!caminho/para/fixture.csv".
+*.xlsx
+*.xls
+*.csv

@@ -325,10 +325,20 @@ export async function queueScheduledTelegramNotifications(now = new Date()): Pro
             eq(schema.telegramPreferences.userId, schema.telegramConnections.userId),
           ),
         )
+        // Mesma trava do broadcast: resumo diário e lembrete de prazo só vão
+        // para quem ainda é membro da organização.
+        .innerJoin(
+          schema.member,
+          and(
+            eq(schema.member.organizationId, schema.telegramConnections.orgId),
+            eq(schema.member.userId, schema.telegramConnections.userId),
+          ),
+        )
         .where(
           and(
             eq(schema.telegramConnections.orgId, organization.id),
             isNull(schema.telegramConnections.revokedAt),
+            eq(schema.member.organizationId, organization.id),
           ),
         ),
     );

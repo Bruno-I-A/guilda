@@ -2,7 +2,9 @@ import { describe, expect, test } from "vitest";
 
 import {
   canAppointClanLeader,
+  canDeleteClanClosing,
   canDistributeClanTasks,
+  canManageClanClosings,
   canQuickCompleteUnassignedInformativeTask,
   canEmphasizeNotice,
   canHandleInformatives,
@@ -221,5 +223,74 @@ describe("operação fiscal — ficha, importação e competência", () => {
         isCustomerSuccessClan: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("fechamentos — rotina da Contabilidade", () => {
+  test("integrante ativo do clã registra, fecha o ano e marca a DEFIS", () => {
+    expect(
+      canManageClanClosings({
+        role: "member",
+        leadsThisClan: false,
+        isActiveClanMember: true,
+      }),
+    ).toBe(true);
+  });
+
+  test("member sem vínculo com o clã não toca em fechamento", () => {
+    expect(
+      canManageClanClosings({
+        role: "member",
+        leadsThisClan: false,
+        isActiveClanMember: false,
+      }),
+    ).toBe(false);
+  });
+
+  test.each(["owner", "admin"] as const)(
+    "%s opera fechamento sem precisar entrar no clã",
+    (role) => {
+      expect(
+        canManageClanClosings({
+          role,
+          leadsThisClan: false,
+          isActiveClanMember: false,
+        }),
+      ).toBe(true);
+    },
+  );
+
+  test("liderança opera mesmo sem o vínculo ativo aparecer nos fatos", () => {
+    expect(
+      canManageClanClosings({
+        role: "member",
+        leadsThisClan: true,
+        isActiveClanMember: false,
+      }),
+    ).toBe(true);
+  });
+
+  test("excluir é mais estreito que a rotina: integrante comum não apaga", () => {
+    expect(
+      canDeleteClanClosing({
+        role: "member",
+        leadsThisClan: false,
+        isActiveClanMember: true,
+      }),
+    ).toBe(false);
+  });
+
+  test.each([
+    ["member", true],
+    ["admin", false],
+    ["owner", false],
+  ] as const)("%s com liderança=%s apaga fechamento", (role, leadsThisClan) => {
+    expect(
+      canDeleteClanClosing({
+        role,
+        leadsThisClan,
+        isActiveClanMember: true,
+      }),
+    ).toBe(true);
   });
 });
