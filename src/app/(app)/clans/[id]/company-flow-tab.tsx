@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -13,6 +13,7 @@ import { isActiveClanMember } from "@/lib/clans/facts";
 
 import {
   CompanyFlowBoard,
+  type CompanyFlowClientOption,
   type CompanyFlowView,
 } from "./company-flow-board";
 
@@ -29,8 +30,8 @@ export async function CompanyFlowTab({
   role: "owner" | "admin" | "member";
   leadsThisClan: boolean;
 }) {
-  const { flows, events, viewerIsCorporateMember, holdsInformativeDuty } = await withOrgTx(orgId, async (tx) => {
-    const [flows, viewerIsCorporateMember] = await Promise.all([
+  const { flows, events, clients, viewerIsCorporateMember, holdsInformativeDuty } = await withOrgTx(orgId, async (tx) => {
+    const [flows, viewerIsCorporateMember, clients] = await Promise.all([
       tx
         .select({
           flow: schema.companyFlows,
@@ -72,6 +73,11 @@ export async function CompanyFlowTab({
         )
         .orderBy(desc(schema.companyFlows.updatedAt)),
       isActiveClanMember(tx, orgId, clanId, viewerId),
+      tx
+        .select()
+        .from(schema.clients)
+        .where(and(eq(schema.clients.orgId, orgId), eq(schema.clients.active, true)))
+        .orderBy(asc(schema.clients.name)),
     ]);
 
     const creatorIds = [...new Set(flows.map((row) => row.flow.createdBy))];
@@ -102,6 +108,35 @@ export async function CompanyFlowTab({
     return {
       flows: flows.map((row) => ({ ...row, createdByName: namesById.get(row.flow.createdBy) ?? "Pessoa removida" })),
       events,
+      clients: clients.map((client): CompanyFlowClientOption => ({
+        id: client.id,
+        name: client.name,
+        cnpj: client.cnpj,
+        taxRegime: client.taxRegime,
+        company: {
+          legalName: client.name,
+          tradeName: client.tradeName,
+          cnaeCode: client.cnaeCode,
+          cnaeDescription: client.cnaeDescription,
+          secondaryCnaes: client.secondaryCnaes ?? [],
+          openedAt: client.openedAt,
+          isSimplesOptant:
+            client.taxRegime === "simples" || client.taxRegime === "mei",
+          isMeiOptant: client.taxRegime === "mei",
+          cadastralSituation: client.cadastralSituation,
+          cadastralSituationDate: client.cadastralSituationDate,
+          companySize: client.companySize,
+          legalNature: client.legalNature,
+          shareCapital: client.shareCapital,
+          headquartersType: client.headquartersType,
+          email: client.revenueEmail,
+          phones: client.revenuePhones,
+          address: client.address,
+          qsa: client.qsa,
+          taxRegimes: client.taxRegimeHistory,
+          normalizedCnpj: client.cnpj ?? "",
+        },
+      })),
       viewerIsCorporateMember,
       holdsInformativeDuty: await holdsClanDuty(tx, orgId, clanId, viewerId, "informative"),
     };
@@ -153,6 +188,7 @@ export async function CompanyFlowTab({
     <CompanyFlowBoard
       clanId={clanId}
       canCreate={canCreateCompanyFlow(actorFacts)}
+      clients={clients}
       rows={rows}
     />
   );
