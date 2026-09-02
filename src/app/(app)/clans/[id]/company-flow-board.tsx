@@ -62,6 +62,7 @@ import {
 import { formatCnpj } from "@/domain/cnpj";
 import type { TaskStatus } from "@/domain/task-state";
 import { TAX_REGIME_LABELS, TAX_REGIMES, type TaxRegime } from "@/lib/clients-ui";
+import { searchCompanyFlowClients } from "@/lib/company-flows/client-search";
 import { formatBRLCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
@@ -75,6 +76,7 @@ import {
   prepareCompanyFlowInformative,
   returnCompanyFlowToOwner,
   revealCompanyFlowGovPassword,
+  type CompanyDataLookupView,
   type CompanyFlowClientLookupView,
 } from "./company-flow-actions";
 
@@ -132,6 +134,14 @@ export interface CompanyFlowView {
     note: string | null;
     createdAt: string;
   }[];
+}
+
+export interface CompanyFlowClientOption {
+  id: string;
+  name: string;
+  cnpj: string | null;
+  taxRegime: TaxRegime;
+  company: CompanyDataLookupView;
 }
 
 const FLOW_SOURCE_LABELS: Record<CompanyFlowSource, string> = {
@@ -669,18 +679,22 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
 
 function NewCompanyFlowDialog({
   clanId,
+  clients,
 }: {
   clanId: string;
+  clients: readonly CompanyFlowClientOption[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [kind, setKind] = useState<CompanyFlowKind>("opening");
   const [existingClientId, setExistingClientId] = useState("");
-  const [companyCnpj, setCompanyCnpj] = useState("");
+  const [companySearch, setCompanySearch] = useState("");
+  const [companyPickerOpen, setCompanyPickerOpen] = useState(false);
   const companyCnpjRef = useRef("");
   const [consultedCompany, setConsultedCompany] =
     useState<CompanyFlowClientLookupView | null>(null);
+  const [companyDataSource, setCompanyDataSource] = useState<"cadastro" | "receita">("cadastro");
   const [legalName, setLegalName] = useState("");
   const [activities, setActivities] = useState("");
   const [removedActivities, setRemovedActivities] = useState("");
@@ -712,6 +726,11 @@ function NewCompanyFlowDialog({
   const opening = kind === "opening";
   const amendment = kind === "amendment";
   const closing = kind === "closure";
+  const selectedClient = clients.find((client) => client.id === existingClientId) ?? null;
+  const matchingClients = useMemo(
+    () => searchCompanyFlowClients(clients, companySearch),
+    [clients, companySearch],
+  );
   const amendmentHas = (field: AmendmentField) => amendmentFields.includes(field);
 
   function clearFlowValues() {
@@ -738,7 +757,8 @@ function NewCompanyFlowDialog({
 
   function resetFlowForm() {
     setKind("opening");
-    setCompanyCnpj("");
+    setCompanySearch("");
+    setCompanyPickerOpen(false);
     companyCnpjRef.current = "";
     clearFlowValues();
   }
@@ -750,15 +770,24 @@ function NewCompanyFlowDialog({
 
   function handleKindChange(nextKind: CompanyFlowKind) {
     setKind(nextKind);
-    setCompanyCnpj("");
+    setCompanySearch("");
+    setCompanyPickerOpen(false);
     companyCnpjRef.current = "";
     clearFlowValues();
   }
 
-  function handleCompanyCnpjChange(nextCnpj: string) {
-    setCompanyCnpj(nextCnpj);
-    companyCnpjRef.current = nextCnpj.replace(/\D/g, "");
+  function selectFlowCompany(client: CompanyFlowClientOption) {
     clearFlowValues();
+    setExistingClientId(client.id);
+    setCompanySearch(client.name);
+    setCompanyPickerOpen(false);
+    companyCnpjRef.current = client.cnpj ?? "";
+    setCompanyDataSource("cadastro");
+    setConsultedCompany({
+      company: client.company,
+      client: { id: client.id, name: client.name },
+      matchedBy: "cnpj",
+    });
   }
 
   function seedOwnershipFromLookup(company: CompanyFlowClientLookupView["company"]) {
@@ -790,7 +819,10 @@ function NewCompanyFlowDialog({
   }
 
   function lookupFlowCompany() {
-    const requestedCnpj = companyCnpj.replace(/\D/g, "");
+    if (!selectedClient?.cnpj) return;
+    const requestedCnpj = selectedClient.cnpj.replace(/\D/g, "");
+    const requestedClientId = selectedClient.id;
+    companyCnpjRef.current = requestedCnpj;
     startTransition(async () => {
       const result = await lookupCompanyFlowClientCnpj({
         clanId,
@@ -801,18 +833,18 @@ function NewCompanyFlowDialog({
         toast.error(result.ok ? "A consulta não retornou dados." : result.error);
         return;
       }
-      setConsultedCompany(result.data);
-      setCompanyCnpj(formatCnpj(result.data.company.normalizedCnpj));
-      companyCnpjRef.current = result.data.company.normalizedCnpj;
-      setExistingClientId(result.data.client?.id ?? "");
+      const currentClient = clients.find((client) => client.id === requestedClientId);
+      if (!currentClient) return;
+      setConsultedCompany({
+        company: result.data.company,
+        client: { id: currentClient.id, name: currentClient.name },
+        matchedBy: "cnpj",
+      });
+      setCompanyDataSource("receita");
       if (amendment && amendmentHas("ownership")) {
         seedOwnershipFromLookup(result.data.company);
       }
-      if (result.data.client) {
-        toast.success("Empresa localizada e vinculada ao Fluxo.");
-      } else {
-        toast.warning("CNPJ localizado na Receita, mas sem empresa correspondente no painel.");
-      }
+      toast.success("Dados atualizados pela consulta de CNPJ.");
     });
   }
 

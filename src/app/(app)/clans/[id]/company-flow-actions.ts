@@ -7,7 +7,12 @@ import { z } from "zod";
 import { withOrgTx, type OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import {
+  COMPANY_FLOW_KIND_LABELS,
   COMPANY_FLOW_KINDS,
+  COMPANY_FLOW_TASK_DIFFICULTY,
+  COMPANY_FLOW_TASK_PRIORITY,
+  companyFlowDisplayName,
+  companyFlowTaskTitle,
   COMPANY_FLOW_SOURCES,
   companyFlowInformativeText,
   companyFlowRhVerificationState,
@@ -27,7 +32,7 @@ import {
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
-import { holdsClanDuty } from "@/lib/clans/duties";
+import { findClanDutyHolder, holdsClanDuty } from "@/lib/clans/duties";
 import { isActiveClanMember, loadClanScopedFacts } from "@/lib/clans/facts";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 import { RH_CLAN_SLUG, SOCIETARIO_CLAN_SLUG } from "@/lib/clans/rules";
@@ -38,6 +43,10 @@ import {
 } from "@/lib/company-flows/secrets";
 import { lookupCnpj, type CnpjLookupData } from "@/lib/cnpj-lookup";
 import { createTaskRecord } from "@/lib/tasks/create";
+import {
+  enqueueTelegramClanBroadcast,
+  notificationPayload,
+} from "@/lib/telegram/notifications";
 
 const activitySchema = z.object({
   code: z.string().trim().max(12).nullable().optional(),
@@ -481,6 +490,74 @@ export async function createCompanyFlow(
           eq(schema.companyFlows.id, flow.id),
         ));
     }
+
+    // Missão do Societário: nasce junto com o Fluxo, para o trabalho não
+    // depender de alguém reparar que ele chegou. Vai nominalmente para quem tem
+    // a atribuição; sem responsável configurado ela cai para o clã e o caminho
+    // de "assumir" (claimCompanyFlow) continua valendo como antes.
+    const responsavel = await findClanDutyHolder(
+      tx,
+      ctx.orgId,
+      data.clanId,
+      "company_flow",
+    );
+    const nomeEmpresa = companyFlowDisplayName({
+      kind: data.kind,
+      existingClientName: existingClient?.name ?? null,
+      approvedLegalName: null,
+      requestedLegalName: data.requestedLegalName || null,
+    });
+    const missao = await createTaskRecord(tx, {
+      orgId: ctx.orgId,
+      creatorId: ctx.userId,
+      assigneeId: responsavel?.userId ?? null,
+      clanId: data.clanId,
+      clientId: existingClient?.id ?? null,
+      title: companyFlowTaskTitle(data.kind, nomeEmpresa).slice(0, 200),
+      description: [
+        `${COMPANY_FLOW_KIND_LABELS[data.kind]} de ${nomeEmpresa}.`,
+        "",
+        "Abra o Fluxo no clã Societário para ver os dados e devolver o resultado.",
+        "Esta missão se conclui sozinha quando você devolver o Fluxo preenchido.",
+      ].join("\n"),
+      priority: COMPANY_FLOW_TASK_PRIORITY,
+      difficulty: COMPANY_FLOW_TASK_DIFFICULTY[data.kind],
+    });
+    await tx
+      .update(schema.companyFlows)
+      .set({
+        processingTaskId: missao.id,
+        // Com dono definido o Fluxo já entra em processamento: não há fila para
+        // ninguém assumir. Sem dono, segue em sent_to_corporate.
+        ...(responsavel
+          ? { assignedTo: responsavel.userId, status: "in_progress" as const }
+          : {}),
+      })
+      .where(and(
+        eq(schema.companyFlows.orgId, ctx.orgId),
+        eq(schema.companyFlows.id, flow.id),
+      ));
+
+    // A equipe inteira do Societário fica sabendo, não só a liderança.
+    await enqueueTelegramClanBroadcast(tx, {
+      orgId: ctx.orgId,
+      clanId: data.clanId,
+      eventType: "company_flow_created",
+      dedupeKey: `company-flow:${flow.id}:created`,
+      payload: notificationPayload(
+        "tasks",
+        [
+          `📜 Novo fluxo no Societário`,
+          "",
+          `${COMPANY_FLOW_KIND_LABELS[data.kind]} — ${nomeEmpresa}`,
+          responsavel
+            ? `Responsável: ${responsavel.userName ?? "definido"}`
+            : "Sem responsável definido — disponível para assumir.",
+        ].join("\n"),
+      ),
+      // Quem recebeu a missão nominal já foi avisado por createTaskRecord.
+      exceptUserId: responsavel?.userId,
+    });
 
     if (encryptedSecret) {
       await tx.insert(schema.companyFlowSecrets).values({
