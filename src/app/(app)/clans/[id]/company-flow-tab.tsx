@@ -8,6 +8,7 @@ import {
   canPrepareCompanyFlowInformative,
   canReturnCompanyFlow,
 } from "@/domain/guild-permissions";
+import { holdsClanDuty } from "@/lib/clans/duties";
 import { isActiveClanMember } from "@/lib/clans/facts";
 
 import {
@@ -28,7 +29,7 @@ export async function CompanyFlowTab({
   role: "owner" | "admin" | "member";
   leadsThisClan: boolean;
 }) {
-  const { flows, events, viewerIsCorporateMember } = await withOrgTx(orgId, async (tx) => {
+  const { flows, events, viewerIsCorporateMember, holdsInformativeDuty } = await withOrgTx(orgId, async (tx) => {
     const [flows, viewerIsCorporateMember] = await Promise.all([
       tx
         .select({
@@ -102,6 +103,7 @@ export async function CompanyFlowTab({
       flows: flows.map((row) => ({ ...row, createdByName: namesById.get(row.flow.createdBy) ?? "Pessoa removida" })),
       events,
       viewerIsCorporateMember,
+      holdsInformativeDuty: await holdsClanDuty(tx, orgId, clanId, viewerId, "informative"),
     };
   });
 
@@ -116,6 +118,7 @@ export async function CompanyFlowTab({
     leadsThisClan,
     isActiveClanMember: viewerIsCorporateMember,
     isActiveCorporateMember: viewerIsCorporateMember,
+    holdsInformativeDuty,
   };
   const rows: CompanyFlowView[] = flows.map((row) => ({
     ...row.flow,

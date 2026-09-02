@@ -197,9 +197,19 @@ export function canReturnCompanyFlow(actor: CompanyFlowActorFacts): boolean {
   return isAdminRole(actor.role) || actor.isActiveCorporateMember;
 }
 
-/** A ponte para Informativos continua sendo uma decisão do dono/admin. */
+export interface CompanyFlowInformativeFacts
+  extends Pick<CompanyFlowActorFacts, "role"> {
+  /** É a pessoa designada no clã como responsável por redigir Informativos. */
+  holdsInformativeDuty: boolean;
+}
+
+/**
+ * A ponte para Informativos era decisão exclusiva de dono/admin. Com a
+ * atribuição nominal, quem foi designado para redigir também abre a prévia —
+ * senão a missão que ele recebe seria impossível de executar por quem a recebeu.
+ */
 export function canPrepareCompanyFlowInformative(
-  actor: Pick<CompanyFlowActorFacts, "role">,
+  actor: CompanyFlowInformativeFacts,
 ): boolean {
-  return isAdminRole(actor.role);
+  return isAdminRole(actor.role) || actor.holdsInformativeDuty;
 }

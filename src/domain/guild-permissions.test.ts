@@ -5,6 +5,7 @@ import {
   canDeleteClanClosing,
   canDistributeClanTasks,
   canManageClanClosings,
+  canPrepareCompanyFlowInformative,
   canQuickCompleteUnassignedInformativeTask,
   canEmphasizeNotice,
   canHandleInformatives,
@@ -348,5 +349,34 @@ describe("fechamentos — rotina da Contabilidade", () => {
         isActiveClanMember: true,
       }),
     ).toBe(true);
+  });
+});
+
+describe("preparar o Informativo — atribuição nominal", () => {
+  test.each(["owner", "admin"] as const)(
+    "%s prepara mesmo sem ter a atribuição",
+    (role) => {
+      expect(
+        canPrepareCompanyFlowInformative({ role, holdsInformativeDuty: false }),
+      ).toBe(true);
+    },
+  );
+
+  test("member designado prepara: sem isso a missão que ele recebe seria impossível", () => {
+    expect(
+      canPrepareCompanyFlowInformative({
+        role: "member",
+        holdsInformativeDuty: true,
+      }),
+    ).toBe(true);
+  });
+
+  test("member sem a atribuição não prepara", () => {
+    expect(
+      canPrepareCompanyFlowInformative({
+        role: "member",
+        holdsInformativeDuty: false,
+      }),
+    ).toBe(false);
   });
 });

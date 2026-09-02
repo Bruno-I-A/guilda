@@ -180,6 +180,55 @@ export const clanInformativeRoutes = pgTable(
   ],
 );
 
+/**
+ * Atribuições nominais dentro de um clã: quem responde por uma etapa do
+ * trabalho recorrente. Não confundir com `clan_informative_routes`, que decide
+ * para onde vão as missões DEPOIS que um Informativo é confirmado — aqui é
+ * quem EXECUTA a etapa, e é por isso que a unicidade é por (clã, atribuição).
+ */
+export const clanDuty = pgEnum("clan_duty", [
+  "company_flow", // atende os Fluxos que chegam ao Societário
+  "informative", //  redige o Informativo a partir do retorno do Societário
+]);
+
+export const clanMemberDuties = pgTable(
+  "clan_member_duties",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clanId: uuid("clan_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    duty: clanDuty("duty").notNull(),
+    assignedBy: text("assigned_by").references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "clan_member_duties_org_clan_fk",
+      columns: [t.orgId, t.clanId],
+      foreignColumns: [clans.orgId, clans.id],
+    }).onDelete("cascade"),
+    // Perder o vínculo com o clã tira a atribuição junto: atribuição sem
+    // vínculo é linha órfã que a interface mostraria como responsável válido.
+    foreignKey({
+      name: "clan_member_duties_membership_fk",
+      columns: [t.orgId, t.clanId, t.userId],
+      foreignColumns: [
+        clanMemberships.orgId,
+        clanMemberships.clanId,
+        clanMemberships.userId,
+      ],
+    }).onDelete("cascade"),
+    uniqueIndex("clan_member_duties_org_clan_duty_uidx").on(t.orgId, t.clanId, t.duty),
+    index("clan_member_duties_org_user_idx").on(t.orgId, t.userId),
+  ],
+);
+
 export const tasks = pgTable(
   "tasks",
   {
@@ -415,6 +464,7 @@ export const clansRelations = relations(clans, ({ one, many }) => ({
   }),
   memberships: many(clanMemberships),
   informativeRoutes: many(clanInformativeRoutes),
+  memberDuties: many(clanMemberDuties),
   tasks: many(tasks),
   incomingTransfers: many(taskTransfers, { relationName: "transfer_to_clan" }),
   outgoingTransfers: many(taskTransfers, { relationName: "transfer_from_clan" }),
@@ -1090,6 +1140,21 @@ export const clanInformativeRoutesRelations = relations(
     }),
   }),
 );
+
+export const clanMemberDutiesRelations = relations(clanMemberDuties, ({ one }) => ({
+  organization: one(organization, {
+    fields: [clanMemberDuties.orgId],
+    references: [organization.id],
+  }),
+  clan: one(clans, {
+    fields: [clanMemberDuties.clanId],
+    references: [clans.id],
+  }),
+  user: one(user, {
+    fields: [clanMemberDuties.userId],
+    references: [user.id],
+  }),
+}));
 
 /** Credencial do Gov.br cifrada com AES-GCM; uma por fluxo, sem histórico. */
 export const companyFlowSecrets = pgTable(

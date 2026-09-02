@@ -421,9 +421,7 @@ export function amendmentClientRegistrationUpdate(input: Pick<
  * necessária ao processamento societário e não deve circular pelo escritório.
  */
 export function companyFlowInformativeText(flow: FlowInformativeInput): string {
-  const company = flow.kind === "opening"
-    ? flow.approvedLegalName ?? flow.requestedLegalName ?? flow.existingClientName ?? "Empresa não informada"
-    : flow.existingClientName ?? flow.approvedLegalName ?? flow.requestedLegalName ?? "Empresa não informada";
+  const company = companyFlowDisplayName(flow);
   const kind = COMPANY_FLOW_KIND_LABELS[flow.kind].toUpperCase();
   const requestedActivities = flow.requestedActivities
     .map((item) => item.description)
@@ -567,4 +565,59 @@ export function accountantChangeInformativeText(input: AccountantChangeInformati
 function formatFlowDate(value: string): string {
   const [year, month, day] = value.split("-");
   return `${day}/${month}/${year}`;
+}
+
+/** Campos que bastam para nomear um Fluxo na interface e nas missões. */
+export type CompanyFlowNameFields = Pick<
+  FlowInformativeInput,
+  "kind" | "existingClientName" | "approvedLegalName" | "requestedLegalName"
+>;
+
+/**
+ * Nome de exibição do Fluxo. A precedência muda com o tipo: numa abertura a
+ * empresa ainda não existe no cadastro, então vale o nome aprovado na Junta e
+ * depois o solicitado; nos demais o cadastro é a fonte de verdade.
+ */
+export function companyFlowDisplayName(flow: CompanyFlowNameFields): string {
+  return flow.kind === "opening"
+    ? flow.approvedLegalName ??
+        flow.requestedLegalName ??
+        flow.existingClientName ??
+        "Empresa não informada"
+    : flow.existingClientName ??
+        flow.approvedLegalName ??
+        flow.requestedLegalName ??
+        "Empresa não informada";
+}
+
+/**
+ * Dificuldade da missão que nasce com o Fluxo, por tipo. Abertura envolve
+ * Junta, CNPJ, inscrições e alvará; alteração costuma ser um ato só; a baixa
+ * fica no meio. Como `xp_value` é congelado na criação pela fórmula da casa
+ * (`difficulty * 20 + (priority - 1) * 10`), mexer aqui mexe no ranking —
+ * por isso os números moram no domínio, testados, e não soltos na action.
+ */
+export const COMPANY_FLOW_TASK_DIFFICULTY: Record<CompanyFlowKind, number> = {
+  opening: 4,
+  amendment: 2,
+  closure: 3,
+};
+
+/** Fluxo e Informativo entram como prioridade média: são rotina, não incêndio. */
+export const COMPANY_FLOW_TASK_PRIORITY = 2;
+
+/** Redigir o Informativo é trabalho de revisão sobre dado já apurado. */
+export const COMPANY_FLOW_INFORMATIVE_TASK_DIFFICULTY = 2;
+
+/** Título da missão de quem vai tocar o Fluxo no Societário. */
+export function companyFlowTaskTitle(
+  kind: CompanyFlowKind,
+  companyName: string,
+): string {
+  return `Novo fluxo — ${COMPANY_FLOW_KIND_LABELS[kind]}: ${companyName}`;
+}
+
+/** Título da missão de quem redige o Informativo depois do retorno. */
+export function companyFlowInformativeTaskTitle(companyName: string): string {
+  return `Gerar o Informativo — ${companyName}`;
 }
