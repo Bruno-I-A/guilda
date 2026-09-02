@@ -1348,9 +1348,16 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
                 </>
               )}
               {simpleConfirmation ? null : <div className="grid gap-1.5"><Label>Retorno e observações</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder="O que foi deferido, pendências ou cuidados" /></div>}
-              <Button type="button" disabled={pending || (!simpleConfirmation && !notes.trim()) || (closure && rhVerificationState === "pending")} onClick={confirmProcessing}>
-                {closure && rhVerificationState === "pending" ? <Clock3 aria-hidden /> : <Send aria-hidden />}
-                {amendment ? "Confirmar informativo" : closure ? rhVerificationState === "pending" ? "Aguardando confirmação do RH" : "Confirmar baixa" : "Confirmar dados aprovados"}
+              <Button
+                type="button"
+                variant={closure && rhVerificationState === "pending" ? "default" : "success"}
+                disabled={pending || (!simpleConfirmation && !notes.trim()) || (closure && rhVerificationState === "pending")}
+                onClick={confirmProcessing}
+              >
+                {closure && rhVerificationState === "pending" ? <Clock3 aria-hidden /> : <CheckCircle2 aria-hidden />}
+                {closure && rhVerificationState === "pending"
+                  ? "Aguardando confirmação do RH"
+                  : "Confirmar conclusão do processo"}
               </Button>
             </section>
           ) : null}

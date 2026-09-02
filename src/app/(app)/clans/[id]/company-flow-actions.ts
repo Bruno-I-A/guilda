@@ -7,11 +7,13 @@ import { z } from "zod";
 import { withOrgTx, type OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import {
+  COMPANY_FLOW_INFORMATIVE_TASK_DIFFICULTY,
   COMPANY_FLOW_KIND_LABELS,
   COMPANY_FLOW_KINDS,
   COMPANY_FLOW_TASK_DIFFICULTY,
   COMPANY_FLOW_TASK_PRIORITY,
   companyFlowDisplayName,
+  companyFlowInformativeTaskTitle,
   companyFlowTaskTitle,
   COMPANY_FLOW_SOURCES,
   companyFlowInformativeText,
@@ -42,6 +44,7 @@ import {
   encryptFlowSecret,
 } from "@/lib/company-flows/secrets";
 import { lookupCnpj, type CnpjLookupData } from "@/lib/cnpj-lookup";
+import { completeTaskFromSystem } from "@/lib/tasks/complete";
 import { createTaskRecord } from "@/lib/tasks/create";
 import {
   enqueueTelegramClanBroadcast,
@@ -765,6 +768,65 @@ export async function returnCompanyFlowToOwner(
       note: data.processingNotes,
       actorId: ctx.userId,
     });
+    // A missão do Societário fecha aqui, sozinha: quem confirmou o processo já
+    // fez o trabalho, e pedir um segundo clique em "concluir" seria burocracia
+    // que ninguém faz — e o painel passaria a mentir sobre o que está aberto.
+    if (flow.processingTaskId) {
+      await completeTaskFromSystem(tx, {
+        orgId: ctx.orgId,
+        taskId: flow.processingTaskId,
+        actorId: ctx.userId,
+        note: "Concluída pela confirmação do processo no Fluxo.",
+      });
+    }
+
+    // O Informativo é a etapa seguinte, e tem dono próprio: quem tem a
+    // atribuição `informative` no clã. Sem ninguém designado, a missão fica com
+    // o clã e aparece na fila de distribuição — degradação, não travamento.
+    if (!flow.informativeTaskId) {
+      const redator = await findClanDutyHolder(
+        tx,
+        ctx.orgId,
+        data.clanId,
+        "informative",
+      );
+      const [clienteVinculado] = flow.existingClientId
+        ? await tx
+            .select({ name: schema.clients.name })
+            .from(schema.clients)
+            .where(and(
+              eq(schema.clients.orgId, ctx.orgId),
+              eq(schema.clients.id, flow.existingClientId),
+            ))
+        : [];
+      const nomeEmpresa = companyFlowDisplayName({
+        kind: flow.kind,
+        existingClientName: clienteVinculado?.name ?? null,
+        approvedLegalName: simpleConfirmation ? flow.approvedLegalName : officialLegalName,
+        requestedLegalName: flow.requestedLegalName,
+      });
+      const missaoInformativo = await createTaskRecord(tx, {
+        orgId: ctx.orgId,
+        creatorId: ctx.userId,
+        assigneeId: redator?.userId ?? null,
+        clanId: data.clanId,
+        clientId: flow.existingClientId ?? null,
+        title: companyFlowInformativeTaskTitle(nomeEmpresa).slice(0, 200),
+        description: `O Societário concluiu ${COMPANY_FLOW_KIND_LABELS[flow.kind].toLowerCase()} de ${nomeEmpresa}.
+Abra o Fluxo no clã Societário e gere o Informativo.
+Esta missão se conclui sozinha quando o Informativo for confirmado.`,
+        priority: COMPANY_FLOW_TASK_PRIORITY,
+        difficulty: COMPANY_FLOW_INFORMATIVE_TASK_DIFFICULTY,
+      });
+      await tx
+        .update(schema.companyFlows)
+        .set({ informativeTaskId: missaoInformativo.id })
+        .where(and(
+          eq(schema.companyFlows.orgId, ctx.orgId),
+          eq(schema.companyFlows.id, flow.id),
+        ));
+    }
+
     return { ok: true };
   });
   if (result.ok) revalidateCompanyFlow(data.clanId);
