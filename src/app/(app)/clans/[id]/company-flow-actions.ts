@@ -478,7 +478,7 @@ export async function createCompanyFlow(
       description: [
         `${COMPANY_FLOW_KIND_LABELS[data.kind]} de ${nomeEmpresa}.`,
         "",
-        "Abra o Fluxo no clã Societário para ver os dados e devolver o resultado.",
+        "Abra o Fluxo no clã Societário, confirme o recebimento e devolva o resultado.",
         "Esta missão se conclui sozinha quando você devolver o Fluxo preenchido.",
       ].join("\n"),
       priority: COMPANY_FLOW_TASK_PRIORITY,
@@ -488,11 +488,12 @@ export async function createCompanyFlow(
       .update(schema.companyFlows)
       .set({
         processingTaskId: missao.id,
-        // Com dono definido o Fluxo já entra em processamento: não há fila para
-        // ninguém assumir. Sem dono, segue em sent_to_corporate.
-        ...(responsavel
-          ? { assignedTo: responsavel.userId, status: "in_progress" as const }
-          : {}),
+        // O Fluxo nasce em sent_to_corporate MESMO com responsável definido: o
+        // dono nominal ainda precisa confirmar que viu o pedido para a esteira
+        // andar. Antes ele entrava direto em processamento e a etapa "Recebido"
+        // nunca era usada — o painel dizia "em processamento" sem ninguém ter
+        // olhado o pedido.
+        ...(responsavel ? { assignedTo: responsavel.userId } : {}),
       })
       .where(and(
         eq(schema.companyFlows.orgId, ctx.orgId),
@@ -512,7 +513,7 @@ export async function createCompanyFlow(
           "",
           `${COMPANY_FLOW_KIND_LABELS[data.kind]} — ${nomeEmpresa}`,
           responsavel
-            ? `Responsável: ${responsavel.userName ?? "definido"}`
+            ? `Responsável: ${responsavel.userName ?? "definido"} — aguardando a confirmação de recebimento.`
             : "Sem responsável definido — disponível para assumir.",
         ].join("\n"),
       ),

@@ -210,6 +210,23 @@ criação. Abrir a competência do Fiscal nunca dependeu de campanha
 volta com o modelo de `missions`/`mission_submissions` da Fase 5, não com a aba
 antiga — não recriar a aba sem o Bruno pedir.
 
+### Fluxo Societário: confirmação de recebimento (decisão de 2026-09-03)
+
+Fluxo novo **sempre nasce em `sent_to_corporate`** ("Recebido"), mesmo quando o
+clã tem responsável nominal (`findClanDutyHolder(..., "company_flow")`). O
+responsável recebe a missão e o aviso, e precisa clicar **Confirmar recebimento**
+para o Fluxo virar `in_progress`.
+
+Antes ele entrava direto em `in_progress` — a etapa 1 da esteira nunca era usada
+e o painel afirmava "em processamento" sem ninguém ter olhado o pedido. **Não
+reintroduzir o auto-avanço**: o clique é o controle de que o pedido foi lido.
+
+`assignedTo` continua sendo preenchido na criação (o dono nominal), então a
+linha em Recebido diz de quem se está esperando. Qualquer integrante ativo do
+Societário ainda pode assumir um Fluxo parado — nesse caso `assignedTo` passa
+para quem assumiu, mas a missão do Societário continua com o dono nominal (o XP
+vai para o responsável da missão, comportamento que já existia).
+
 ## Lista de missões: Avulsas × Informativos (decisão de 2026-09-03)
 
 `/tasks` deixou de ser uma lista única com quatro filtros (origem, escopo,

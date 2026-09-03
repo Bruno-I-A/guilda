@@ -122,6 +122,8 @@ export interface CompanyFlowView {
   returnedAt: string | null;
   completedAt: string | null;
   hasGovSecret: boolean;
+  /** O leitor é o responsável nominal — para ele, assumir é confirmar que viu. */
+  isAssignedToViewer: boolean;
   canClaim: boolean;
   canReturn: boolean;
   canPrepareInformative: boolean;
@@ -175,7 +177,7 @@ const FLOW_STAGES = [
   {
     key: "received",
     label: "Recebido",
-    hint: "esperando o Societário assumir",
+    hint: "esperando o Societário confirmar",
     statuses: ["sent_to_corporate"],
   },
   {
@@ -256,9 +258,10 @@ function FlowStageTracker({ status }: { status: CompanyFlowStatus }) {
 function flowCallToAction(row: CompanyFlowView): { label: string; primary: boolean } {
   switch (row.status) {
     case "sent_to_corporate":
-      return row.canClaim
-        ? { label: "Assumir processamento", primary: true }
-        : { label: "Ver pedido", primary: false };
+      if (!row.canClaim) return { label: "Ver pedido", primary: false };
+      return row.isAssignedToViewer
+        ? { label: "Confirmar recebimento", primary: true }
+        : { label: "Assumir processamento", primary: true };
     case "in_progress":
       return row.canReturn
         ? { label: "Confirmar conclusão", primary: true }
@@ -347,7 +350,9 @@ function getRhVerificationState(
 function flowStageDescription(row: CompanyFlowView): string {
   switch (row.status) {
     case "sent_to_corporate":
-      return "Aguardando o Societário assumir";
+      return row.assignedName
+        ? `Aguardando ${row.assignedName} confirmar o recebimento`
+        : "Aguardando o Societário assumir";
     case "in_progress":
       return row.assignedName
         ? `Em processamento por ${row.assignedName}`
@@ -406,7 +411,7 @@ const AMENDMENT_FIELDS: readonly {
 function eventLabel(eventType: string, kind: CompanyFlowKind): string {
   const labels: Record<string, string> = {
     created: "Fluxo enviado ao Societário",
-    claimed: "Fluxo assumido",
+    claimed: "Recebimento confirmado",
     assigned: "Responsável alterado",
     returned_to_owner: kind === "amendment"
       ? "Informativo confirmado"
@@ -1385,7 +1390,11 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
         toast.error(result.error);
         return;
       }
-      toast.success("Fluxo assumido.");
+      toast.success(
+        row.isAssignedToViewer
+          ? "Recebimento confirmado. O Fluxo está em processamento."
+          : "Fluxo assumido.",
+      );
       router.refresh();
     });
   }
@@ -1539,7 +1548,7 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
           ) : null}
           {["awaiting_owner", "informative_drafting"].includes(row.status) && row.canPrepareInformative ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Próximo passo</h3><p className="text-xs text-muted-foreground">O Informativo mostrará o resumo da alteração para conferência; acrescente somente alguma missão ou observação adicional, se necessário.</p><Button type="button" disabled={pending} onClick={prepareInformative}><ClipboardPenLine aria-hidden /> {row.status === "informative_drafting" ? "Gerar Informativo novamente" : "Preparar Informativo"}</Button></section> : null}
           {row.status === "informative_drafting" ? <p className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">A preparação do Informativo está aberta. Você pode gerar o texto novamente até criar a prévia em Informativos.</p> : null}
-          {row.status === "sent_to_corporate" && row.canClaim ? <Button type="button" disabled={pending} onClick={claim}><UserRoundCheck aria-hidden /> Assumir processamento</Button> : null}
+          {row.status === "sent_to_corporate" && row.canClaim ? <Button type="button" disabled={pending} onClick={claim}><UserRoundCheck aria-hidden /> {row.isAssignedToViewer ? "Confirmar recebimento" : "Assumir processamento"}</Button> : null}
           {row.status === "completed" ? <div className="rounded-md border border-success/30 bg-success/5 p-3 text-sm text-success"><CheckCircle2 className="mr-1 inline size-4" aria-hidden /> Informativo gerado e Fluxo concluído. A confirmação das missões segue em Informativos.</div> : null}
           {row.history.length > 0 ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Histórico</h3>{row.history.map((event) => <div key={event.id} className="rounded-md bg-muted/35 px-3 py-2 text-xs"><span className="font-medium">{eventLabel(event.eventType, row.kind)}</span><span className="text-muted-foreground"> · {event.actorName} · {new Date(event.createdAt).toLocaleString("pt-BR")}</span>{event.note ? <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{event.note}</p> : null}</div>)}</section> : null}
         </div>
