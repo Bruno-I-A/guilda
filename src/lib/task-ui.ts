@@ -31,6 +31,20 @@ export const STATUS_RAIL_CLASSES: Record<TaskStatus, string> = {
   cancelled: "border-l-border",
 };
 
+/**
+ * Segmento do medidor de um pacote de Informativo — uma missão, um
+ * segmento. Mesmas cores do trilho, em fundo: concluída em ouro porque é o
+ * único lugar onde "feito" e "recompensa creditada" são a mesma coisa.
+ */
+export const STATUS_METER_CLASSES: Record<TaskStatus, string> = {
+  pending: "bg-secondary",
+  in_progress: "bg-primary",
+  awaiting_approval: "bg-warning/80",
+  completed: "bg-gold/70",
+  rejected: "bg-destructive/80",
+  cancelled: "bg-border/60",
+};
+
 export const PRIORITY_LABELS: Record<number, string> = {
   1: "Baixa",
   2: "Média",

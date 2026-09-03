@@ -44,6 +44,8 @@ export type MissionRowTask = {
 export function MissionRow({
   task,
   variant = "full",
+  frame = "panel",
+  href,
   showStatus = true,
   trailing,
   after,
@@ -52,6 +54,17 @@ export function MissionRow({
   task: MissionRowTask;
   /** `full` abre os dois grupos de metadado; `compact` resume numa linha. */
   variant?: "full" | "compact";
+  /**
+   * `panel` é a linha solta, com o painel chanfrado próprio. `flat` é a linha
+   * DENTRO de um painel maior (o pacote de um Informativo): só o trilho de
+   * status e o hover, sem chanfro dentro de chanfro.
+   */
+  frame?: "panel" | "flat";
+  /**
+   * Destino do clique. O padrão é a página da missão; a lista passa o
+   * `returnTo` para a pessoa voltar ao mesmo recorte de onde saiu.
+   */
+  href?: string;
   /** Na `compact`, some com o rótulo de status (quem já sabe o status pelo contexto). */
   showStatus?: boolean;
   /** Slot ANTES do chip de XP: avatar do responsável, etiqueta "disponível". */
@@ -66,6 +79,11 @@ export function MissionRow({
 }) {
   const overdue = isOverdue(task.dueDate, task.status);
   const rail = overdue ? "border-l-destructive" : STATUS_RAIL_CLASSES[task.status];
+  const target = href ?? `/tasks/${task.id}`;
+  const surface =
+    frame === "panel"
+      ? "panel-cut panel-cut-sm hover:bg-accent/40"
+      : "hover:bg-accent/30";
 
   const due = task.dueDate ? (
     <span
@@ -96,9 +114,10 @@ export function MissionRow({
 
     return (
       <Link
-        href={`/tasks/${task.id}`}
+        href={target}
         className={cn(
-          "panel-cut panel-cut-sm flex items-center gap-3 border-l-2 px-4 py-2.5 transition-colors hover:bg-accent/40",
+          "flex items-center gap-3 border-l-2 px-4 py-2.5 transition-colors",
+          surface,
           rail,
           className,
         )}
@@ -120,9 +139,10 @@ export function MissionRow({
 
   return (
     <Link
-      href={`/tasks/${task.id}`}
+      href={target}
       className={cn(
-        "panel-cut panel-cut-sm flex flex-col gap-2 border-l-2 px-4 py-3 transition-colors hover:bg-accent/40",
+        "flex flex-col gap-2 border-l-2 px-4 py-3 transition-colors",
+        surface,
         rail,
         className,
       )}

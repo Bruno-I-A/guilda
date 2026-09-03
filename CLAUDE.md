@@ -199,6 +199,32 @@ Atenção: `clan_campaigns` é a campanha POR CLÃ, mensal. Não confundir com o
 de `missions`/`mission_submissions` descrito na Fase 5 abaixo (pool auto-servido
 por regime), que continua não implementado.
 
+## Lista de missões: Avulsas × Informativos (decisão de 2026-09-03)
+
+`/tasks` deixou de ser uma lista única com quatro filtros (origem, escopo,
+status, prazo). A **origem virou o eixo principal** (`?view=standalone` ou
+`?view=informative`), porque as duas populações têm forma diferente:
+
+- **Avulsas** (`tasks.informative_id` NULL): pedido de uma pessoa para outra.
+  Na visão pessoal são divididas pelo **papel do leitor** em cada missão —
+  Para você fazer / Para você aprovar / Você pediu / Enviadas para aprovação /
+  Encerradas — e não por status: papel é o que decide a próxima ação. Escopos
+  amplos (clã, pessoa, Guilda) ficam aberto/encerrado, atrasadas no topo.
+  A **criação é em uma linha**, no topo da própria lista: `@pessoa` ou `@clã`,
+  `!alta|!baixa`, `~sexta|~15/09|~+3`, `#1..#5` (parser puro e testado em
+  `src/domain/quick-mission.ts`). É a "liberdade com campos estruturados" da
+  seção de Design. O formulário completo (`/tasks/new`) continua para quem
+  precisa de descrição ou empresa.
+- **Informativos** (`informative_id` preenchido): lidas como **pacote por
+  empresa**, com o progresso do conjunto (`src/domain/mission-triage.ts`).
+  Criar aqui é preparar um Informativo (`/informativos`), nunca uma missão
+  solta.
+
+O único filtro que sobrou é o recorte de pessoas (`scope`: minhas / meus
+clãs / um clã / uma pessoa / Guilda). Status, prazo e origem viraram
+estrutura. Toda linha de missão passa pela `<MissionRow>` (`frame="flat"`
+dentro do pacote).
+
 ## Design e UX (decisões já tomadas — não redecidir do zero)
 
 **Antes de escrever qualquer tela, leia `docs/design-system.md`.** Ele é

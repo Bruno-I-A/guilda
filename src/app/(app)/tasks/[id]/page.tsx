@@ -1,5 +1,13 @@
 import { or, and, asc, eq } from "drizzle-orm";
-import { ArrowLeft, ArrowRightLeft, CalendarClock, Star, UsersRound } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRightLeft,
+  Building2,
+  CalendarClock,
+  Inbox,
+  Star,
+  UsersRound,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -75,6 +83,7 @@ export default async function TaskDetailPage({
           assignee: { columns: { id: true, name: true } },
           creator: { columns: { id: true, name: true } },
           clan: { columns: { id: true, name: true, active: true } },
+          client: { columns: { name: true } },
           events: {
             with: { actor: { columns: { name: true } } },
             orderBy: [asc(schema.taskEvents.createdAt)],
@@ -509,6 +518,31 @@ export default async function TaskDetailPage({
               <span className="text-muted-foreground">Criada por</span>
               <span className="font-medium">{task.creator.name}</span>
             </div>
+            <Separator />
+            {/* De onde a missão veio decide onde ela é acompanhada: pacote
+                de Informativo ou lista de avulsas. */}
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Origem</span>
+              {task.informativeId ? (
+                <Link
+                  href="/tasks?view=informative"
+                  className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                >
+                  <Inbox className="size-4" aria-hidden /> Informativo
+                </Link>
+              ) : (
+                <span className="font-medium">Avulsa</span>
+              )}
+            </div>
+            {task.client ? (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Empresa</span>
+                <span className="inline-flex min-w-0 items-center gap-1 font-medium">
+                  <Building2 className="size-4 shrink-0" aria-hidden />
+                  <span className="truncate">{task.client.name}</span>
+                </span>
+              </div>
+            ) : null}
             <Separator />
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Prioridade</span>

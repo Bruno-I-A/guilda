@@ -136,6 +136,19 @@ de XP — os dois melhores sinais de triagem do app. Já houve uma versão paral
 sem eles na aba do clã, e o resultado foi que **a única tela cuja finalidade é
 triagem era a que não mostrava os sinais de triagem**.
 
+Dentro de um painel maior (o pacote de um Informativo em `/tasks`), passe
+`frame="flat"`: a linha perde o chanfro próprio e fica só com trilho e hover —
+chanfro dentro de chanfro vira ruído. `href` aceita o destino com `returnTo`,
+para a pessoa voltar ao mesmo recorte de onde saiu.
+
+### Seções da lista de missões
+
+`MissionSection`, `MissionEmpty` e `ClosedMissions` (em
+`src/app/(app)/tasks/mission-sections.tsx`) são o título de seção com
+contagem, o vazio explicado e o bloco dobrado das encerradas. Título é `<h2>`
+de verdade; a contagem em mono ao lado é o dado. Encerradas ficam dobradas
+porque são histórico, não trabalho.
+
 ---
 
 ## 4. Superfície e forma
