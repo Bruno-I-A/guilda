@@ -18,7 +18,39 @@ export type OrgRole = "owner" | "admin" | "member";
 
 export interface TransitionContext {
   actor: { id: string; role: OrgRole };
-  task: { creatorId: string; assigneeId: string | null; status: TaskStatus };
+  task: {
+    creatorId: string;
+    assigneeId: string | null;
+    status: TaskStatus;
+    /** Quando a conclusão foi registrada — abre a janela de desfazer. */
+    completedAt?: Date | null;
+    /** Quem registrou a conclusão; só essa pessoa desfaz sem ser admin. */
+    completedBy?: string | null;
+  };
+  /** Injetável para o teste não depender do relógio da máquina. */
+  now?: Date;
+}
+
+/**
+ * Por quanto tempo quem concluiu pode desfazer a própria conclusão sem
+ * depender de um admin. Curta de propósito: é para o clique errado, não para
+ * reabrir o trabalho de ontem. Passada a janela, volta a ser reversão
+ * administrativa como sempre foi.
+ */
+export const UNDO_COMPLETION_WINDOW_MS = 5 * 60 * 1000;
+
+/**
+ * A pessoa que acabou de concluir ainda está dentro da janela de
+ * arrependimento? O estorno de XP acontece igual — o que a janela dispensa é
+ * o admin, não o registro.
+ */
+export function isWithinUndoWindow(
+  ctx: Pick<TransitionContext, "actor" | "task" | "now">,
+): boolean {
+  const { completedAt, completedBy } = ctx.task;
+  if (!completedAt || completedBy !== ctx.actor.id) return false;
+  const decorrido = (ctx.now ?? new Date()).getTime() - completedAt.getTime();
+  return decorrido >= 0 && decorrido <= UNDO_COMPLETION_WINDOW_MS;
 }
 
 export type TransitionDecision =
@@ -62,7 +94,8 @@ const ALLOW: TransitionDecision = { allowed: true };
  *   andamento, ainda que outra pessoa a tenha criado;
  * - aprovar / rejeitar tarefa de terceiros: criador ou admin/owner;
  * - cancelar: criador ou admin/owner;
- * - reverter conclusão: apenas admin/owner.
+ * - reverter conclusão: admin/owner a qualquer tempo, e quem concluiu dentro
+ *   da janela de arrependimento (ver UNDO_COMPLETION_WINDOW_MS).
  */
 export function authorizeTransition(
   to: TaskStatus,
@@ -86,10 +119,14 @@ export function authorizeTransition(
       : deny("Apenas a pessoa responsável pode trabalhar na missão.");
   }
 
-  // completed → in_progress (reversão administrativa)
+  // completed → in_progress: reversão administrativa OU o desfazer de quem
+  // acabou de concluir, dentro da janela de arrependimento.
   if (to === "in_progress" && from === "completed") {
-    return isAdmin
-      ? ALLOW
+    if (isAdmin || isWithinUndoWindow(ctx)) return ALLOW;
+    return task.completedBy === actor.id
+      ? deny(
+          "O tempo para desfazer esta conclusão passou. Peça a um admin para reverter.",
+        )
       : deny("Apenas admin ou owner pode reverter uma conclusão.");
   }
 

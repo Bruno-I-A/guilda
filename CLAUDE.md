@@ -144,6 +144,31 @@ CREATE POLICY org_isolation ON tasks
 - **member**: criar tarefas (para si ou colegas da org), atualizar as suas,
   aprovar tarefas que criou
 
+## Desfazer: janela de arrependimento (decisão de 2026-09-03)
+
+Conclusão de missão mostra um aviso com **"Desfazer"** ao lado (`toastWithUndo`,
+em `src/lib/undo-toast.ts`). O desfazer NÃO é otimista: a conclusão já foi para
+o banco, e o botão chama `revertCompletion` de verdade — mesmas permissões,
+mesmo estorno no ledger. É o que faz o desfazer sobreviver a um F5 e não mentir
+sobre o que já aconteceu.
+
+Para o botão funcionar para quem não é admin, `authorizeTransition` ganhou a
+**janela de arrependimento** (`UNDO_COMPLETION_WINDOW_MS`, 5 min): quem
+registrou a conclusão desfaz a própria conclusão dentro dela, mesmo sendo
+member. Fora da janela, `completed → in_progress` continua sendo admin/owner
+como sempre foi. A janela do servidor é maior que a do aviso de propósito —
+perder o toast não custa o desfazer.
+
+Isso NÃO é brecha de farm de XP: o estorno entra como lançamento negativo
+(`reason = 'reversal'`) e a reconclusão é idempotente por `task_event_id`, não
+por `task_id` — concluir/desfazer/concluir dá saldo líquido de um crédito.
+
+Onde tem: **Concluir** (detalhe da missão) e **conclusão direta da Mesa do clã**
+(`distribution-board`), os dois cliques únicos que creditam XP. Aprovar ficou
+DE FORA de propósito: só volta para `in_progress`, não para `awaiting_approval`,
+então "desfazer" deixaria a missão num estado diferente do anterior — e aprovar
+já exige diálogo com comentário, não é clique de engano.
+
 ## Estrutura por clã (decisões de 2026-08-18)
 
 O clã deixou de ser um diretório da Guilda e virou o **espaço de trabalho** da

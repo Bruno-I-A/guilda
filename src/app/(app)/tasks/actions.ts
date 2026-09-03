@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -428,12 +428,33 @@ async function transitionTask(options: {
       }
     }
 
+    // Quem registrou a conclusão só importa para o desfazer: é a pessoa que a
+    // janela de arrependimento libera. Fora desse caso não vale a consulta.
+    let completedBy: string | null = null;
+    if (task.status === "completed" && options.to === "in_progress") {
+      const [conclusao] = await tx
+        .select({ actorId: schema.taskEvents.actorId })
+        .from(schema.taskEvents)
+        .where(
+          and(
+            eq(schema.taskEvents.orgId, ctx.orgId),
+            eq(schema.taskEvents.taskId, task.id),
+            eq(schema.taskEvents.toStatus, "completed"),
+          ),
+        )
+        .orderBy(desc(schema.taskEvents.createdAt))
+        .limit(1);
+      completedBy = conclusao?.actorId ?? null;
+    }
+
     const decision = authorizeTransition(options.to, {
       actor: { id: ctx.userId, role: ctx.role },
       task: {
         creatorId: task.creatorId,
         assigneeId: task.assigneeId,
         status: task.status,
+        completedAt: task.completedAt,
+        completedBy,
       },
     });
     if (!decision.allowed) {

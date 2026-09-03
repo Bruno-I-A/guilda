@@ -4,6 +4,7 @@ import {
   authorizeTaskDeletion,
   authorizeTransition,
   canTransition,
+  UNDO_COMPLETION_WINDOW_MS,
   type OrgRole,
   type TaskStatus,
   type TransitionContext,
@@ -16,6 +17,9 @@ function ctx(overrides: {
   creatorId?: string;
   assigneeId?: string | null;
   status: TaskStatus;
+  completedAt?: Date | null;
+  completedBy?: string | null;
+  now?: Date;
 }): TransitionContext {
   return {
     actor: { id: overrides.actorId, role: overrides.actorRole ?? "member" },
@@ -24,7 +28,10 @@ function ctx(overrides: {
       assigneeId:
         overrides.assigneeId === undefined ? "assignee-1" : overrides.assigneeId,
       status: overrides.status,
+      completedAt: overrides.completedAt ?? null,
+      completedBy: overrides.completedBy ?? null,
     },
+    now: overrides.now,
   };
 }
 
@@ -326,12 +333,109 @@ describe("reversão de conclusão (completed → in_progress)", () => {
     expect(decision.allowed).toBe(false);
   });
 
-  test("responsável não pode reverter a própria conclusão", () => {
+  test("responsável não reverte a própria conclusão sem a janela aberta", () => {
     const decision = authorizeTransition(
       "in_progress",
       ctx({ actorId: "assignee-1", status: "completed" }),
     );
     expect(decision.allowed).toBe(false);
+  });
+});
+
+describe("janela de arrependimento (desfazer a própria conclusão)", () => {
+  const concluidaEm = new Date("2026-09-03T12:00:00Z");
+  const janela = (minutos: number) =>
+    new Date(concluidaEm.getTime() + minutos * 60 * 1000);
+
+  test("quem concluiu desfaz dentro da janela, mesmo sendo member", () => {
+    const decision = authorizeTransition(
+      "in_progress",
+      ctx({
+        actorId: "assignee-1",
+        status: "completed",
+        completedAt: concluidaEm,
+        completedBy: "assignee-1",
+        now: janela(1),
+      }),
+    );
+    expect(decision.allowed).toBe(true);
+  });
+
+  test("a janela fecha e a reversão volta a ser administrativa", () => {
+    const decision = authorizeTransition(
+      "in_progress",
+      ctx({
+        actorId: "assignee-1",
+        status: "completed",
+        completedAt: concluidaEm,
+        completedBy: "assignee-1",
+        now: janela(6),
+      }),
+    );
+    expect(decision.allowed).toBe(false);
+    expect(decision.allowed === false && decision.reason).toContain(
+      "tempo para desfazer",
+    );
+  });
+
+  test("a janela é de quem concluiu, não de qualquer colega", () => {
+    const decision = authorizeTransition(
+      "in_progress",
+      ctx({
+        actorId: "colega-1",
+        status: "completed",
+        completedAt: concluidaEm,
+        completedBy: "assignee-1",
+        now: janela(1),
+      }),
+    );
+    expect(decision.allowed).toBe(false);
+    expect(decision.allowed === false && decision.reason).toContain(
+      "Apenas admin ou owner",
+    );
+  });
+
+  test("borda exata da janela ainda desfaz", () => {
+    const decision = authorizeTransition(
+      "in_progress",
+      ctx({
+        actorId: "assignee-1",
+        status: "completed",
+        completedAt: concluidaEm,
+        completedBy: "assignee-1",
+        now: new Date(concluidaEm.getTime() + UNDO_COMPLETION_WINDOW_MS),
+      }),
+    );
+    expect(decision.allowed).toBe(true);
+  });
+
+  test("relógio atrasado não abre janela para trás", () => {
+    const decision = authorizeTransition(
+      "in_progress",
+      ctx({
+        actorId: "assignee-1",
+        status: "completed",
+        completedAt: concluidaEm,
+        completedBy: "assignee-1",
+        now: janela(-1),
+      }),
+    );
+    expect(decision.allowed).toBe(false);
+  });
+
+  test("admin continua revertendo depois da janela", () => {
+    const decision = authorizeTransition(
+      "in_progress",
+      ctx({
+        actorId: "admin-1",
+        actorRole: "admin",
+        status: "completed",
+        completedAt: concluidaEm,
+        completedBy: "assignee-1",
+        now: janela(600),
+      }),
+    );
+    expect(decision.allowed).toBe(true);
   });
 });
 
