@@ -282,48 +282,6 @@ export interface CompanyFlowClientLookupView {
   matchedBy: "cnpj" | "name" | null;
 }
 
-/** Consulta avulsa da área Societária. Apenas lê a Receita; não altera cadastro. */
-export async function lookupCompanyDataCnpj(
-  input: z.input<typeof companyDataLookupSchema>,
-): Promise<ActionResult<CompanyDataLookupView>> {
-  const ctx = await requireMemberContext();
-  if (!ctx.ok) return ctx;
-  const parsed = companyDataLookupSchema.safeParse(input);
-  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
-
-  const normalizedCnpj = normalizeCnpj(parsed.data.cnpj);
-  if (!validateCnpj(normalizedCnpj)) {
-    return err("CNPJ inválido — confira os dígitos.");
-  }
-
-  const authorized = await withOrgTx(ctx.orgId, async (tx) => {
-    const corporate = await requireCorporateFlowClan(tx, {
-      orgId: ctx.orgId,
-      clanId: parsed.data.clanId,
-      userId: ctx.userId,
-      role: ctx.role,
-    });
-    return Boolean(
-      corporate &&
-        (ctx.role === "owner" || ctx.role === "admin" || corporate.activeMember),
-    );
-  });
-  if (!authorized) return err("Você não pode consultar empresas neste clã.");
-
-  const result = await lookupCnpj(normalizedCnpj);
-  if (!result.ok) {
-    return err(
-      result.reason === "not_found"
-        ? "CNPJ não encontrado na Receita."
-        : "Não foi possível consultar a Receita agora. Tente novamente.",
-    );
-  }
-  return {
-    ok: true,
-    data: { ...result.data, normalizedCnpj },
-  };
-}
-
 /**
  * Consulta usada no Novo Fluxo: além da Receita, resolve a empresa ativa do
  * painel para que alteração/baixa nunca seja vinculada ao cliente errado.

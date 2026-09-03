@@ -7,23 +7,21 @@ import {
 /**
  * As seções de um clã.
  *
- * Missões, Integrantes e Campanhas existem em todo clã. As demais são
- * específicas porque o trabalho tem forma
- * diferente em cada área: o Fiscal se organiza por CARTEIRA (empresa sob
- * responsabilidade de alguém) e a Contabilidade por FECHAMENTO (o ano de cada
- * empresa). Enfiar as duas em todo clã encheria a navegação de aba morta.
+ * Missões e Integrantes existem em todo clã. As demais são específicas porque
+ * o trabalho tem forma diferente em cada área: o Fiscal se organiza por
+ * CARTEIRA (empresa sob responsabilidade de alguém) e a Contabilidade por
+ * FECHAMENTO (o ano de cada empresa). Enfiar as duas em todo clã encheria a
+ * navegação de aba morta.
  */
 export const CLAN_TABS = [
   { key: "missions", label: "Missões" },
   { key: "members", label: "Integrantes" },
-  { key: "campaigns", label: "Campanhas" },
   { key: "commitments", label: "Distribuição de lucros" },
   { key: "portfolio", label: "Carteira" },
   { key: "mei", label: "MEI" },
   { key: "installments", label: "Parcelamentos" },
   { key: "fees", label: "Honorários" },
   { key: "closings", label: "Fechamentos" },
-  { key: "company-data", label: "Dados da empresa" },
   { key: "flow", label: "Fluxo" },
 ] as const;
 
@@ -36,14 +34,12 @@ export type ClanTab = (typeof CLAN_TABS)[number]["key"];
 export const CLAN_TAB_DESCRIPTIONS: Record<ClanTab, string> = {
   missions: "A mesa do clã: quem está com o quê e a fila de missões sem dono.",
   members: "Quem integra o clã e a carga de cada pessoa.",
-  campaigns: "O trabalho grande e recorrente de cada mês.",
   commitments: "Planejamento das distribuições de lucros das empresas.",
   portfolio: "Carteira de empresas e fichas fiscais sob responsabilidade do clã.",
   mei: "Declarações anuais das empresas MEI.",
   installments: "Controle dos parcelamentos em andamento.",
   fees: "Controle mensal de honorários.",
   closings: "Fechamentos contábeis de cada empresa.",
-  "company-data": "Consulta cadastral de uma empresa pelo CNPJ.",
   flow: "Aberturas, alterações e baixas: do pedido do cliente ao Informativo.",
 };
 
@@ -55,7 +51,6 @@ const TAB_OWNER_SLUG: Partial<Record<ClanTab, string>> = {
   installments: FISCAL_CLAN_SLUG,
   fees: FISCAL_CLAN_SLUG,
   closings: CONTABILIDADE_CLAN_SLUG,
-  "company-data": SOCIETARIO_CLAN_SLUG,
   flow: SOCIETARIO_CLAN_SLUG,
 };
 

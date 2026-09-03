@@ -158,14 +158,14 @@ pessoa. Consequências, todas já implementadas:
   definir o que a pessoa vê, ele virou organograma. O líder continua dono do dia
   a dia — distribui missões e remaneja a carteira.
 - **A página do clã tem abas**: Missões (a Mesa do Líder de sempre), Integrantes
-  (leitura), Campanhas e mais uma seção específica do clã quando existe —
-  **Carteira** no Fiscal, **Fechamentos** na Contabilidade. Missões/Integrantes/
-  Campanhas valem para todo clã; as outras duas são específicas porque o
-  trabalho tem forma diferente em cada área, e enfiá-las em todo clã encheria a
-  navegação de aba morta. A tabela aba→clã dono vive em `src/lib/clan-tabs.ts`.
+  (leitura) e mais uma seção específica do clã quando existe — **Carteira** no
+  Fiscal, **Fechamentos** na Contabilidade. Missões/Integrantes valem para todo
+  clã; as outras são específicas porque o trabalho tem forma diferente em cada
+  área, e enfiá-las em todo clã encheria a navegação de aba morta. A tabela
+  aba→clã dono vive em `src/lib/clan-tabs.ts`.
 - **Navegação do clã em dois grupos (2026-09-03)**: *Espaço da área* (as
   abas próprias do clã, primeiro e com moldura em `--primary`) e *Mesa do
-  clã* (Missões, Integrantes, Campanhas). Motivo: a equipe achava o clã
+  clã* (Missões, Integrantes). Motivo: a equipe achava o clã
   confuso e o Societário não achava o Fluxo numa fileira de sete rótulos
   iguais. O cabeçalho mostra a formação (avatares + líder) em toda aba, e a
   aba ativa tem uma frase de descrição (`CLAN_TAB_DESCRIPTIONS`). Títulos de
@@ -195,17 +195,20 @@ porque "essa empresa não é minha" é discussão real.
 Empresa presa a quem saiu do clã não some da tela: ganha bloco próprio com o nome
 de quem a deixou para trás.
 
-### Campanhas de clã
+### Campanhas de clã — aba REMOVIDA em 2026-09-03
 
-`clan_campaigns (org_id, clan_id, name, period_year, period_month, due_date, status)`
-— o guarda-chuva mensal do trabalho recorrente do clã. **Esta etapa entrega só o
-guarda-chuva**; a materialização das missões de cada empresa a partir dos
-`mission_templates` é a etapa seguinte, e é por isso que `tasks` ainda NÃO tem
-`campaign_id`. A coluna nasce junto com a instanciação, não antes.
+A aba Campanhas (e a aba **Dados da empresa** do Societário) saiu de todos os
+clãs a pedido do Bruno: o guarda-chuva mensal não estava sendo usado, e a
+consulta avulsa de CNPJ já existe dentro do próprio Fluxo. Foram apagados
+`campaigns-tab.tsx`, `campaign-board.tsx`, `campaign-actions.ts`,
+`company-data-tab.tsx` e a action `lookupCompanyDataCnpj`.
 
-Atenção: `clan_campaigns` é a campanha POR CLÃ, mensal. Não confundir com o modelo
-de `missions`/`mission_submissions` descrito na Fase 5 abaixo (pool auto-servido
-por regime), que continua não implementado.
+A tabela `clan_campaigns` CONTINUA no schema — `fiscal_control_periods.campaign_id`
+aponta para ela — mas hoje ninguém escreve nela: sem a aba, não há caminho de
+criação. Abrir a competência do Fiscal nunca dependeu de campanha
+(`openFiscalControlPeriod` tem `campaignId` opcional). Se a ideia voltar, ela
+volta com o modelo de `missions`/`mission_submissions` da Fase 5, não com a aba
+antiga — não recriar a aba sem o Bruno pedir.
 
 ## Lista de missões: Avulsas × Informativos (decisão de 2026-09-03)
 

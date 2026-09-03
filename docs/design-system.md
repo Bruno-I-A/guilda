@@ -145,8 +145,8 @@ para a pessoa voltar ao mesmo recorte de onde saiu.
 
 A navegação do clã vem em **dois grupos de placas**: o *Espaço da área*
 (Fluxo no Societário, Carteira/MEI/Parcelamentos/Honorários no Fiscal,
-Fechamentos/Distribuição na Contabilidade) e a *Mesa do clã* (Missões,
-Integrantes, Campanhas, iguais em todo clã). Cada placa tem o mesmo ícone
+Fechamentos/Distribuição na Contabilidade) e a *Mesa do clã* (Missões e
+Integrantes, iguais em todo clã). Cada placa tem o mesmo ícone
 do atalho correspondente no dashboard. O grupo da área vem primeiro e com
 moldura em `--primary`: é onde vive o trabalho específico do clã, e antes
 ele ficava perdido no fim de uma fileira de sete rótulos.

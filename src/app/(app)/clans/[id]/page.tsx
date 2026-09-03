@@ -22,7 +22,6 @@ import { CUSTOMER_SUCCESS_CLAN_SLUG } from "@/lib/clans/rules";
 import { initials } from "@/lib/people";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 
-import { CampaignsTab } from "./campaigns-tab";
 import { ClanTabNav } from "./clan-tab-nav";
 import { ClosingsTab, type ClosingsTabParams } from "./closings-tab";
 import { CommitmentsTab } from "./commitments-tab";
@@ -30,7 +29,6 @@ import { MembersTab } from "./members-tab";
 import { MeiTab } from "./mei-tab";
 import { MissionsTab } from "./missions-tab";
 import { PortfolioTab } from "./portfolio-tab";
-import { CompanyDataTab } from "./company-data-tab";
 import { CompanyFlowTab } from "./company-flow-tab";
 import { FiscalInstallmentTab } from "./fiscal-installment-tab";
 import { OfficeFeeTab } from "./office-fee-tab";
@@ -274,15 +272,6 @@ export default async function ClanPage({
         />
       ) : null}
 
-      {activeTab === "campaigns" ? (
-        <CampaignsTab
-          orgId={session.orgId}
-          clanId={clan.id}
-          canManage={canDistributeClanTasks(clanFacts)}
-          isFiscal={clan.slug === "fiscal"}
-        />
-      ) : null}
-
       {activeTab === "commitments" ? (
         <CommitmentsTab
           orgId={session.orgId}
@@ -349,10 +338,6 @@ export default async function ClanPage({
           role={role}
           leadsThisClan={leadsThisClan}
         />
-      ) : null}
-
-      {activeTab === "company-data" ? (
-        <CompanyDataTab clanId={clan.id} />
       ) : null}
     </div>
   );

@@ -10,14 +10,12 @@ export type DashboardShortcutIcon =
   | "clients"
   | "missions"
   | "members"
-  | "campaigns"
   | "commitments"
   | "portfolio"
   | "mei"
   | "installments"
   | "fees"
   | "closings"
-  | "company-data"
   | "flow";
 
 export interface DashboardShortcutOption {

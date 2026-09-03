@@ -1,9 +1,7 @@
 import {
   BriefcaseBusiness,
-  Building2,
   CalendarCheck,
   CalendarRange,
-  Flag,
   HandCoins,
   ReceiptText,
   ShieldCheck,
@@ -25,14 +23,12 @@ import { cn } from "@/lib/utils";
 const TAB_ICONS: Record<ClanTab, LucideIcon> = {
   missions: ShieldCheck,
   members: Users,
-  campaigns: Flag,
   commitments: HandCoins,
   portfolio: BriefcaseBusiness,
   mei: CalendarCheck,
   installments: ReceiptText,
   fees: WalletCards,
   closings: CalendarRange,
-  "company-data": Building2,
   flow: Workflow,
 };
 
@@ -87,10 +83,10 @@ function TabGroup({
 }
 
 /**
- * Seções do clã, em dois grupos: a MESA (missões, integrantes, campanhas —
- * igual em todo clã) e o ESPAÇO da área (Fluxo no Societário, Carteira no
- * Fiscal…). Antes eram sete rótulos numa fileira só, e quem chegava não sabia
- * onde vivia o trabalho do seu clã. Server Component: navegar é trocar a URL.
+ * Seções do clã, em dois grupos: a MESA (missões e integrantes — igual em todo
+ * clã) e o ESPAÇO da área (Fluxo no Societário, Carteira no Fiscal…). Antes
+ * eram sete rótulos numa fileira só, e quem chegava não sabia onde vivia o
+ * trabalho do seu clã. Server Component: navegar é trocar a URL.
  */
 export function ClanTabNav({
   clanId,
