@@ -208,8 +208,11 @@ export default async function TaskDetailPage({
     complete:
       task.status === "in_progress" &&
       authorizeTransition("completed", context).allowed,
+    // Entregar é para quem PEDIU. Auto-missão conclui direto: entregar um
+    // retorno a si mesmo só criaria um passo a mais para o mesmo XP.
     submit:
       task.status === "in_progress" &&
+      task.creatorId !== task.assigneeId &&
       authorizeTransition("awaiting_approval", context).allowed,
     approve:
       task.status === "awaiting_approval" &&
