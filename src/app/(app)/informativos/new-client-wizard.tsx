@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, ScanText, Search, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ListChecks, Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -16,11 +16,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { formatCnpj } from "@/domain/cnpj";
 import { TAX_REGIME_LABELS, TAX_REGIMES, type TaxRegime } from "@/lib/clients-ui";
 
-import { analyzeInformative, lookupClientCnpj } from "./actions";
+import { lookupClientCnpj, prepareStructuredInformative } from "./actions";
+import {
+  ClanMissionEditor,
+  clanMissionGroupsAreValid,
+  emptyClanMissionGroup,
+  flattenClanMissionGroups,
+  type ClanMissionGroupDraft,
+} from "./clan-mission-editor";
 
 interface CnpjActivity {
   code: string;
@@ -40,17 +46,24 @@ interface CompanyForm {
 
 /**
  * Fluxo "Novo cliente" dos Informativos: CNPJ → confirma dados da Receita →
- * descreve o que precisa ser feito. Nada é criado aqui — o "Analisar" final
- * só monta a mesma prévia que o caminho de texto livre já usa; quem confirma
- * e cria o cliente é o painel, como sempre.
+ * escolhe clã e descreve as missões. Nada é criado aqui — a etapa final monta
+ * a mesma prévia sem chamar IA; quem confirma e cria o cliente é o painel.
  */
-export function NewClientWizard({ onDone }: { onDone: () => void }) {
+export function NewClientWizard({
+  clans,
+  onDone,
+}: {
+  clans: readonly { id: string; name: string }[];
+  onDone: () => void;
+}) {
   const router = useRouter();
   const [step, setStep] = useState<1 | 2>(1);
   const [pending, startTransition] = useTransition();
   const [cnpjInput, setCnpjInput] = useState("");
   const [company, setCompany] = useState<CompanyForm | null>(null);
-  const [taskText, setTaskText] = useState("");
+  const [missionGroups, setMissionGroups] = useState<ClanMissionGroupDraft[]>([
+    emptyClanMissionGroup("new-client-clan-group-1"),
+  ]);
 
   const digits = cnpjInput.replace(/\D/g, "");
 
@@ -95,8 +108,8 @@ export function NewClientWizard({ onDone }: { onDone: () => void }) {
   function handleAnalyze() {
     if (!company || !company.taxRegime) return;
     startTransition(async () => {
-      const result = await analyzeInformative({
-        sourceText: taskText,
+      const result = await prepareStructuredInformative({
+        missions: flattenClanMissionGroups(missionGroups),
         resolvedCompany: {
           legalName: company.legalName,
           normalizedCnpj: company.normalizedCnpj,
@@ -111,7 +124,7 @@ export function NewClientWizard({ onDone }: { onDone: () => void }) {
         toast.error(result.error);
         return;
       }
-      toast.success("Prévia gerada. Confira antes de confirmar.");
+      toast.success("Prévia gerada sem processamento de IA.");
       router.refresh();
       onDone();
     });
@@ -250,7 +263,7 @@ export function NewClientWizard({ onDone }: { onDone: () => void }) {
           ) : null}
         </div>
       ) : (
-        <div className="grid gap-2">
+        <div className="grid gap-4">
           <Button
             variant="ghost"
             size="sm"
@@ -260,27 +273,22 @@ export function NewClientWizard({ onDone }: { onDone: () => void }) {
           >
             <ArrowLeft className="size-4" aria-hidden /> Voltar
           </Button>
-          <Label htmlFor="wizard-tasks">O que precisa ser feito</Label>
-          <Textarea
-            id="wizard-tasks"
-            value={taskText}
-            onChange={(event) => setTaskText(event.target.value)}
-            rows={8}
-            maxLength={12_000}
-            placeholder={
-              "AÇÕES\nFiscal - Camila - parametrizar o simples nacional\nRH - cadastrar o pró-labore do sócio"
-            }
-            className="font-mono text-xs"
+          <ClanMissionEditor
+            clans={clans}
+            groups={missionGroups}
+            onChange={setMissionGroups}
+            disabled={pending}
           />
           <div className="flex items-center justify-between gap-2">
-            <span className="font-mono text-xs tabular-nums text-muted-foreground">
-              {taskText.length}/12.000
+            <span className="text-xs text-muted-foreground">
+              {flattenClanMissionGroups(missionGroups).length}{" "}
+              {flattenClanMissionGroups(missionGroups).length === 1 ? "missão" : "missões"} · sem processamento de IA
             </span>
             <Button
               onClick={handleAnalyze}
-              disabled={pending || taskText.trim().length < 10}
+              disabled={pending || !clanMissionGroupsAreValid(missionGroups)}
             >
-              <ScanText className="size-4" aria-hidden /> Analisar
+              <ListChecks className="size-4" aria-hidden /> Gerar prévia
             </Button>
           </div>
         </div>

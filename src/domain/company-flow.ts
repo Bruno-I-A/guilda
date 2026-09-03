@@ -529,6 +529,8 @@ export interface AccountantChangeInformativeInput {
   address: string | null;
   responsibilityUntil: string;
   observations: string | null;
+  /** Bloco estruturado que substitui integralmente as sugestões padrão. */
+  actions?: string | null;
   /** Linhas extras no formato "SETOR – ação", incluídas no bloco AÇÕES. */
   additionalActions?: string | null;
 }
@@ -537,6 +539,21 @@ export interface AccountantChangeInformativeInput {
 export function accountantChangeInformativeText(input: AccountantChangeInformativeInput): string {
   const responsibilityUntil = formatFlowDate(input.responsibilityUntil);
   const competence = `${input.responsibilityUntil.slice(5, 7)}/${input.responsibilityUntil.slice(0, 4)}`;
+  const actions = input.actions === undefined
+    ? [
+        `CONTABILIDADE – Encerramento até ${responsibilityUntil} para entrega do balancete à nova contabilidade.`,
+        `FISCAL – Gerar até competência ${competence}.`,
+        `RH – Gerar até competência ${competence}.`,
+        "SUCESSO DO CLIENTE – Encaminhar para o e-mail do cliente a documentação que servirá como protocolo de entrega.",
+        ...((input.additionalActions ?? "")
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)),
+      ]
+    : (input.actions ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
   return [
     "INFORMATIVO DE BAIXA DE CLIENTE POR DESLIGAMENTO",
     "BAIXA DE CLIENTE – código (681)",
@@ -551,14 +568,7 @@ export function accountantChangeInformativeText(input: AccountantChangeInformati
     input.observations?.trim() || "—",
     "",
     "AÇÕES",
-    `CONTABILIDADE – Encerramento até ${responsibilityUntil} para entrega do balancete à nova contabilidade.`,
-    `FISCAL – Gerar até competência ${competence}.`,
-    `RH – Gerar até competência ${competence}.`,
-    "SUCESSO DO CLIENTE – Encaminhar para o e-mail do cliente a documentação que servirá como protocolo de entrega.",
-    ...((input.additionalActions ?? "")
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)),
+    ...(actions.length > 0 ? actions : ["Nenhuma missão adicional."]),
   ].join("\n");
 }
 

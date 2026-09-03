@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { CLAN_DUTIES } from "@/domain/clan-duties";
 import { canManageClanMembership } from "@/domain/guild-permissions";
 import {
   err,
@@ -592,6 +593,79 @@ export async function setPrimaryClan(
           eq(schema.clanMemberships.id, membership.id),
         ),
       );
+    return { ok: true };
+  });
+
+  if (result.ok) revalidateClanPaths();
+  return result;
+}
+
+const clanDutySchema = z.object({
+  clanId: z.uuid("Clã inválido."),
+  duty: z.enum(CLAN_DUTIES),
+  /** `null` remove a atribuição — o trabalho volta a cair na fila do clã. */
+  userId: z.string().min(1, "Pessoa inválida.").nullable(),
+});
+
+/**
+ * Define (ou remove) quem responde por uma atribuição do clã.
+ *
+ * Uma atribuição tem UM dono por clã — a unicidade está no índice
+ * `clan_member_duties_org_clan_duty_uidx`, e aqui a troca é delete + insert
+ * para que designar outra pessoa substitua, em vez de acumular.
+ *
+ * Fica atrás de admin/owner pela mesma razão que a composição do clã: o vínculo
+ * define o que a pessoa enxerga e recebe (decisão de 2026-08-18).
+ */
+export async function setClanDuty(
+  input: z.input<typeof clanDutySchema>,
+): Promise<ActionResult> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  if (!canManageClanMembership({ role: ctx.role })) {
+    return err("Apenas admin ou owner pode definir atribuições.");
+  }
+  const parsed = clanDutySchema.safeParse(input);
+  if (!parsed.success) {
+    return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+  }
+  const data = parsed.data;
+
+  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
+    const clan = await lockClan(tx, ctx.orgId, data.clanId);
+    if (!clan) return err("Clã não encontrado.");
+
+    if (data.userId) {
+      // A FK composta já impediria, mas o erro dela não explica nada a quem usa.
+      const [vinculo] = await tx
+        .select({ userId: schema.clanMemberships.userId })
+        .from(schema.clanMemberships)
+        .where(and(
+          eq(schema.clanMemberships.orgId, ctx.orgId),
+          eq(schema.clanMemberships.clanId, clan.id),
+          eq(schema.clanMemberships.userId, data.userId),
+        ))
+        .limit(1);
+      if (!vinculo) return err("A pessoa precisa participar deste clã.");
+    }
+
+    await tx
+      .delete(schema.clanMemberDuties)
+      .where(and(
+        eq(schema.clanMemberDuties.orgId, ctx.orgId),
+        eq(schema.clanMemberDuties.clanId, clan.id),
+        eq(schema.clanMemberDuties.duty, data.duty),
+      ));
+
+    if (data.userId) {
+      await tx.insert(schema.clanMemberDuties).values({
+        orgId: ctx.orgId,
+        clanId: clan.id,
+        userId: data.userId,
+        duty: data.duty,
+        assignedBy: ctx.userId,
+      });
+    }
     return { ok: true };
   });
 

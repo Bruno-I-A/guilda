@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { or, and, asc, eq } from "drizzle-orm";
 import { ArrowLeft, ArrowRightLeft, CalendarClock, Star, UsersRound } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { withOrgTx } from "@/db/org-tx";
+import { clanTabHref } from "@/lib/clan-tabs";
 import * as schema from "@/db/schema";
 import { isTransferableTaskStatus } from "@/domain/clans";
 import {
@@ -64,7 +65,8 @@ export default async function TaskDetailPage({
   const taskListHref = returnToTasks((await searchParams).returnTo);
   if (!z.uuid().safeParse(id).success) notFound();
 
-  const { task, viewerClanMembership, candidateMemberships } = await withOrgTx(
+  const { task, viewerClanMembership, candidateMemberships, fluxoVinculado } =
+    await withOrgTx(
     session.orgId,
     async (tx) => {
       const taskRow = await tx.query.tasks.findFirst({
@@ -91,8 +93,29 @@ export default async function TaskDetailPage({
       });
 
       if (!taskRow) {
-        return { task: null, viewerClanMembership: null, candidateMemberships: [] };
+        return {
+          task: null,
+          viewerClanMembership: null,
+          candidateMemberships: [],
+          fluxoVinculado: null,
+        };
       }
+
+      // O vínculo mora no Fluxo (processing_task_id / informative_task_id), então
+      // a busca é reversa. Os dois índices únicos parciais tornam isso barato.
+      const [fluxoVinculado] = await tx
+        .select({ clanId: schema.companyFlows.societarioClanId })
+        .from(schema.companyFlows)
+        .where(
+          and(
+            eq(schema.companyFlows.orgId, session.orgId),
+            or(
+              eq(schema.companyFlows.processingTaskId, taskRow.id),
+              eq(schema.companyFlows.informativeTaskId, taskRow.id),
+            ),
+          ),
+        )
+        .limit(1);
 
       const [viewerMembership, candidates] = await Promise.all([
         taskRow.clanId
@@ -144,6 +167,7 @@ export default async function TaskDetailPage({
         task: taskRow,
         viewerClanMembership: viewerMembership ?? null,
         candidateMemberships: candidates,
+        fluxoVinculado: fluxoVinculado ?? null,
       };
     },
   );
@@ -335,6 +359,9 @@ export default async function TaskDetailPage({
         transferCandidates={transferCandidates}
         restrictTransferToTaskClan={!isAdmin}
         returnTo={taskListHref}
+        startDestination={
+          fluxoVinculado ? clanTabHref(fluxoVinculado.clanId, "flow") : null
+        }
       />
 
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">

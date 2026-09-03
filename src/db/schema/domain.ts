@@ -1032,6 +1032,14 @@ export const companyFlows = pgTable(
     billingDescription: text("billing_description"),
     /** Missão preventiva do RH que libera a conclusão de uma baixa. */
     rhVerificationTaskId: uuid("rh_verification_task_id"),
+    /**
+     * Missão do Societário, criada junto com o Fluxo. A coluna é a trava de
+     * idempotência: preenchida significa "já existe", então reprocessar não
+     * duplica. Mesmo desenho do rhVerificationTaskId.
+     */
+    processingTaskId: uuid("processing_task_id"),
+    /** Missão de redigir o Informativo, criada quando o Societário devolve. */
+    informativeTaskId: uuid("informative_task_id"),
     assignedTo: text("assigned_to").references(() => user.id),
     resultCnpj: varchar("result_cnpj", { length: 14 }),
     approvedLegalName: varchar("approved_legal_name", { length: 200 }),
@@ -1081,6 +1089,17 @@ export const companyFlows = pgTable(
       columns: [t.orgId, t.rhVerificationTaskId],
       foreignColumns: [tasks.orgId, tasks.id],
     }).onDelete("restrict"),
+    // restrict, nunca set null: FK composta com SET NULL zera o org_id junto.
+    foreignKey({
+      name: "company_flows_processing_task_fk",
+      columns: [t.orgId, t.processingTaskId],
+      foreignColumns: [tasks.orgId, tasks.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "company_flows_informative_task_fk",
+      columns: [t.orgId, t.informativeTaskId],
+      foreignColumns: [tasks.orgId, tasks.id],
+    }).onDelete("restrict"),
     uniqueIndex("company_flows_org_id_uidx").on(t.orgId, t.id),
     index("company_flows_org_clan_status_idx").on(
       t.orgId,
@@ -1100,6 +1119,12 @@ export const companyFlows = pgTable(
     uniqueIndex("company_flows_org_rh_verification_task_uidx")
       .on(t.orgId, t.rhVerificationTaskId)
       .where(sql`${t.rhVerificationTaskId} IS NOT NULL`),
+    uniqueIndex("company_flows_org_processing_task_uidx")
+      .on(t.orgId, t.processingTaskId)
+      .where(sql`${t.processingTaskId} IS NOT NULL`),
+    uniqueIndex("company_flows_org_informative_task_uidx")
+      .on(t.orgId, t.informativeTaskId)
+      .where(sql`${t.informativeTaskId} IS NOT NULL`),
     check(
       "company_flows_kind_client_check",
       sql`(${t.kind} = 'opening' AND ${t.existingClientId} IS NULL) OR (${t.kind} <> 'opening' AND ${t.existingClientId} IS NOT NULL)`,

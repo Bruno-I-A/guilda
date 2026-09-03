@@ -164,12 +164,12 @@ function UserMenu({
   );
 }
 
-/** Contador de avisos do mural aguardando a confirmação desta pessoa. */
-function PendingBadge({ count }: { count: number }) {
+/** Contador de pendências numa entrada da navegação (mural, missões). */
+function PendingBadge({ count, label }: { count: number; label: string }) {
   if (count <= 0) return null;
   return (
     <span
-      aria-label={`${count} aviso(s) aguardando confirmação`}
+      aria-label={`${count} ${label}`}
       className="inline-flex min-w-5 items-center justify-center border border-destructive/80 bg-destructive px-1 font-mono text-[10px] leading-4 text-destructive-foreground [clip-path:polygon(0.2rem_0,100%_0,100%_calc(100%-0.2rem),calc(100%-0.2rem)_100%,0_100%,0_0.2rem)]"
     >
       {count > 9 ? "9+" : count}
@@ -182,6 +182,7 @@ export function AppShell({
   user,
   role,
   pendingNotices = 0,
+  pendingMissions = 0,
   children,
 }: {
   orgName: string;
@@ -189,6 +190,8 @@ export function AppShell({
   role: string;
   /** Avisos do mural que exigem ciência e ainda não foram confirmados. */
   pendingNotices?: number;
+  /** Missões esperando uma ação desta pessoa (ver lib/tasks/queries). */
+  pendingMissions?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -298,7 +301,12 @@ export function AppShell({
                           <Icon className="size-4" aria-hidden />
                         </span>
                         <span className="min-w-0 flex-1 text-sm font-medium">{label}</span>
-                        {href === "/mural" ? <PendingBadge count={pendingNotices} /> : null}
+                        {href === "/mural" ? (
+                          <PendingBadge count={pendingNotices} label="aviso(s) aguardando confirmação" />
+                        ) : null}
+                        {href === "/tasks" ? (
+                          <PendingBadge count={pendingMissions} label="missão(ões) esperando por você" />
+                        ) : null}
                         {active ? <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-primary">agora</span> : <ChevronRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-70" aria-hidden />}
                       </Link>
                     );
@@ -400,7 +408,12 @@ export function AppShell({
                   <Icon className="size-5" aria-hidden />
                   {href === "/mural" && pendingNotices > 0 ? (
                     <span className="absolute -top-1 -right-2">
-                      <PendingBadge count={pendingNotices} />
+                      <PendingBadge count={pendingNotices} label="aviso(s) aguardando confirmação" />
+                    </span>
+                  ) : null}
+                  {href === "/tasks" && pendingMissions > 0 ? (
+                    <span className="absolute -top-1 -right-2">
+                      <PendingBadge count={pendingMissions} label="missão(ões) esperando por você" />
                     </span>
                   ) : null}
                 </span>

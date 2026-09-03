@@ -21,6 +21,7 @@ import { getActiveMember, requireOrgSession } from "@/lib/session";
 import { ClanMembershipManager } from "./clan-membership-manager";
 import {
   ClanDetailsDialog,
+  ClanDutiesManager,
   ClanRoutingManager,
   CreateClanDialog,
 } from "./clan-configuration-manager";
@@ -46,6 +47,7 @@ export default async function SettingsPage() {
         informativeRoutes: {
           with: { user: { columns: { name: true } } },
         },
+        memberDuties: true,
       },
       orderBy: [asc(schema.clans.name)],
     });
@@ -213,6 +215,25 @@ export default async function SettingsPage() {
           </div>
         )}
       </section>
+
+      <ClanDutiesManager
+        clans={clans.map((clan) => ({
+          id: clan.id,
+          slug: clan.slug,
+          name: clan.name,
+          members: clan.memberships
+            .filter((membership) => membership.user)
+            .map((membership) => ({
+              userId: membership.userId,
+              name: membership.user.name,
+              functionTitle: membership.functionTitle,
+            })),
+          duties: clan.memberDuties.map((entry) => ({
+            duty: entry.duty,
+            userId: entry.userId,
+          })),
+        }))}
+      />
     </div>
   );
 }

@@ -5,8 +5,8 @@ import {
   ArrowRight,
   Building2,
   Flag,
+  ListChecks,
   Repeat2,
-  ScanText,
   Trash2,
   UserRound,
 } from "lucide-react";
@@ -23,15 +23,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-
 import { CADENCE_LABELS, type CommitmentCadence } from "@/domain/commitments";
+import type { ClanMissionPreset } from "@/lib/informatives/mission-presets";
 
 import {
-  analyzeInformative,
   cancelInformativeDraft,
   confirmInformativeDraft,
+  prepareStructuredInformative,
 } from "./actions";
+import {
+  ClanMissionEditor,
+  clanMissionGroupsAreValid,
+  clanMissionGroupsFromPresets,
+  emptyClanMissionGroup,
+  flattenClanMissionGroups,
+  type ClanMissionEditorClan,
+  type ClanMissionGroupDraft,
+} from "./clan-mission-editor";
 import { NewClientWizard } from "./new-client-wizard";
 import { AccountantChangeWizard } from "./accountant-change-wizard";
 import { DirectCompanyInformativeWizard } from "./direct-company-informative-wizard";
@@ -86,6 +94,12 @@ interface AmendmentSummaryView {
   hasExternalRegistrationTask: boolean;
 }
 
+interface FlowInformativeSummaryView {
+  kind: "opening" | "amendment" | "closure";
+  companyName: string;
+  observations: string | null;
+}
+
 /** Destino escolhido na tela para uma linha que veio pendente. */
 type Decision = { kind: "clan"; clanId: string } | { kind: "person"; assigneeId: string };
 
@@ -94,30 +108,50 @@ export function InformativePanel({
   clans,
   members,
   clients,
-  initialSourceText = "",
   flowId,
   amendmentSummary,
+  flowSummary,
+  flowMissionPresets = [],
 }: {
   draft: DraftView | null;
-  clans: { id: string; name: string }[];
+  clans: ClanMissionEditorClan[];
   members: { userId: string; name: string }[];
   clients: { id: string; name: string; cnpj: string | null; taxRegime: "mei" | "simples" | "presumido" | "association" | "real" }[];
-  initialSourceText?: string;
   flowId?: string;
   amendmentSummary?: AmendmentSummaryView | null;
+  flowSummary?: FlowInformativeSummaryView | null;
+  flowMissionPresets?: readonly ClanMissionPreset[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [sourceText, setSourceText] = useState(
-    amendmentSummary ? "" : initialSourceText,
-  );
   const [decisions, setDecisions] = useState<Record<number, Decision>>({});
+  const [missionGroups, setMissionGroups] = useState<ClanMissionGroupDraft[]>(
+    () => {
+      const presets = clanMissionGroupsFromPresets(
+        clans,
+        flowMissionPresets,
+        `fluxo-${flowSummary?.kind ?? "geral"}`,
+      );
+      if (
+        flowId &&
+        (presets.length > 0 || flowSummary?.kind === "amendment")
+      ) {
+        return presets;
+      }
+      return [emptyClanMissionGroup()];
+    },
+  );
   const [wizardOpen, setWizardOpen] = useState(false);
   const [accountantChangeOpen, setAccountantChangeOpen] = useState(false);
   const [directKind, setDirectKind] = useState<"amendment" | "closure" | null>(null);
 
   const pendingTasks = draft?.tasks.filter((t) => t.assignmentType === "pending") ?? [];
   const undecided = pendingTasks.filter((task) => !decisions[task.index]);
+  const structuredMissionCount = flattenClanMissionGroups(missionGroups).length;
+  const missionsMayBeEmpty = flowId && flowSummary?.kind === "amendment";
+  const missionGroupsValid =
+    (missionsMayBeEmpty && missionGroups.length === 0) ||
+    clanMissionGroupsAreValid(missionGroups);
   // Espelha draftIsBlocked no servidor: prévia sem missão continua
   // confirmável quando há empresa nova a cadastrar (as linhas podem ser todas
   // combinado do Fiscal ou "sem particularidades").
@@ -131,18 +165,15 @@ export function InformativePanel({
 
   function handleAnalyze() {
     startTransition(async () => {
-      const textToAnalyze = amendmentSummary
-        ? [initialSourceText, sourceText.trim()].filter(Boolean).join("\n")
-        : sourceText;
-      const result = await analyzeInformative({
-        sourceText: textToAnalyze,
+      const result = await prepareStructuredInformative({
+        missions: flattenClanMissionGroups(missionGroups),
         flowId,
       });
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
-      toast.success("Prévia gerada. Confira antes de confirmar.");
+      toast.success("Prévia gerada sem processamento de IA.");
       setDecisions({});
       router.refresh();
     });
@@ -164,7 +195,7 @@ export function InformativePanel({
         return;
       }
       toast.success(result.data?.message ?? "Missões criadas.");
-      setSourceText("");
+      setMissionGroups([emptyClanMissionGroup()]);
       setDecisions({});
       router.refresh();
     });
@@ -189,12 +220,13 @@ export function InformativePanel({
   return (
     <div className="grid gap-5">
       {wizardOpen ? (
-        <NewClientWizard onDone={() => setWizardOpen(false)} />
+        <NewClientWizard clans={clans} onDone={() => setWizardOpen(false)} />
       ) : accountantChangeOpen ? (
-        <AccountantChangeWizard clients={clients} onDone={() => setAccountantChangeOpen(false)} />
+        <AccountantChangeWizard clans={clans} clients={clients} onDone={() => setAccountantChangeOpen(false)} />
       ) : directKind ? (
         <DirectCompanyInformativeWizard
           kind={directKind}
+          clans={clans}
           clients={clients}
           onDone={() => setDirectKind(null)}
         />
@@ -217,94 +249,87 @@ export function InformativePanel({
             </Button>
           </div>
           {amendmentSummary ? (
-            <>
-              <section className="grid gap-4 rounded-lg border border-primary/35 bg-primary/[0.04] p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge className="border-primary/35 bg-primary/10 text-primary">
-                    Alteração
-                  </Badge>
-                  <h2 className="font-heading text-lg font-medium">
-                    {amendmentSummary.companyName}
-                  </h2>
-                </div>
-                <div>
-                  <p className="hud-label">O que foi alterado</p>
-                  {amendmentSummary.changes.length > 0 ? (
-                    <ul className="mt-2 grid gap-2 sm:grid-cols-2">
-                      {amendmentSummary.changes.map((change) => (
-                        <li key={`${change.label}-${change.next}`} className="rounded-md border bg-background/35 p-3">
-                          <p className="text-xs font-medium text-primary">{change.label}</p>
-                          <div className="mt-1 flex items-center gap-2 text-sm">
-                            {change.previous ? (
-                              <>
-                                <span className="text-muted-foreground line-through">{change.previous}</span>
-                                <ArrowRight className="size-3.5 shrink-0 text-primary" aria-hidden />
-                              </>
-                            ) : null}
-                            <span className="font-medium">{change.next}</span>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      A solicitação não possui campos estruturados; confira as observações abaixo.
-                    </p>
-                  )}
-                </div>
-                {amendmentSummary.observations ? (
-                  <div className="rounded-md bg-muted/30 p-3">
-                    <p className="hud-label">Observações da solicitação</p>
-                    <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
-                      {amendmentSummary.observations}
-                    </p>
-                  </div>
-                ) : null}
-              </section>
-              <div className="grid gap-1.5">
-                <label htmlFor="amendment-extra-actions" className="text-sm font-medium">
-                  Missões ou observações adicionais <span className="font-normal text-muted-foreground">(opcional)</span>
-                </label>
-                <Textarea
-                  id="amendment-extra-actions"
-                  value={sourceText}
-                  onChange={(event) => setSourceText(event.target.value)}
-                  rows={4}
-                  maxLength={8_000}
-                  placeholder="Escreva somente se houver outra providência além da atualização no Societário."
-                  className="text-sm"
-                />
+            <section className="grid gap-4 rounded-lg border border-primary/35 bg-primary/[0.04] p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge className="border-primary/35 bg-primary/10 text-primary">
+                  Alteração
+                </Badge>
+                <h2 className="font-medium">
+                  {amendmentSummary.companyName}
+                </h2>
               </div>
-            </>
-          ) : (
-            <Textarea
-              value={sourceText}
-              onChange={(event) => setSourceText(event.target.value)}
-              rows={10}
-              maxLength={12_000}
-              placeholder={
-                "INFORMATIVO — NOVO CLIENTE\n\nRazão social: ...\nCNPJ: ...\nEnquadramento: ...\n\nAÇÕES\nFiscal - Camila - parametrizar ...\nRH - cadastrar o pró-labore ..."
-              }
-              className="font-mono text-xs"
-            />
-          )}
+              <div>
+                <p className="hud-label">O que foi alterado</p>
+                {amendmentSummary.changes.length > 0 ? (
+                  <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                    {amendmentSummary.changes.map((change) => (
+                      <li key={`${change.label}-${change.next}`} className="rounded-md border bg-background/35 p-3">
+                        <p className="text-xs font-medium text-primary">{change.label}</p>
+                        <div className="mt-1 flex items-center gap-2 text-sm">
+                          {change.previous ? (
+                            <>
+                              <span className="text-muted-foreground line-through">{change.previous}</span>
+                              <ArrowRight className="size-3.5 shrink-0 text-primary" aria-hidden />
+                            </>
+                          ) : null}
+                          <span className="font-medium">{change.next}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    A solicitação não possui campos estruturados; confira as observações abaixo.
+                  </p>
+                )}
+              </div>
+              {amendmentSummary.observations ? (
+                <div className="rounded-md bg-muted/30 p-3">
+                  <p className="hud-label">Observações da solicitação</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
+                    {amendmentSummary.observations}
+                  </p>
+                </div>
+              ) : null}
+            </section>
+          ) : flowSummary ? (
+            <section className="grid gap-2 rounded-lg border border-primary/35 bg-primary/[0.04] p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge className="border-primary/35 bg-primary/10 text-primary">
+                  {flowSummary.kind === "opening" ? "Abertura" : "Baixa"}
+                </Badge>
+                <h2 className="font-medium">{flowSummary.companyName}</h2>
+              </div>
+              {flowSummary.observations ? (
+                <p className="max-w-prose whitespace-pre-wrap text-sm text-muted-foreground">
+                  {flowSummary.observations}
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+
+          <ClanMissionEditor
+            clans={clans}
+            groups={missionGroups}
+            onChange={setMissionGroups}
+            disabled={pending}
+            description={
+              flowSummary?.kind === "amendment"
+                ? "As sugestões do Fluxo já estão separadas por clã. Todas são opcionais e podem ser editadas."
+                : flowId
+                  ? "As missões sugeridas pelo Fluxo já estão separadas por clã. Edite, remova ou acrescente o que for necessário."
+                  : undefined
+            }
+          />
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground">
-              {flowId
-                ? amendmentSummary
-                  ? amendmentSummary.hasExternalRegistrationTask
-                    ? "A alteração será enviada completa ao mural; a atualização de Alvará/IE será criada para o Societário."
-                    : "A alteração será enviada completa ao mural e não exige missão de atualização de Alvará/IE."
-                  : "No Fluxo, somente as linhas após AÇÕES são analisadas; os dados cadastrais ficam protegidos e vão completos ao mural."
-                : `${sourceText.length}/12.000`}
+              {structuredMissionCount} {structuredMissionCount === 1 ? "missão" : "missões"} · sem processamento de IA
             </span>
             <Button
               onClick={handleAnalyze}
-              disabled={
-                pending || (!amendmentSummary && sourceText.trim().length < 10)
-              }
+              disabled={pending || !missionGroupsValid}
             >
-              <ScanText className="size-4" aria-hidden /> Analisar
+              <ListChecks className="size-4" aria-hidden /> Gerar prévia
             </Button>
           </div>
         </div>

@@ -5,7 +5,12 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { type OrgTx, withOrgTx } from "@/db/org-tx";
-import { companyFlowActionsText } from "@/domain/company-flow";
+import {
+  accountantChangeInformativeText,
+  companyFlowActionsText,
+  companyFlowInformativeText,
+  directCompanyInformativeText,
+} from "@/domain/company-flow";
 import * as schema from "@/db/schema";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
 import { inferTaxRegimeFromCnpj } from "@/domain/client-tax-regime";
@@ -30,6 +35,13 @@ import {
   type CompanyFlowDraftContext,
   type ResolvedCompany,
 } from "@/lib/informatives/draft";
+import {
+  buildStructuredInformativePayload,
+  STRUCTURED_INFORMATIVE_MODEL,
+  structuredInformativeSourceText,
+  type StructuredInformativeCompany,
+} from "@/lib/informatives/structured";
+import { listActiveClans } from "@/lib/org";
 
 /**
  * Server Actions do painel de informativos.
@@ -227,6 +239,367 @@ const analyzeSchema = z.object({
   }
 });
 
+const structuredMissionSchema = z.object({
+  clanId: z.uuid("Escolha um clã válido."),
+  description: z
+    .string()
+    .trim()
+    .min(3, "Descreva a missão.")
+    .max(5_000, "A descrição da missão excede 5.000 caracteres."),
+});
+
+const structuredInformativeSchema = z.object({
+  missions: z
+    .array(structuredMissionSchema)
+    .max(60, "Adicione no máximo 60 missões por Informativo."),
+  resolvedCompany: resolvedCompanySchema.optional(),
+  flowId: z.uuid("Fluxo inválido.").optional(),
+  directCompany: z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("company"),
+      clientId: z.uuid("Empresa inválida."),
+      kind: z.enum(["amendment", "closure"]),
+      details: z.string().trim().max(5_000),
+    }),
+    z.object({
+      type: z.literal("accountant_change"),
+      clientId: z.uuid("Empresa inválida."),
+      responsibilityUntil: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, "Informe a data de responsabilidade.")
+        .refine((value) => {
+          const parsed = new Date(`${value}T12:00:00Z`);
+          return (
+            !Number.isNaN(parsed.getTime()) &&
+            parsed.toISOString().slice(0, 10) === value
+          );
+        }, "Informe uma data de responsabilidade válida."),
+      address: z.string().trim().max(1_000),
+      observations: z.string().trim().max(5_000),
+    }),
+  ]).optional(),
+}).superRefine((data, ctx) => {
+  const origins = [
+    Boolean(data.resolvedCompany),
+    Boolean(data.flowId),
+    Boolean(data.directCompany),
+  ].filter(Boolean).length;
+  if (origins > 1) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["flowId"],
+      message: "Escolha apenas uma origem para o Informativo.",
+    });
+  }
+});
+
+async function attachInformativeToFlow(
+  actor: InformativeActor,
+  flowId: string,
+  informativeId: string,
+): Promise<boolean> {
+  return withOrgTx(actor.orgId, async (tx) => {
+    if (!isAdminRole(actor.role)) return false;
+    const [flow] = await tx
+      .select({
+        id: schema.companyFlows.id,
+        status: schema.companyFlows.status,
+        informativeId: schema.companyFlows.informativeId,
+      })
+      .from(schema.companyFlows)
+      .where(
+        and(
+          eq(schema.companyFlows.orgId, actor.orgId),
+          eq(schema.companyFlows.id, flowId),
+        ),
+      )
+      .for("update");
+    if (
+      !flow ||
+      flow.status !== "informative_drafting" ||
+      flow.informativeId
+    ) {
+      return false;
+    }
+    await tx
+      .update(schema.companyFlows)
+      .set({
+        informativeId,
+        status: "completed",
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.companyFlows.id, flow.id));
+    await tx.insert(schema.companyFlowEvents).values({
+      orgId: actor.orgId,
+      flowId: flow.id,
+      eventType: "informative_prepared",
+      previousValue: { status: flow.status },
+      newValue: { status: "completed", informativeId },
+      actorId: actor.userId,
+    });
+    return true;
+  });
+}
+
+/**
+ * Caminho rápido do painel: clã e descrição já chegam separados, portanto a
+ * prévia é montada deterministicamente e nenhuma API de IA é chamada.
+ */
+export async function prepareStructuredInformative(
+  input: z.input<typeof structuredInformativeSchema>,
+): Promise<ActionResult<{ informativeId: string }>> {
+  const gate = await requireInformativeActor();
+  if (!gate.ok) return gate;
+
+  const parsed = structuredInformativeSchema.safeParse(input);
+  if (!parsed.success) {
+    return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+  }
+  if (
+    parsed.data.resolvedCompany &&
+    !validateCnpj(parsed.data.resolvedCompany.normalizedCnpj)
+  ) {
+    return err("CNPJ inválido — confira os dígitos.");
+  }
+
+  const clans = await listActiveClans(gate.actor.orgId);
+  const activeClanIds = new Set(clans.map((clan) => clan.id));
+  if (parsed.data.missions.some((mission) => !activeClanIds.has(mission.clanId))) {
+    return err("Um dos clãs selecionados não está mais ativo. Atualize a página.");
+  }
+
+  let company: StructuredInformativeCompany | undefined;
+  let kind: "new_client" | "client_change" | "client_closure" | "general_task" =
+    "general_task";
+  let sourceText = structuredInformativeSourceText(parsed.data.missions, clans);
+  let observations: string[] = [];
+  let summary: string | undefined;
+
+  if (parsed.data.resolvedCompany) {
+    const resolved = parsed.data.resolvedCompany;
+    const existing = await withOrgTx(gate.actor.orgId, (tx) =>
+      tx.query.clients.findFirst({
+        where: and(
+          eq(schema.clients.orgId, gate.actor.orgId),
+          eq(schema.clients.cnpj, resolved.normalizedCnpj),
+        ),
+        columns: { id: true, name: true },
+      }),
+    );
+    company = {
+      ...resolved,
+      legalName: existing?.name ?? resolved.legalName,
+      clientId: existing?.id ?? null,
+      createClient: !existing,
+    };
+    kind = "new_client";
+  } else if (parsed.data.directCompany) {
+    const direct = parsed.data.directCompany;
+    const client = await withOrgTx(gate.actor.orgId, (tx) =>
+      tx.query.clients.findFirst({
+        where: and(
+          eq(schema.clients.orgId, gate.actor.orgId),
+          eq(schema.clients.id, direct.clientId),
+          eq(schema.clients.active, true),
+        ),
+        columns: {
+          id: true,
+          name: true,
+          cnpj: true,
+          taxRegime: true,
+          cnaeCode: true,
+          cnaeDescription: true,
+          secondaryCnaes: true,
+          openedAt: true,
+        },
+      }),
+    );
+    if (!client) return err("Empresa ativa não encontrada.");
+
+    company = {
+      legalName: client.name,
+      normalizedCnpj:
+        client.cnpj && validateCnpj(client.cnpj) ? client.cnpj : null,
+      taxRegime: client.taxRegime,
+      clientId: client.id,
+      createClient: false,
+      cnaeCode: client.cnaeCode,
+      cnaeDescription: client.cnaeDescription,
+      secondaryCnaes: client.secondaryCnaes,
+      openedAt: client.openedAt,
+    };
+    const actionText = structuredInformativeSourceText(parsed.data.missions, clans);
+
+    if (direct.type === "accountant_change") {
+      kind = "client_closure";
+      sourceText = accountantChangeInformativeText({
+        companyName: client.name,
+        cnpj: client.cnpj,
+        taxRegime: client.taxRegime,
+        address: direct.address,
+        responsibilityUntil: direct.responsibilityUntil,
+        observations: direct.observations,
+        actions: actionText,
+      });
+      observations = [
+        `Responsabilidade do escritório até ${direct.responsibilityUntil}`,
+        direct.address ? `Endereço: ${direct.address}` : "",
+        direct.observations,
+      ].filter(Boolean);
+      summary = `Desligamento de ${client.name} por troca de contabilidade.`;
+    } else {
+      kind = direct.kind === "amendment" ? "client_change" : "client_closure";
+      sourceText = directCompanyInformativeText({
+        kind: direct.kind,
+        companyName: client.name,
+        cnpj: client.cnpj,
+        taxRegime: client.taxRegime,
+        details: direct.details,
+        actions: actionText,
+      });
+      observations = direct.details ? [direct.details] : [];
+      summary = `${direct.kind === "amendment" ? "Alteração" : "Baixa"} de ${client.name}.`;
+    }
+  } else if (parsed.data.flowId) {
+    if (!isAdminRole(gate.actor.role)) {
+      return err("Apenas owner ou admin pode preparar o Informativo de um Fluxo.");
+    }
+    const flow = await withOrgTx(gate.actor.orgId, async (tx) => {
+      const [row] = await tx
+        .select({
+          flow: schema.companyFlows,
+          clientName: schema.clients.name,
+          clientCnpj: schema.clients.cnpj,
+          clientTaxRegime: schema.clients.taxRegime,
+          rhVerificationTaskStatus: schema.tasks.status,
+        })
+        .from(schema.companyFlows)
+        .leftJoin(
+          schema.clients,
+          and(
+            eq(schema.clients.orgId, schema.companyFlows.orgId),
+            eq(schema.clients.id, schema.companyFlows.existingClientId),
+          ),
+        )
+        .leftJoin(
+          schema.tasks,
+          and(
+            eq(schema.tasks.orgId, schema.companyFlows.orgId),
+            eq(schema.tasks.id, schema.companyFlows.rhVerificationTaskId),
+          ),
+        )
+        .where(
+          and(
+            eq(schema.companyFlows.orgId, gate.actor.orgId),
+            eq(schema.companyFlows.id, parsed.data.flowId!),
+            eq(schema.companyFlows.status, "informative_drafting"),
+            isNull(schema.companyFlows.informativeId),
+          ),
+        );
+      return row ?? null;
+    });
+    if (!flow) {
+      return err("Este Fluxo não está disponível para gerar uma prévia. Reabra-o no Societário.");
+    }
+
+    const flowInput = {
+      ...flow.flow,
+      existingClientName: flow.clientName ?? null,
+      existingClientCnpj: flow.clientCnpj ?? null,
+      existingClientTaxRegime: flow.clientTaxRegime ?? null,
+      rhVerificationConfirmed:
+        Boolean(flow.flow.rhVerificationTaskId) &&
+        flow.rhVerificationTaskStatus === "completed",
+    };
+    const originalSource = companyFlowInformativeText(flowInput);
+    const actionsMarker = originalSource.search(/(?:^|\n)A(?:Ç|C)(?:Õ|O)ES\s*:?(?:\n|$)/i);
+    sourceText = [
+      actionsMarker >= 0 ? originalSource.slice(0, actionsMarker).trimEnd() : originalSource,
+      structuredInformativeSourceText(parsed.data.missions, clans),
+    ].join("\n\n");
+    kind =
+      flow.flow.kind === "opening"
+        ? "new_client"
+        : flow.flow.kind === "amendment"
+          ? "client_change"
+          : "client_closure";
+    const legalName =
+      flow.flow.kind === "opening"
+        ? flow.flow.approvedLegalName ?? flow.flow.requestedLegalName ?? flow.clientName
+        : flow.clientName ?? flow.flow.approvedLegalName ?? flow.flow.requestedLegalName;
+    if (!legalName) return err("O Fluxo não possui uma razão social para o Informativo.");
+    company = {
+      legalName,
+      normalizedCnpj: [flow.clientCnpj, flow.flow.resultCnpj].find(
+        (cnpj): cnpj is string => Boolean(cnpj && validateCnpj(cnpj)),
+      ) ?? null,
+      taxRegime:
+        flow.flow.approvedTaxRegime ??
+        flow.flow.taxRegime ??
+        flow.clientTaxRegime ??
+        null,
+      clientId: flow.flow.existingClientId,
+      createClient: flow.flow.kind === "opening" && !flow.flow.existingClientId,
+      cnaeCode: null,
+      cnaeDescription: null,
+      secondaryCnaes: null,
+      openedAt: null,
+    };
+    observations = [flow.flow.requestDetails, flow.flow.processingNotes].filter(
+      (value): value is string => Boolean(value?.trim()),
+    );
+    summary = `${flow.flow.kind === "opening" ? "Abertura" : flow.flow.kind === "amendment" ? "Alteração" : "Baixa"} de ${legalName}.`;
+  }
+
+  if (
+    parsed.data.missions.length === 0 &&
+    kind !== "client_change" &&
+    !company?.createClient
+  ) {
+    return err("Adicione ao menos uma missão.");
+  }
+
+  let payload;
+  try {
+    payload = buildStructuredInformativePayload({
+      clans,
+      missions: parsed.data.missions,
+      company,
+      kind,
+      summary,
+      observations,
+    });
+  } catch (error) {
+    console.error("informativo estruturado: falha ao montar prévia", error);
+    return err("Não foi possível montar a prévia. Atualize a página e tente novamente.");
+  }
+
+  const saved = await saveInformativeDraft({
+    actor: gate.actor,
+    payload,
+    model: STRUCTURED_INFORMATIVE_MODEL,
+    sourceText,
+    source: "panel",
+    connectionId: null,
+  });
+
+  if (parsed.data.flowId) {
+    const attached = await attachInformativeToFlow(
+      gate.actor,
+      parsed.data.flowId,
+      saved.id,
+    );
+    if (!attached) {
+      await cancelInformative(gate.actor, saved.id);
+      return err("Este Fluxo não está disponível para criar um Informativo. Reabra-o no Societário e tente novamente.");
+    }
+  }
+
+  revalidatePath("/informativos");
+  return { ok: true, data: { informativeId: saved.id } };
+}
+
 /**
  * Extrai e roteia, salvando a prévia. Substitui a prévia pendente anterior
  * desta mesma pessoa (`saveInformativeDraft` cancela a antiga), então não
@@ -356,31 +729,11 @@ export async function analyzeInformative(input: {
   });
 
   if (flowId) {
-    const attached = await withOrgTx(gate.actor.orgId, async (tx) => {
-      if (!isAdminRole(gate.actor.role)) return false;
-      const [flow] = await tx
-        .select({ id: schema.companyFlows.id, status: schema.companyFlows.status, informativeId: schema.companyFlows.informativeId })
-        .from(schema.companyFlows)
-        .where(and(eq(schema.companyFlows.orgId, gate.actor.orgId), eq(schema.companyFlows.id, flowId)))
-        .for("update");
-      if (!flow || flow.status !== "informative_drafting" || flow.informativeId) return false;
-      await tx.update(schema.companyFlows).set({
-        informativeId: saved.id,
-        status: "completed",
-        completedAt: new Date(),
-        updatedAt: new Date(),
-      })
-        .where(eq(schema.companyFlows.id, flow.id));
-      await tx.insert(schema.companyFlowEvents).values({
-        orgId: gate.actor.orgId,
-        flowId: flow.id,
-        eventType: "informative_prepared",
-        previousValue: { status: flow.status },
-        newValue: { status: "completed", informativeId: saved.id },
-        actorId: gate.actor.userId,
-      });
-      return true;
-    });
+    const attached = await attachInformativeToFlow(
+      gate.actor,
+      flowId,
+      saved.id,
+    );
     if (!attached) {
       await cancelInformative(gate.actor, saved.id);
       return err("Este Fluxo não está disponível para criar um Informativo. Reabra-o no Societário e tente novamente.");

@@ -6,6 +6,14 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  CLAN_DUTIES,
+  CLAN_DUTY_DESCRIPTIONS,
+  CLAN_DUTY_LABELS,
+  CLAN_DUTY_OWNER_SLUG,
+  type ClanDuty,
+} from "@/domain/clan-duties";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +34,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-import { createClan, replaceClanRoutingRules, updateClan } from "./clan-actions";
+import {
+  createClan,
+  replaceClanRoutingRules,
+  setClanDuty,
+  updateClan,
+} from "./clan-actions";
 
 export function CreateClanDialog() {
   const router = useRouter();
@@ -294,6 +307,121 @@ export function ClanRoutingManager({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </section>
+  );
+}
+
+const SEM_RESPONSAVEL = "__sem_responsavel__";
+
+export interface ClanDutyScope {
+  id: string;
+  slug: string;
+  name: string;
+  members: RoutingMember[];
+  duties: { duty: ClanDuty; userId: string }[];
+}
+
+/**
+ * Quem responde por cada etapa recorrente.
+ *
+ * Fica FORA dos cards de clã de propósito. Atender Fluxo e redigir Informativo
+ * só existem no Societário — repetir os dois seletores em cada clã encheria a
+ * tela de configuração morta, do mesmo jeito que aba morta enche a navegação
+ * (ver `CLAN_DUTY_OWNER_SLUG`). Aqui cada atribuição aparece uma vez, ao lado
+ * do clã a que pertence.
+ *
+ * Sem diálogo: a troca é de um campo só, e modal para mudar um seletor é
+ * fricção sem ganho. Salva na hora.
+ */
+export function ClanDutiesManager({ clans }: { clans: ClanDutyScope[] }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+
+  function salvar(clan: ClanDutyScope, duty: ClanDuty, valor: string) {
+    const userId = valor === SEM_RESPONSAVEL ? null : valor;
+    startTransition(async () => {
+      const result = await setClanDuty({ clanId: clan.id, duty, userId });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      const nome = clan.members.find((member) => member.userId === userId)?.name;
+      toast.success(
+        userId
+          ? `${nome} responde por “${CLAN_DUTY_LABELS[duty]}”.`
+          : `“${CLAN_DUTY_LABELS[duty]}” voltou para a fila de ${clan.name}.`,
+      );
+      router.refresh();
+    });
+  }
+
+  return (
+    <section className="grid gap-3">
+      <div>
+        <h2>Atribuições</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Quem recebe nominalmente cada etapa recorrente. Sem responsável, o
+          trabalho cai na fila de distribuição do clã.
+        </p>
+      </div>
+
+      <Card>
+        <CardContent className="grid gap-4">
+          {CLAN_DUTIES.map((duty) => {
+            const dono = clans.find(
+              (clan) => clan.slug === CLAN_DUTY_OWNER_SLUG[duty],
+            );
+            return (
+              <div key={duty} className="grid gap-1.5">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <Label htmlFor={`duty-${duty}`}>{CLAN_DUTY_LABELS[duty]}</Label>
+                  <span className="hud-label">
+                    {dono?.name ?? CLAN_DUTY_OWNER_SLUG[duty]}
+                  </span>
+                </div>
+                {!dono ? (
+                  <p className="text-xs text-muted-foreground">
+                    O clã responsável por esta atribuição não existe nesta
+                    organização.
+                  </p>
+                ) : dono.members.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {dono.name} ainda não tem integrantes para receber a
+                    atribuição.
+                  </p>
+                ) : (
+                  <Select
+                    value={
+                      dono.duties.find((entry) => entry.duty === duty)?.userId ??
+                      SEM_RESPONSAVEL
+                    }
+                    onValueChange={(valor) => salvar(dono, duty, valor)}
+                    disabled={pending}
+                  >
+                    <SelectTrigger id={`duty-${duty}`} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={SEM_RESPONSAVEL}>
+                        Ninguém — cai na fila do clã
+                      </SelectItem>
+                      {dono.members.map((member) => (
+                        <SelectItem key={member.userId} value={member.userId}>
+                          {member.name}
+                          {member.functionTitle ? ` · ${member.functionTitle}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {CLAN_DUTY_DESCRIPTIONS[duty]}
+                </p>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
     </section>
   );
 }

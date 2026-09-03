@@ -142,3 +142,72 @@ export async function enqueueTelegramOrgBroadcast(
     });
   }
 }
+
+/**
+ * Avisa TODOS os integrantes ativos de um clã.
+ *
+ * `createTaskRecord` já notifica missão de clã, mas só para a liderança — faz
+ * sentido quando a missão vai ser distribuída pela Mesa. Quando o aviso é "algo
+ * novo chegou para o clã", quem precisa saber é a equipe inteira.
+ *
+ * Os três INNER JOIN são a trava, pela mesma razão do broadcast da organização:
+ * a conexão do Telegram sobrevive a mudanças de vínculo, então enumerar
+ * conexões sem provar que a pessoa ainda está na organização E no clã é o que
+ * faz ex-integrante continuar recebendo. Clã inativo não notifica ninguém.
+ */
+export async function enqueueTelegramClanBroadcast(
+  tx: OrgTx,
+  input: {
+    orgId: string;
+    clanId: string;
+    eventType: string;
+    dedupeKey: string;
+    payload: TelegramNotificationPayload;
+    /** Não avisa quem já recebeu a missão nominalmente. */
+    exceptUserId?: string;
+  },
+): Promise<void> {
+  const destinatarios = await tx
+    .selectDistinct({ userId: schema.telegramConnections.userId })
+    .from(schema.telegramConnections)
+    .innerJoin(
+      schema.member,
+      and(
+        eq(schema.member.organizationId, schema.telegramConnections.orgId),
+        eq(schema.member.userId, schema.telegramConnections.userId),
+      ),
+    )
+    .innerJoin(
+      schema.clanMemberships,
+      and(
+        eq(schema.clanMemberships.orgId, schema.telegramConnections.orgId),
+        eq(schema.clanMemberships.userId, schema.telegramConnections.userId),
+        eq(schema.clanMemberships.clanId, input.clanId),
+      ),
+    )
+    .innerJoin(
+      schema.clans,
+      and(
+        eq(schema.clans.orgId, schema.clanMemberships.orgId),
+        eq(schema.clans.id, schema.clanMemberships.clanId),
+        eq(schema.clans.active, true),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.telegramConnections.orgId, input.orgId),
+        isNull(schema.telegramConnections.revokedAt),
+      ),
+    );
+
+  for (const destinatario of destinatarios) {
+    if (destinatario.userId === input.exceptUserId) continue;
+    await enqueueTelegramNotificationIfEnabled(tx, {
+      orgId: input.orgId,
+      eventType: input.eventType,
+      dedupeKey: `${input.dedupeKey}:user:${destinatario.userId}`,
+      payload: input.payload,
+      userId: destinatario.userId,
+    });
+  }
+}

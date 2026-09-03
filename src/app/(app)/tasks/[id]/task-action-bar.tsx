@@ -72,6 +72,7 @@ export function TaskActionBar({
   transferCandidates,
   restrictTransferToTaskClan,
   returnTo,
+  startDestination,
 }: {
   task: TaskView;
   can: {
@@ -91,6 +92,8 @@ export function TaskActionBar({
   restrictTransferToTaskClan: boolean;
   /** Lista de origem, incluindo os filtros ativos. */
   returnTo: string;
+  /** Para onde ir ao iniciar. `null` em missão comum, que fica na própria tela. */
+  startDestination?: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -113,7 +116,17 @@ export function TaskActionBar({
     ? transferAssigneeId
     : transferCandidates[0]?.userId ?? "";
 
-  function run(action: () => Promise<ActionResult>, successMessage: string) {
+  /**
+   * `destino` existe para as missões que só apontam para o trabalho de verdade
+   * (Fluxo, Informativo): iniciar e ficar parado na tela da missão obrigaria a
+   * pessoa a procurar sozinha onde executar. Sem destino, comporta-se como
+   * sempre e apenas atualiza.
+   */
+  function run(
+    action: () => Promise<ActionResult>,
+    successMessage: string,
+    destino?: string | null,
+  ) {
     startTransition(async () => {
       const result = await action();
       if (!result.ok) {
@@ -121,6 +134,10 @@ export function TaskActionBar({
         return;
       }
       toast.success(successMessage);
+      if (destino) {
+        router.push(destino);
+        return;
+      }
       router.refresh();
     });
   }
@@ -168,7 +185,13 @@ export function TaskActionBar({
       {can.start ? (
         <Button
           disabled={pending}
-          onClick={() => run(() => startTask({ taskId: task.id }), "Missão iniciada!")}
+          onClick={() =>
+            run(
+              () => startTask({ taskId: task.id }),
+              startDestination ? "Missão iniciada — abrindo o trabalho." : "Missão iniciada!",
+              startDestination,
+            )
+          }
         >
           <Play aria-hidden /> Iniciar
         </Button>
@@ -177,7 +200,13 @@ export function TaskActionBar({
       {can.resume ? (
         <Button
           disabled={pending}
-          onClick={() => run(() => startTask({ taskId: task.id }), "Missão retomada!")}
+          onClick={() =>
+            run(
+              () => startTask({ taskId: task.id }),
+              startDestination ? "Missão retomada — abrindo o trabalho." : "Missão retomada!",
+              startDestination,
+            )
+          }
         >
           <RotateCcw aria-hidden /> Retomar ajustes
         </Button>

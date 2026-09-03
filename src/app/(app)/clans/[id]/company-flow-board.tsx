@@ -62,6 +62,7 @@ import {
 import { formatCnpj } from "@/domain/cnpj";
 import type { TaskStatus } from "@/domain/task-state";
 import { TAX_REGIME_LABELS, TAX_REGIMES, type TaxRegime } from "@/lib/clients-ui";
+import { searchCompanyFlowClients } from "@/lib/company-flows/client-search";
 import { formatBRLCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
@@ -75,6 +76,7 @@ import {
   prepareCompanyFlowInformative,
   returnCompanyFlowToOwner,
   revealCompanyFlowGovPassword,
+  type CompanyDataLookupView,
   type CompanyFlowClientLookupView,
 } from "./company-flow-actions";
 
@@ -132,6 +134,14 @@ export interface CompanyFlowView {
     note: string | null;
     createdAt: string;
   }[];
+}
+
+export interface CompanyFlowClientOption {
+  id: string;
+  name: string;
+  cnpj: string | null;
+  taxRegime: TaxRegime;
+  company: CompanyDataLookupView;
 }
 
 const FLOW_SOURCE_LABELS: Record<CompanyFlowSource, string> = {
@@ -669,18 +679,22 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
 
 function NewCompanyFlowDialog({
   clanId,
+  clients,
 }: {
   clanId: string;
+  clients: readonly CompanyFlowClientOption[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [kind, setKind] = useState<CompanyFlowKind>("opening");
   const [existingClientId, setExistingClientId] = useState("");
-  const [companyCnpj, setCompanyCnpj] = useState("");
+  const [companySearch, setCompanySearch] = useState("");
+  const [companyPickerOpen, setCompanyPickerOpen] = useState(false);
   const companyCnpjRef = useRef("");
   const [consultedCompany, setConsultedCompany] =
     useState<CompanyFlowClientLookupView | null>(null);
+  const [companyDataSource, setCompanyDataSource] = useState<"cadastro" | "receita">("cadastro");
   const [legalName, setLegalName] = useState("");
   const [activities, setActivities] = useState("");
   const [removedActivities, setRemovedActivities] = useState("");
@@ -712,6 +726,11 @@ function NewCompanyFlowDialog({
   const opening = kind === "opening";
   const amendment = kind === "amendment";
   const closing = kind === "closure";
+  const selectedClient = clients.find((client) => client.id === existingClientId) ?? null;
+  const matchingClients = useMemo(
+    () => searchCompanyFlowClients(clients, companySearch),
+    [clients, companySearch],
+  );
   const amendmentHas = (field: AmendmentField) => amendmentFields.includes(field);
 
   function clearFlowValues() {
@@ -738,7 +757,8 @@ function NewCompanyFlowDialog({
 
   function resetFlowForm() {
     setKind("opening");
-    setCompanyCnpj("");
+    setCompanySearch("");
+    setCompanyPickerOpen(false);
     companyCnpjRef.current = "";
     clearFlowValues();
   }
@@ -750,15 +770,24 @@ function NewCompanyFlowDialog({
 
   function handleKindChange(nextKind: CompanyFlowKind) {
     setKind(nextKind);
-    setCompanyCnpj("");
+    setCompanySearch("");
+    setCompanyPickerOpen(false);
     companyCnpjRef.current = "";
     clearFlowValues();
   }
 
-  function handleCompanyCnpjChange(nextCnpj: string) {
-    setCompanyCnpj(nextCnpj);
-    companyCnpjRef.current = nextCnpj.replace(/\D/g, "");
+  function selectFlowCompany(client: CompanyFlowClientOption) {
     clearFlowValues();
+    setExistingClientId(client.id);
+    setCompanySearch(client.name);
+    setCompanyPickerOpen(false);
+    companyCnpjRef.current = client.cnpj ?? "";
+    setCompanyDataSource("cadastro");
+    setConsultedCompany({
+      company: client.company,
+      client: { id: client.id, name: client.name },
+      matchedBy: "cnpj",
+    });
   }
 
   function seedOwnershipFromLookup(company: CompanyFlowClientLookupView["company"]) {
@@ -790,7 +819,10 @@ function NewCompanyFlowDialog({
   }
 
   function lookupFlowCompany() {
-    const requestedCnpj = companyCnpj.replace(/\D/g, "");
+    if (!selectedClient?.cnpj) return;
+    const requestedCnpj = selectedClient.cnpj.replace(/\D/g, "");
+    const requestedClientId = selectedClient.id;
+    companyCnpjRef.current = requestedCnpj;
     startTransition(async () => {
       const result = await lookupCompanyFlowClientCnpj({
         clanId,
@@ -801,18 +833,18 @@ function NewCompanyFlowDialog({
         toast.error(result.ok ? "A consulta não retornou dados." : result.error);
         return;
       }
-      setConsultedCompany(result.data);
-      setCompanyCnpj(formatCnpj(result.data.company.normalizedCnpj));
-      companyCnpjRef.current = result.data.company.normalizedCnpj;
-      setExistingClientId(result.data.client?.id ?? "");
+      const currentClient = clients.find((client) => client.id === requestedClientId);
+      if (!currentClient) return;
+      setConsultedCompany({
+        company: result.data.company,
+        client: { id: currentClient.id, name: currentClient.name },
+        matchedBy: "cnpj",
+      });
+      setCompanyDataSource("receita");
       if (amendment && amendmentHas("ownership")) {
         seedOwnershipFromLookup(result.data.company);
       }
-      if (result.data.client) {
-        toast.success("Empresa localizada e vinculada ao Fluxo.");
-      } else {
-        toast.warning("CNPJ localizado na Receita, mas sem empresa correspondente no painel.");
-      }
+      toast.success("Dados atualizados pela consulta de CNPJ.");
     });
   }
 
@@ -922,27 +954,52 @@ function NewCompanyFlowDialog({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5"><Label>Tipo</Label><Select value={kind} onValueChange={(value) => handleKindChange(value as CompanyFlowKind)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="opening">Abertura</SelectItem><SelectItem value="amendment">Alteração</SelectItem><SelectItem value="closure">Baixa</SelectItem></SelectContent></Select></div>
             {opening ? null : (
-              <div className="grid gap-1.5">
-                <Label htmlFor="flow-company-cnpj">CNPJ da empresa {kind === "amendment" ? "que será alterada" : "que será baixada"}</Label>
-                <div className="flex gap-2">
+              <div className="relative grid gap-1.5">
+                <Label htmlFor="flow-company-search">Empresa {kind === "amendment" ? "que será alterada" : "que será baixada"}</Label>
+                <div className="relative">
+                  <Search
+                    className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden
+                  />
                   <Input
-                    id="flow-company-cnpj"
-                    className="font-mono"
-                    value={companyCnpj}
-                    onChange={(event) => handleCompanyCnpjChange(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && companyCnpj.replace(/\D/g, "").length === 14) {
-                        event.preventDefault();
-                        lookupFlowCompany();
-                      }
+                    id="flow-company-search"
+                    className="pl-9"
+                    value={companySearch}
+                    onChange={(event) => {
+                      setCompanySearch(event.target.value);
+                      setExistingClientId("");
+                      setConsultedCompany(null);
+                      setCompanyPickerOpen(true);
                     }}
-                    placeholder="00.000.000/0000-00"
-                    inputMode="numeric"
+                    onFocus={() => setCompanyPickerOpen(true)}
+                    placeholder="Pesquise pelo nome ou CNPJ"
                     autoComplete="off"
                   />
-                  <Button type="button" variant="outline" disabled={pending || companyCnpj.replace(/\D/g, "").length !== 14} onClick={lookupFlowCompany}>
-                    {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Search aria-hidden />} Consultar
-                  </Button>
+                  {companyPickerOpen ? (
+                    <div className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-md border bg-popover p-1 shadow-md">
+                      {matchingClients.length > 0 ? (
+                        matchingClients.map((client) => (
+                          <button
+                            key={client.id}
+                            type="button"
+                            className="flex min-h-11 w-full flex-col rounded-sm px-2 py-2 text-left text-sm hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+                            onClick={() => selectFlowCompany(client)}
+                          >
+                            <span>{client.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {client.cnpj ? formatCnpj(client.cnpj) : "CNPJ não informado"}
+                              {" · "}
+                              {TAX_REGIME_LABELS[client.taxRegime]}
+                            </span>
+                          </button>
+                        ))
+                      ) : (
+                        <p className="px-2 py-2 text-sm text-muted-foreground">
+                          Nenhuma empresa encontrada no cadastro.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}
@@ -951,26 +1008,38 @@ function NewCompanyFlowDialog({
           </div>
 
           {!opening && consultedCompany ? (
-            <section className={cn("grid gap-3 rounded-md border p-3", consultedCompany.client ? "border-success/30 bg-success/5" : "border-warning/35 bg-warning/5")}>
+            <section className="grid gap-3 rounded-md border border-success/30 bg-success/5 p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <p className="hud-label">Dados atuais consultados</p>
+                  <p className="hud-label">
+                    {companyDataSource === "receita" ? "Dados atualizados pela consulta" : "Dados do cadastro"}
+                  </p>
                   <h3 className="mt-1 font-medium">{consultedCompany.company.legalName}</h3>
-                  <p className="mt-0.5 font-mono text-xs text-muted-foreground">{formatCnpj(consultedCompany.company.normalizedCnpj)}</p>
+                  <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                    {consultedCompany.company.normalizedCnpj ? formatCnpj(consultedCompany.company.normalizedCnpj) : "CNPJ não informado"}
+                  </p>
                 </div>
                 <Badge variant="outline">{consultedCompany.company.cadastralSituation ?? "Situação não informada"}</Badge>
               </div>
-              {consultedCompany.client ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs text-success">
-                  Vinculada ao cadastro “{consultedCompany.client.name}”{consultedCompany.matchedBy === "name" ? " pela razão social; o CNPJ ainda não consta no cadastro interno" : ""}.
+                  Empresa selecionada no cadastro interno.
                 </p>
-              ) : (
-                <p className="text-xs text-warning">Esta empresa ainda não foi localizada entre os clientes ativos do painel. Complete o cadastro antes de abrir o Fluxo.</p>
-              )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={pending || !selectedClient?.cnpj}
+                  onClick={lookupFlowCompany}
+                >
+                  {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Search aria-hidden />}
+                  Consultar CNPJ (opcional)
+                </Button>
+              </div>
               <div className="grid gap-2 text-sm sm:grid-cols-2">
                 <div className="rounded-md bg-background/35 p-2.5"><strong className="block text-xs">Endereço atual</strong><span className="mt-1 block text-muted-foreground">{consultedCompany.company.address ? [[consultedCompany.company.address.street, consultedCompany.company.address.number].filter(Boolean).join(", "), consultedCompany.company.address.city, consultedCompany.company.address.state].filter(Boolean).join(" · ") : "Não informado"}</span></div>
                 <div className="rounded-md bg-background/35 p-2.5"><strong className="block text-xs">Capital social</strong><span className="mt-1 block text-muted-foreground">{consultedCompany.company.shareCapital ? formatBRLCurrency(consultedCompany.company.shareCapital) : "Não informado"}</span></div>
-                <div className="rounded-md bg-background/35 p-2.5"><strong className="block text-xs">Regime disponível</strong><span className="mt-1 block text-muted-foreground">{consultedCompany.company.isSimplesOptant ? "Simples Nacional" : consultedCompany.company.taxRegimes[0]?.form ?? "Não informado"}</span></div>
+                <div className="rounded-md bg-background/35 p-2.5"><strong className="block text-xs">Regime tributário</strong><span className="mt-1 block text-muted-foreground">{selectedClient ? TAX_REGIME_LABELS[selectedClient.taxRegime] : "Não informado"}</span></div>
                 <div className="rounded-md bg-background/35 p-2.5"><strong className="block text-xs">Natureza jurídica</strong><span className="mt-1 block text-muted-foreground">{consultedCompany.company.legalNature ?? "Não informada"}</span></div>
               </div>
 
@@ -1279,9 +1348,16 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
                 </>
               )}
               {simpleConfirmation ? null : <div className="grid gap-1.5"><Label>Retorno e observações</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder="O que foi deferido, pendências ou cuidados" /></div>}
-              <Button type="button" disabled={pending || (!simpleConfirmation && !notes.trim()) || (closure && rhVerificationState === "pending")} onClick={confirmProcessing}>
-                {closure && rhVerificationState === "pending" ? <Clock3 aria-hidden /> : <Send aria-hidden />}
-                {amendment ? "Confirmar informativo" : closure ? rhVerificationState === "pending" ? "Aguardando confirmação do RH" : "Confirmar baixa" : "Confirmar dados aprovados"}
+              <Button
+                type="button"
+                variant={closure && rhVerificationState === "pending" ? "default" : "success"}
+                disabled={pending || (!simpleConfirmation && !notes.trim()) || (closure && rhVerificationState === "pending")}
+                onClick={confirmProcessing}
+              >
+                {closure && rhVerificationState === "pending" ? <Clock3 aria-hidden /> : <CheckCircle2 aria-hidden />}
+                {closure && rhVerificationState === "pending"
+                  ? "Aguardando confirmação do RH"
+                  : "Confirmar conclusão do processo"}
               </Button>
             </section>
           ) : null}
@@ -1304,10 +1380,12 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
 export function CompanyFlowBoard({
   clanId,
   canCreate,
+  clients,
   rows,
 }: {
   clanId: string;
   canCreate: boolean;
+  clients: readonly CompanyFlowClientOption[];
   rows: readonly CompanyFlowView[];
 }) {
   const [query, setQuery] = useState("");
@@ -1355,7 +1433,7 @@ export function CompanyFlowBoard({
             </p>
           </div>
         </div>
-        {canCreate ? <NewCompanyFlowDialog clanId={clanId} /> : null}
+        {canCreate ? <NewCompanyFlowDialog clanId={clanId} clients={clients} /> : null}
       </section>
 
       <div className="flex w-fit rounded-lg border bg-muted/25 p-1" role="tablist" aria-label="Visão dos fluxos">

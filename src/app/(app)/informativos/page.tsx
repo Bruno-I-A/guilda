@@ -2,16 +2,18 @@ import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { PageHeader } from "@/components/page-header";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import {
   amendmentRequiresExternalRegistrationTask,
   companyFlowAmendmentChanges,
-  companyFlowInformativeText,
+  companyFlowDisplayName,
 } from "@/domain/company-flow";
 import { canHandleInformatives, isAdminRole } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
 import { informativeDraftPayloadSchema } from "@/lib/ai/informative-schema";
+import { companyFlowMissionPresets } from "@/lib/informatives/mission-presets";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 
 import { InformativePanel, type DraftView } from "./informative-panel";
@@ -45,7 +47,7 @@ export default async function InformativosPage({
         .orderBy(desc(schema.informatives.createdAt))
         .limit(1);
       const clanRows = await tx
-        .select({ id: schema.clans.id, name: schema.clans.name })
+        .select({ id: schema.clans.id, name: schema.clans.name, slug: schema.clans.slug })
         .from(schema.clans)
         .where(
           and(
@@ -143,7 +145,6 @@ export default async function InformativosPage({
           flowForInformative.rhVerificationTaskStatus === "completed",
       }
     : null;
-  const initialFlowText = flowInput ? companyFlowInformativeText(flowInput) : "";
   const amendmentSummary = flowInput?.kind === "amendment"
     ? {
         companyName: flowInput.existingClientName ?? "Empresa não informada",
@@ -151,6 +152,23 @@ export default async function InformativosPage({
         observations: flowInput.requestDetails,
         hasExternalRegistrationTask:
           amendmentRequiresExternalRegistrationTask(flowInput),
+      }
+    : null;
+  const flowMissionPresets = flowInput
+    ? companyFlowMissionPresets({
+        kind: flowInput.kind,
+        amendmentRequiresExternalRegistration:
+          amendmentRequiresExternalRegistrationTask(flowInput),
+        rhVerificationConfirmed: flowInput.rhVerificationConfirmed,
+        billingAmount: flowInput.billingAmount,
+        billingDescription: flowInput.billingDescription,
+      })
+    : [];
+  const flowSummary = flowInput
+    ? {
+        kind: flowInput.kind,
+        companyName: companyFlowDisplayName(flowInput),
+        observations: flowInput.requestDetails,
       }
     : null;
 
@@ -198,25 +216,22 @@ export default async function InformativosPage({
 
   return (
     <div className="grid gap-5">
-      <div>
-        <h1 className="font-heading text-2xl font-semibold tracking-wide">
-          Informativos
-        </h1>
-        <p className="text-muted-foreground">
-          Cole o informativo, confira o destino de cada linha e confirme. Nada é
-          criado antes da sua confirmação.
-        </p>
-      </div>
+      <PageHeader
+        title="Informativos"
+        description="Escolha os clãs, descreva as missões e confirme a prévia. Nada é criado antes da sua confirmação."
+      />
 
       {canHandle ? (
         <InformativePanel
+          key={flowForInformative?.flow.id ?? "informativo-geral"}
           draft={draft}
           clans={clans}
           members={members}
           clients={clients}
-          initialSourceText={initialFlowText}
           flowId={flowForInformative?.flow.id}
           amendmentSummary={amendmentSummary}
+          flowSummary={flowSummary}
+          flowMissionPresets={flowMissionPresets}
         />
       ) : (
         <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">

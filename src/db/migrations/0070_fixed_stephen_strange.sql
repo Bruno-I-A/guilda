@@ -1,0 +1,6 @@
+ALTER TABLE "company_flows" ADD COLUMN "processing_task_id" uuid;--> statement-breakpoint
+ALTER TABLE "company_flows" ADD COLUMN "informative_task_id" uuid;--> statement-breakpoint
+ALTER TABLE "company_flows" ADD CONSTRAINT "company_flows_processing_task_fk" FOREIGN KEY ("org_id","processing_task_id") REFERENCES "public"."tasks"("org_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "company_flows" ADD CONSTRAINT "company_flows_informative_task_fk" FOREIGN KEY ("org_id","informative_task_id") REFERENCES "public"."tasks"("org_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "company_flows_org_processing_task_uidx" ON "company_flows" USING btree ("org_id","processing_task_id") WHERE "company_flows"."processing_task_id" IS NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "company_flows_org_informative_task_uidx" ON "company_flows" USING btree ("org_id","informative_task_id") WHERE "company_flows"."informative_task_id" IS NOT NULL;

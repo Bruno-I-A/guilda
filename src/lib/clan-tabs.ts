@@ -53,6 +53,11 @@ export function clanHasCompanyFlow(clanSlug: string): boolean {
   return clanSlug === SOCIETARIO_CLAN_SLUG;
 }
 
+/** Link direto para uma aba do clã — usado por missões que apontam para lá. */
+export function clanTabHref(clanId: string, tab: ClanTab): string {
+  return `/clans/${clanId}?tab=${tab}`;
+}
+
 export function clanTabsFor(clanSlug: string) {
   return CLAN_TABS.filter((tab) => {
     const owner = TAB_OWNER_SLUG[tab.key];
