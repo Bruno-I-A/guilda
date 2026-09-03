@@ -16,7 +16,9 @@ import { NextResponse, type NextRequest } from "next/server";
  *    afrouxada porque o Next injeta scripts inline e usa eval() para HMR e o
  *    overlay de erro — testar CSP estrita só faz sentido no build de produção.
  */
-const AUTH_PAGES = ["/sign-in", "/sign-up"];
+// Só o login. O autocadastro foi removido (auth.ts: disableSignUp) — link
+// antigo para /sign-up cai aqui e é redirecionado para /sign-in.
+const AUTH_PAGES = ["/sign-in"];
 
 function novoNonce(): string {
   // Web Crypto está disponível no runtime do proxy (edge e nodejs).
@@ -98,6 +100,5 @@ export const config = {
     "/onboarding",
     "/change-password",
     "/sign-in",
-    "/sign-up",
   ],
 };

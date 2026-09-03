@@ -21,6 +21,13 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
+    // Autocadastro FECHADO. Sem isto, /api/auth/sign-up/email aceita qualquer
+    // pessoa da internet, que sai com conta e organização próprias dentro da
+    // instância. Tirar o link da tela de login escondia a porta; não a fechava.
+    // Conta nasce pela tela de Membros ou pelo script de bootstrap — os dois
+    // passam por src/lib/auth-admin.ts, que usa o internalAdapter e não este
+    // endpoint. Mexer aqui reabre o buraco.
+    disableSignUp: true,
   },
   user: {
     additionalFields: {
@@ -46,6 +53,8 @@ export const auth = betterAuth({
     storage: "database",
     customRules: {
       "/sign-in/email": { window: 60, max: 5 },
+      // Inerte enquanto disableSignUp estiver ligado; fica como rede de
+      // segurança para o dia em que alguém reabrir o cadastro sem pensar nisto.
       "/sign-up/email": { window: 60, max: 3 },
       "/organization/invite-member": { window: 60, max: 10 },
       "/organization/accept-invitation": { window: 60, max: 10 },
