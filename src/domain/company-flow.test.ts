@@ -455,6 +455,22 @@ describe("Fluxo Societário", () => {
     expect(text).not.toContain("SOCIETÁRIO – Baixar o Alvará.");
   });
 
+  test("usa somente as missões estruturadas quando elas substituem as sugestões", () => {
+    const text = accountantChangeInformativeText({
+      companyName: "EMPRESA TESTE LTDA",
+      cnpj: "11222333000181",
+      taxRegime: "simples",
+      address: null,
+      responsibilityUntil: "2026-09-30",
+      observations: null,
+      actions: "MISSÕES ESTRUTURADAS\nFiscal — Entregar obrigação final.",
+    });
+
+    expect(text).toContain("AÇÕES\nMISSÕES ESTRUTURADAS");
+    expect(text).toContain("Fiscal — Entregar obrigação final.");
+    expect(text).not.toContain("CONTABILIDADE – Encerramento até");
+  });
+
   test("envia à IA somente o bloco de ações do Fluxo", () => {
     const actions = companyFlowActionsText(
       "Empresa: Dado cadastral\nCNPJ: 00.000.000/0000-00\n\nAÇÕES\nFiscal - Camila - parametrizar\nRH - Bruno - cadastrar",

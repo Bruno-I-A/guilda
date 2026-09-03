@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  clanMissionGroupsFromPresets,
   clanMissionGroupsAreValid,
   flattenClanMissionGroups,
   type ClanMissionGroupDraft,
@@ -23,6 +24,28 @@ const groups: ClanMissionGroupDraft[] = [
 ];
 
 describe("editor de missões por clã", () => {
+  test("transforma presets em grupos vinculados ao clã pelo slug", () => {
+    const groupsFromPresets = clanMissionGroupsFromPresets(
+      [
+        { id: "clan-fiscal", name: "Fiscal", slug: "fiscal" },
+        { id: "clan-rh", name: "RH", slug: "rh" },
+      ],
+      [
+        { clanSlug: "fiscal", descriptions: ["Primeira", "Segunda"] },
+        { clanSlug: "rh", descriptions: ["Terceira"] },
+      ],
+      "baixa",
+    );
+
+    expect(groupsFromPresets).toHaveLength(2);
+    expect(groupsFromPresets[0]).toMatchObject({
+      id: "baixa-1",
+      clanId: "clan-fiscal",
+      missions: [{ description: "Primeira" }, { description: "Segunda" }],
+    });
+    expect(groupsFromPresets[1]?.clanId).toBe("clan-rh");
+  });
+
   test("escolhe o clã uma vez e expande todas as missões para o servidor", () => {
     expect(flattenClanMissionGroups(groups)).toEqual([
       { clanId: "clan-fiscal", description: "Parametrizar a empresa" },

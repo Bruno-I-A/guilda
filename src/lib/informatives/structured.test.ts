@@ -64,4 +64,29 @@ describe("buildStructuredInformativePayload", () => {
       ),
     ).toContain("RH — Cadastrar o pró-labore");
   });
+
+  test("aceita alteração de cliente sem missão e preserva observações", () => {
+    const payload = buildStructuredInformativePayload({
+      clans,
+      missions: [],
+      kind: "client_change",
+      company: {
+        legalName: "EMPRESA EXISTENTE LTDA",
+        normalizedCnpj: "11222333000181",
+        taxRegime: "simples",
+        clientId: "33333333-3333-4333-8333-333333333333",
+        createClient: false,
+        cnaeCode: null,
+        cnaeDescription: null,
+        secondaryCnaes: null,
+        openedAt: null,
+      },
+      observations: ["Razão social atualizada"],
+    });
+
+    expect(payload.kind).toBe("client_change");
+    expect(payload.tasks).toEqual([]);
+    expect(payload.observations).toEqual(["Razão social atualizada"]);
+    expect(payload.warnings).toEqual([]);
+  });
 });
