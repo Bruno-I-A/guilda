@@ -179,10 +179,30 @@ describe("conclusão direta pelo responsável", () => {
     expect(decision.allowed).toBe(true);
   });
 
-  test("responsável conclui tarefa criada por outra pessoa", () => {
+  test("responsável NÃO conclui direto tarefa criada por outra pessoa", () => {
+    // Quem pediu o trabalho precisa ver o retorno antes de dar por feito.
+    // O caminho é in_progress → awaiting_approval → completed, decidido por
+    // quem criou. Antes desta régua a pessoa concluía sozinha e creditava o
+    // próprio XP sem ninguém revisar.
     const decision = authorizeTransition(
       "completed",
       ctx({ actorId: "assignee-1", status: "in_progress" }),
+    );
+    expect(decision.allowed).toBe(false);
+  });
+
+  test("o caminho da missão de terceiro é enviar para aprovação", () => {
+    const decision = authorizeTransition(
+      "awaiting_approval",
+      ctx({ actorId: "assignee-1", status: "in_progress" }),
+    );
+    expect(decision.allowed).toBe(true);
+  });
+
+  test("quem criou conclui a missão que está aguardando aprovação", () => {
+    const decision = authorizeTransition(
+      "completed",
+      ctx({ actorId: "creator-1", status: "awaiting_approval" }),
     );
     expect(decision.allowed).toBe(true);
   });

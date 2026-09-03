@@ -31,6 +31,20 @@ export const STATUS_RAIL_CLASSES: Record<TaskStatus, string> = {
   cancelled: "border-l-border",
 };
 
+/**
+ * Segmento do medidor de um pacote de Informativo — uma missão, um
+ * segmento. Mesmas cores do trilho, em fundo: concluída em ouro porque é o
+ * único lugar onde "feito" e "recompensa creditada" são a mesma coisa.
+ */
+export const STATUS_METER_CLASSES: Record<TaskStatus, string> = {
+  pending: "bg-secondary",
+  in_progress: "bg-primary",
+  awaiting_approval: "bg-warning/80",
+  completed: "bg-gold/70",
+  rejected: "bg-destructive/80",
+  cancelled: "bg-border/60",
+};
+
 export const PRIORITY_LABELS: Record<number, string> = {
   1: "Baixa",
   2: "Média",
@@ -62,6 +76,28 @@ export function formatDateTime(date: Date): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+/**
+ * "há 5 min", "há 3 h", "ontem", "há 4 dias"; acima de uma semana vira a
+ * data. Para quem pediu a missão, "quando foi a última movimentação" é a
+ * resposta para "isso está andando?" — e é melhor lida como distância do
+ * que como carimbo de data.
+ */
+export function formatRelativeTime(date: Date, now = new Date()): string {
+  const minutes = Math.floor((now.getTime() - date.getTime()) / 60_000);
+  if (minutes < 1) return "agora";
+  if (minutes < 60) return `há ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `há ${hours} h`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "ontem";
+  if (days < 7) return `há ${days} dias`;
+  return `em ${new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "America/Sao_Paulo",
+  }).format(date)}`;
 }
 
 export function isOverdue(dueDate: Date | null, status: TaskStatus): boolean {

@@ -9,6 +9,7 @@ import {
   Play,
   RotateCcw,
   Trash2,
+  Send,
   Undo2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -38,6 +39,7 @@ import type { ActionResult } from "@/lib/action-context";
 
 import {
   approveTask,
+  submitTaskForApproval,
   cancelTask,
   claimTask,
   completeTask,
@@ -56,6 +58,8 @@ interface TaskView {
   dueDate: string;
   xpValue: number;
   assigneeName: string | null;
+  /** Quem pediu — é para essa pessoa que o retorno da entrega vai. */
+  creatorName: string;
   clanId: string | null;
   clanName: string | null;
 }
@@ -80,6 +84,7 @@ export function TaskActionBar({
     start: boolean;
     resume: boolean;
     complete: boolean;
+    submit: boolean;
     approve: boolean;
     reject: boolean;
     cancel: boolean;
@@ -98,6 +103,10 @@ export function TaskActionBar({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [rejectOpen, setRejectOpen] = useState(false);
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [submitNote, setSubmitNote] = useState("");
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [approveNote, setApproveNote] = useState("");
   const [cancelOpen, setCancelOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -226,23 +235,21 @@ export function TaskActionBar({
         </Button>
       ) : null}
 
+      {can.submit ? (
+        <Button disabled={pending} onClick={() => setSubmitOpen(true)}>
+          <Send aria-hidden /> Entregar com retorno
+        </Button>
+      ) : null}
+
       {can.approve ? (
-        <Button
-          disabled={pending}
-          onClick={() =>
-            run(
-              () => approveTask({ taskId: task.id }),
-              `Entrega legada aprovada. ${task.assigneeName ?? "A pessoa responsável"} recebeu ${task.xpValue} XP.`,
-            )
-          }
-        >
-          <Check aria-hidden /> Aprovar entrega legada
+        <Button disabled={pending} onClick={() => setApproveOpen(true)}>
+          <Check aria-hidden /> Aprovar e creditar XP
         </Button>
       ) : null}
 
       {can.reject ? (
         <Button variant="outline" disabled={pending} onClick={() => setRejectOpen(true)}>
-          <Undo2 aria-hidden /> Rejeitar entrega legada
+          <Undo2 aria-hidden /> Devolver para ajuste
         </Button>
       ) : null}
 
@@ -357,13 +364,110 @@ export function TaskActionBar({
         </DialogContent>
       </Dialog>
 
+      <Dialog open={submitOpen} onOpenChange={setSubmitOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Entregar com retorno</DialogTitle>
+            <DialogDescription>
+              Conte o que foi feito. {task.creatorName} recebe este retorno,
+              confere e aprova — só então os {task.xpValue} XP são creditados.
+              Se faltar algo, a missão volta para você com a explicação.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <Label htmlFor="submit-note">Retorno para {task.creatorName}</Label>
+            <Textarea
+              id="submit-note"
+              value={submitNote}
+              onChange={(event) => setSubmitNote(event.target.value)}
+              placeholder="Ex.: Planilha atualizada, o total de agosto fechou em R$ 12.400. Falta só a nota da filial, que o cliente manda amanhã."
+              rows={5}
+              maxLength={2000}
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground">
+              Obrigatório: é a única forma de quem pediu saber o resultado sem
+              ter que perguntar.
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setSubmitOpen(false)}>
+              Voltar
+            </Button>
+            <Button
+              disabled={pending || submitNote.trim().length < 3}
+              onClick={() => {
+                setSubmitOpen(false);
+                run(
+                  () =>
+                    submitTaskForApproval({
+                      taskId: task.id,
+                      note: submitNote.trim(),
+                    }),
+                  `Entregue. ${task.creatorName} recebeu o seu retorno.`,
+                );
+                setSubmitNote("");
+              }}
+            >
+              <Send aria-hidden /> Entregar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Aprovar entrega</DialogTitle>
+            <DialogDescription>
+              {task.assigneeName ?? "A pessoa responsável"} recebe {task.xpValue} XP.
+              Se quiser, deixe um comentário: ele fica no histórico e chega para
+              quem entregou.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <Label htmlFor="approve-note">Comentário (opcional)</Label>
+            <Textarea
+              id="approve-note"
+              value={approveNote}
+              onChange={(event) => setApproveNote(event.target.value)}
+              placeholder="Ex.: Perfeito, já enviei para o cliente. Obrigado!"
+              rows={3}
+              maxLength={2000}
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setApproveOpen(false)}>
+              Voltar
+            </Button>
+            <Button
+              disabled={pending}
+              onClick={() => {
+                setApproveOpen(false);
+                run(
+                  () =>
+                    approveTask({
+                      taskId: task.id,
+                      note: approveNote.trim() || undefined,
+                    }),
+                  `Entrega aprovada. ${task.assigneeName ?? "A pessoa responsável"} recebeu ${task.xpValue} XP.`,
+                );
+                setApproveNote("");
+              }}
+            >
+              <Check aria-hidden /> Aprovar e creditar XP
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Rejeitar entrega legada</DialogTitle>
+            <DialogTitle>Devolver para ajuste</DialogTitle>
             <DialogDescription>
-              Explique o que precisa de ajuste. Esta ação existe apenas para
-              missões que já estavam no fluxo antigo de aprovação.
+              Explique o que falta. A missão volta para a pessoa responsável, que
+              pode retomar, ajustar e enviar de novo.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">

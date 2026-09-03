@@ -199,6 +199,39 @@ Atenção: `clan_campaigns` é a campanha POR CLÃ, mensal. Não confundir com o
 de `missions`/`mission_submissions` descrito na Fase 5 abaixo (pool auto-servido
 por regime), que continua não implementado.
 
+## Lista de missões: Avulsas × Informativos (decisão de 2026-09-03)
+
+`/tasks` deixou de ser uma lista única com quatro filtros (origem, escopo,
+status, prazo). A **origem virou o eixo principal** (`?view=standalone` ou
+`?view=informative`), porque as duas populações têm forma diferente:
+
+- **Avulsas** (`tasks.informative_id` NULL): pedido de uma pessoa para outra.
+  Na visão pessoal são divididas pelo **papel do leitor** em cada missão —
+  Para você fazer / Para você aprovar / Você pediu / Entregues, aguardando
+  quem pediu / Encerradas — e não por status: papel é o que decide a próxima
+  ação. Escopos amplos (clã, pessoa, Guilda) ficam aberto/encerrado,
+  atrasadas no topo. **Criação só pelo formulário completo** (`/tasks/new`):
+  um compositor de uma linha (`@pessoa !alta ~sexta #3`) foi implementado e
+  **removido no mesmo dia a pedido do Bruno** — ele quer um único caminho
+  completo, não um atalho. Não reintroduzir sem ele pedir.
+- **Retorno para quem pediu** (2026-09-03): missão criada para outra pessoa
+  termina em **entrega com retorno escrito obrigatório** (`awaiting_approval`
+  exige nota). Quem pediu vê o retorno na lista ("Para você aprovar") e no
+  detalhe, aprova com comentário opcional (vai para o histórico e para quem
+  entregou), e é avisado no Telegram quando o trabalho começa, quando a
+  entrega chega (com o retorno no texto) e, no outro sentido, quem entregou
+  recebe a aprovação com o comentário. "Você pediu" mostra a última
+  movimentação de cada pedido.
+- **Informativos** (`informative_id` preenchido): lidas como **pacote por
+  empresa**, com o progresso do conjunto (`src/domain/mission-triage.ts`).
+  Criar aqui é preparar um Informativo (`/informativos`), nunca uma missão
+  solta.
+
+O único filtro que sobrou é o recorte de pessoas (`scope`: minhas / meus
+clãs / um clã / uma pessoa / Guilda). Status, prazo e origem viraram
+estrutura. Toda linha de missão passa pela `<MissionRow>` (`frame="flat"`
+dentro do pacote).
+
 ## Design e UX (decisões já tomadas — não redecidir do zero)
 
 **Antes de escrever qualquer tela, leia `docs/design-system.md`.** Ele é
@@ -248,11 +281,13 @@ Se você está prestes a copiar classes de outra tela, o componente já existe.
   tarefas que não existem no schema.
 
 - **Criação de tarefa — "liberdade" significa baixa fricção com campos
-  estruturados, NÃO texto livre não-estruturado.** Ex.: criação em uma linha
-  com parsing de atalhos (@pessoa, !prioridade, ~prazo), campos opcionais
-  que não bloqueiam o salvamento, edição inline sem modal pesado. Nunca sacrificar
+  estruturados, NÃO texto livre não-estruturado.** Campos opcionais que não
+  bloqueiam o salvamento, edição inline sem modal pesado. Nunca sacrificar
   estrutura (prioridade, dificuldade, prazo como campos reais) em nome de
   liberdade — sem estrutura, XP e leaderboard não têm o que calcular.
+  A ideia de "criação em uma linha com parsing de atalhos (@pessoa,
+  !prioridade, ~prazo)" foi **testada e rejeitada pelo Bruno em 2026-09-03**:
+  o caminho de criação é um só, o formulário completo.
 
 - **Sequenciamento**: não aplicar mudanças visuais em paralelo com mudanças de
   schema/backend da mesma sessão de trabalho — risco de diffs conflitantes sem

@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useTransition } from "react";
 
 import {
   Select,
@@ -9,29 +10,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { TASK_STATUSES, type TaskStatus } from "@/domain/task-state";
-import { STATUS_LABELS } from "@/lib/task-ui";
+import type { MissionScope } from "@/domain/mission-triage";
 
-export type TaskScope =
-  | "mine"
-  | "my_clans"
-  | "clan"
-  | "person"
-  | "created"
-  | "all";
-
-export function TaskFilters({
+/**
+ * O único filtro que sobrou na lista de missões: DE QUEM é o trabalho.
+ *
+ * Origem virou a navegação da página (Avulsas / Informativos); status e
+ * prazo viraram estrutura (seções por papel, atrasadas no topo). O que não
+ * dá para virar estrutura é o ponto de vista — a pessoa, os clãs dela, um
+ * clã, alguém, a Guilda inteira — e isso continua sendo uma escolha.
+ */
+export function MissionScopeSelect({
   scope,
-  status,
-  due,
   clans,
   members,
   clanId,
   personId,
 }: {
-  scope: TaskScope;
-  status: TaskStatus | "all";
-  due: "all" | "overdue" | "week";
+  scope: MissionScope;
   clans: { id: string; name: string }[];
   members: { userId: string; name: string }[];
   clanId?: string;
@@ -40,25 +36,24 @@ export function TaskFilters({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [pending, startTransition] = useTransition();
 
   function replace(mutator: (params: URLSearchParams) => void) {
     const params = new URLSearchParams(searchParams);
     mutator(params);
+    // Filtros da lista antiga: não fazem mais nada, não ficam na URL.
+    params.delete("status");
+    params.delete("due");
+    params.delete("origin");
     const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname);
-  }
-
-  function setSimpleParam(key: "status" | "due", value: string) {
-    replace((params) => {
-      if (value === "all") params.delete(key);
-      else params.set(key, value);
+    startTransition(() => {
+      router.replace(query ? `${pathname}?${query}` : pathname);
     });
   }
 
-  function setScope(nextScope: TaskScope) {
+  function setScope(nextScope: MissionScope) {
     replace((params) => {
-      if (nextScope === "mine") params.delete("scope");
-      else params.set("scope", nextScope);
+      params.set("scope", nextScope);
       if (nextScope !== "clan") params.delete("clan");
       else if (!clanId && clans[0]) params.set("clan", clans[0].id);
       if (nextScope !== "person") params.delete("person");
@@ -67,21 +62,24 @@ export function TaskFilters({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/25 p-2">
-      <Select value={scope} onValueChange={(value) => setScope(value as TaskScope)}>
-        <SelectTrigger size="sm" aria-label="Filtrar por escopo" className="min-w-40">
+    <div
+      className="flex flex-wrap items-center gap-2"
+      aria-busy={pending || undefined}
+    >
+      <span className="hud-label">Mostrar</span>
+      <Select value={scope} onValueChange={(value) => setScope(value as MissionScope)}>
+        <SelectTrigger size="sm" aria-label="Escolher de quem são as missões" className="min-w-40">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="mine">Minhas missões</SelectItem>
           <SelectItem value="my_clans">Meus clãs</SelectItem>
           <SelectItem value="clan" disabled={clans.length === 0}>
-            Clã específico
+            Um clã…
           </SelectItem>
           <SelectItem value="person" disabled={members.length === 0}>
-            Pessoa específica
+            Uma pessoa…
           </SelectItem>
-          <SelectItem value="created">Criadas por mim</SelectItem>
           <SelectItem value="all">Toda a Guilda</SelectItem>
         </SelectContent>
       </Select>
@@ -131,30 +129,6 @@ export function TaskFilters({
           </SelectContent>
         </Select>
       ) : null}
-
-      <Select value={status} onValueChange={(value) => setSimpleParam("status", value)}>
-        <SelectTrigger size="sm" aria-label="Filtrar por status">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Todos os status</SelectItem>
-          {TASK_STATUSES.map((taskStatus) => (
-            <SelectItem key={taskStatus} value={taskStatus}>
-              {STATUS_LABELS[taskStatus]}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={due} onValueChange={(value) => setSimpleParam("due", value)}>
-        <SelectTrigger size="sm" aria-label="Filtrar por prazo">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Qualquer prazo</SelectItem>
-          <SelectItem value="overdue">Atrasadas</SelectItem>
-          <SelectItem value="week">Próximos 7 dias</SelectItem>
-        </SelectContent>
-      </Select>
     </div>
   );
 }

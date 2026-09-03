@@ -1,5 +1,13 @@
 import { or, and, asc, eq } from "drizzle-orm";
-import { ArrowLeft, ArrowRightLeft, CalendarClock, Star, UsersRound } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRightLeft,
+  Building2,
+  CalendarClock,
+  Inbox,
+  Star,
+  UsersRound,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -75,6 +83,7 @@ export default async function TaskDetailPage({
           assignee: { columns: { id: true, name: true } },
           creator: { columns: { id: true, name: true } },
           clan: { columns: { id: true, name: true, active: true } },
+          client: { columns: { name: true } },
           events: {
             with: { actor: { columns: { name: true } } },
             orderBy: [asc(schema.taskEvents.createdAt)],
@@ -199,6 +208,12 @@ export default async function TaskDetailPage({
     complete:
       task.status === "in_progress" &&
       authorizeTransition("completed", context).allowed,
+    // Entregar é para quem PEDIU. Auto-missão conclui direto: entregar um
+    // retorno a si mesmo só criaria um passo a mais para o mesmo XP.
+    submit:
+      task.status === "in_progress" &&
+      task.creatorId !== task.assigneeId &&
+      authorizeTransition("awaiting_approval", context).allowed,
     approve:
       task.status === "awaiting_approval" &&
       authorizeTransition("completed", context).allowed,
@@ -275,10 +290,24 @@ export default async function TaskDetailPage({
           clanName: candidate.clanName,
         }));
 
-  const awaitingMyApproval = task.status === "awaiting_approval" && can.approve;
   const lastRejection = [...task.events]
     .reverse()
     .find((event) => event.toStatus === "rejected");
+  // O retorno da entrega e o comentário da aprovação são os dois lados do
+  // ciclo de uma missão pedida a outra pessoa. Ficam em destaque, não só
+  // enterrados na linha do tempo.
+  const viewerIsCreator = task.creatorId === session.user.id;
+  const viewerIsAssignee = task.assigneeId === session.user.id;
+  const thirdParty = task.creatorId !== task.assigneeId;
+  const delivery = [...task.events]
+    .reverse()
+    .find((event) => event.toStatus === "awaiting_approval");
+  const approval = [...task.events]
+    .reverse()
+    .find(
+      (event) =>
+        event.toStatus === "completed" && event.fromStatus === "awaiting_approval",
+    );
   const overdue = isOverdue(task.dueDate, task.status);
   const timeline = [
     ...task.events.map((event) => ({ kind: "event" as const, date: event.createdAt, event })),
@@ -308,11 +337,35 @@ export default async function TaskDetailPage({
         </div>
       </div>
 
-      {awaitingMyApproval ? (
-        <div className="rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
-          <p className="font-medium">Esta missão ainda usa o fluxo legado de aprovação.</p>
-          <p>
-            Ao aprovar, {task.assignee?.name ?? "a pessoa responsável"} recebe {task.xpValue} XP.
+      {task.status === "awaiting_approval" ? (
+        <div className="panel-cut panel-cut-sm grid gap-2 bg-warning/10 p-4 text-sm shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--warning)_35%,transparent)]">
+          <p className="hud-label !text-warning">
+            Retorno de {delivery?.actor.name ?? task.assignee?.name ?? "quem entregou"}
+            {delivery ? ` · ${formatDateTime(delivery.createdAt)}` : ""}
+          </p>
+          <p className="whitespace-pre-wrap">
+            {delivery?.note ?? "Entregue sem retorno escrito."}
+          </p>
+          {can.approve ? (
+            <p className="text-xs text-muted-foreground">
+              Aprove para creditar {task.xpValue} XP a{" "}
+              {task.assignee?.name ?? "quem entregou"}, ou devolva dizendo o que falta.
+            </p>
+          ) : viewerIsAssignee ? (
+            <p className="text-xs text-muted-foreground">
+              {task.creator.name} recebeu o retorno e decide a aprovação.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {task.status === "completed" && thirdParty && viewerIsCreator && delivery ? (
+        <div className="panel-cut panel-cut-sm grid gap-2 bg-card/60 p-4 text-sm">
+          <p className="hud-label">
+            Retorno de {delivery.actor.name} · {formatDateTime(delivery.createdAt)}
+          </p>
+          <p className="whitespace-pre-wrap">
+            {delivery.note ?? "Entregue sem retorno escrito."}
           </p>
         </div>
       ) : null}
@@ -327,8 +380,14 @@ export default async function TaskDetailPage({
       {task.status === "completed" && task.assigneeId === session.user.id ? (
         <div className="panel-cut panel-cut-sm flex items-center gap-3 bg-gold/10 p-4 text-sm shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--gold)_35%,transparent)]">
           <Star className="size-5 shrink-0 text-gold" aria-hidden />
-          <div>
+          <div className="grid gap-1">
             <p className="font-medium">Missão concluída — você ganhou {task.xpValue} XP! 🎉</p>
+            {approval?.note ? (
+              <p className="whitespace-pre-wrap">
+                <span className="font-medium">{approval.actor.name}:</span>{" "}
+                {approval.note}
+              </p>
+            ) : null}
             <p>
               Confira seu progresso no{" "}
               <Link href="/profile" className="font-medium underline underline-offset-4">
@@ -352,6 +411,7 @@ export default async function TaskDetailPage({
           dueDate: task.dueDate ? task.dueDate.toISOString().slice(0, 10) : "",
           xpValue: task.xpValue,
           assigneeName: task.assignee?.name ?? null,
+          creatorName: task.creator.name,
           clanId: task.clanId,
           clanName: task.clan?.name ?? null,
         }}
@@ -506,6 +566,31 @@ export default async function TaskDetailPage({
               <span className="text-muted-foreground">Criada por</span>
               <span className="font-medium">{task.creator.name}</span>
             </div>
+            <Separator />
+            {/* De onde a missão veio decide onde ela é acompanhada: pacote
+                de Informativo ou lista de avulsas. */}
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Origem</span>
+              {task.informativeId ? (
+                <Link
+                  href="/tasks?view=informative"
+                  className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                >
+                  <Inbox className="size-4" aria-hidden /> Informativo
+                </Link>
+              ) : (
+                <span className="font-medium">Avulsa</span>
+              )}
+            </div>
+            {task.client ? (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Empresa</span>
+                <span className="inline-flex min-w-0 items-center gap-1 font-medium">
+                  <Building2 className="size-4 shrink-0" aria-hidden />
+                  <span className="truncate">{task.client.name}</span>
+                </span>
+              </div>
+            ) : null}
             <Separator />
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Prioridade</span>

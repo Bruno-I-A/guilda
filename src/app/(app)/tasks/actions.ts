@@ -49,15 +49,37 @@ import { taskUrl } from "@/lib/telegram/notification-payload";
  */
 
 
-/** 'YYYY-MM-DD' → Date ao meio-dia UTC (evita virada de dia por fuso). */
+/**
+ * Aceita duas formas:
+ *
+ * - 'YYYY-MM-DD' (só data) → meio-dia UTC, para o prazo não virar o dia
+ *   anterior ou seguinte dependendo do fuso de quem olha;
+ * - ISO completo com fuso → usado como veio. Quando a pessoa escolhe a HORA, o
+ *   formulário converte no navegador, porque só ele sabe o fuso dela — uma
+ *   hora local enviada crua chegaria aqui sem origem.
+ */
 function dueDateFromInput(value: string | undefined): Date | null {
   if (!value) return null;
-  return new Date(`${value}T12:00:00Z`);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}T12:00:00Z`);
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 const dueDateSchema = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.")
+  .refine(
+    (value) =>
+      /^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isNaN(Date.parse(value)),
+    "Data inválida.",
+  )
+  .optional()
+  .or(z.literal("").transform(() => undefined));
+
+/** Empresa-cliente a que a missão se refere. Opcional: missão avulsa não tem. */
+const clientIdSchema = z
+  .uuid("Empresa inválida.")
   .optional()
   .or(z.literal("").transform(() => undefined));
 
@@ -72,6 +94,7 @@ const createTaskFields = {
   priority: z.coerce.number().int().min(1).max(3),
   difficulty: z.coerce.number().int().min(1).max(5),
   dueDate: dueDateSchema,
+  clientId: clientIdSchema,
 };
 
 const createTaskSchema = z.discriminatedUnion("assignmentType", [
@@ -197,6 +220,7 @@ export async function createTask(
         priority: data.priority,
         difficulty: data.difficulty,
         dueDate: dueDateFromInput(data.dueDate),
+        clientId: data.clientId ?? null,
       });
       return { ok: true, data: { taskId: task.id } };
     },
@@ -469,6 +493,8 @@ async function transitionTask(options: {
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;
     if (options.to === "awaiting_approval") {
+      // O retorno escrito vai junto: quem pediu decide pelo Telegram sem
+      // precisar abrir a missão para saber o que foi feito.
       await enqueueTelegramNotificationIfEnabled(tx, {
         orgId: ctx.orgId,
         userId: task.creatorId,
@@ -476,7 +502,9 @@ async function transitionTask(options: {
         dedupeKey: `task-event:${event.id}:awaiting`,
         payload: notificationPayload(
           "approvals",
-          `🛡️ Missão aguardando aprovação\n\n${task.title}\nRecompensa: ${task.xpValue} XP`,
+          `🛡️ Entrega para sua aprovação\n\n${task.title}\nRecompensa: ${task.xpValue} XP${
+            options.note ? `\n\nRetorno: ${options.note}` : ""
+          }`,
           [[
             { text: "Aprovar", callbackData: encodeTaskCallback("approve", task.id) },
             { text: "Abrir", url: taskUrl(task.id, baseUrl) },
@@ -484,16 +512,43 @@ async function transitionTask(options: {
         ),
       });
     } else if (options.to === "completed" && task.assigneeId) {
-      const completionEventType =
-        task.status === "awaiting_approval" ? "task_approved" : "task_completed";
+      const approved = task.status === "awaiting_approval";
       await enqueueTelegramNotificationIfEnabled(tx, {
         orgId: ctx.orgId,
         userId: task.assigneeId,
-        eventType: completionEventType,
+        eventType: approved ? "task_approved" : "task_completed",
         dedupeKey: `task-event:${event.id}:completed`,
         payload: notificationPayload(
           "xp",
-          `🏆 Missão concluída\n\n${task.title}\n+${task.xpValue} XP`,
+          approved
+            ? `🏆 Entrega aprovada\n\n${task.title}\n+${task.xpValue} XP${
+                options.note ? `\n\nComentário: ${options.note}` : ""
+              }`
+            : `🏆 Missão concluída\n\n${task.title}\n+${task.xpValue} XP`,
+          [[{ text: "Ver missão", url: taskUrl(task.id, baseUrl) }]],
+        ),
+      });
+    } else if (
+      options.to === "in_progress" &&
+      (task.status === "pending" || task.status === "rejected") &&
+      task.creatorId !== ctx.userId
+    ) {
+      // Quem pediu fica sabendo que o trabalho começou (ou recomeçou) sem
+      // ter que abrir a lista para conferir — é o primeiro retorno da missão.
+      const [actor] = await tx
+        .select({ name: schema.user.name })
+        .from(schema.user)
+        .where(eq(schema.user.id, ctx.userId))
+        .limit(1);
+      const verb = task.status === "rejected" ? "retomou" : "iniciou";
+      await enqueueTelegramNotificationIfEnabled(tx, {
+        orgId: ctx.orgId,
+        userId: task.creatorId,
+        eventType: "task_started",
+        dedupeKey: `task-event:${event.id}:started`,
+        payload: notificationPayload(
+          "tasks",
+          `▶️ ${actor?.name ?? "A pessoa responsável"} ${verb} a missão\n\n${task.title}`,
           [[{ text: "Ver missão", url: taskUrl(task.id, baseUrl) }]],
         ),
       });
@@ -808,9 +863,38 @@ export async function startTask(input: { taskId: string }): Promise<ActionResult
   });
 }
 
-/** @deprecated Consumidores antigos agora concluem diretamente. */
-export async function submitTask(input: { taskId: string }): Promise<ActionResult> {
-  return completeTask(input);
+const submitSchema = z.object({
+  taskId: z.uuid(),
+  note: z
+    .string()
+    .trim()
+    .min(3, "Conte o que foi feito: quem pediu precisa desse retorno.")
+    .max(2000, "Retorno muito longo."),
+});
+
+/**
+ * Responsável entrega o trabalho para quem pediu.
+ *
+ * É o caminho ÚNICO de uma missão criada por outra pessoa: ela não conclui
+ * sozinha (ver authorizeTransition). A nota é o RETORNO — o que foi feito, o
+ * dado que faltava, a dúvida — e é obrigatória (decisão de 2026-09-03): quem
+ * pediu precisa receber algo além de uma mudança de status, e a missão não
+ * tem outro canal de conversa. Sem retorno, o pedido voltava mudo.
+ */
+export async function submitTaskForApproval(input: {
+  taskId: string;
+  note: string;
+}): Promise<ActionResult> {
+  const parsed = submitSchema.safeParse(input);
+  if (!parsed.success) {
+    return err(parsed.error.issues[0]?.message ?? "Missão inválida.");
+  }
+  return transitionTask({
+    taskId: parsed.data.taskId,
+    to: "awaiting_approval",
+    allowedFrom: ["in_progress"],
+    note: parsed.data.note,
+  });
 }
 
 /**
@@ -989,14 +1073,33 @@ export async function quickCompleteUnassignedInformativeTask(input: {
   return result;
 }
 
-/** Aprova uma entrega legada que já esteja em awaiting_approval. */
-export async function approveTask(input: { taskId: string }): Promise<ActionResult> {
-  const parsed = taskIdSchema.safeParse(input);
-  if (!parsed.success) return err("Missão inválida.");
+const approveSchema = z.object({
+  taskId: z.uuid(),
+  note: z
+    .string()
+    .trim()
+    .max(2000, "Comentário muito longo.")
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+});
+
+/**
+ * Quem pediu aprova a entrega e credita o XP. O comentário é opcional e
+ * fecha o ciclo no outro sentido: fica no histórico e vai para quem entregou.
+ */
+export async function approveTask(input: {
+  taskId: string;
+  note?: string;
+}): Promise<ActionResult> {
+  const parsed = approveSchema.safeParse(input);
+  if (!parsed.success) {
+    return err(parsed.error.issues[0]?.message ?? "Missão inválida.");
+  }
   return transitionTask({
     taskId: parsed.data.taskId,
     to: "completed",
     allowedFrom: ["awaiting_approval"],
+    note: parsed.data.note,
     sideEffect: creditTaskXp,
   });
 }

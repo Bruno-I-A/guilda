@@ -3,10 +3,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 /**
  * Esqueleto do /tasks.
  *
- * Quatro consultas antes do primeiro paint (clãs, membros, vínculos e a
- * própria lista de até 200 missões). A silhueta é a da lista no formato
- * `full`: título + chip de XP em cima, badge/pips/atribuição embaixo — duas
- * alturas de texto por linha, e não uma.
+ * Quatro consultas antes do primeiro paint (clãs, membros, vínculos e as
+ * missões do recorte). A silhueta é a da visão pessoal das avulsas: cabeçalho
+ * com ação, navegação Avulsas/Informativos, seletor de recorte, faixa de
+ * três contadores e uma seção com linhas no formato `full`.
  */
 
 /** Larguras do título de cada linha, para a lista não virar código de barras. */
@@ -17,8 +17,6 @@ const ROW_TITLE_WIDTHS = [
   "w-3/5",
   "w-2/5",
   "w-3/4",
-  "w-1/2",
-  "w-7/12",
 ] as const;
 
 export default function TasksLoading() {
@@ -36,44 +34,66 @@ export default function TasksLoading() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="grid gap-2">
             <Skeleton className="h-7 w-40 rounded-none" />
-            <Skeleton className="h-4 w-72 max-w-full rounded-none" />
+            <Skeleton className="h-4 w-80 max-w-full rounded-none" />
           </div>
-          <Skeleton className="h-9 w-36 rounded-none" />
-        </div>
-
-        {/* Barra de filtros: os gatilhos de select são `size="sm"` (h-8). */}
-        <div className="panel-cut panel-cut-sm flex flex-wrap items-center gap-2 p-2">
-          <Skeleton className="h-8 w-40 rounded-none" />
-          <Skeleton className="h-8 w-36 rounded-none" />
           <Skeleton className="h-8 w-32 rounded-none" />
         </div>
 
-        {/* Lista de missões no formato `full` */}
-        <ul className="grid gap-1.5">
-          {ROW_TITLE_WIDTHS.map((titleWidth, index) => (
-            <li
-              key={index}
-              className="panel-cut panel-cut-sm flex flex-col gap-2 border-l-2 border-l-border/60 px-4 py-3"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <Skeleton className={`h-5 rounded-none ${titleWidth}`} />
-                {/* Chip de loot: 1.375rem é a altura exata de `.chip-loot`. */}
-                <Skeleton className="h-[1.375rem] w-16 shrink-0 rounded-none" />
-              </div>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                {/* Grupo 1 — estado: badge + pips de prioridade e dificuldade */}
-                <Skeleton className="h-4 w-20 rounded-none" />
-                <Skeleton className="h-3 w-10 rounded-none" />
-                <Skeleton className="h-3 w-16 rounded-none" />
-                <span className="hidden h-3 w-px bg-border sm:block" />
-                {/* Grupo 2 — atribuição: clã · responsável · prazo */}
-                <Skeleton className="h-3 w-24 rounded-none" />
+        {/* Navegação Avulsas / Informativos + recorte */}
+        <div className="grid gap-3">
+          <div className="flex gap-1 border-b border-border">
+            <Skeleton className="my-2.5 h-3 w-16 rounded-none" />
+            <Skeleton className="my-2.5 ml-6 h-3 w-24 rounded-none" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-3 w-14 rounded-none" />
+            <Skeleton className="h-7 w-40 rounded-none" />
+          </div>
+        </div>
+
+        {/* Faixa de contadores */}
+        <div className="grid border-y border-border/80 bg-card/25 sm:grid-cols-3">
+          {[0, 1, 2].map((index) => (
+            <div key={index} className="flex min-h-16 items-center gap-3 px-4 py-2.5">
+              <Skeleton className="h-6 w-8 rounded-none" />
+              <div className="grid gap-1.5">
+                <Skeleton className="h-3.5 w-24 rounded-none" />
                 <Skeleton className="h-3 w-32 rounded-none" />
-                <Skeleton className="h-3 w-24 rounded-none" />
               </div>
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
+
+        {/* Seção "Para você fazer" */}
+        <div className="grid gap-2">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-5 w-40 rounded-none" />
+            <Skeleton className="h-3 w-4 rounded-none" />
+            <span className="h-px flex-1 bg-border/60" />
+          </div>
+          <ul className="grid gap-1.5">
+            {ROW_TITLE_WIDTHS.map((titleWidth, index) => (
+              <li
+                key={index}
+                className="panel-cut panel-cut-sm flex flex-col gap-2 border-l-2 border-l-border/60 px-4 py-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <Skeleton className={`h-5 rounded-none ${titleWidth}`} />
+                  {/* Chip de loot: 1.375rem é a altura exata de `.chip-loot`. */}
+                  <Skeleton className="h-[1.375rem] w-16 shrink-0 rounded-none" />
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <Skeleton className="h-4 w-20 rounded-none" />
+                  <Skeleton className="h-3 w-10 rounded-none" />
+                  <Skeleton className="h-3 w-16 rounded-none" />
+                  <span className="hidden h-3 w-px bg-border sm:block" />
+                  <Skeleton className="h-3 w-24 rounded-none" />
+                  <Skeleton className="h-3 w-32 rounded-none" />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </div>
   );
