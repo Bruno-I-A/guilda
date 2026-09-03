@@ -7,7 +7,9 @@ import { NextResponse, type NextRequest } from "next/server";
  * redirecionar cedo. A validação real da sessão acontece no servidor
  * (src/lib/session.ts) em todo layout protegido e em toda Server Action.
  */
-const AUTH_PAGES = ["/sign-in", "/sign-up"];
+// Só o login. O autocadastro foi removido (auth.ts: disableSignUp) — link
+// antigo para /sign-up cai aqui e é redirecionado para /sign-in.
+const AUTH_PAGES = ["/sign-in"];
 
 export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -39,6 +41,5 @@ export const config = {
     "/onboarding",
     "/change-password",
     "/sign-in",
-    "/sign-up",
   ],
 };

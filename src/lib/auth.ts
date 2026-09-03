@@ -21,6 +21,14 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
+    // Autocadastro FECHADO. Sem isto, /api/auth/sign-up/email aceita qualquer
+    // pessoa da internet, que sai com conta e organização próprias dentro da
+    // instância. A trava fica na biblioteca, na primeira linha do handler, e
+    // não numa checagem nossa que alguém possa desviar.
+    // Conta nasce pela tela de Membros (createMemberWithTempPassword), que
+    // exige admin/owner e usa o internalAdapter — abaixo da camada de rotas,
+    // portanto não afetado por esta trava.
+    disableSignUp: true,
   },
   user: {
     additionalFields: {
