@@ -49,15 +49,37 @@ import { taskUrl } from "@/lib/telegram/notification-payload";
  */
 
 
-/** 'YYYY-MM-DD' → Date ao meio-dia UTC (evita virada de dia por fuso). */
+/**
+ * Aceita duas formas:
+ *
+ * - 'YYYY-MM-DD' (só data) → meio-dia UTC, para o prazo não virar o dia
+ *   anterior ou seguinte dependendo do fuso de quem olha;
+ * - ISO completo com fuso → usado como veio. Quando a pessoa escolhe a HORA, o
+ *   formulário converte no navegador, porque só ele sabe o fuso dela — uma
+ *   hora local enviada crua chegaria aqui sem origem.
+ */
 function dueDateFromInput(value: string | undefined): Date | null {
   if (!value) return null;
-  return new Date(`${value}T12:00:00Z`);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}T12:00:00Z`);
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 const dueDateSchema = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.")
+  .refine(
+    (value) =>
+      /^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isNaN(Date.parse(value)),
+    "Data inválida.",
+  )
+  .optional()
+  .or(z.literal("").transform(() => undefined));
+
+/** Empresa-cliente a que a missão se refere. Opcional: missão avulsa não tem. */
+const clientIdSchema = z
+  .uuid("Empresa inválida.")
   .optional()
   .or(z.literal("").transform(() => undefined));
 
@@ -72,6 +94,7 @@ const createTaskFields = {
   priority: z.coerce.number().int().min(1).max(3),
   difficulty: z.coerce.number().int().min(1).max(5),
   dueDate: dueDateSchema,
+  clientId: clientIdSchema,
 };
 
 const createTaskSchema = z.discriminatedUnion("assignmentType", [
@@ -197,6 +220,7 @@ export async function createTask(
         priority: data.priority,
         difficulty: data.difficulty,
         dueDate: dueDateFromInput(data.dueDate),
+        clientId: data.clientId ?? null,
       });
       return { ok: true, data: { taskId: task.id } };
     },
