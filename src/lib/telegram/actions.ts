@@ -190,6 +190,29 @@ export async function runTelegramTaskAction(input: {
           [[{ text: "Ver missão", url: taskUrl(task.id, baseUrl) }]],
         ),
       });
+    } else if (
+      intent.to === "in_progress" &&
+      (task.status === "pending" || task.status === "rejected") &&
+      task.creatorId !== input.userId
+    ) {
+      // Mesmo retorno do fluxo web: quem pediu sabe que o trabalho começou.
+      const [actor] = await tx
+        .select({ name: schema.user.name })
+        .from(schema.user)
+        .where(eq(schema.user.id, input.userId))
+        .limit(1);
+      const verb = task.status === "rejected" ? "retomou" : "iniciou";
+      await enqueueTelegramNotificationIfEnabled(tx, {
+        orgId: input.orgId,
+        userId: task.creatorId,
+        eventType: "task_started",
+        dedupeKey: `task-event:${event.id}:started`,
+        payload: notificationPayload(
+          "tasks",
+          `▶️ ${actor?.name ?? "A pessoa responsável"} ${verb} a missão\n\n${task.title}`,
+          [[{ text: "Ver missão", url: taskUrl(task.id, baseUrl) }]],
+        ),
+      });
     } else if (intent.to === "rejected" && task.assigneeId) {
       await enqueueTelegramNotificationIfEnabled(tx, {
         orgId: input.orgId,

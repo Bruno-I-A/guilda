@@ -78,6 +78,28 @@ export function formatDateTime(date: Date): string {
   }).format(date);
 }
 
+/**
+ * "há 5 min", "há 3 h", "ontem", "há 4 dias"; acima de uma semana vira a
+ * data. Para quem pediu a missão, "quando foi a última movimentação" é a
+ * resposta para "isso está andando?" — e é melhor lida como distância do
+ * que como carimbo de data.
+ */
+export function formatRelativeTime(date: Date, now = new Date()): string {
+  const minutes = Math.floor((now.getTime() - date.getTime()) / 60_000);
+  if (minutes < 1) return "agora";
+  if (minutes < 60) return `há ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `há ${hours} h`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "ontem";
+  if (days < 7) return `há ${days} dias`;
+  return `em ${new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "America/Sao_Paulo",
+  }).format(date)}`;
+}
+
 export function isOverdue(dueDate: Date | null, status: TaskStatus): boolean {
   if (!dueDate) return false;
   if (status === "completed" || status === "cancelled") return false;

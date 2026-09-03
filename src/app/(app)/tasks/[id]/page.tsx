@@ -287,10 +287,24 @@ export default async function TaskDetailPage({
           clanName: candidate.clanName,
         }));
 
-  const awaitingMyApproval = task.status === "awaiting_approval" && can.approve;
   const lastRejection = [...task.events]
     .reverse()
     .find((event) => event.toStatus === "rejected");
+  // O retorno da entrega e o comentário da aprovação são os dois lados do
+  // ciclo de uma missão pedida a outra pessoa. Ficam em destaque, não só
+  // enterrados na linha do tempo.
+  const viewerIsCreator = task.creatorId === session.user.id;
+  const viewerIsAssignee = task.assigneeId === session.user.id;
+  const thirdParty = task.creatorId !== task.assigneeId;
+  const delivery = [...task.events]
+    .reverse()
+    .find((event) => event.toStatus === "awaiting_approval");
+  const approval = [...task.events]
+    .reverse()
+    .find(
+      (event) =>
+        event.toStatus === "completed" && event.fromStatus === "awaiting_approval",
+    );
   const overdue = isOverdue(task.dueDate, task.status);
   const timeline = [
     ...task.events.map((event) => ({ kind: "event" as const, date: event.createdAt, event })),
@@ -320,11 +334,35 @@ export default async function TaskDetailPage({
         </div>
       </div>
 
-      {awaitingMyApproval ? (
-        <div className="rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
-          <p className="font-medium">Esta missão ainda usa o fluxo legado de aprovação.</p>
-          <p>
-            Ao aprovar, {task.assignee?.name ?? "a pessoa responsável"} recebe {task.xpValue} XP.
+      {task.status === "awaiting_approval" ? (
+        <div className="panel-cut panel-cut-sm grid gap-2 bg-warning/10 p-4 text-sm shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--warning)_35%,transparent)]">
+          <p className="hud-label !text-warning">
+            Retorno de {delivery?.actor.name ?? task.assignee?.name ?? "quem entregou"}
+            {delivery ? ` · ${formatDateTime(delivery.createdAt)}` : ""}
+          </p>
+          <p className="whitespace-pre-wrap">
+            {delivery?.note ?? "Entregue sem retorno escrito."}
+          </p>
+          {can.approve ? (
+            <p className="text-xs text-muted-foreground">
+              Aprove para creditar {task.xpValue} XP a{" "}
+              {task.assignee?.name ?? "quem entregou"}, ou devolva dizendo o que falta.
+            </p>
+          ) : viewerIsAssignee ? (
+            <p className="text-xs text-muted-foreground">
+              {task.creator.name} recebeu o retorno e decide a aprovação.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {task.status === "completed" && thirdParty && viewerIsCreator && delivery ? (
+        <div className="panel-cut panel-cut-sm grid gap-2 bg-card/60 p-4 text-sm">
+          <p className="hud-label">
+            Retorno de {delivery.actor.name} · {formatDateTime(delivery.createdAt)}
+          </p>
+          <p className="whitespace-pre-wrap">
+            {delivery.note ?? "Entregue sem retorno escrito."}
           </p>
         </div>
       ) : null}
@@ -339,8 +377,14 @@ export default async function TaskDetailPage({
       {task.status === "completed" && task.assigneeId === session.user.id ? (
         <div className="panel-cut panel-cut-sm flex items-center gap-3 bg-gold/10 p-4 text-sm shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--gold)_35%,transparent)]">
           <Star className="size-5 shrink-0 text-gold" aria-hidden />
-          <div>
+          <div className="grid gap-1">
             <p className="font-medium">Missão concluída — você ganhou {task.xpValue} XP! 🎉</p>
+            {approval?.note ? (
+              <p className="whitespace-pre-wrap">
+                <span className="font-medium">{approval.actor.name}:</span>{" "}
+                {approval.note}
+              </p>
+            ) : null}
             <p>
               Confira seu progresso no{" "}
               <Link href="/profile" className="font-medium underline underline-offset-4">
@@ -364,6 +408,7 @@ export default async function TaskDetailPage({
           dueDate: task.dueDate ? task.dueDate.toISOString().slice(0, 10) : "",
           xpValue: task.xpValue,
           assigneeName: task.assignee?.name ?? null,
+          creatorName: task.creator.name,
           clanId: task.clanId,
           clanName: task.clan?.name ?? null,
         }}

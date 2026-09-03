@@ -32,13 +32,11 @@ import {
   type MissionView,
 } from "@/domain/mission-triage";
 import type { TaskStatus } from "@/domain/task-state";
-import { listOrgMembersWithResolvedClan } from "@/lib/org";
 import { requireOrgSession } from "@/lib/session";
 
 import { InformativeView } from "./informative-view";
-import type { MissionListRow } from "./mission-list-types";
+import type { MissionDelivery, MissionListRow } from "./mission-list-types";
 import { MissionScopeSelect } from "./mission-scope-select";
-import { QuickMissionComposer } from "./quick-mission-composer";
 import { StandaloneView } from "./standalone-view";
 
 export const metadata: Metadata = { title: "Missões" };
@@ -135,17 +133,21 @@ export default async function TasksPage({
   const view = parseMissionView(single(params.view), single(params.origin));
   const now = new Date();
 
-  // Pessoas com o clã que o servidor inferiria para elas: o compositor de
-  // uma linha usa isso para avisar ANTES de enviar quem não pode receber
-  // missão. A Server Action repete a resolução — aqui é só transparência.
-  const [{ clans, myClanIds }, members] = await Promise.all([
-    withOrgTx(session.orgId, async (tx) => {
-      const [clanRows, myMemberships] = await Promise.all([
+  const { clans, members, myClanIds } = await withOrgTx(
+    session.orgId,
+    async (tx) => {
+      const [clanRows, memberRows, myMemberships] = await Promise.all([
         tx
           .select({ id: schema.clans.id, name: schema.clans.name })
           .from(schema.clans)
           .where(and(eq(schema.clans.orgId, session.orgId), eq(schema.clans.active, true)))
           .orderBy(asc(schema.clans.name)),
+        tx
+          .select({ userId: schema.member.userId, name: schema.user.name })
+          .from(schema.member)
+          .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+          .where(eq(schema.member.organizationId, session.orgId))
+          .orderBy(asc(schema.user.name)),
         tx
           .select({ clanId: schema.clanMemberships.clanId })
           .from(schema.clanMemberships)
@@ -167,11 +169,11 @@ export default async function TasksPage({
       ]);
       return {
         clans: clanRows,
+        members: memberRows,
         myClanIds: myMemberships.map((membership) => membership.clanId),
       };
-    }),
-    listOrgMembersWithResolvedClan(session.orgId),
-  ]);
+    },
+  );
 
   const scope = parseMissionScope(
     single(params.scope),
@@ -224,7 +226,11 @@ export default async function TasksPage({
     );
   }
 
-  let standalone: { open: MissionListRow[]; closed: MissionListRow[] } | null = null;
+  let standalone: {
+    open: MissionListRow[];
+    closed: MissionListRow[];
+    deliveries: Map<string, MissionDelivery>;
+  } | null = null;
   let packages: InformativePackage<MissionListRow>[] = [];
 
   if (view === "standalone") {
@@ -253,7 +259,48 @@ export default async function TasksPage({
           limit: 30,
         }),
       ]);
-      return { open: open.map(toRow), closed: closed.map(toRow) };
+
+      // O retorno escrito de cada entrega que espera a aprovação de quem lê:
+      // é o dado que decide "aprovo daqui mesmo ou preciso abrir".
+      const awaitingMine = open
+        .filter(
+          (task) =>
+            task.status === "awaiting_approval" &&
+            task.creatorId === session.user.id &&
+            task.assigneeId !== session.user.id,
+        )
+        .map((task) => task.id);
+      const deliveries = new Map<string, MissionDelivery>();
+      if (awaitingMine.length > 0) {
+        const events = await tx
+          .select({
+            taskId: schema.taskEvents.taskId,
+            note: schema.taskEvents.note,
+            createdAt: schema.taskEvents.createdAt,
+            actorName: schema.user.name,
+          })
+          .from(schema.taskEvents)
+          .innerJoin(schema.user, eq(schema.user.id, schema.taskEvents.actorId))
+          .where(
+            and(
+              eq(schema.taskEvents.orgId, session.orgId),
+              inArray(schema.taskEvents.taskId, awaitingMine),
+              eq(schema.taskEvents.toStatus, "awaiting_approval"),
+            ),
+          )
+          .orderBy(desc(schema.taskEvents.createdAt));
+        for (const event of events) {
+          if (!deliveries.has(event.taskId)) {
+            deliveries.set(event.taskId, {
+              note: event.note,
+              actorName: event.actorName,
+              at: event.createdAt,
+            });
+          }
+        }
+      }
+
+      return { open: open.map(toRow), closed: closed.map(toRow), deliveries };
     });
   } else {
     packages = await withOrgTx(session.orgId, async (tx) => {
@@ -364,25 +411,15 @@ export default async function TasksPage({
       </div>
 
       {standalone ? (
-        <>
-          <QuickMissionComposer
-            viewerId={session.user.id}
-            clans={clans}
-            members={members.map((member) => ({
-              userId: member.userId,
-              name: member.name,
-              resolutionError: member.resolutionError,
-            }))}
-          />
-          <StandaloneView
-            scope={scope}
-            viewerId={session.user.id}
-            open={standalone.open}
-            closed={standalone.closed}
-            now={now}
-            taskHref={taskHref}
-          />
-        </>
+        <StandaloneView
+          scope={scope}
+          viewerId={session.user.id}
+          open={standalone.open}
+          closed={standalone.closed}
+          deliveries={standalone.deliveries}
+          now={now}
+          taskHref={taskHref}
+        />
       ) : (
         <InformativeView packages={packages} now={now} taskHref={taskHref} />
       )}

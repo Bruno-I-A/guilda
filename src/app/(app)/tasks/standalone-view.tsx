@@ -8,9 +8,10 @@ import {
   triageStandaloneTasks,
   type MissionScope,
 } from "@/domain/mission-triage";
+import { formatRelativeTime } from "@/lib/task-ui";
 
 import { ClosedMissions, MissionEmpty, MissionSection } from "./mission-sections";
-import type { MissionListRow } from "./mission-list-types";
+import type { MissionDelivery, MissionListRow } from "./mission-list-types";
 
 function plural(count: number, one: string, many: string): string {
   return count === 1 ? one : many;
@@ -19,18 +20,31 @@ function plural(count: number, one: string, many: string): string {
 function Rows({
   tasks,
   taskHref,
+  trailingFor,
 }: {
   tasks: readonly MissionListRow[];
   taskHref: (taskId: string) => string;
+  /** Sinal à direita da linha: "movimentada há 2 h", "enviada ontem". */
+  trailingFor?: (task: MissionListRow) => React.ReactNode;
 }) {
   return (
     <ul className="grid gap-1.5">
       {tasks.map((task) => (
         <li key={task.id}>
-          <MissionRow task={task} href={taskHref(task.id)} />
+          <MissionRow
+            task={task}
+            href={taskHref(task.id)}
+            trailing={trailingFor?.(task)}
+          />
         </li>
       ))}
     </ul>
+  );
+}
+
+function Movement({ label }: { label: string }) {
+  return (
+    <span className="ml-auto whitespace-nowrap text-xs text-muted-foreground">{label}</span>
   );
 }
 
@@ -41,12 +55,17 @@ function Rows({
  * missão — fazer, aprovar, pediu, enviou — porque é o papel que decide a
  * próxima ação, não o status. Nos escopos amplos (clã, pessoa, Guilda) não
  * há papel: fica aberto/encerrado, com atrasadas no topo.
+ *
+ * Quem pediu precisa de RETORNO, não só de status: a seção "Para você
+ * aprovar" mostra o retorno escrito de cada entrega, e "Você pediu" mostra
+ * quando a missão se moveu pela última vez.
  */
 export function StandaloneView({
   scope,
   viewerId,
   open,
   closed,
+  deliveries,
   now,
   taskHref,
 }: {
@@ -54,6 +73,8 @@ export function StandaloneView({
   viewerId: string;
   open: readonly MissionListRow[];
   closed: readonly MissionListRow[];
+  /** Retorno da entrega, por missão que espera a aprovação de quem lê. */
+  deliveries?: ReadonlyMap<string, MissionDelivery>;
   now: Date;
   taskHref: (taskId: string) => string;
 }) {
@@ -99,7 +120,7 @@ export function StandaloneView({
         <MissionSection
           title="Para você fazer"
           count={sections.todo.length}
-          hint="iniciar, concluir ou enviar"
+          hint="iniciar, concluir ou entregar"
         >
           {sections.todo.length === 0 ? (
             <MissionEmpty title="Nada esperando por você">
@@ -115,9 +136,36 @@ export function StandaloneView({
           <MissionSection
             title="Para você aprovar"
             count={sections.approve.length}
-            hint="quem entregou espera o seu retorno"
+            hint="leia o retorno e decida"
           >
-            <Rows tasks={sections.approve} taskHref={taskHref} />
+            <ul className="grid gap-2">
+              {sections.approve.map((task) => {
+                const delivery = deliveries?.get(task.id);
+                return (
+                  <li key={task.id} className="grid">
+                    <MissionRow
+                      task={task}
+                      href={taskHref(task.id)}
+                      trailing={
+                        delivery ? (
+                          <Movement label={`entregue ${formatRelativeTime(delivery.at, now)}`} />
+                        ) : null
+                      }
+                    />
+                    {/* O retorno fica colado na linha: ler aqui já decide se
+                        dá para aprovar de cara ou se precisa abrir. */}
+                    <blockquote className="ml-3 border-l-2 border-warning/60 bg-warning/5 px-3 py-2">
+                      <p className="hud-label !text-warning">
+                        retorno de {delivery?.actorName ?? task.assigneeName ?? "quem entregou"}
+                      </p>
+                      <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground">
+                        {delivery?.note ?? "Entregue sem retorno escrito."}
+                      </p>
+                    </blockquote>
+                  </li>
+                );
+              })}
+            </ul>
           </MissionSection>
         ) : null}
 
@@ -127,17 +175,35 @@ export function StandaloneView({
             count={sections.requested.length}
             hint="em mãos de outra pessoa"
           >
-            <Rows tasks={sections.requested} taskHref={taskHref} />
+            <Rows
+              tasks={sections.requested}
+              taskHref={taskHref}
+              trailingFor={(task) => (
+                <Movement
+                  label={
+                    task.status === "pending"
+                      ? `pedida ${formatRelativeTime(task.createdAt, now)}`
+                      : `movimentada ${formatRelativeTime(task.updatedAt, now)}`
+                  }
+                />
+              )}
+            />
           </MissionSection>
         ) : null}
 
         {sections.submitted.length > 0 ? (
           <MissionSection
-            title="Enviadas para aprovação"
+            title="Entregues, aguardando quem pediu"
             count={sections.submitted.length}
-            hint="esperando quem pediu"
+            hint="o retorno já foi enviado"
           >
-            <Rows tasks={sections.submitted} taskHref={taskHref} />
+            <Rows
+              tasks={sections.submitted}
+              taskHref={taskHref}
+              trailingFor={(task) => (
+                <Movement label={`entregue ${formatRelativeTime(task.updatedAt, now)}`} />
+              )}
+            />
           </MissionSection>
         ) : null}
 
@@ -188,7 +254,13 @@ export function StandaloneView({
             .
           </MissionEmpty>
         ) : (
-          <Rows tasks={split.open} taskHref={taskHref} />
+          <Rows
+            tasks={split.open}
+            taskHref={taskHref}
+            trailingFor={(task) => (
+              <Movement label={`movimentada ${formatRelativeTime(task.updatedAt, now)}`} />
+            )}
+          />
         )}
       </MissionSection>
 
