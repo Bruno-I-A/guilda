@@ -199,6 +199,9 @@ export default async function TaskDetailPage({
     complete:
       task.status === "in_progress" &&
       authorizeTransition("completed", context).allowed,
+    submit:
+      task.status === "in_progress" &&
+      authorizeTransition("awaiting_approval", context).allowed,
     approve:
       task.status === "awaiting_approval" &&
       authorizeTransition("completed", context).allowed,

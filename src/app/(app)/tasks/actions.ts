@@ -808,9 +808,33 @@ export async function startTask(input: { taskId: string }): Promise<ActionResult
   });
 }
 
-/** @deprecated Consumidores antigos agora concluem diretamente. */
+/**
+ * Responsável devolve o trabalho para quem pediu.
+ *
+ * É o caminho ÚNICO de uma missão criada por outra pessoa: ela não conclui
+ * sozinha (ver authorizeTransition). A nota é o retorno — o que foi feito, o
+ * dado que faltava, a dúvida. Opcional porque nem toda missão pede resposta, e
+ * a conversa da missão cobre o resto.
+ */
+export async function submitTaskForApproval(input: {
+  taskId: string;
+  note?: string;
+}): Promise<ActionResult> {
+  const parsed = z
+    .object({ taskId: z.uuid(), note: z.string().trim().max(2000).optional() })
+    .safeParse(input);
+  if (!parsed.success) return err("Missão inválida.");
+  return transitionTask({
+    taskId: parsed.data.taskId,
+    to: "awaiting_approval",
+    allowedFrom: ["in_progress"],
+    note: parsed.data.note || undefined,
+  });
+}
+
+/** @deprecated Use submitTaskForApproval. Mantido para consumidores antigos. */
 export async function submitTask(input: { taskId: string }): Promise<ActionResult> {
-  return completeTask(input);
+  return submitTaskForApproval(input);
 }
 
 /**
