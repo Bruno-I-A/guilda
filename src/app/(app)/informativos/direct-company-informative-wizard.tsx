@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ScanText, Search, X } from "lucide-react";
+import { ArrowLeft, ListChecks, Search, X } from "lucide-react";
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -8,11 +8,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { directCompanyInformativeText } from "@/domain/company-flow";
 import { formatCnpj } from "@/domain/cnpj";
 import { TAX_REGIME_LABELS, type TaxRegime } from "@/lib/clients-ui";
+import { DIRECT_CLOSURE_MISSION_PRESETS } from "@/lib/informatives/mission-presets";
 
-import { analyzeInformative } from "./actions";
+import { prepareStructuredInformative } from "./actions";
+import {
+  ClanMissionEditor,
+  clanMissionGroupsAreValid,
+  clanMissionGroupsFromPresets,
+  flattenClanMissionGroups,
+  type ClanMissionEditorClan,
+  type ClanMissionGroupDraft,
+} from "./clan-mission-editor";
 
 type DirectInformativeKind = "amendment" | "closure";
 
@@ -23,22 +31,14 @@ type ClientOption = {
   taxRegime: TaxRegime;
 };
 
-const DEFAULT_CLOSURE_ACTIONS = [
-  "SOCIETÁRIO – Baixar o Alvará.",
-  "CONTABILIDADE – Finalizar lançamentos até a data da baixa.",
-  "FISCAL – Finalizar todos os informativos da empresa até a data da baixa.",
-  "RH – Baixar folha e pró-labore ou confirmar que já foram baixados.",
-  "SUCESSO DO CLIENTE – Separar a documentação, confeccionar o Protocolo de entrega, combinar a entrega e cobrar a baixa.",
-  "SUCESSO DO CLIENTE – Retirar empresa do E-Auditoria.",
-  "SUCESSO DO CLIENTE – Retirar empresa do Onvio.",
-].join("\n");
-
 export function DirectCompanyInformativeWizard({
   kind,
+  clans,
   clients,
   onDone,
 }: {
   kind: DirectInformativeKind;
+  clans: readonly ClanMissionEditorClan[];
   clients: readonly ClientOption[];
   onDone: () => void;
 }) {
@@ -47,8 +47,14 @@ export function DirectCompanyInformativeWizard({
   const [selectedId, setSelectedId] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [details, setDetails] = useState("");
-  const [actions, setActions] = useState(
-    kind === "closure" ? DEFAULT_CLOSURE_ACTIONS : "",
+  const [missionGroups, setMissionGroups] = useState<ClanMissionGroupDraft[]>(
+    () => kind === "closure"
+      ? clanMissionGroupsFromPresets(
+          clans,
+          DIRECT_CLOSURE_MISSION_PRESETS,
+          "baixa-direta",
+        )
+      : [],
   );
   const selected = clients.find((client) => client.id === selectedId) ?? null;
   const matches = useMemo(() => {
@@ -60,22 +66,20 @@ export function DirectCompanyInformativeWizard({
       .slice(0, 12);
   }, [clients, search]);
   const amendment = kind === "amendment";
+  const missionsValid =
+    (amendment && missionGroups.length === 0) ||
+    clanMissionGroupsAreValid(missionGroups);
 
   function analyze() {
-    if (!selected || (amendment && !details.trim())) return;
+    if (!selected || (amendment && !details.trim()) || !missionsValid) return;
     startTransition(async () => {
-      const result = await analyzeInformative({
-        sourceText: directCompanyInformativeText({
-          kind,
-          companyName: selected.name,
-          cnpj: selected.cnpj,
-          taxRegime: selected.taxRegime,
-          details,
-          actions,
-        }),
+      const result = await prepareStructuredInformative({
+        missions: flattenClanMissionGroups(missionGroups),
         directCompany: {
+          type: "company",
           clientId: selected.id,
           kind,
+          details,
         },
       });
       if (!result.ok) {
@@ -175,23 +179,17 @@ export function DirectCompanyInformativeWizard({
         />
       </div>
 
-      <div className="grid gap-1.5">
-        <Label htmlFor={`direct-${kind}-actions`}>Missões do Informativo</Label>
-        <Textarea
-          id={`direct-${kind}-actions`}
-          value={actions}
-          onChange={(event) => setActions(event.target.value)}
-          rows={amendment ? 5 : 9}
-          placeholder={
-            "Uma missão por linha, no formato:\nFiscal – Atualizar cadastro da empresa"
-          }
-        />
-        <p className="text-xs text-muted-foreground">
-          {amendment
-            ? "Pode ficar vazio quando a alteração servir somente como aviso no mural."
-            : "As missões padrão podem ser editadas, removidas ou complementadas antes da prévia."}
-        </p>
-      </div>
+      <ClanMissionEditor
+        clans={clans}
+        groups={missionGroups}
+        onChange={setMissionGroups}
+        disabled={pending}
+        description={
+          amendment
+            ? "Opcional: adicione somente os clãs que terão alguma providência após a alteração."
+            : "As missões padrão já estão separadas por clã e podem ser editadas, removidas ou complementadas."
+        }
+      />
 
       <div className="flex items-center justify-between gap-2">
         <Button variant="ghost" size="sm" onClick={onDone} disabled={pending}>
@@ -199,9 +197,14 @@ export function DirectCompanyInformativeWizard({
         </Button>
         <Button
           onClick={analyze}
-          disabled={pending || !selected || (amendment && !details.trim())}
+          disabled={
+            pending ||
+            !selected ||
+            (amendment && !details.trim()) ||
+            !missionsValid
+          }
         >
-          <ScanText className="size-4" aria-hidden /> Gerar prévia
+          <ListChecks className="size-4" aria-hidden /> Gerar prévia
         </Button>
       </div>
     </div>

@@ -13,8 +13,8 @@ export interface StructuredMissionInput {
 
 export interface StructuredInformativeCompany {
   legalName: string;
-  normalizedCnpj: string;
-  taxRegime: TaxRegime;
+  normalizedCnpj: string | null;
+  taxRegime: TaxRegime | null;
   clientId: string | null;
   createClient: boolean;
   cnaeCode: string | null;
@@ -44,6 +44,9 @@ export function buildStructuredInformativePayload(input: {
   clans: readonly StructuredClan[];
   missions: readonly StructuredMissionInput[];
   company?: StructuredInformativeCompany;
+  kind?: InformativeDraftPayload["kind"];
+  summary?: string;
+  observations?: readonly string[];
 }): InformativeDraftPayload {
   const clansById = new Map(input.clans.map((clan) => [clan.id, clan]));
   const tasks = input.missions.map((mission) => {
@@ -71,10 +74,11 @@ export function buildStructuredInformativePayload(input: {
     };
   });
   const company = input.company;
+  const kind = input.kind ?? (company ? "new_client" : "general_task");
 
   return informativeDraftPayloadSchema.parse({
-    kind: company ? "new_client" : "general_task",
-    sourceFormat: company ? "informative" : "business_mission",
+    kind,
+    sourceFormat: kind === "general_task" ? "business_mission" : "informative",
     company: {
       systemCode: null,
       legalName: company?.legalName ?? null,
@@ -82,9 +86,11 @@ export function buildStructuredInformativePayload(input: {
       taxRegime: company?.taxRegime ?? null,
       city: null,
       contact: null,
-      summary: company
-        ? `Solicitação referente a ${company.legalName}.`
-        : "Solicitação de missões por clã.",
+      summary:
+        input.summary ??
+        (company
+          ? `Solicitação referente a ${company.legalName}.`
+          : "Solicitação de missões por clã."),
       normalizedCnpj: company?.normalizedCnpj ?? null,
       clientId: company?.clientId ?? null,
       createClient: company?.createClient ?? false,
@@ -98,10 +104,13 @@ export function buildStructuredInformativePayload(input: {
     tasks,
     ignoredNotes: [],
     commitments: [],
-    observations: [],
+    observations: (input.observations ?? [])
+      .map((observation) => observation.trim())
+      .filter(Boolean)
+      .map((observation) => observation.slice(0, 500)),
     unresolvedAssignees: [],
     warnings:
-      company && !company.createClient && company.clientId
+      kind === "new_client" && company && !company.createClient && company.clientId
         ? [`Este CNPJ já está cadastrado como “${company.legalName}” — nenhuma empresa nova será criada.`]
         : [],
   });

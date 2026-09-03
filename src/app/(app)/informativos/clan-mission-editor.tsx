@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import type { ClanMissionPreset } from "@/lib/informatives/mission-presets";
 
 interface MissionDescriptionDraft {
   id: string;
@@ -24,12 +25,39 @@ export interface ClanMissionGroupDraft {
   missions: MissionDescriptionDraft[];
 }
 
+export interface ClanMissionEditorClan {
+  id: string;
+  name: string;
+  slug?: string;
+}
+
 export function emptyClanMissionGroup(id = "clan-group-1"): ClanMissionGroupDraft {
   return {
     id,
     clanId: "",
     missions: [{ id: `${id}-mission-1`, description: "" }],
   };
+}
+
+export function clanMissionGroupsFromPresets(
+  clans: readonly ClanMissionEditorClan[],
+  presets: readonly ClanMissionPreset[],
+  idPrefix = "preset",
+): ClanMissionGroupDraft[] {
+  return presets
+    .filter((preset) => preset.descriptions.length > 0)
+    .map((preset, groupIndex) => {
+      const clan = clans.find((candidate) => candidate.slug === preset.clanSlug);
+      const groupId = `${idPrefix}-${groupIndex + 1}`;
+      return {
+        id: groupId,
+        clanId: clan?.id ?? "",
+        missions: preset.descriptions.map((description, missionIndex) => ({
+          id: `${groupId}-mission-${missionIndex + 1}`,
+          description,
+        })),
+      };
+    });
 }
 
 function nextFieldId(prefix: string): string {
@@ -68,11 +96,13 @@ export function ClanMissionEditor({
   groups,
   onChange,
   disabled = false,
+  description = "Escolha um clã e descreva todas as missões dele. Depois, adicione quantos clãs precisar.",
 }: {
-  clans: readonly { id: string; name: string }[];
+  clans: readonly ClanMissionEditorClan[];
   groups: readonly ClanMissionGroupDraft[];
   onChange: (groups: ClanMissionGroupDraft[]) => void;
   disabled?: boolean;
+  description?: string;
 }) {
   function updateGroup(id: string, patch: Partial<ClanMissionGroupDraft>) {
     onChange(
@@ -99,7 +129,7 @@ export function ClanMissionEditor({
       <div>
         <h2>Missões</h2>
         <p className="max-w-prose text-sm text-muted-foreground">
-          Escolha um clã e descreva todas as missões dele. Depois, adicione quantos clãs precisar.
+          {description}
         </p>
       </div>
 
