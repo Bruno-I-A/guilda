@@ -20,10 +20,19 @@ export type TaskScope =
   | "created"
   | "all";
 
+/**
+ * Origem da missão. Missão de Informativo nasce de um pacote confirmado e vem
+ * em lote; missão avulsa é pedido direto de uma pessoa para outra. Misturar as
+ * duas na mesma lista esconde as avulsas, que são as que precisam de
+ * acompanhamento.
+ */
+export type TaskOrigin = "all" | "standalone" | "informative";
+
 export function TaskFilters({
   scope,
   status,
   due,
+  origin,
   clans,
   members,
   clanId,
@@ -32,6 +41,7 @@ export function TaskFilters({
   scope: TaskScope;
   status: TaskStatus | "all";
   due: "all" | "overdue" | "week";
+  origin: TaskOrigin;
   clans: { id: string; name: string }[];
   members: { userId: string; name: string }[];
   clanId?: string;
@@ -48,7 +58,7 @@ export function TaskFilters({
     router.replace(query ? `${pathname}?${query}` : pathname);
   }
 
-  function setSimpleParam(key: "status" | "due", value: string) {
+  function setSimpleParam(key: "status" | "due" | "origin", value: string) {
     replace((params) => {
       if (value === "all") params.delete(key);
       else params.set(key, value);
@@ -68,6 +78,20 @@ export function TaskFilters({
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/25 p-2">
+      <Select
+        value={origin}
+        onValueChange={(value) => setSimpleParam("origin", value)}
+      >
+        <SelectTrigger size="sm" aria-label="Filtrar por origem" className="min-w-40">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Todas as origens</SelectItem>
+          <SelectItem value="standalone">Só avulsas</SelectItem>
+          <SelectItem value="informative">Só de Informativos</SelectItem>
+        </SelectContent>
+      </Select>
+
       <Select value={scope} onValueChange={(value) => setScope(value as TaskScope)}>
         <SelectTrigger size="sm" aria-label="Filtrar por escopo" className="min-w-40">
           <SelectValue />

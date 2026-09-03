@@ -5,6 +5,8 @@ import {
   eq,
   gte,
   inArray,
+  isNotNull,
+  isNull,
   lt,
   lte,
   notInArray,
@@ -32,7 +34,7 @@ import {
 } from "@/lib/task-ui";
 import { cn } from "@/lib/utils";
 
-import { TaskFilters, type TaskScope } from "./task-filters";
+import { TaskFilters, type TaskOrigin, type TaskScope } from "./task-filters";
 
 export const metadata: Metadata = { title: "Missões" };
 
@@ -54,6 +56,10 @@ function parseDue(value: string | undefined): "all" | "overdue" | "week" {
   return value === "overdue" || value === "week" ? value : "all";
 }
 
+function parseOrigin(value: string | undefined): TaskOrigin {
+  return value === "standalone" || value === "informative" ? value : "all";
+}
+
 export default async function TasksPage({
   searchParams,
 }: {
@@ -63,6 +69,7 @@ export default async function TasksPage({
     person?: string | string[];
     status?: string | string[];
     due?: string | string[];
+    origin?: string | string[];
   }>;
 }) {
   const session = await requireOrgSession();
@@ -70,6 +77,7 @@ export default async function TasksPage({
   const scope = parseScope(single(params.scope));
   const status = parseStatus(single(params.status));
   const due = parseDue(single(params.due));
+  const origin = parseOrigin(single(params.origin));
 
   const { clans, members, myClanIds } = await withOrgTx(
     session.orgId,
@@ -127,6 +135,7 @@ export default async function TasksPage({
   if (scope === "person" && personId) filters.set("person", personId);
   if (status !== "all") filters.set("status", status);
   if (due !== "all") filters.set("due", due);
+  if (origin !== "all") filters.set("origin", origin);
   const filteredTasksHref = filters.size > 0 ? `/tasks?${filters}` : "/tasks";
 
   const conditions: SQL[] = [eq(schema.tasks.orgId, session.orgId)];
@@ -148,6 +157,12 @@ export default async function TasksPage({
     conditions.push(eq(schema.tasks.creatorId, session.user.id));
   }
   if (status !== "all") conditions.push(eq(schema.tasks.status, status));
+  // informativeId preenchido = missão que veio de um pacote de Informativo.
+  if (origin === "standalone") {
+    conditions.push(isNull(schema.tasks.informativeId));
+  } else if (origin === "informative") {
+    conditions.push(isNotNull(schema.tasks.informativeId));
+  }
   if (due === "overdue") {
     conditions.push(
       lt(schema.tasks.dueDate, new Date()),
@@ -192,6 +207,7 @@ export default async function TasksPage({
       </div>
 
       <TaskFilters
+        origin={origin}
         scope={scope}
         status={status}
         due={due}
