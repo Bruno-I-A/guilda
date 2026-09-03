@@ -29,6 +29,24 @@ export const CLAN_TABS = [
 
 export type ClanTab = (typeof CLAN_TABS)[number]["key"];
 
+/**
+ * Uma frase por aba: o que a pessoa encontra ali. Aparece sob a navegação do
+ * clã e nos atalhos do dashboard — mesma fonte, para não divergir.
+ */
+export const CLAN_TAB_DESCRIPTIONS: Record<ClanTab, string> = {
+  missions: "A mesa do clã: quem está com o quê e a fila de missões sem dono.",
+  members: "Quem integra o clã e a carga de cada pessoa.",
+  campaigns: "O trabalho grande e recorrente de cada mês.",
+  commitments: "Planejamento das distribuições de lucros das empresas.",
+  portfolio: "Carteira de empresas e fichas fiscais sob responsabilidade do clã.",
+  mei: "Declarações anuais das empresas MEI.",
+  installments: "Controle dos parcelamentos em andamento.",
+  fees: "Controle mensal de honorários.",
+  closings: "Fechamentos contábeis de cada empresa.",
+  "company-data": "Consulta cadastral de uma empresa pelo CNPJ.",
+  flow: "Aberturas, alterações e baixas: do pedido do cliente ao Informativo.",
+};
+
 /** Aba → clã dono dela. Aba ausente desta tabela existe em todo clã. */
 const TAB_OWNER_SLUG: Partial<Record<ClanTab, string>> = {
   commitments: CONTABILIDADE_CLAN_SLUG,
@@ -40,6 +58,15 @@ const TAB_OWNER_SLUG: Partial<Record<ClanTab, string>> = {
   "company-data": SOCIETARIO_CLAN_SLUG,
   flow: SOCIETARIO_CLAN_SLUG,
 };
+
+/**
+ * Aba que existe em todo clã (a mesa) versus a aba própria da área. A
+ * navegação separa as duas para a pessoa achar de cara onde vive o trabalho
+ * específico do seu clã — no Societário, o Fluxo; no Fiscal, a Carteira.
+ */
+export function isSharedClanTab(tab: ClanTab): boolean {
+  return !TAB_OWNER_SLUG[tab];
+}
 
 export function clanHasPortfolio(clanSlug: string): boolean {
   return clanSlug === FISCAL_CLAN_SLUG;

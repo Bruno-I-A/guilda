@@ -1,9 +1,12 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  CLAN_TAB_DESCRIPTIONS,
+  CLAN_TABS,
   clanHasClosings,
   clanHasPortfolio,
   clanTabsFor,
+  isSharedClanTab,
   parseClanTab,
 } from "./clan-tabs";
 
@@ -72,6 +75,23 @@ describe("abas específicas de cada clã", () => {
       "members",
       "campaigns",
     ]);
+  });
+});
+
+describe("mesa do clã versus espaço da área", () => {
+  test("missões, integrantes e campanhas são a mesa; o resto é da área", () => {
+    expect(isSharedClanTab("missions")).toBe(true);
+    expect(isSharedClanTab("members")).toBe(true);
+    expect(isSharedClanTab("campaigns")).toBe(true);
+    expect(isSharedClanTab("flow")).toBe(false);
+    expect(isSharedClanTab("portfolio")).toBe(false);
+    expect(isSharedClanTab("closings")).toBe(false);
+  });
+
+  test("toda aba tem uma descrição", () => {
+    for (const tab of CLAN_TABS) {
+      expect(CLAN_TAB_DESCRIPTIONS[tab.key].length).toBeGreaterThan(10);
+    }
   });
 });
 

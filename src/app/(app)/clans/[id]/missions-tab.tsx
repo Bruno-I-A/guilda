@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { ChevronRight, ListChecks } from "lucide-react";
-import Link from "next/link";
 
+import { MissionRow } from "@/components/mission-row";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -155,7 +155,7 @@ export async function MissionsTab({
       />
 
       <section className="grid gap-3">
-        <ClanSectionHeading>Em andamento</ClanSectionHeading>
+        <ClanSectionHeading count={assigned.length}>Em andamento</ClanSectionHeading>
         {assigned.length === 0 ? (
           <ClanEmptyState
             icon={<ListChecks className="size-6" aria-hidden />}
@@ -164,33 +164,34 @@ export async function MissionsTab({
             compact
           />
         ) : (
-          <ul className="grid gap-2">
+          <ul className="grid gap-1.5">
+            {/* A mesma linha de missão do resto do app: trilho de status,
+                prazo e chip de XP são os sinais de triagem, e a mesa é a
+                tela de triagem por excelência. */}
             {assigned.map((task) => (
               <li key={task.id}>
-                <Link
-                  href={`/tasks/${task.id}`}
-                  className="clan-operational-row flex min-h-16 items-center justify-between gap-3 px-4 py-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                >
-                  <div className="min-w-0">
-                    <span className="block truncate font-medium">
-                    {task.title}
-                    </span>
-                  {task.client ? (
-                    <p className="truncate text-xs text-muted-foreground">
-                      {task.client.name}
-                    </p>
-                  ) : null}
-                  </div>
-                  <span className="flex shrink-0 items-center gap-2 text-sm">
-                  <Avatar className="size-6">
-                      <AvatarFallback className="text-[9px]" aria-hidden>
-                      {initials(task.assignee?.name ?? "?")}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="hidden sm:inline">{task.assignee?.name}</span>
-                    <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
-                  </span>
-                </Link>
+                <MissionRow
+                  variant="compact"
+                  task={{
+                    id: task.id,
+                    title: task.title,
+                    status: task.status,
+                    xpValue: task.xpValue,
+                    dueDate: task.dueDate,
+                    clientName: task.client?.name ?? null,
+                    assigneeName: task.assignee?.name ?? null,
+                  }}
+                  trailing={
+                    <Avatar className="size-6 shrink-0">
+                      <AvatarFallback className="text-xs" aria-hidden>
+                        {initials(task.assignee?.name ?? "?")}
+                      </AvatarFallback>
+                    </Avatar>
+                  }
+                  after={
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                  }
+                />
               </li>
             ))}
           </ul>

@@ -4,6 +4,7 @@ import {
   Archive,
   Check,
   CheckCircle2,
+  ChevronRight,
   Clock3,
   ClipboardPenLine,
   Eye,
@@ -14,7 +15,6 @@ import {
   Send,
   ShieldCheck,
   UserRoundCheck,
-  Workflow,
   XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -151,14 +151,155 @@ const FLOW_SOURCE_LABELS: Record<CompanyFlowSource, string> = {
   other: "Outro",
 };
 
+/**
+ * Situação como ESTADO, nos tokens do tema: prata para "ainda ninguém pegou",
+ * azul-gelo para "em mãos do Societário", cobre para "precisa de uma ação
+ * sua" (o Informativo), verde para concluído. Antes usava sky/violet crus,
+ * que eram paleta categórica para o que é, na verdade, uma etapa.
+ */
 const STATUS_CLASS: Record<CompanyFlowStatus, string> = {
-  sent_to_corporate: "border-sky-500/40 bg-sky-500/10 text-sky-300",
-  in_progress: "border-warning/40 bg-warning/10 text-warning",
-  awaiting_owner: "border-violet-500/40 bg-violet-500/10 text-violet-300",
-  informative_drafting: "border-primary/40 bg-primary/10 text-primary",
+  sent_to_corporate: "border-silver/40 bg-secondary text-silver",
+  in_progress: "border-primary/40 bg-primary/10 text-primary",
+  awaiting_owner: "border-warning/50 bg-warning/10 text-warning",
+  informative_drafting: "border-warning/50 bg-warning/10 text-warning",
   completed: "border-success/40 bg-success/10 text-success",
   cancelled: "border-muted-foreground/30 text-muted-foreground",
 };
+
+/**
+ * O Fluxo é uma esteira de quatro etapas. Mostrar a esteira — e em que ponto
+ * cada pedido está — é o que responde "o que falta acontecer com isso?"
+ * sem abrir nada. As etapas são só leitura do status; nada muda de função.
+ */
+const FLOW_STAGES = [
+  {
+    key: "received",
+    label: "Recebido",
+    hint: "esperando o Societário assumir",
+    statuses: ["sent_to_corporate"],
+  },
+  {
+    key: "processing",
+    label: "Em processamento",
+    hint: "o Societário está no processo",
+    statuses: ["in_progress"],
+  },
+  {
+    key: "informative",
+    label: "Informativo",
+    hint: "confirmado; falta o Informativo",
+    statuses: ["awaiting_owner", "informative_drafting"],
+  },
+  {
+    key: "closed",
+    label: "Encerrados",
+    hint: "concluídos e cancelados",
+    statuses: ["completed", "cancelled"],
+  },
+] as const satisfies readonly {
+  key: string;
+  label: string;
+  hint: string;
+  statuses: readonly CompanyFlowStatus[];
+}[];
+
+type FlowStageKey = (typeof FLOW_STAGES)[number]["key"];
+
+function flowStageIndex(status: CompanyFlowStatus): number {
+  if (status === "cancelled") return -1;
+  return FLOW_STAGES.findIndex((stage) =>
+    (stage.statuses as readonly CompanyFlowStatus[]).includes(status),
+  );
+}
+
+/** Quatro segmentos, um por etapa; o atual aceso, os anteriores meia-luz. */
+function FlowStageTracker({ status }: { status: CompanyFlowStatus }) {
+  const index = flowStageIndex(status);
+  if (index < 0) {
+    return <span className="hud-label">cancelado</span>;
+  }
+  return (
+    <span
+      role="img"
+      aria-label={`Etapa ${index + 1} de ${FLOW_STAGES.length}: ${FLOW_STAGES[index].label}`}
+      className="inline-flex items-center gap-2"
+    >
+      <span className="flex items-center gap-0.5">
+        {FLOW_STAGES.map((stage, position) => (
+          <span
+            key={stage.key}
+            className={cn(
+              "h-1.5 w-6 skew-x-[-12deg]",
+              position < index
+                ? "bg-primary/40"
+                : position === index
+                  ? status === "completed"
+                    ? "bg-success"
+                    : "bg-primary"
+                  : "bg-secondary",
+            )}
+          />
+        ))}
+      </span>
+      <span className="hud-label">
+        {index + 1}/{FLOW_STAGES.length} · {FLOW_STAGES[index].label}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * O que a pessoa faz a seguir com este pedido. É o rótulo do botão que abre
+ * o painel do Fluxo — a ação continua acontecendo lá dentro; aqui só deixa
+ * de se chamar "Abrir" para todo mundo.
+ */
+function flowCallToAction(row: CompanyFlowView): { label: string; primary: boolean } {
+  switch (row.status) {
+    case "sent_to_corporate":
+      return row.canClaim
+        ? { label: "Assumir processamento", primary: true }
+        : { label: "Ver pedido", primary: false };
+    case "in_progress":
+      return row.canReturn
+        ? { label: "Confirmar conclusão", primary: true }
+        : { label: "Acompanhar", primary: false };
+    case "awaiting_owner":
+      return row.canPrepareInformative
+        ? { label: "Preparar Informativo", primary: true }
+        : { label: "Acompanhar", primary: false };
+    case "informative_drafting":
+      return row.canPrepareInformative
+        ? { label: "Continuar Informativo", primary: true }
+        : { label: "Acompanhar", primary: false };
+    default:
+      return { label: "Ver detalhes", primary: false };
+  }
+}
+
+/** Cabeçalho numerado de um bloco do formulário de novo Fluxo. */
+function FormStep({
+  number,
+  title,
+  description,
+}: {
+  number: number;
+  title: string;
+  description?: string;
+}) {
+  return (
+    <div className="flex items-start gap-3 border-t border-border/70 pt-4 first:border-t-0 first:pt-0">
+      <span className="grid size-7 shrink-0 place-items-center border border-primary/50 bg-primary/10 font-mono text-xs font-semibold text-primary [clip-path:polygon(0.3rem_0,100%_0,100%_calc(100%-0.3rem),calc(100%-0.3rem)_100%,0_100%,0_0.3rem)]">
+        {number}
+      </span>
+      <div className="min-w-0">
+        <h3>{title}</h3>
+        {description ? (
+          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 const OPEN_FLOW_STATUSES: readonly CompanyFlowStatus[] = [
   "sent_to_corporate",
@@ -519,12 +660,12 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
               <Badge className="mb-2">Razão social</Badge>
               <div className="grid items-center gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
                 <div>
-                  <span className="text-[10px] font-medium tracking-wider text-muted-foreground uppercase">Atual</span>
+                  <span className="hud-label">Atual</span>
                   <p className="mt-0.5">{row.existingClientName ?? "Não informada"}</p>
                 </div>
                 <span className="hidden text-lg text-primary sm:block" aria-hidden>→</span>
                 <div>
-                  <span className="text-[10px] font-medium tracking-wider text-primary uppercase">Nova razão social</span>
+                  <span className="hud-label !text-primary">Nova razão social</span>
                   <p className="mt-0.5 font-semibold text-primary">{row.requestedLegalName}</p>
                 </div>
               </div>
@@ -534,7 +675,7 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
           {taxRegime ? (
             <div className="rounded-md border border-primary/30 bg-background/65 p-3">
               <Badge className="mb-2">Regime tributário</Badge>
-              <p className="text-[10px] font-medium tracking-wider text-primary uppercase">Novo regime</p>
+              <p className="hud-label !text-primary">Novo regime</p>
               <p className="mt-1 font-semibold">{TAX_REGIME_LABELS[taxRegime]}</p>
             </div>
           ) : null}
@@ -544,7 +685,7 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
               <Badge className="w-fit">Atividades econômicas</Badge>
               {row.requestedActivities.length > 0 ? (
                 <div>
-                  <p className="text-[10px] font-medium tracking-wider text-success uppercase">Adicionar</p>
+                  <p className="hud-label !text-success">Adicionar</p>
                   <ul className="mt-1 grid gap-1">
                     {row.requestedActivities.map((activity, index) => (
                       <li key={`${activity.description}-${index}`} className="rounded bg-success/5 px-2 py-1.5">+ {activity.description}</li>
@@ -554,7 +695,7 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
               ) : null}
               {row.removedActivities.length > 0 ? (
                 <div>
-                  <p className="text-[10px] font-medium tracking-wider text-destructive uppercase">Retirar</p>
+                  <p className="hud-label !text-destructive">Retirar</p>
                   <ul className="mt-1 grid gap-1">
                     {row.removedActivities.map((activity, index) => (
                       <li key={`${activity.description}-${index}`} className="rounded bg-destructive/5 px-2 py-1.5">− {activity.description}</li>
@@ -568,7 +709,7 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
           {address || row.iptu ? (
             <div className="rounded-md border border-primary/30 bg-background/65 p-3 sm:col-span-2">
               <Badge className="mb-2">Endereço</Badge>
-              {address ? <><p className="text-[10px] font-medium tracking-wider text-primary uppercase">Novo endereço</p><p className="mt-1 whitespace-pre-wrap font-medium">{address}</p></> : null}
+              {address ? <><p className="hud-label !text-primary">Novo endereço</p><p className="mt-1 whitespace-pre-wrap font-medium">{address}</p></> : null}
               {row.iptu ? <p className="mt-2 text-xs text-muted-foreground"><strong className="text-foreground">IPTU:</strong> {row.iptu}</p> : null}
             </div>
           ) : null}
@@ -605,7 +746,7 @@ function FlowRequestSummary({ row }: { row: CompanyFlowView }) {
           {contactValues.length > 0 ? (
             <div className="rounded-md border border-primary/30 bg-background/65 p-3 sm:col-span-2">
               <Badge className="mb-2">Contato</Badge>
-              <p className="text-[10px] font-medium tracking-wider text-primary uppercase">Novos dados de contato</p>
+              <p className="hud-label !text-primary">Novos dados de contato</p>
               <div className="mt-1 grid gap-1 sm:grid-cols-3">
                 {row.contactName ? <p><strong>Nome:</strong> {row.contactName}</p> : null}
                 {row.contactPhone ? <p><strong>Telefone:</strong> {row.contactPhone}</p> : null}
@@ -951,6 +1092,11 @@ function NewCompanyFlowDialog({
           <DialogDescription>Registre o pedido do cliente. Ele será enviado ao Societário sem virar missão ou informativo ainda.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
+          <FormStep
+            number={1}
+            title="Pedido"
+            description={opening ? "Tipo do fluxo e o enquadramento pretendido." : "Tipo do fluxo e a empresa envolvida."}
+          />
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5"><Label>Tipo</Label><Select value={kind} onValueChange={(value) => handleKindChange(value as CompanyFlowKind)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="opening">Abertura</SelectItem><SelectItem value="amendment">Alteração</SelectItem><SelectItem value="closure">Baixa</SelectItem></SelectContent></Select></div>
             {opening ? null : (
@@ -1110,6 +1256,11 @@ function NewCompanyFlowDialog({
 
           {opening ? (
             <>
+              <FormStep
+                number={2}
+                title="Nova empresa"
+                description="Como a empresa deve nascer: nome, atividades, capital, endereço e sócios."
+              />
               <div className="grid gap-1.5"><Label>Razão social pretendida</Label><Input value={legalName} onChange={(event) => setLegalName(event.target.value)} placeholder="Nome pretendido da empresa" /></div>
               <div className="grid gap-1.5"><Label>Atividades</Label><Textarea value={activities} onChange={(event) => setActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -1124,7 +1275,11 @@ function NewCompanyFlowDialog({
           {kind === "amendment" ? (
             <section className="grid gap-4 rounded-md border bg-muted/20 p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
-                <div><h3 className="font-medium">O que será alterado?</h3><p className="text-xs text-muted-foreground">Selecione os itens para abrir somente os campos necessários.</p></div>
+                <FormStep
+                  number={2}
+                  title="O que será alterado?"
+                  description="Marque os itens; só os campos necessários aparecem."
+                />
                 {amendmentFields.length > 0 ? <Badge variant="outline">{amendmentFields.length} selecionado{amendmentFields.length === 1 ? "" : "s"}</Badge> : null}
               </div>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -1163,13 +1318,23 @@ function NewCompanyFlowDialog({
             </section>
           ) : null}
 
-          {opening ? <><div className="grid gap-3 sm:grid-cols-2">
+          {opening ? <><FormStep number={3} title="Contato e detalhes" description="Quem responde pela empresa e o pedido como veio do cliente." /><div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5"><Label>Contato</Label><Input value={contactName} onChange={(event) => setContactName(event.target.value)} placeholder="Nome do contato" /></div>
             <div className="grid gap-1.5"><Label>Telefone</Label><Input value={contactPhone} onChange={(event) => setContactPhone(event.target.value)} placeholder="(00) 00000-0000" /></div>
             <div className="grid gap-1.5"><Label>E-mail</Label><Input type="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} placeholder="contato@empresa.com" /></div>
           </div>
           <div className="grid gap-1.5"><Label>{detailLabel}</Label><Textarea value={details} onChange={(event) => setDetails(event.target.value)} rows={4} placeholder={detailPlaceholder} /></div></> : null}
+          {closing ? <FormStep number={2} title="Dados da baixa" description="Data, recibo e o que o Societário precisa saber." /> : null}
           {closing ? <div className="grid gap-1.5"><Label>Observações da baixa</Label><Textarea value={details} onChange={(event) => setDetails(event.target.value)} rows={6} placeholder="Descreva a data da baixa, recibo e demais observações" /></div> : null}
+          {!opening ? (
+            <FormStep
+              number={3}
+              title={closing ? "Cobrança" : "Cobrança e acesso"}
+              description={closing ? "Opcional: honorário do serviço de baixa." : "Opcionais: honorário do serviço e senha Gov.br."}
+            />
+          ) : (
+            <FormStep number={4} title="Acesso Gov.br" description="Opcional. Fica cifrado no cofre do Fluxo." />
+          )}
           {!opening ? (
             <section className="grid gap-3 rounded-md border border-gold/30 bg-gold/5 p-3">
               <div>
@@ -1312,12 +1477,23 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
     });
   }
 
+  const callToAction = flowCallToAction(row);
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button type="button" variant="outline" size="sm">Abrir</Button></DialogTrigger>
+      <DialogTrigger asChild>
+        <Button type="button" variant={callToAction.primary ? "default" : "outline"} size="sm">
+          {callToAction.label} <ChevronRight aria-hidden />
+        </Button>
+      </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader><DialogTitle>{COMPANY_FLOW_KIND_LABELS[row.kind]} · {companyName}</DialogTitle><DialogDescription>Criado por {row.createdByName} em {new Date(row.createdAt).toLocaleString("pt-BR")}</DialogDescription></DialogHeader>
         <div className="grid gap-4 text-sm">
+          {/* Onde o pedido está na esteira, antes de qualquer detalhe. */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 pb-3">
+            <FlowStageTracker status={row.status} />
+            <span className="text-xs text-muted-foreground">{flowStageDescription(row)}</span>
+          </div>
           <div className="flex flex-wrap gap-2"><Badge variant="outline" className={STATUS_CLASS[row.status]}>{COMPANY_FLOW_STATUS_LABELS[row.status]}</Badge><Badge variant="outline">Origem: {FLOW_SOURCE_LABELS[row.source]}</Badge>{row.assignedName ? <Badge variant="outline">Societário: {row.assignedName}</Badge> : null}<RhVerificationBadge state={rhVerificationState} /></div>
           <FlowRequestSummary row={row} />
           {rhVerificationState === "pending" ? (
@@ -1390,7 +1566,8 @@ export function CompanyFlowBoard({
 }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<CompanyFlowStatus | "all">("all");
-  const [view, setView] = useState<"open" | "history">("open");
+  const [stage, setStage] = useState<FlowStageKey | null>(null);
+  const view: "open" | "history" = stage === "closed" ? "history" : "open";
   const openRows = useMemo(
     () => rows.filter((row) => OPEN_FLOW_STATUSES.includes(row.status)),
     [rows],
@@ -1399,136 +1576,194 @@ export function CompanyFlowBoard({
     () => rows.filter((row) => HISTORY_FLOW_STATUSES.includes(row.status)),
     [rows],
   );
-  const statusOptions = view === "open" ? OPEN_FLOW_STATUSES : HISTORY_FLOW_STATUSES;
+  const stageCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        FLOW_STAGES.map((item) => [
+          item.key,
+          rows.filter((row) =>
+            (item.statuses as readonly CompanyFlowStatus[]).includes(row.status),
+          ).length,
+        ]),
+      ) as Record<FlowStageKey, number>,
+    [rows],
+  );
   const visible = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("pt-BR");
     const source = view === "open" ? openRows : historyRows;
+    const stageStatuses =
+      stage && stage !== "closed"
+        ? (FLOW_STAGES.find((item) => item.key === stage)?.statuses as
+            | readonly CompanyFlowStatus[]
+            | undefined)
+        : undefined;
     return source.filter((row) => {
       const haystack = `${row.requestedLegalName ?? ""} ${row.approvedLegalName ?? ""} ${row.existingClientName ?? ""} ${row.resultCnpj ?? ""}`.toLocaleLowerCase("pt-BR");
       return (
         (!normalizedQuery || haystack.includes(normalizedQuery)) &&
-        (status === "all" || row.status === status)
+        (!stageStatuses || stageStatuses.includes(row.status)) &&
+        (view === "open" || status === "all" || row.status === status)
       );
     });
-  }, [historyRows, openRows, query, status, view]);
+  }, [historyRows, openRows, query, stage, status, view]);
 
-  function changeView(next: "open" | "history") {
-    setView(next);
+  /** Clicar na etapa filtra por ela; clicar de novo volta a "tudo em andamento". */
+  function selectStage(key: FlowStageKey) {
     setStatus("all");
     setQuery("");
+    setStage((current) => (current === key ? null : key));
   }
+
+  const filtered = Boolean(query) || (view === "history" && status !== "all");
 
   return (
     <div className="grid gap-5">
-      <section className="panel-cut flex flex-col gap-5 border-l-2 border-l-primary bg-card/50 p-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="grid size-11 shrink-0 place-items-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
-            <Workflow className="size-5" aria-hidden />
-          </span>
-          <div>
-            <p className="hud-label mb-1">Central de solicitações</p>
-            <h2 className="font-heading text-xl font-medium">Fluxo Societário</h2>
-            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Crie pedidos de abertura, alteração e baixa. A tela principal mostra somente o que ainda precisa de ação.
-            </p>
-          </div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2>Fluxo Societário</h2>
+          <p className="mt-1 max-w-prose text-sm text-muted-foreground">
+            O pedido do cliente entra aqui, o Societário processa, e a
+            confirmação vira Informativo. Cada linha mostra em que etapa está
+            e qual é o próximo passo.
+          </p>
         </div>
         {canCreate ? <NewCompanyFlowDialog clanId={clanId} clients={clients} /> : null}
-      </section>
-
-      <div className="flex w-fit rounded-lg border bg-muted/25 p-1" role="tablist" aria-label="Visão dos fluxos">
-        <Button
-          type="button"
-          variant={view === "open" ? "secondary" : "ghost"}
-          aria-pressed={view === "open"}
-          onClick={() => changeView("open")}
-        >
-          <Clock3 aria-hidden /> Em andamento
-          <span className="rounded-full bg-background/60 px-1.5 font-mono text-[10px]">{openRows.length}</span>
-        </Button>
-        <Button
-          type="button"
-          variant={view === "history" ? "secondary" : "ghost"}
-          aria-pressed={view === "history"}
-          onClick={() => changeView("history")}
-        >
-          <Archive aria-hidden /> Concluídos
-          <span className="rounded-full bg-background/60 px-1.5 font-mono text-[10px]">{historyRows.length}</span>
-        </Button>
       </div>
 
-      {view === "open" ? (
-        <div className="grid gap-2 sm:grid-cols-3">
-          <div className="rounded-lg border bg-card/35 p-3">
-            <span className="text-xs text-muted-foreground">Aguardando atendimento</span>
-            <strong className="mt-1 block font-mono text-xl">{openRows.filter((row) => row.status === "sent_to_corporate").length}</strong>
-          </div>
-          <div className="rounded-lg border bg-card/35 p-3">
-            <span className="text-xs text-muted-foreground">Em processamento</span>
-            <strong className="mt-1 block font-mono text-xl">{openRows.filter((row) => row.status === "in_progress").length}</strong>
-          </div>
-          <div className="rounded-lg border bg-card/35 p-3">
-            <span className="text-xs text-muted-foreground">Aguardando Informativo</span>
-            <strong className="mt-1 block font-mono text-xl">{openRows.filter((row) => ["awaiting_owner", "informative_drafting"].includes(row.status)).length}</strong>
-          </div>
-        </div>
-      ) : (
-        <div>
-          <h3 className="font-medium">Histórico de fluxos</h3>
-          <p className="text-sm text-muted-foreground">Consulte processos concluídos ou cancelados sem misturá-los ao trabalho do dia.</p>
-        </div>
-      )}
+      {/* A esteira: as quatro etapas com a contagem de pedidos em cada uma.
+          É filtro e mapa ao mesmo tempo. */}
+      <ol
+        aria-label="Etapas do Fluxo"
+        className="grid grid-cols-2 gap-px border border-border/70 bg-border/40 sm:grid-cols-4"
+      >
+        {FLOW_STAGES.map((item, index) => {
+          const selected = stage === item.key;
+          const count = stageCounts[item.key];
+          return (
+            <li key={item.key} className="min-w-0">
+              <button
+                type="button"
+                aria-pressed={selected}
+                onClick={() => selectStage(item.key)}
+                className={cn(
+                  "grid min-h-24 w-full content-start gap-1 bg-card/60 px-3 py-3 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                  selected && "bg-primary/10 shadow-[inset_0_2px_0_var(--primary)]",
+                  item.key === "closed" && !selected && "bg-card/30",
+                )}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className={cn("hud-label", selected && "!text-primary")}>
+                    {index + 1} · {item.label}
+                  </span>
+                  {index < FLOW_STAGES.length - 1 ? (
+                    <ChevronRight className="hidden size-3.5 shrink-0 text-muted-foreground sm:block" aria-hidden />
+                  ) : null}
+                </span>
+                <span
+                  className={cn(
+                    "font-mono text-2xl font-semibold tabular-nums",
+                    count === 0 && "text-muted-foreground/60",
+                  )}
+                >
+                  {count}
+                </span>
+                <span className="truncate text-xs text-muted-foreground">{item.hint}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
 
-      <div className="grid gap-2 md:grid-cols-[minmax(12rem,1fr)_15rem]">
-        <div className="relative">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-48 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Buscar nos fluxos ${view === "open" ? "em andamento" : "concluídos"}`} />
+          <Input
+            className="pl-9"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={`Buscar nos fluxos ${view === "open" ? "em andamento" : "encerrados"}`}
+          />
         </div>
-        <Select value={status} onValueChange={(value) => setStatus(value as CompanyFlowStatus | "all")}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas as situações</SelectItem>
-            {statusOptions.map((value) => <SelectItem key={value} value={value}>{COMPANY_FLOW_STATUS_LABELS[value]}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        {view === "history" ? (
+          <Select value={status} onValueChange={(value) => setStatus(value as CompanyFlowStatus | "all")}>
+            <SelectTrigger className="w-44" aria-label="Filtrar encerrados"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Concluídos e cancelados</SelectItem>
+              {HISTORY_FLOW_STATUSES.map((value) => <SelectItem key={value} value={value}>{COMPANY_FLOW_STATUS_LABELS[value]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        ) : null}
+        <span className="ml-auto hud-label">
+          {visible.length} {visible.length === 1 ? "fluxo" : "fluxos"}
+          {stage && stage !== "closed" ? ` · ${FLOW_STAGES.find((item) => item.key === stage)?.label}` : view === "open" ? " em andamento" : " encerrados"}
+        </span>
       </div>
 
       <div className="grid gap-2">
-        {visible.map((row) => (
-          <article
-            key={row.id}
-            className={cn(
-              "panel-cut grid gap-3 border-l-2 border-l-primary/45 bg-card/45 p-4 transition-colors hover:bg-accent/25 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center",
-              row.status === "cancelled" && "border-l-muted-foreground/40 opacity-70",
-            )}
-          >
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{COMPANY_FLOW_KIND_LABELS[row.kind]}</Badge>
-                <Badge variant="outline" className={STATUS_CLASS[row.status]}>{COMPANY_FLOW_STATUS_LABELS[row.status]}</Badge>
-                <RhVerificationBadge state={getRhVerificationState(row)} />
+        {visible.map((row) => {
+          const callToAction = flowCallToAction(row);
+          return (
+            <article
+              key={row.id}
+              className={cn(
+                "panel-cut grid gap-3 border-l-2 bg-card/45 p-4 transition-colors hover:bg-accent/25 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center",
+                row.status === "completed"
+                  ? "border-l-success/60"
+                  : row.status === "cancelled"
+                    ? "border-l-border opacity-70"
+                    : callToAction.primary
+                      ? "border-l-warning/70"
+                      : "border-l-primary/45",
+              )}
+            >
+              <div className="grid min-w-0 gap-2">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="hud-label shrink-0 border border-primary/35 bg-primary/10 px-1.5 py-0.5 !text-primary">
+                    {COMPANY_FLOW_KIND_LABELS[row.kind]}
+                  </span>
+                  <h3 className="min-w-0 truncate">
+                    {row.approvedLegalName ?? row.requestedLegalName ?? row.existingClientName ?? "Empresa"}
+                  </h3>
+                  <RhVerificationBadge state={getRhVerificationState(row)} />
+                </div>
+                <FlowStageTracker status={row.status} />
+                <p className="text-sm">{flowStageDescription(row)}</p>
+                <p className="text-xs text-muted-foreground">
+                  {row.resultCnpj ? formatCnpj(row.resultCnpj) : `Origem: ${FLOW_SOURCE_LABELS[row.source]}`}
+                  {` · atualizado ${new Date(row.updatedAt).toLocaleDateString("pt-BR")}`}
+                  {row.assignedName && row.status !== "in_progress" ? ` · Societário: ${row.assignedName}` : ""}
+                  {` · pedido por ${row.createdByName}`}
+                </p>
+                {row.processingNotes ? <p className="line-clamp-2 text-sm text-muted-foreground">{row.processingNotes}</p> : null}
               </div>
-              <h3 className="mt-2 truncate text-base font-medium">{row.approvedLegalName ?? row.requestedLegalName ?? row.existingClientName ?? "Empresa"}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">{flowStageDescription(row)}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {row.resultCnpj ? formatCnpj(row.resultCnpj) : `Origem: ${FLOW_SOURCE_LABELS[row.source]}`}
-                {` · Atualizado ${new Date(row.updatedAt).toLocaleDateString("pt-BR")}`}
-              </p>
-              {row.processingNotes ? <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{row.processingNotes}</p> : null}
-            </div>
-            <FlowDetailDialog clanId={clanId} row={row} />
-          </article>
-        ))}
+              <div className="flex items-center gap-2 sm:flex-col sm:items-end">
+                <FlowDetailDialog clanId={clanId} row={row} />
+              </div>
+            </article>
+          );
+        })}
         {visible.length === 0 ? (
-          <div className="grid min-h-44 justify-items-center content-center gap-2 rounded-lg border border-dashed p-8 text-center">
+          <div className="panel-cut grid min-h-40 content-center justify-items-center gap-2 bg-card/35 p-8 text-center">
             {view === "open" ? <CheckCircle2 className="size-8 text-success" aria-hidden /> : <Archive className="size-8 text-muted-foreground" aria-hidden />}
-            <p className="font-medium">{view === "open" ? "Nenhum fluxo em andamento" : "Nenhum fluxo no histórico"}</p>
+            <p className="font-medium">
+              {filtered
+                ? "Nenhum fluxo com esta busca"
+                : stage && stage !== "closed"
+                  ? `Nenhum fluxo na etapa ${FLOW_STAGES.find((item) => item.key === stage)?.label}`
+                  : view === "open"
+                    ? "Nenhum fluxo em andamento"
+                    : "Nenhum fluxo encerrado"}
+            </p>
             <p className="max-w-md text-sm text-muted-foreground">
-              {query || status !== "all"
-                ? "Tente limpar a busca ou mudar o filtro."
-                : view === "open"
-                  ? "Quando um novo pedido for criado, ele aparecerá aqui."
-                  : "Os fluxos concluídos e cancelados aparecerão nesta área."}
+              {filtered
+                ? "Limpe a busca ou o filtro para ver os demais."
+                : stage && stage !== "closed"
+                  ? "Clique na etapa de novo para ver tudo que está em andamento."
+                  : view === "open"
+                    ? canCreate
+                      ? "Registre o pedido do cliente em “Criar novo fluxo”: ele entra na etapa Recebido."
+                      : "Quando um novo pedido for criado, ele aparece aqui."
+                    : "Os fluxos concluídos e cancelados ficam nesta etapa."}
             </p>
           </div>
         ) : null}

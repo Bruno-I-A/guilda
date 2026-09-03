@@ -163,6 +163,14 @@ pessoa. Consequências, todas já implementadas:
   Campanhas valem para todo clã; as outras duas são específicas porque o
   trabalho tem forma diferente em cada área, e enfiá-las em todo clã encheria a
   navegação de aba morta. A tabela aba→clã dono vive em `src/lib/clan-tabs.ts`.
+- **Navegação do clã em dois grupos (2026-09-03)**: *Espaço da área* (as
+  abas próprias do clã, primeiro e com moldura em `--primary`) e *Mesa do
+  clã* (Missões, Integrantes, Campanhas). Motivo: a equipe achava o clã
+  confuso e o Societário não achava o Fluxo numa fileira de sete rótulos
+  iguais. O cabeçalho mostra a formação (avatares + líder) em toda aba, e a
+  aba ativa tem uma frase de descrição (`CLAN_TAB_DESCRIPTIONS`). Títulos de
+  seção dentro do clã são `<h2>` reais. Mudança só visual; nenhuma função
+  mudou.
 - **`/closings` saiu da navegação global** e virou a aba Fechamentos da
   Contabilidade. A rota sobrevive apenas como **redirecionamento** (o botão
   "Abrir fechamentos" das notificações do Telegram aponta para ela). Como

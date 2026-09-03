@@ -141,6 +141,33 @@ Dentro de um painel maior (o pacote de um Informativo em `/tasks`), passe
 chanfro dentro de chanfro vira ruído. `href` aceita o destino com `returnTo`,
 para a pessoa voltar ao mesmo recorte de onde saiu.
 
+### `<ClanTabNav>` e `<ClanSectionHeading>`
+
+A navegação do clã vem em **dois grupos de placas**: o *Espaço da área*
+(Fluxo no Societário, Carteira/MEI/Parcelamentos/Honorários no Fiscal,
+Fechamentos/Distribuição na Contabilidade) e a *Mesa do clã* (Missões,
+Integrantes, Campanhas, iguais em todo clã). Cada placa tem o mesmo ícone
+do atalho correspondente no dashboard. O grupo da área vem primeiro e com
+moldura em `--primary`: é onde vive o trabalho específico do clã, e antes
+ele ficava perdido no fim de uma fileira de sete rótulos.
+
+`ClanSectionHeading` é um `<h2>` de verdade com `count` opcional — a versão
+antiga rebaixava o título a `.hud-label`, e a seção ficava menor que as
+linhas que introduzia (a violação mais comum da regra 1.1, e o motivo
+concreto de "visibilidade ruim" dentro do clã).
+
+### Esteira do Fluxo Societário
+
+O Fluxo é uma esteira de quatro etapas (Recebido → Em processamento →
+Informativo → Encerrados). O topo da aba mostra as quatro com a contagem de
+pedidos em cada uma — é mapa e filtro ao mesmo tempo — e cada linha traz o
+`FlowStageTracker` (quatro segmentos, o atual aceso) e um botão com o
+**próximo passo** ("Assumir processamento", "Confirmar conclusão", "Preparar
+Informativo") em vez de um "Abrir" genérico. As ações continuam dentro do
+painel do Fluxo; só o rótulo diz o que vai acontecer. Situação é estado,
+não categoria: usa `--silver`/`--primary`/`--warning`/`--success`, nunca
+sky/violet.
+
 ### Seções da lista de missões
 
 `MissionSection`, `MissionEmpty` e `ClosedMissions` (em
