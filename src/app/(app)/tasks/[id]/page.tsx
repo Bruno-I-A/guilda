@@ -38,25 +38,12 @@ import {
   STATUS_BADGE_CLASSES,
   STATUS_LABELS,
 } from "@/lib/task-ui";
+import { parseReturnTo } from "@/lib/return-to";
 import { cn } from "@/lib/utils";
 
 import { TaskActionBar } from "./task-action-bar";
 
 export const metadata: Metadata = { title: "Missão" };
-
-function returnToTasks(value: string | string[] | undefined): string {
-  const returnTo = Array.isArray(value) ? value[0] : value;
-  if (!returnTo) return "/tasks";
-
-  try {
-    const parsed = new URL(returnTo, "https://guilda.local");
-    return parsed.origin === "https://guilda.local" && parsed.pathname === "/tasks"
-      ? `${parsed.pathname}${parsed.search}`
-      : "/tasks";
-  } catch {
-    return "/tasks";
-  }
-}
 
 export default async function TaskDetailPage({
   params,
@@ -70,7 +57,7 @@ export default async function TaskDetailPage({
   if (!member) redirect("/onboarding");
 
   const { id } = await params;
-  const taskListHref = returnToTasks((await searchParams).returnTo);
+  const voltarPara = parseReturnTo((await searchParams).returnTo);
   if (!z.uuid().safeParse(id).success) notFound();
 
   const { task, viewerClanMembership, candidateMemberships, fluxoVinculado } =
@@ -321,11 +308,13 @@ export default async function TaskDetailPage({
   return (
     <div className="grid gap-5">
       <div>
+        {/* O rótulo diz de onde a pessoa veio: quem abriu a missão de dentro
+            de um clã volta para o clã, não para a lista geral. */}
         <Link
-          href={taskListHref}
+          href={voltarPara.href}
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft className="size-4" aria-hidden /> Missões
+          <ArrowLeft className="size-4" aria-hidden /> {voltarPara.label}
         </Link>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
           <h1 className="max-w-xl font-sans text-2xl font-semibold leading-tight tracking-tight">
@@ -418,7 +407,7 @@ export default async function TaskDetailPage({
         can={can}
         transferCandidates={transferCandidates}
         restrictTransferToTaskClan={!isAdmin}
-        returnTo={taskListHref}
+        returnTo={voltarPara.href}
         startDestination={
           fluxoVinculado ? clanTabHref(fluxoVinculado.clanId, "flow") : null
         }

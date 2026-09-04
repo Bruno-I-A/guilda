@@ -54,6 +54,7 @@ import {
   type CommitmentCadence,
   type CommitmentPeriodCoordinate,
 } from "@/domain/commitments";
+import { clanTabHref } from "@/lib/clan-tabs";
 import { formatBRLCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
@@ -606,7 +607,9 @@ function PeriodRow({
       <div className="flex flex-wrap items-center justify-end gap-1">
         {period.taskId ? (
           <Link
-            href={`/tasks/${period.taskId}`}
+            href={`/tasks/${period.taskId}?returnTo=${encodeURIComponent(
+              clanTabHref(clanId, "commitments"),
+            )}`}
             className="px-2 font-mono text-xs text-primary hover:underline"
           >
             ver missão →
