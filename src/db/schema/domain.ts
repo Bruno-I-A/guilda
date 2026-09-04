@@ -399,6 +399,9 @@ export const taskEvents = pgTable(
  *   - reason 'reversal': lançamento negativo quando admin reverte;
  *   - task_event_id torna cada lançamento de transição idempotente, sem
  *     impedir novos ciclos conclusão → reversão → reconclusão;
+ *   - reason 'closing_year_closed' / 'closing_year_reversal': crédito e
+ *     estorno do fechamento de ano, ambos vindos da reconciliação em
+ *     `src/domain/closing-year-xp.ts`;
  *   - reason 'bonus': reservado para usos futuros.
  */
 export const xpLedger = pgTable(
@@ -430,9 +433,17 @@ export const xpLedger = pgTable(
       .where(
         sql`task_event_id IS NOT NULL AND reason IN ('task_completed', 'reversal')`,
       ),
-    uniqueIndex("xp_ledger_closing_year_closed_uidx")
-      .on(t.closingYearId)
-      .where(sql`reason = 'closing_year_closed'`),
+    // Índice de LEITURA, não de unicidade: a reconciliação do fechamento
+    // anual soma o ledger por ano antes de decidir o que lançar.
+    //
+    // A unicidade parcial `(closing_year_id) WHERE reason =
+    // 'closing_year_closed'` que morava aqui dava idempotência de graça, mas
+    // ao custo de travar o recrédito: reaberto o ano, quem o fechasse de novo
+    // trabalhava sem XP. Quem garante a idempotência agora é
+    // `reconcileClosingYearXp` (só devolve a diferença entre o ledger e o
+    // estado do ano) somada ao lock da linha do ano, que serializa duas
+    // conclusões concorrentes.
+    index("xp_ledger_closing_year_idx").on(t.orgId, t.closingYearId),
   ],
 );
 

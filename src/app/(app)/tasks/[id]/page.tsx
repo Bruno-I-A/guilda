@@ -169,6 +169,11 @@ export default async function TaskDetailPage({
   );
   if (!task) notFound();
 
+  // Quem registrou a última conclusão — é quem a janela de arrependimento
+  // libera. Os eventos já vêm carregados, então não custa consulta nova.
+  const ultimaConclusao = [...task.events]
+    .reverse()
+    .find((event) => event.toStatus === "completed");
   const context = {
     actor: { id: session.user.id, role: member.role as OrgRole },
     task: {
@@ -176,6 +181,11 @@ export default async function TaskDetailPage({
       assigneeId: task.assigneeId,
       status: task.status,
       fromInformative: task.informativeId !== null,
+      // Os MESMOS fatos da action: sem eles o botão "Reverter conclusão"
+      // sumia para quem podia desfazer dentro da janela, e quem perdesse o
+      // aviso ficava sem caminho de volta mesmo estando autorizado.
+      completedAt: task.completedAt,
+      completedBy: ultimaConclusao?.actorId ?? null,
     },
   };
   const isAdmin = member.role === "admin" || member.role === "owner";

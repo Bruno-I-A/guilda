@@ -37,6 +37,7 @@ export const metadata: Metadata = { title: "Perfil" };
 const REASON_LABELS: Record<string, string> = {
   task_completed: "Missão concluída",
   closing_year_closed: "Fechamento anual",
+  closing_year_reversal: "Fechamento anual revertido",
   reversal: "Conclusão revertida",
   bonus: "Bônus",
 };

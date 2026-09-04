@@ -5,7 +5,10 @@ import { and, eq, isNotNull, isNull, ne } from "drizzle-orm";
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import type { TaskStatus } from "@/domain/task-state";
-import { CLOSING_YEAR_XP } from "@/domain/xp";
+import {
+  lockClosingYear,
+  reconcileClosingYearLedger,
+} from "./closing-year-xp";
 import { completedTaskAssigneeId } from "./task-sync-guards";
 
 /** Mantém períodos e encerramentos anuais consistentes com a missão vinculada. */
@@ -86,7 +89,7 @@ export async function syncClosingFromTask(
 
   if (input.toStatus === "completed") {
     const closedBy = completedTaskAssigneeId(task, "completed");
-    const closed = await tx
+    const [closed] = await tx
       .update(schema.accountingClosingYears)
       .set({
         closedAt: input.changedAt,
@@ -101,20 +104,18 @@ export async function syncClosingFromTask(
           isNull(schema.accountingClosingYears.closedAt),
         ),
       )
-      .returning({ id: schema.accountingClosingYears.id });
+      .returning({ closedBy: schema.accountingClosingYears.closedBy });
 
-    if (closed.length > 0) {
-      await tx
-        .insert(schema.xpLedger)
-        .values({
-          orgId: task.orgId,
-          userId: closedBy,
-          closingYearId: task.closingYearId,
-          amount: CLOSING_YEAR_XP,
-          reason: "closing_year_closed",
-        })
-        .onConflictDoNothing();
-    }
+    await reconcileClosingYearLedger(tx, {
+      orgId: task.orgId,
+      closingYearId: task.closingYearId,
+      closedBy: await settledClosingYearOwner(
+        tx,
+        task.orgId,
+        task.closingYearId,
+        closed,
+      ),
+    });
     return;
   }
 
@@ -130,7 +131,7 @@ export async function syncClosingFromTask(
       columns: { id: true, assigneeId: true, completedAt: true },
     });
     const replacement = otherCompleted?.assigneeId ? otherCompleted : null;
-    await tx
+    const [reopened] = await tx
       .update(schema.accountingClosingYears)
       .set(
         replacement
@@ -155,6 +156,42 @@ export async function syncClosingFromTask(
           eq(schema.accountingClosingYears.orgId, task.orgId),
           eq(schema.accountingClosingYears.closedByTaskId, task.id),
         ),
-      );
+      )
+      .returning({ closedBy: schema.accountingClosingYears.closedBy });
+
+    // Este é o lado que faltava: o ano reabria e o crédito ficava com quem
+    // teve o trabalho desfeito. A reconciliação estorna quem perdeu o ano e,
+    // quando a missão substituta assume, credita quem ganhou — na mesma
+    // passada, sem UPDATE no ledger.
+    await reconcileClosingYearLedger(tx, {
+      orgId: task.orgId,
+      closingYearId: task.closingYearId,
+      closedBy: await settledClosingYearOwner(
+        tx,
+        task.orgId,
+        task.closingYearId,
+        reopened,
+      ),
+    });
   }
+}
+
+/**
+ * Quem ficou como dono do fechamento depois que o UPDATE do ano rodou.
+ *
+ * O UPDATE devolve linha (e a trava) quando afeta o ano. Quando não afeta, o
+ * ano pertence a outra missão e precisa ser RELIDO com lock: a reconciliação
+ * soma o ledger sem lock próprio e conta com a linha do ano já travada nesta
+ * transação. Não assumir o `closedBy` que se tentou gravar — o gravado é o
+ * que manda.
+ */
+async function settledClosingYearOwner(
+  tx: OrgTx,
+  orgId: string,
+  closingYearId: string,
+  updated: { closedBy: string | null } | undefined,
+): Promise<string | null> {
+  if (updated) return updated.closedBy;
+  const row = await lockClosingYear(tx, { orgId, closingYearId });
+  return row?.closedBy ?? null;
 }

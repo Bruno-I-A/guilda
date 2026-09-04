@@ -1,18 +1,18 @@
 import "server-only";
 
-import { and, desc, eq, gte, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import {
+  leaderboardPeriodRange,
+  type LeaderboardPeriod,
+} from "@/domain/leaderboard-period";
 
-export type LeaderboardPeriod = "week" | "month" | "all";
-
-function periodStart(period: LeaderboardPeriod): Date | undefined {
-  const DAY = 24 * 60 * 60 * 1000;
-  if (period === "week") return new Date(Date.now() - 7 * DAY);
-  if (period === "month") return new Date(Date.now() - 30 * DAY);
-  return undefined;
-}
+// Re-exportado daqui porque a tela do ranking importa o tipo deste módulo
+// desde antes de a janela virar domínio próprio. A regra mora em
+// `@/domain/leaderboard-period` (função pura e testada); aqui só se aplica.
+export type { LeaderboardPeriod };
 
 /** Soma do ledger do usuário na org (fonte da verdade do XP/nível). */
 export async function getUserXpTotal(orgId: string, userId: string): Promise<number> {
@@ -39,16 +39,41 @@ export interface LeaderboardRow {
 /**
  * Ranking da org: soma do ledger por usuário no período (query agregada,
  * sem cache na v1) + total geral para derivar o nível de cada pessoa.
+ *
+ * A janela do período é de calendário e vem de `leaderboardPeriodRange` —
+ * ver lá o porquê de não ser mais `agora − 7 dias`.
  */
 export async function getLeaderboard(
   orgId: string,
   period: LeaderboardPeriod,
 ): Promise<LeaderboardRow[]> {
-  const since = periodStart(period);
+  const { start, end } = leaderboardPeriodRange(period, new Date());
   return withOrgTx(orgId, async (tx) => {
-    const conditions: SQL[] = [eq(schema.xpLedger.orgId, orgId)];
-    if (since) {
-      conditions.push(gte(schema.xpLedger.createdAt, since));
+    // Só quem tem associação ATIVA na org entra no ranking. O ledger guarda
+    // org_id para sempre — quem saiu continua com os lançamentos dela e, sem
+    // esta restrição, seguia aparecendo (podendo até liderar) um time do qual
+    // não faz mais parte.
+    //
+    // EXISTS, e não innerJoin com `member`: se houver mais de uma linha de
+    // member para o mesmo par (usuário, org), o join MULTIPLICA as linhas do
+    // ledger e dobra o XP somado. A subconsulta correlacionada filtra sem
+    // multiplicar.
+    const isActiveMember = sql`exists (
+      select 1
+      from ${schema.member}
+      where ${schema.member.organizationId} = ${orgId}
+        and ${schema.member.userId} = ${schema.xpLedger.userId}
+    )`;
+
+    const conditions: SQL[] = [eq(schema.xpLedger.orgId, orgId), isActiveMember];
+    if (start) {
+      conditions.push(gte(schema.xpLedger.createdAt, start));
+    }
+    // `end` está no futuro enquanto o período é o corrente, então hoje não
+    // muda o resultado — mas deixa a janela fechada dos dois lados, que é o
+    // que a torna uma competição com chegada, e não uma soma aberta.
+    if (end) {
+      conditions.push(lt(schema.xpLedger.createdAt, end));
     }
 
     const periodSum = sql<number>`sum(${schema.xpLedger.amount})::int`;
@@ -70,7 +95,7 @@ export async function getLeaderboard(
         totalXp: sql<number>`sum(${schema.xpLedger.amount})::int`,
       })
       .from(schema.xpLedger)
-      .where(eq(schema.xpLedger.orgId, orgId))
+      .where(and(eq(schema.xpLedger.orgId, orgId), isActiveMember))
       .groupBy(schema.xpLedger.userId);
 
     const totals = new Map(totalRows.map((r) => [r.userId, r.totalXp]));
@@ -138,22 +163,52 @@ export async function getXpHistory(
   });
 }
 
-/** Quantas tarefas o usuário já teve aprovadas (créditos no ledger). */
+/**
+ * Quantas missões DISTINTAS estão hoje creditadas para a pessoa — é o que o
+ * rótulo "missões concluídas" do perfil promete.
+ *
+ * A contagem é LÍQUIDA por task_id, e não uma contagem de linhas
+ * 'task_completed', por causa de duas propriedades do ledger:
+ *
+ *   1. ele é imutável — desfazer uma conclusão não apaga o crédito, insere um
+ *      estorno ('reversal') ao lado dele;
+ *   2. a idempotência do crédito é por task_event_id (índice
+ *      `xp_ledger_task_event_uidx`), não por task_id — de propósito, para que
+ *      uma reconclusão possa creditar de novo.
+ *
+ * Somando só as linhas 'task_completed', portanto: uma missão desfeita
+ * continuaria contando, e o ciclo concluir → desfazer → concluir contaria a
+ * MESMA missão duas vezes. Agrupando por task_id com +1 por conclusão e −1
+ * por estorno, e ficando só com quem termina positivo, os dois casos batem —
+ * o ciclo completo conta 1, a conclusão desfeita conta 0.
+ *
+ * Fechamentos anuais ('closing_year_closed') ficam de fora de propósito: o
+ * rótulo diz "missões", e fechamento não é uma.
+ */
 export async function countCompletedTasks(
   orgId: string,
   userId: string,
 ): Promise<number> {
   return withOrgTx(orgId, async (tx) => {
-    const [row] = await tx
-      .select({ total: sql<number>`count(*)::int` })
+    const netCredits = sql`sum(case when ${schema.xpLedger.reason} = 'task_completed' then 1 else -1 end)`;
+    const creditedTasks = tx
+      .select({ taskId: schema.xpLedger.taskId })
       .from(schema.xpLedger)
       .where(
         and(
           eq(schema.xpLedger.orgId, orgId),
           eq(schema.xpLedger.userId, userId),
-          eq(schema.xpLedger.reason, "task_completed"),
+          isNotNull(schema.xpLedger.taskId),
+          inArray(schema.xpLedger.reason, ["task_completed", "reversal"]),
         ),
-      );
+      )
+      .groupBy(schema.xpLedger.taskId)
+      .having(sql`${netCredits} > 0`)
+      .as("credited_tasks");
+
+    const [row] = await tx
+      .select({ total: sql<number>`count(*)::int` })
+      .from(creditedTasks);
     return row.total;
   });
 }

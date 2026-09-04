@@ -16,21 +16,33 @@ export const TASK_STATUSES = [
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export type OrgRole = "owner" | "admin" | "member";
 
+/**
+ * Os fatos que a decisão precisa. Todos os campos são OBRIGATÓRIOS de
+ * propósito, mesmo os que quase sempre são `null`: quando eram opcionais, um
+ * chamador que esquecia de preenchê-los compilava e recebia a decisão errada
+ * em silêncio — foi assim que o bot do Telegram passou a recusar uma conclusão
+ * que a web já permitia. Campo novo aqui quebra o build de quem não decidiu o
+ * que fazer com ele, que é o comportamento desejado.
+ */
 export interface TransitionContext {
   actor: { id: string; role: OrgRole };
   task: {
     creatorId: string;
     assigneeId: string | null;
     status: TaskStatus;
-    /** Quando a conclusão foi registrada — abre a janela de desfazer. */
-    completedAt?: Date | null;
+    /**
+     * Quando a conclusão foi registrada — abre a janela de desfazer. `null`
+     * quando a missão não está concluída, ou quando o chamador não oferece
+     * desfazer (o bot do Telegram, por exemplo).
+     */
+    completedAt: Date | null;
     /** Quem registrou a conclusão; só essa pessoa desfaz sem ser admin. */
-    completedBy?: string | null;
+    completedBy: string | null;
     /**
      * Missão nascida de um Informativo. Não é pedido de uma pessoa para outra:
      * é rotina do clã, e por isso termina em conclusão, não em aprovação.
      */
-    fromInformative?: boolean;
+    fromInformative: boolean;
   };
   /** Injetável para o teste não depender do relógio da máquina. */
   now?: Date;

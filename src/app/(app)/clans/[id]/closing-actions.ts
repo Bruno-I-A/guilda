@@ -20,6 +20,7 @@ import {
 import { isActiveClanMember, loadClanScopedFacts } from "@/lib/clans/facts";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 import { CONTABILIDADE_CLAN_SLUG } from "@/lib/clans/rules";
+import { reconcileClosingYearLedger } from "@/lib/closings/closing-year-xp";
 import {
   enqueueTelegramNotificationIfEnabled,
   enqueueTelegramOrgBroadcast,
@@ -437,14 +438,23 @@ export async function setYearClosed(
     if (!client) return err("Empresa não encontrada.");
 
     const now = new Date();
-    const existing = await tx.query.accountingClosingYears.findFirst({
-      where: and(
-        eq(schema.accountingClosingYears.orgId, ctx.orgId),
-        eq(schema.accountingClosingYears.clientId, client.id),
-        eq(schema.accountingClosingYears.year, data.year),
-      ),
-      columns: { id: true, closedAt: true },
-    });
+    // FOR UPDATE, não um findFirst solto: é o lock DA LINHA DO ANO que
+    // serializa duas pessoas fechando o mesmo ano, porque a reconciliação do
+    // ledger logo abaixo soma os lançamentos sem lock próprio. Foi ele que
+    // substituiu o índice único parcial `(closing_year_id) WHERE reason =
+    // 'closing_year_closed'`, removido porque impedia recreditar quem
+    // fechasse o ano de novo depois de uma reabertura.
+    const [existing] = await tx
+      .select({ id: schema.accountingClosingYears.id })
+      .from(schema.accountingClosingYears)
+      .where(
+        and(
+          eq(schema.accountingClosingYears.orgId, ctx.orgId),
+          eq(schema.accountingClosingYears.clientId, client.id),
+          eq(schema.accountingClosingYears.year, data.year),
+        ),
+      )
+      .for("update");
 
     const annual = existing
       ? (
@@ -482,21 +492,17 @@ export async function setYearClosed(
             .returning({ id: schema.accountingClosingYears.id })
         )[0];
 
-    let xpAwarded = false;
-    if (data.closed) {
-      const credited = await tx
-        .insert(schema.xpLedger)
-        .values({
-          orgId: ctx.orgId,
-          userId: ctx.userId,
-          closingYearId: annual.id,
-          amount: CLOSING_YEAR_XP,
-          reason: "closing_year_closed",
-        })
-        .onConflictDoNothing()
-        .returning({ id: schema.xpLedger.id });
-      xpAwarded = credited.length > 0;
-    }
+    // Fechar credita, reabrir estorna — os dois lados saem da mesma
+    // reconciliação, que compara o ledger com quem consta no ano. Reabrir sem
+    // estornar deixava o XP com quem teve o trabalho desfeito.
+    const entries = await reconcileClosingYearLedger(tx, {
+      orgId: ctx.orgId,
+      closingYearId: annual.id,
+      closedBy: data.closed ? ctx.userId : null,
+    });
+    const xpAwarded = entries.some(
+      (entry) => entry.userId === ctx.userId && entry.amount > 0,
+    );
 
     if (xpAwarded) {
       await enqueueTelegramNotificationIfEnabled(tx, {

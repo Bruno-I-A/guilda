@@ -6,13 +6,16 @@ import { Skeleton } from "@/components/ui/skeleton";
  * O ranking agrega o `xp_ledger` inteiro da org por período — é a consulta
  * mais cara do app e a que mais se beneficia de feedback imediato.
  *
- * A silhueta: cabeçalho, nav de período (semana/mês/geral) e UM painel de
+ * A silhueta: cabeçalho, nav de período (semana/mês/carreira) e UM painel de
  * vitrine com oito linhas divididas — rank, avatar, nome + nível, badge de
  * XP do período à direita.
+ *
+ * A silhueta é a do pódio, e não a da carreira, porque "Semana" é o padrão da
+ * rota: o esqueleto tem que parecer com o que chega na maioria das vezes.
  */
 
-/** Semana · Mês · Geral. */
-const PERIOD_WIDTHS = ["w-16", "w-10", "w-14"] as const;
+/** Semana · Mês · Carreira. */
+const PERIOD_WIDTHS = ["w-16", "w-10", "w-20"] as const;
 
 /** Oito colocações: as três primeiras têm trilho colorido no conteúdo real. */
 const RANK_ROWS = [
