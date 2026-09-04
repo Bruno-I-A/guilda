@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, gte, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -138,22 +138,52 @@ export async function getXpHistory(
   });
 }
 
-/** Quantas tarefas o usuário já teve aprovadas (créditos no ledger). */
+/**
+ * Quantas missões DISTINTAS estão hoje creditadas para a pessoa — é o que o
+ * rótulo "missões concluídas" do perfil promete.
+ *
+ * A contagem é LÍQUIDA por task_id, e não uma contagem de linhas
+ * 'task_completed', por causa de duas propriedades do ledger:
+ *
+ *   1. ele é imutável — desfazer uma conclusão não apaga o crédito, insere um
+ *      estorno ('reversal') ao lado dele;
+ *   2. a idempotência do crédito é por task_event_id (índice
+ *      `xp_ledger_task_event_uidx`), não por task_id — de propósito, para que
+ *      uma reconclusão possa creditar de novo.
+ *
+ * Somando só as linhas 'task_completed', portanto: uma missão desfeita
+ * continuaria contando, e o ciclo concluir → desfazer → concluir contaria a
+ * MESMA missão duas vezes. Agrupando por task_id com +1 por conclusão e −1
+ * por estorno, e ficando só com quem termina positivo, os dois casos batem —
+ * o ciclo completo conta 1, a conclusão desfeita conta 0.
+ *
+ * Fechamentos anuais ('closing_year_closed') ficam de fora de propósito: o
+ * rótulo diz "missões", e fechamento não é uma.
+ */
 export async function countCompletedTasks(
   orgId: string,
   userId: string,
 ): Promise<number> {
   return withOrgTx(orgId, async (tx) => {
-    const [row] = await tx
-      .select({ total: sql<number>`count(*)::int` })
+    const netCredits = sql`sum(case when ${schema.xpLedger.reason} = 'task_completed' then 1 else -1 end)`;
+    const creditedTasks = tx
+      .select({ taskId: schema.xpLedger.taskId })
       .from(schema.xpLedger)
       .where(
         and(
           eq(schema.xpLedger.orgId, orgId),
           eq(schema.xpLedger.userId, userId),
-          eq(schema.xpLedger.reason, "task_completed"),
+          isNotNull(schema.xpLedger.taskId),
+          inArray(schema.xpLedger.reason, ["task_completed", "reversal"]),
         ),
-      );
+      )
+      .groupBy(schema.xpLedger.taskId)
+      .having(sql`${netCredits} > 0`)
+      .as("credited_tasks");
+
+    const [row] = await tx
+      .select({ total: sql<number>`count(*)::int` })
+      .from(creditedTasks);
     return row.total;
   });
 }
