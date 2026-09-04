@@ -131,8 +131,16 @@ CREATE POLICY org_isolation ON tasks
 - **Crédito de XP é transacional e idempotente**: dentro da mesma transação da
   transição para `completed`, inserir no `xp_ledger`. Constraint de unicidade parcial
   `(task_id) WHERE reason = 'task_completed'` impede crédito duplo.
-- **Nível**: derivado do XP total. Fórmula: XP necessário para o nível `n` é
-  `floor(100 * n^1.5)` acumulado. Implementar `levelFromXp(totalXp)` puro e testado.
+- **Nível**: derivado do XP total, nunca gravado. Até o nível 25 a fórmula é
+  `floor(100 * n^1.5)` acumulado; acima disso o custo do próximo nível cresce
+  12% por degrau (`LEVEL_SOFT_CAP` e `SOFT_CAP_GROWTH` em `src/domain/xp.ts`).
+  O patamar existe porque `n^1.5` cresce com a RAIZ do nível: sem ele, sair do
+  nível 50 custava 21 missões contra 14 do nível 20, o nível nunca virava
+  conquista e um ano de uso intenso dava nível ~100. **A emenda fica em 25 de
+  propósito**: nenhum saldo abaixo de 14.029 XP muda de nível, então a mudança
+  não rebaixa ninguém que já está na Guilda — só encarece o futuro. Se alguém
+  passar disso antes da mudança chegar à produção, o certo é SUBIR a constante,
+  não deixar o nível cair. `levelFromXp(totalXp)` é puro e testado.
 - **Leaderboard**: soma do ledger por usuário na org, período selecionável
   (semana / mês / geral). Query agregada, sem cache na v1.
 - **Reversão**: se um admin reverter uma conclusão, inserir lançamento negativo no

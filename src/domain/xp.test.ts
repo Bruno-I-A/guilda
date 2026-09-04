@@ -2,10 +2,22 @@ import { describe, expect, test } from "vitest";
 
 import {
   calculateTaskXp,
+  LEVEL_SOFT_CAP,
   levelFromXp,
   levelProgress,
+  MAX_LEVEL,
   xpForLevel,
 } from "./xp";
+
+/** A curva anterior ao patamar, para provar o que mudou e o que não mudou. */
+const legacyXpForLevel = (level: number) =>
+  Math.floor(100 * Math.pow(level, 1.5));
+const legacyLevelFromXp = (totalXp: number) => {
+  if (totalXp <= 0) return 0;
+  let level = 0;
+  while (legacyXpForLevel(level + 1) <= totalXp) level++;
+  return level;
+};
 
 describe("calculateTaskXp — xp_value = difficulty * 20 + (priority - 1) * 10", () => {
   test("dificuldade mínima e prioridade baixa valem 20 XP", () => {
@@ -107,6 +119,83 @@ describe("levelFromXp — bordas", () => {
       expect(level).toBeGreaterThanOrEqual(previous);
       previous = level;
     }
+  });
+});
+
+describe("xpForLevel — patamar acima do nível 25", () => {
+  test("até o patamar a curva é a original, degrau por degrau", () => {
+    for (let level = 0; level <= LEVEL_SOFT_CAP; level++) {
+      expect(xpForLevel(level)).toBe(legacyXpForLevel(level));
+    }
+  });
+
+  test("a emenda não tem salto: o degrau cresce, não pula", () => {
+    const before = xpForLevel(LEVEL_SOFT_CAP) - xpForLevel(LEVEL_SOFT_CAP - 1);
+    const at = xpForLevel(LEVEL_SOFT_CAP + 1) - xpForLevel(LEVEL_SOFT_CAP);
+    const after = xpForLevel(LEVEL_SOFT_CAP + 2) - xpForLevel(LEVEL_SOFT_CAP + 1);
+    expect(before).toBe(743);
+    expect(at).toBe(757);
+    expect(after).toBe(847);
+  });
+
+  test("acima do patamar cada nível custa estritamente mais que o anterior", () => {
+    for (let level = LEVEL_SOFT_CAP; level < 60; level++) {
+      const step = xpForLevel(level + 1) - xpForLevel(level);
+      const previousStep = xpForLevel(level) - xpForLevel(level - 1);
+      expect(step).toBeGreaterThan(previousStep);
+    }
+  });
+
+  test("o nível alto vira conquista: 40→41 custa muito mais que 20→21", () => {
+    const early = xpForLevel(21) - xpForLevel(20);
+    const late = xpForLevel(41) - xpForLevel(40);
+    expect(early).toBe(679); // ~14 missões de 50 XP
+    expect(late).toBeGreaterThan(early * 5); // ~83 missões
+    // A curva antiga cobrava só 954 XP aqui — 19 missões, e o nível 40 não
+    // significava nada de diferente do 20.
+    expect(legacyXpForLevel(41) - legacyXpForLevel(40)).toBe(954);
+  });
+
+  test("nível 100 sai de 100 mil XP para um número inalcançável", () => {
+    expect(legacyXpForLevel(100)).toBe(100_000);
+    expect(xpForLevel(100)).toBeGreaterThan(10_000_000);
+  });
+
+  test("é monotônica e cabe em inteiro seguro mesmo em níveis absurdos", () => {
+    let previous = -1;
+    for (let level = 0; level <= 400; level++) {
+      const value = xpForLevel(level);
+      expect(Number.isSafeInteger(value)).toBe(true);
+      expect(value).toBeGreaterThanOrEqual(previous);
+      previous = value;
+    }
+  });
+});
+
+describe("levelFromXp — o patamar não mexe no nível de ninguém hoje", () => {
+  test("abaixo de 14.029 XP o nível é idêntico ao da curva antiga", () => {
+    // 14.029 é o primeiro XP em que as duas curvas discordam (~281 missões
+    // de 50 XP). É a garantia de que a mudança não rebaixa ninguém que já
+    // está na Guilda: abaixo disso, nem para cima nem para baixo.
+    for (let xp = 0; xp < 14_029; xp++) {
+      expect(levelFromXp(xp)).toBe(legacyLevelFromXp(xp));
+    }
+    expect(levelFromXp(14_029)).toBe(26);
+    expect(legacyLevelFromXp(14_029)).toBe(27);
+  });
+
+  test("acima do patamar o nível fica menor, nunca maior", () => {
+    for (const xp of [15_000, 20_000, 25_200, 50_400, 100_800]) {
+      expect(levelFromXp(xp)).toBeLessThan(legacyLevelFromXp(xp));
+    }
+    expect(levelFromXp(100_800)).toBe(48);
+    expect(legacyLevelFromXp(100_800)).toBe(100);
+  });
+
+  test("termina no teto mesmo com XP fora de qualquer faixa real", () => {
+    // Sem o teto o laço não pararia: acima do nível ~281 a curva satura em
+    // MAX_SAFE_INTEGER e todo nível seguinte passaria na condição.
+    expect(levelFromXp(Number.MAX_SAFE_INTEGER)).toBe(MAX_LEVEL);
   });
 });
 
