@@ -19,6 +19,7 @@ function ctx(overrides: {
   status: TaskStatus;
   completedAt?: Date | null;
   completedBy?: string | null;
+  fromInformative?: boolean;
   now?: Date;
 }): TransitionContext {
   return {
@@ -30,6 +31,7 @@ function ctx(overrides: {
       status: overrides.status,
       completedAt: overrides.completedAt ?? null,
       completedBy: overrides.completedBy ?? null,
+      fromInformative: overrides.fromInformative ?? false,
     },
     now: overrides.now,
   };
@@ -435,6 +437,44 @@ describe("janela de arrependimento (desfazer a própria conclusão)", () => {
         now: janela(600),
       }),
     );
+    expect(decision.allowed).toBe(true);
+  });
+});
+
+describe("missão de Informativo conclui direto (não vai para aprovação)", () => {
+  const informativo = {
+    actorId: "assignee-1",
+    creatorId: "quem-preparou-o-informativo",
+    status: "in_progress" as TaskStatus,
+    fromInformative: true,
+  };
+
+  test("responsável conclui mesmo tendo sido outra pessoa a criar", () => {
+    const decision = authorizeTransition("completed", ctx(informativo));
+    expect(decision.allowed).toBe(true);
+  });
+
+  test("missão AVULSA de terceiro continua exigindo aprovação", () => {
+    const decision = authorizeTransition(
+      "completed",
+      ctx({ ...informativo, fromInformative: false }),
+    );
+    expect(decision.allowed).toBe(false);
+    expect(decision.allowed === false && decision.reason).toContain(
+      "enviada para aprovação",
+    );
+  });
+
+  test("quem não é responsável continua sem concluir", () => {
+    const decision = authorizeTransition(
+      "completed",
+      ctx({ ...informativo, actorId: "outra-pessoa" }),
+    );
+    expect(decision.allowed).toBe(false);
+  });
+
+  test("entregar com retorno segue disponível como opção", () => {
+    const decision = authorizeTransition("awaiting_approval", ctx(informativo));
     expect(decision.allowed).toBe(true);
   });
 });

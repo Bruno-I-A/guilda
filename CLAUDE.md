@@ -267,9 +267,9 @@ status, prazo). A **origem virou o eixo principal** (`?view=standalone` ou
   um compositor de uma linha (`@pessoa !alta ~sexta #3`) foi implementado e
   **removido no mesmo dia a pedido do Bruno** — ele quer um único caminho
   completo, não um atalho. Não reintroduzir sem ele pedir.
-- **Retorno para quem pediu** (2026-09-03): missão criada para outra pessoa
-  termina em **entrega com retorno escrito obrigatório** (`awaiting_approval`
-  exige nota). Quem pediu vê o retorno na lista ("Para você aprovar") e no
+- **Retorno para quem pediu** (2026-09-03): missão **avulsa** criada para outra
+  pessoa termina em **entrega com retorno escrito obrigatório**
+  (`awaiting_approval` exige nota). Quem pediu vê o retorno na lista ("Para você aprovar") e no
   detalhe, aprova com comentário opcional (vai para o histórico e para quem
   entregou), e é avisado no Telegram quando o trabalho começa, quando a
   entrega chega (com o retorno no texto) e, no outro sentido, quem entregou
@@ -278,7 +278,13 @@ status, prazo). A **origem virou o eixo principal** (`?view=standalone` ou
 - **Informativos** (`informative_id` preenchido): lidas como **pacote por
   empresa**, com o progresso do conjunto (`src/domain/mission-triage.ts`).
   Criar aqui é preparar um Informativo (`/informativos`), nunca uma missão
-  solta.
+  solta. **Concluem direto, sem aprovação** (decisão de 2026-09-04,
+  `task.fromInformative` em `authorizeTransition`): ali não existe "quem
+  pediu" — o pedido veio do Informativo, e quem consta como criador só
+  preparou o pacote. Cobrar dele uma aprovação transformava rotina do clã em
+  vai-e-volta sem leitor. "Entregar com retorno" continua no botão como
+  **opção** (secundário ao lado de Concluir), nunca como obrigação. A régua de
+  aprovação obrigatória segue valendo para as avulsas — não unificar as duas.
 
 O único filtro que sobrou é o recorte de pessoas (`scope`: minhas / meus
 clãs / um clã / uma pessoa / Guilda). Status, prazo e origem viraram

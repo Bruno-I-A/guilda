@@ -175,6 +175,7 @@ export default async function TaskDetailPage({
       creatorId: task.creatorId,
       assigneeId: task.assigneeId,
       status: task.status,
+      fromInformative: task.informativeId !== null,
     },
   };
   const isAdmin = member.role === "admin" || member.role === "owner";
@@ -196,7 +197,8 @@ export default async function TaskDetailPage({
       task.status === "in_progress" &&
       authorizeTransition("completed", context).allowed,
     // Entregar é para quem PEDIU. Auto-missão conclui direto: entregar um
-    // retorno a si mesmo só criaria um passo a mais para o mesmo XP.
+    // retorno a si mesmo só criaria um passo a mais para o mesmo XP. Na missão
+    // de Informativo o retorno vira opção — Concluir é o caminho normal.
     submit:
       task.status === "in_progress" &&
       task.creatorId !== task.assigneeId &&

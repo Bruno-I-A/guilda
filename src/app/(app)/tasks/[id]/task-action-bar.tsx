@@ -269,8 +269,15 @@ export function TaskActionBar({
         </Button>
       ) : null}
 
+      {/* Quando Concluir também está disponível (missão de Informativo), o
+          retorno é a opção, não o caminho — dois botões primários lado a lado
+          não diriam qual é o normal. */}
       {can.submit ? (
-        <Button disabled={pending} onClick={() => setSubmitOpen(true)}>
+        <Button
+          variant={can.complete ? "outline" : "default"}
+          disabled={pending}
+          onClick={() => setSubmitOpen(true)}
+        >
           <Send aria-hidden /> Entregar com retorno
         </Button>
       ) : null}

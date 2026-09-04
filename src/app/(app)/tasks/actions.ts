@@ -455,6 +455,7 @@ async function transitionTask(options: {
         status: task.status,
         completedAt: task.completedAt,
         completedBy,
+        fromInformative: task.informativeId !== null,
       },
     });
     if (!decision.allowed) {
