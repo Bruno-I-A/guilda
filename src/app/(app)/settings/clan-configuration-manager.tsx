@@ -73,7 +73,7 @@ export function CreateClanDialog() {
         <DialogHeader>
           <DialogTitle>Criar clã</DialogTitle>
           <DialogDescription>
-            O clã nasce com Missões, Integrantes e Campanhas. As partes dos
+            O clã nasce com Missões e Integrantes. As partes dos
             Informativos são configuradas depois, sem alterar o código.
           </DialogDescription>
         </DialogHeader>

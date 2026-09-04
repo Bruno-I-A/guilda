@@ -1,4 +1,4 @@
-import { clanTabsFor, type ClanTab } from "@/lib/clan-tabs";
+import { CLAN_TAB_DESCRIPTIONS, clanTabsFor } from "@/lib/clan-tabs";
 
 export const MAX_DASHBOARD_SHORTCUTS = 8;
 
@@ -10,14 +10,12 @@ export type DashboardShortcutIcon =
   | "clients"
   | "missions"
   | "members"
-  | "campaigns"
   | "commitments"
   | "portfolio"
   | "mei"
   | "installments"
   | "fees"
   | "closings"
-  | "company-data"
   | "flow";
 
 export interface DashboardShortcutOption {
@@ -78,20 +76,6 @@ const GENERAL_OPTIONS: readonly DashboardShortcutOption[] = [
   },
 ];
 
-const TAB_DESCRIPTION: Record<ClanTab, string> = {
-  missions: "Missões e distribuição do clã",
-  members: "Integrantes e funções do clã",
-  campaigns: "Campanhas e rotinas recorrentes",
-  commitments: "Planejamento de distribuição de lucros",
-  portfolio: "Carteira e fichas fiscais",
-  mei: "Declarações anuais do MEI",
-  installments: "Controle dos parcelamentos",
-  fees: "Controle mensal de honorários",
-  closings: "Fechamentos da Contabilidade",
-  "company-data": "Consulta cadastral por CNPJ",
-  flow: "Fluxos de abertura, alteração e baixa",
-};
-
 export function dashboardShortcutOptions(
   clans: readonly ShortcutClan[],
 ): DashboardShortcutOption[] {
@@ -101,7 +85,7 @@ export function dashboardShortcutOptions(
       options.push({
         target: `clan:${clan.id}:${tab.key}`,
         label: `${clan.name} · ${tab.label}`,
-        description: TAB_DESCRIPTION[tab.key],
+        description: CLAN_TAB_DESCRIPTIONS[tab.key],
         href: `/clans/${clan.id}?tab=${tab.key}`,
         icon: tab.key,
         group: clan.name,

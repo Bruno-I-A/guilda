@@ -102,7 +102,7 @@ export async function MembersTab({
             >
               <span className="flex min-w-0 items-center gap-2.5">
                 <Avatar className="size-8">
-                  <AvatarFallback className="text-[10px]" aria-hidden>
+                  <AvatarFallback className="text-xs" aria-hidden>
                     {initials(row.name)}
                   </AvatarFallback>
                 </Avatar>
@@ -131,14 +131,14 @@ export async function MembersTab({
                   <strong className="block font-mono leading-none">
                     {row.openCount}
                   </strong>
-                  <span className="text-[11px] text-muted-foreground">abertas</span>
+                  <span className="text-xs text-muted-foreground">abertas</span>
                 </span>
                 {row.overdueCount > 0 ? (
                   <span className="text-right text-destructive">
                     <strong className="block font-mono leading-none">
                       {row.overdueCount}
                     </strong>
-                    <span className="text-[11px]">atrasadas</span>
+                    <span className="text-xs">atrasadas</span>
                   </span>
                 ) : null}
               </span>

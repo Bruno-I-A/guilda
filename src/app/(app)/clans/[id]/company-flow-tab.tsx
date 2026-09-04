@@ -167,6 +167,7 @@ export async function CompanyFlowTab({
     rhVerificationTaskStatus: row.rhVerificationTaskStatus ?? null,
     rhVerificationCompletedAt: row.rhVerificationCompletedAt?.toISOString() ?? null,
     hasGovSecret: Boolean(row.secretId),
+    isAssignedToViewer: row.flow.assignedTo === viewerId,
     canClaim: canClaimCompanyFlow({
       ...actorFacts,
       isAssignedToFlow: row.flow.assignedTo === viewerId,

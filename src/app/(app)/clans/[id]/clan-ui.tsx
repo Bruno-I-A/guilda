@@ -45,7 +45,7 @@ export function ClanStatusStrip({
           <div className="min-w-0">
             <dt className="text-sm font-medium text-foreground/90">{item.label}</dt>
             {item.detail ? (
-              <p className="truncate text-[11px] text-muted-foreground">
+              <p className="truncate text-xs text-muted-foreground">
                 {item.detail}
               </p>
             ) : null}
@@ -56,19 +56,30 @@ export function ClanStatusStrip({
   );
 }
 
+/**
+ * Título de seção do clã. É um `<h2>` de verdade (18px Cinzel, da escala):
+ * a versão anterior rebaixava o título a 11px mono, e a seção ficava menor
+ * que as próprias linhas que introduzia — o motivo de "visibilidade ruim"
+ * dentro do clã. `count` é o dado ao lado do título; `aside` é a ação.
+ */
 export function ClanSectionHeading({
   children,
+  count,
   aside,
   className,
 }: {
   children: ReactNode;
+  count?: number;
   aside?: ReactNode;
   className?: string;
 }) {
   return (
     <div className={cn("flex items-center gap-3", className)}>
-      <h2 className="hud-label shrink-0 text-foreground/80">{children}</h2>
-      <span className="h-px flex-1 bg-gradient-to-r from-border via-border/70 to-transparent" />
+      <h2 className="shrink-0">{children}</h2>
+      {count !== undefined ? (
+        <span className="font-mono text-xs tabular-nums text-muted-foreground">{count}</span>
+      ) : null}
+      <span className="h-px min-w-6 flex-1 bg-gradient-to-r from-border via-border/70 to-transparent" />
       <span className="size-1.5 shrink-0 rotate-45 border border-primary/70" aria-hidden />
       {aside ? <div className="shrink-0">{aside}</div> : null}
     </div>

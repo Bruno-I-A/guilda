@@ -8,7 +8,6 @@ import {
   CalendarRange,
   CalendarCheck,
   ChevronRight,
-  Flag,
   HandCoins,
   Inbox,
   ListTodo,
@@ -65,14 +64,12 @@ const SHORTCUT_ICONS: Record<DashboardShortcutIcon, LucideIcon> = {
   clients: Building2,
   missions: ShieldCheck,
   members: Users,
-  campaigns: Flag,
   commitments: HandCoins,
   portfolio: BriefcaseBusiness,
   mei: CalendarCheck,
   installments: ReceiptText,
   fees: WalletCards,
   closings: CalendarRange,
-  "company-data": Building2,
   flow: Workflow,
 };
 

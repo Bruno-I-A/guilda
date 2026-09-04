@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionResult } from "@/lib/action-context";
+import { toastWithUndo } from "@/lib/undo-toast";
 
 import {
   approveTask,
@@ -151,6 +152,33 @@ export function TaskActionBar({
     });
   }
 
+  /**
+   * Igual ao `run`, mas o aviso de sucesso vem com "Desfazer" ao lado. Para os
+   * cliques que a pessoa se arrepende: conclusão e aprovação creditam XP, e
+   * até aqui o único caminho de volta era um admin abrir o diálogo de reverter.
+   */
+  function runWithUndo(
+    action: () => Promise<ActionResult>,
+    successMessage: string,
+    undo: () => Promise<ActionResult>,
+    undoneMessage: string,
+  ) {
+    startTransition(async () => {
+      const result = await action();
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toastWithUndo({
+        message: successMessage,
+        undo,
+        undoneMessage,
+        onUndone: () => router.refresh(),
+      });
+      router.refresh();
+    });
+  }
+
   function runDelete() {
     startTransition(async () => {
       const result = await deleteTask({ taskId: task.id });
@@ -225,9 +253,15 @@ export function TaskActionBar({
         <Button
           disabled={pending}
           onClick={() =>
-            run(
+            runWithUndo(
               () => completeTask({ taskId: task.id }),
               `Concluída! Você ganhou ${task.xpValue} XP.`,
+              () =>
+                revertCompletion({
+                  taskId: task.id,
+                  note: "Conclusão desfeita por quem concluiu.",
+                }),
+              `Conclusão desfeita. Os ${task.xpValue} XP foram estornados.`,
             )
           }
         >

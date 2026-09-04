@@ -144,6 +144,31 @@ CREATE POLICY org_isolation ON tasks
 - **member**: criar tarefas (para si ou colegas da org), atualizar as suas,
   aprovar tarefas que criou
 
+## Desfazer: janela de arrependimento (decisão de 2026-09-03)
+
+Conclusão de missão mostra um aviso com **"Desfazer"** ao lado (`toastWithUndo`,
+em `src/lib/undo-toast.ts`). O desfazer NÃO é otimista: a conclusão já foi para
+o banco, e o botão chama `revertCompletion` de verdade — mesmas permissões,
+mesmo estorno no ledger. É o que faz o desfazer sobreviver a um F5 e não mentir
+sobre o que já aconteceu.
+
+Para o botão funcionar para quem não é admin, `authorizeTransition` ganhou a
+**janela de arrependimento** (`UNDO_COMPLETION_WINDOW_MS`, 5 min): quem
+registrou a conclusão desfaz a própria conclusão dentro dela, mesmo sendo
+member. Fora da janela, `completed → in_progress` continua sendo admin/owner
+como sempre foi. A janela do servidor é maior que a do aviso de propósito —
+perder o toast não custa o desfazer.
+
+Isso NÃO é brecha de farm de XP: o estorno entra como lançamento negativo
+(`reason = 'reversal'`) e a reconclusão é idempotente por `task_event_id`, não
+por `task_id` — concluir/desfazer/concluir dá saldo líquido de um crédito.
+
+Onde tem: **Concluir** (detalhe da missão) e **conclusão direta da Mesa do clã**
+(`distribution-board`), os dois cliques únicos que creditam XP. Aprovar ficou
+DE FORA de propósito: só volta para `in_progress`, não para `awaiting_approval`,
+então "desfazer" deixaria a missão num estado diferente do anterior — e aprovar
+já exige diálogo com comentário, não é clique de engano.
+
 ## Estrutura por clã (decisões de 2026-08-18)
 
 O clã deixou de ser um diretório da Guilda e virou o **espaço de trabalho** da
@@ -158,11 +183,19 @@ pessoa. Consequências, todas já implementadas:
   definir o que a pessoa vê, ele virou organograma. O líder continua dono do dia
   a dia — distribui missões e remaneja a carteira.
 - **A página do clã tem abas**: Missões (a Mesa do Líder de sempre), Integrantes
-  (leitura), Campanhas e mais uma seção específica do clã quando existe —
-  **Carteira** no Fiscal, **Fechamentos** na Contabilidade. Missões/Integrantes/
-  Campanhas valem para todo clã; as outras duas são específicas porque o
-  trabalho tem forma diferente em cada área, e enfiá-las em todo clã encheria a
-  navegação de aba morta. A tabela aba→clã dono vive em `src/lib/clan-tabs.ts`.
+  (leitura) e mais uma seção específica do clã quando existe — **Carteira** no
+  Fiscal, **Fechamentos** na Contabilidade. Missões/Integrantes valem para todo
+  clã; as outras são específicas porque o trabalho tem forma diferente em cada
+  área, e enfiá-las em todo clã encheria a navegação de aba morta. A tabela
+  aba→clã dono vive em `src/lib/clan-tabs.ts`.
+- **Navegação do clã em dois grupos (2026-09-03)**: *Espaço da área* (as
+  abas próprias do clã, primeiro e com moldura em `--primary`) e *Mesa do
+  clã* (Missões, Integrantes). Motivo: a equipe achava o clã
+  confuso e o Societário não achava o Fluxo numa fileira de sete rótulos
+  iguais. O cabeçalho mostra a formação (avatares + líder) em toda aba, e a
+  aba ativa tem uma frase de descrição (`CLAN_TAB_DESCRIPTIONS`). Títulos de
+  seção dentro do clã são `<h2>` reais. Mudança só visual; nenhuma função
+  mudou.
 - **`/closings` saiu da navegação global** e virou a aba Fechamentos da
   Contabilidade. A rota sobrevive apenas como **redirecionamento** (o botão
   "Abrir fechamentos" das notificações do Telegram aponta para ela). Como
@@ -187,17 +220,37 @@ porque "essa empresa não é minha" é discussão real.
 Empresa presa a quem saiu do clã não some da tela: ganha bloco próprio com o nome
 de quem a deixou para trás.
 
-### Campanhas de clã
+### Campanhas de clã — aba REMOVIDA em 2026-09-03
 
-`clan_campaigns (org_id, clan_id, name, period_year, period_month, due_date, status)`
-— o guarda-chuva mensal do trabalho recorrente do clã. **Esta etapa entrega só o
-guarda-chuva**; a materialização das missões de cada empresa a partir dos
-`mission_templates` é a etapa seguinte, e é por isso que `tasks` ainda NÃO tem
-`campaign_id`. A coluna nasce junto com a instanciação, não antes.
+A aba Campanhas (e a aba **Dados da empresa** do Societário) saiu de todos os
+clãs a pedido do Bruno: o guarda-chuva mensal não estava sendo usado, e a
+consulta avulsa de CNPJ já existe dentro do próprio Fluxo. Foram apagados
+`campaigns-tab.tsx`, `campaign-board.tsx`, `campaign-actions.ts`,
+`company-data-tab.tsx` e a action `lookupCompanyDataCnpj`.
 
-Atenção: `clan_campaigns` é a campanha POR CLÃ, mensal. Não confundir com o modelo
-de `missions`/`mission_submissions` descrito na Fase 5 abaixo (pool auto-servido
-por regime), que continua não implementado.
+A tabela `clan_campaigns` CONTINUA no schema — `fiscal_control_periods.campaign_id`
+aponta para ela — mas hoje ninguém escreve nela: sem a aba, não há caminho de
+criação. Abrir a competência do Fiscal nunca dependeu de campanha
+(`openFiscalControlPeriod` tem `campaignId` opcional). Se a ideia voltar, ela
+volta com o modelo de `missions`/`mission_submissions` da Fase 5, não com a aba
+antiga — não recriar a aba sem o Bruno pedir.
+
+### Fluxo Societário: confirmação de recebimento (decisão de 2026-09-03)
+
+Fluxo novo **sempre nasce em `sent_to_corporate`** ("Recebido"), mesmo quando o
+clã tem responsável nominal (`findClanDutyHolder(..., "company_flow")`). O
+responsável recebe a missão e o aviso, e precisa clicar **Confirmar recebimento**
+para o Fluxo virar `in_progress`.
+
+Antes ele entrava direto em `in_progress` — a etapa 1 da esteira nunca era usada
+e o painel afirmava "em processamento" sem ninguém ter olhado o pedido. **Não
+reintroduzir o auto-avanço**: o clique é o controle de que o pedido foi lido.
+
+`assignedTo` continua sendo preenchido na criação (o dono nominal), então a
+linha em Recebido diz de quem se está esperando. Qualquer integrante ativo do
+Societário ainda pode assumir um Fluxo parado — nesse caso `assignedTo` passa
+para quem assumiu, mas a missão do Societário continua com o dono nominal (o XP
+vai para o responsável da missão, comportamento que já existia).
 
 ## Lista de missões: Avulsas × Informativos (decisão de 2026-09-03)
 

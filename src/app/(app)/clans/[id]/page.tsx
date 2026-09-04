@@ -1,9 +1,10 @@
 import { and, asc, eq } from "drizzle-orm";
-import { ArrowLeft, Diamond } from "lucide-react";
+import { ArrowLeft, Crown, Diamond } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -16,11 +17,11 @@ import {
   isAdminRole,
 } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
-import { parseClanTab } from "@/lib/clan-tabs";
+import { CLAN_TAB_DESCRIPTIONS, parseClanTab } from "@/lib/clan-tabs";
 import { CUSTOMER_SUCCESS_CLAN_SLUG } from "@/lib/clans/rules";
+import { initials } from "@/lib/people";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 
-import { CampaignsTab } from "./campaigns-tab";
 import { ClanTabNav } from "./clan-tab-nav";
 import { ClosingsTab, type ClosingsTabParams } from "./closings-tab";
 import { CommitmentsTab } from "./commitments-tab";
@@ -28,7 +29,6 @@ import { MembersTab } from "./members-tab";
 import { MeiTab } from "./mei-tab";
 import { MissionsTab } from "./missions-tab";
 import { PortfolioTab } from "./portfolio-tab";
-import { CompanyDataTab } from "./company-data-tab";
 import { CompanyFlowTab } from "./company-flow-tab";
 import { FiscalInstallmentTab } from "./fiscal-installment-tab";
 import { OfficeFeeTab } from "./office-fee-tab";
@@ -145,27 +145,34 @@ export default async function ClanPage({
     memberships.some((membership) => membership.userId === session.user.id);
   const clanFacts = { role, leadsThisClan, isActiveClanMember };
   const activeTab = parseClanTab(tab, clan.slug);
+  const leaders = memberships.filter((membership) => membership.isLeader);
+  const shownAvatars = memberships.slice(0, 6);
+  const hiddenAvatars = memberships.length - shownAvatars.length;
 
   return (
     <div className="grid gap-5">
-      <header className="relative grid gap-3 border-b border-border/80 pb-5">
+      <header className="relative grid gap-4 border-b border-border/80 pb-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-        {/* Quem tem um clã só chegou aqui direto; a listagem só serve a
-            quem tem mais de um, e ao admin. */}
-        {(myClanIds.length > 1 || isAdminRole(role)) && (
-          <Link
-            href="/clans"
-            className="flex min-h-10 w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ArrowLeft className="size-4" aria-hidden />{" "}
-            {isAdminRole(role) ? "Clãs" : "Meus clãs"}
-          </Link>
-        )}
+          {/* Quem tem um clã só chegou aqui direto; a listagem só serve a
+              quem tem mais de um, e ao admin. */}
+          {(myClanIds.length > 1 || isAdminRole(role)) && (
+            <Link
+              href="/clans"
+              className="flex min-h-10 w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ArrowLeft className="size-4" aria-hidden />{" "}
+              {isAdminRole(role) ? "Clãs" : "Meus clãs"}
+            </Link>
+          )}
           <span className="hud-label hidden items-center gap-2 sm:flex">
             <Diamond className="size-3 text-primary" aria-hidden /> Área operacional
           </span>
         </div>
-        <div className="flex flex-wrap items-end justify-between gap-3">
+
+        {/* Identidade + formação numa linha: o nome de um lado, quem faz
+            parte do outro. A composição vem das Configurações; aqui é só
+            leitura, e por isso cabe no cabeçalho de toda aba. */}
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           <div className="flex min-w-0 items-center gap-3">
             <span
               className="grid size-10 shrink-0 rotate-45 place-items-center border border-primary/50 bg-primary/5"
@@ -175,19 +182,68 @@ export default async function ClanPage({
             </span>
             <div className="min-w-0">
               <p className="hud-label mb-1">Clã</p>
-              <h1 className="truncate font-heading text-2xl font-semibold tracking-wide sm:text-3xl">
-                {clan.name}
-              </h1>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <h1 className="truncate">{clan.name}</h1>
+                {leadsThisClan ? <Badge variant="default">Liderança</Badge> : null}
+                {!clan.active ? <Badge variant="outline">Inativo</Badge> : null}
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {leadsThisClan ? <Badge variant="default">Liderança</Badge> : null}
-            {!clan.active ? <Badge variant="outline">Inativo</Badge> : null}
-          </div>
+
+          <Link
+            href={`/clans/${clan.id}?tab=members`}
+            aria-label="Ver integrantes do clã"
+            className="flex items-center gap-3 border border-border/70 bg-card/30 py-2 pr-4 pl-2 transition-colors hover:border-primary/50 hover:bg-accent/30 [clip-path:polygon(0.5rem_0,100%_0,100%_calc(100%-0.5rem),calc(100%-0.5rem)_100%,0_100%,0_0.5rem)]"
+          >
+            <span className="flex -space-x-2">
+              {shownAvatars.map((membership) => (
+                <Avatar
+                  key={membership.userId}
+                  className="size-8 border-2 border-background"
+                  title={membership.name}
+                >
+                  <AvatarFallback className="text-xs">
+                    {initials(membership.name)}
+                  </AvatarFallback>
+                </Avatar>
+              ))}
+              {hiddenAvatars > 0 ? (
+                <span className="grid size-8 place-items-center rounded-full border-2 border-background bg-secondary font-mono text-xs">
+                  +{hiddenAvatars}
+                </span>
+              ) : null}
+            </span>
+            <span className="grid text-xs leading-tight">
+              <span className="font-medium">
+                {memberships.length}{" "}
+                {memberships.length === 1 ? "integrante" : "integrantes"}
+              </span>
+              <span className="inline-flex items-center gap-1 text-muted-foreground">
+                {leaders.length > 0 ? (
+                  <>
+                    <Crown className="size-3 text-primary" aria-hidden />
+                    {leaders.map((leader) => leader.name.split(" ")[0]).join(", ")}
+                  </>
+                ) : (
+                  "sem liderança definida"
+                )}
+              </span>
+            </span>
+          </Link>
         </div>
       </header>
 
-      <ClanTabNav clanId={clan.id} clanSlug={clan.slug} active={activeTab} />
+      <div className="grid gap-2">
+        <ClanTabNav
+          clanId={clan.id}
+          clanSlug={clan.slug}
+          clanName={clan.name}
+          active={activeTab}
+        />
+        <p className="text-sm text-muted-foreground">
+          {CLAN_TAB_DESCRIPTIONS[activeTab]}
+        </p>
+      </div>
 
       {activeTab === "missions" ? (
         <MissionsTab
@@ -213,15 +269,6 @@ export default async function ClanPage({
           clanId={clan.id}
           memberships={memberships}
           viewerId={session.user.id}
-        />
-      ) : null}
-
-      {activeTab === "campaigns" ? (
-        <CampaignsTab
-          orgId={session.orgId}
-          clanId={clan.id}
-          canManage={canDistributeClanTasks(clanFacts)}
-          isFiscal={clan.slug === "fiscal"}
         />
       ) : null}
 
@@ -291,10 +338,6 @@ export default async function ClanPage({
           role={role}
           leadsThisClan={leadsThisClan}
         />
-      ) : null}
-
-      {activeTab === "company-data" ? (
-        <CompanyDataTab clanId={clan.id} />
       ) : null}
     </div>
   );

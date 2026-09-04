@@ -6,7 +6,10 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { quickCompleteUnassignedInformativeTask } from "@/app/(app)/tasks/actions";
+import {
+  quickCompleteUnassignedInformativeTask,
+  revertCompletion,
+} from "@/app/(app)/tasks/actions";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +22,8 @@ import {
 } from "@/components/ui/select";
 
 import { acceptClanSuggestions, assignClanTasks } from "./actions";
+import { toastWithUndo } from "@/lib/undo-toast";
+
 import { ClanEmptyState, ClanSectionHeading } from "./clan-ui";
 
 export interface BoardSuggestion {
@@ -119,9 +124,19 @@ export function DistributionBoard({
         toast.error(result.error);
         return;
       }
-      toast.success(
-        `Missão concluída diretamente. +${result.data?.xpValue ?? 0} XP`,
-      );
+      // Um clique na linha errada aqui concluía e creditava XP sem volta —
+      // é a tela onde o engano é mais fácil, porque as linhas são parecidas.
+      toastWithUndo({
+        message: `Missão concluída diretamente. +${result.data?.xpValue ?? 0} XP`,
+        undo: () =>
+          revertCompletion({
+            taskId,
+            note: "Conclusão desfeita por quem concluiu.",
+          }),
+        undoneMessage:
+          "Conclusão desfeita, XP estornado. A missão voltou como sua, em andamento.",
+        onUndone: () => router.refresh(),
+      });
       router.refresh();
     });
   }

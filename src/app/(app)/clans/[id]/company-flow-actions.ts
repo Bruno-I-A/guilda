@@ -282,48 +282,6 @@ export interface CompanyFlowClientLookupView {
   matchedBy: "cnpj" | "name" | null;
 }
 
-/** Consulta avulsa da área Societária. Apenas lê a Receita; não altera cadastro. */
-export async function lookupCompanyDataCnpj(
-  input: z.input<typeof companyDataLookupSchema>,
-): Promise<ActionResult<CompanyDataLookupView>> {
-  const ctx = await requireMemberContext();
-  if (!ctx.ok) return ctx;
-  const parsed = companyDataLookupSchema.safeParse(input);
-  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
-
-  const normalizedCnpj = normalizeCnpj(parsed.data.cnpj);
-  if (!validateCnpj(normalizedCnpj)) {
-    return err("CNPJ inválido — confira os dígitos.");
-  }
-
-  const authorized = await withOrgTx(ctx.orgId, async (tx) => {
-    const corporate = await requireCorporateFlowClan(tx, {
-      orgId: ctx.orgId,
-      clanId: parsed.data.clanId,
-      userId: ctx.userId,
-      role: ctx.role,
-    });
-    return Boolean(
-      corporate &&
-        (ctx.role === "owner" || ctx.role === "admin" || corporate.activeMember),
-    );
-  });
-  if (!authorized) return err("Você não pode consultar empresas neste clã.");
-
-  const result = await lookupCnpj(normalizedCnpj);
-  if (!result.ok) {
-    return err(
-      result.reason === "not_found"
-        ? "CNPJ não encontrado na Receita."
-        : "Não foi possível consultar a Receita agora. Tente novamente.",
-    );
-  }
-  return {
-    ok: true,
-    data: { ...result.data, normalizedCnpj },
-  };
-}
-
 /**
  * Consulta usada no Novo Fluxo: além da Receita, resolve a empresa ativa do
  * painel para que alteração/baixa nunca seja vinculada ao cliente errado.
@@ -520,7 +478,7 @@ export async function createCompanyFlow(
       description: [
         `${COMPANY_FLOW_KIND_LABELS[data.kind]} de ${nomeEmpresa}.`,
         "",
-        "Abra o Fluxo no clã Societário para ver os dados e devolver o resultado.",
+        "Abra o Fluxo no clã Societário, confirme o recebimento e devolva o resultado.",
         "Esta missão se conclui sozinha quando você devolver o Fluxo preenchido.",
       ].join("\n"),
       priority: COMPANY_FLOW_TASK_PRIORITY,
@@ -530,11 +488,12 @@ export async function createCompanyFlow(
       .update(schema.companyFlows)
       .set({
         processingTaskId: missao.id,
-        // Com dono definido o Fluxo já entra em processamento: não há fila para
-        // ninguém assumir. Sem dono, segue em sent_to_corporate.
-        ...(responsavel
-          ? { assignedTo: responsavel.userId, status: "in_progress" as const }
-          : {}),
+        // O Fluxo nasce em sent_to_corporate MESMO com responsável definido: o
+        // dono nominal ainda precisa confirmar que viu o pedido para a esteira
+        // andar. Antes ele entrava direto em processamento e a etapa "Recebido"
+        // nunca era usada — o painel dizia "em processamento" sem ninguém ter
+        // olhado o pedido.
+        ...(responsavel ? { assignedTo: responsavel.userId } : {}),
       })
       .where(and(
         eq(schema.companyFlows.orgId, ctx.orgId),
@@ -554,7 +513,7 @@ export async function createCompanyFlow(
           "",
           `${COMPANY_FLOW_KIND_LABELS[data.kind]} — ${nomeEmpresa}`,
           responsavel
-            ? `Responsável: ${responsavel.userName ?? "definido"}`
+            ? `Responsável: ${responsavel.userName ?? "definido"} — aguardando a confirmação de recebimento.`
             : "Sem responsável definido — disponível para assumir.",
         ].join("\n"),
       ),
