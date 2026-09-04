@@ -97,12 +97,20 @@ export async function runTelegramTaskAction(input: {
       };
     }
 
+    // Os MESMOS fatos que a web passa. Sem `fromInformative` o bot recusava
+    // concluir missão de Informativo pedindo uma aprovação que a web já não
+    // exige — o botão aparecia e a ação falhava.
     const decision = authorizeTransition(intent.to, {
       actor: { id: input.userId, role },
       task: {
         creatorId: task.creatorId,
         assigneeId: task.assigneeId,
         status: task.status,
+        fromInformative: task.informativeId !== null,
+        // O bot não oferece desfazer: não há transição completed → in_progress
+        // no seu mapa de ações, então a janela de arrependimento não se aplica.
+        completedAt: null,
+        completedBy: null,
       },
     });
     if (!decision.allowed) return { ok: false, error: decision.reason };
