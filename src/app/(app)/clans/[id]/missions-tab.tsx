@@ -2,6 +2,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { ChevronRight, ListChecks } from "lucide-react";
 
 import { MissionRow } from "@/components/mission-row";
+import { clanTabHref } from "@/lib/clan-tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -41,6 +42,12 @@ export async function MissionsTab({
   canDistribute: boolean;
   canQuickComplete: boolean;
 }) {
+  // Quem abre uma missão daqui volta para a Mesa deste clã, não para a lista
+  // geral de missões — a aba vai junto para a pessoa cair na seção de onde saiu.
+  const voltarParaAMesa = clanTabHref(clanId, "missions");
+  const taskHref = (taskId: string) =>
+    `/tasks/${taskId}?returnTo=${encodeURIComponent(voltarParaAMesa)}`;
+
   const { openTasks, suggestedUsers } = await withOrgTx(orgId, async (tx) => {
     const tasks = await tx.query.tasks.findMany({
       where: and(
@@ -172,6 +179,7 @@ export async function MissionsTab({
               <li key={task.id}>
                 <MissionRow
                   variant="compact"
+                  href={taskHref(task.id)}
                   task={{
                     id: task.id,
                     title: task.title,

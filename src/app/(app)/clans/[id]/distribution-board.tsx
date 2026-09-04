@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 
 import { acceptClanSuggestions, assignClanTasks } from "./actions";
+import { clanTabHref } from "@/lib/clan-tabs";
 import { toastWithUndo } from "@/lib/undo-toast";
 
 import { ClanEmptyState, ClanSectionHeading } from "./clan-ui";
@@ -251,7 +252,9 @@ export function DistributionBoard({
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div className="min-w-0">
                           <Link
-                            href={`/tasks/${task.id}`}
+                            href={`/tasks/${task.id}?returnTo=${encodeURIComponent(
+                              clanTabHref(clanId, "missions"),
+                            )}`}
                             className="font-medium hover:underline"
                           >
                             {task.title}

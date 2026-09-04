@@ -268,7 +268,7 @@ export default async function DashboardPage() {
               return (
                 <li key={task.id}>
                   <Link
-                    href={`/tasks/${task.id}`}
+                    href={`/tasks/${task.id}?returnTo=${encodeURIComponent("/dashboard")}`}
                     className={cn(
                       "panel-cut panel-cut-sm flex items-center gap-3 border-l-2 px-4 py-2.5 transition-colors hover:bg-accent/40",
                       overdue
@@ -330,7 +330,7 @@ export default async function DashboardPage() {
               return (
                 <li key={task.id}>
                   <Link
-                    href={`/tasks/${task.id}`}
+                    href={`/tasks/${task.id}?returnTo=${encodeURIComponent("/dashboard")}`}
                     className={cn(
                       "panel-cut panel-cut-sm flex items-center gap-3 border-l-2 px-4 py-2.5 transition-colors hover:bg-accent/40",
                       overdue

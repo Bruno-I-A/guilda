@@ -26,6 +26,11 @@ export interface TransitionContext {
     completedAt?: Date | null;
     /** Quem registrou a conclusão; só essa pessoa desfaz sem ser admin. */
     completedBy?: string | null;
+    /**
+     * Missão nascida de um Informativo. Não é pedido de uma pessoa para outra:
+     * é rotina do clã, e por isso termina em conclusão, não em aprovação.
+     */
+    fromInformative?: boolean;
   };
   /** Injetável para o teste não depender do relógio da máquina. */
   now?: Date;
@@ -90,8 +95,8 @@ const ALLOW: TransitionDecision = { allowed: true };
  * estados com as regras de papel/propriedade:
  *
  * - iniciar / enviar para aprovação / retomar: só o responsável;
- * - toda pessoa responsável pode concluir diretamente uma missão em
- *   andamento, ainda que outra pessoa a tenha criado;
+ * - conclusão direta pela pessoa responsável: auto-missão e missão de
+ *   Informativo; missão avulsa de terceiro passa por aprovação;
  * - aprovar / rejeitar tarefa de terceiros: criador ou admin/owner;
  * - cancelar: criador ou admin/owner;
  * - reverter conclusão: admin/owner a qualquer tempo, e quem concluiu dentro
@@ -137,22 +142,27 @@ export function authorizeTransition(
       : deny("Apenas a pessoa responsável pode enviar para aprovação.");
   }
 
-  // in_progress → completed (conclusão direta) — SÓ em auto-tarefa.
+  // in_progress → completed (conclusão direta).
   //
-  // Missão que alguém criou para outra pessoa termina em aprovação: quem pediu
-  // o trabalho precisa ver o retorno antes de dar por feito. Sem esta régua, a
-  // pessoa responsável concluía sozinha e creditava o próprio XP, e quem pediu
-  // nunca via o resultado — o que esvaziava o fluxo de aprovação inteiro e
-  // contrariava a regra escrita no CLAUDE.md.
+  // Missão AVULSA que alguém criou para outra pessoa termina em aprovação: quem
+  // pediu o trabalho precisa ver o retorno antes de dar por feito. Sem esta
+  // régua, a pessoa responsável concluía sozinha e creditava o próprio XP, e
+  // quem pediu nunca via o resultado.
+  //
+  // Missão de INFORMATIVO não: ali não existe "quem pediu". O pedido veio do
+  // Informativo, e quem consta como criador só preparou o pacote — cobrar dele
+  // uma aprovação transformava rotina do clã em vai-e-volta sem leitor. Quem
+  // executa conclui; entregar com retorno segue disponível, como opção.
   if (to === "completed" && from === "in_progress") {
     if (!isAssignee) {
       return deny("Apenas a pessoa responsável pode concluir a missão.");
     }
-    return task.creatorId === task.assigneeId
-      ? ALLOW
-      : deny(
-          "Missão criada por outra pessoa precisa ser enviada para aprovação — quem pediu é quem conclui.",
-        );
+    if (task.fromInformative || task.creatorId === task.assigneeId) {
+      return ALLOW;
+    }
+    return deny(
+      "Missão criada por outra pessoa precisa ser enviada para aprovação — quem pediu é quem conclui.",
+    );
   }
 
   // awaiting_approval → completed | rejected (decisão de aprovação)

@@ -142,7 +142,7 @@ function InformativeMissionSummary({
             {summary.items.map((task) => (
               <li key={task.id}>
                 <Link
-                  href={`/tasks/${task.id}`}
+                  href={`/tasks/${task.id}?returnTo=${encodeURIComponent("/mural")}`}
                   className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm hover:bg-muted/25"
                 >
                   <span className="min-w-0 flex-1">
