@@ -248,6 +248,8 @@ export interface InformativePackage<T extends TriageTask> {
   progress: PackageProgress;
   /** Ainda tem missão em jogo em qualquer parte do pacote. */
   open: boolean;
+  /** Tem missão aberta DENTRO do recorte — é o que decide a ordem da fila. */
+  hasOpenForViewer: boolean;
 }
 
 export function packageProgress(
@@ -306,11 +308,20 @@ export function groupInformativePackages<T extends TriageTask & { informativeId:
       statuses: [...statuses],
       progress,
       open: statuses.some((status) => isOpenStatus(status)),
+      hasOpenForViewer: group.some((task) => isOpenStatus(task.status)),
     });
   }
 
   packages.sort((left, right) => {
     if (left.open !== right.open) return left.open ? -1 : 1;
+    // Entre os abertos, quem tem trabalho PARA O LEITOR vem primeiro. O pacote
+    // pode seguir em jogo com outra pessoa e não pedir nada de quem está
+    // olhando: misturado com os acionáveis, ele ocupa o topo da lista sem
+    // oferecer próxima ação. A lista existe para responder "o que é meu e
+    // ainda não fiz" — o resto é contexto, e contexto vai depois.
+    const leftMine = left.tasks.some((task) => isOpenStatus(task.status));
+    const rightMine = right.tasks.some((task) => isOpenStatus(task.status));
+    if (leftMine !== rightMine) return leftMine ? -1 : 1;
     return right.createdAt.getTime() - left.createdAt.getTime();
   });
   return packages;

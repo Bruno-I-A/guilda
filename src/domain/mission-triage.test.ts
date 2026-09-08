@@ -237,6 +237,33 @@ describe("groupInformativePackages", () => {
     expect(packageB.progress).toEqual({ done: 1, total: 1, cancelled: 1 });
   });
 
+  it("pacote sem nada pendente para o leitor vai depois dos acionáveis, mesmo sendo mais recente", () => {
+    // Recente, mas o que sobrou nele está com outra pessoa (fora do recorte).
+    const semNada = task({ informativeId: "inf-novo", status: "completed", creatorId: OTHER, assigneeId: OTHER });
+    // Mais antigo, porém com missão aberta para quem está olhando.
+    const comTrabalho = task({ informativeId: "inf-velho", status: "pending", creatorId: OTHER, assigneeId: null });
+
+    const packages = groupInformativePackages(
+      [semNada, comTrabalho],
+      new Map([
+        ["inf-novo", { kind: "general_task" as const, companyName: "Recente", createdAt: new Date("2026-09-05T00:00:00Z") }],
+        ["inf-velho", { kind: "general_task" as const, companyName: "Antigo", createdAt: new Date("2026-09-01T00:00:00Z") }],
+      ]),
+      new Map<string, TaskStatus[]>([
+        // Os dois seguem abertos como pacote; a diferença é de quem é o que resta.
+        ["inf-novo", ["completed", "in_progress"]],
+        ["inf-velho", ["pending"]],
+      ]),
+      NOW,
+    );
+
+    expect(packages.map((item) => item.label)).toEqual(["Antigo", "Recente"]);
+    expect(packages[0].hasOpenForViewer).toBe(true);
+    expect(packages[1].hasOpenForViewer).toBe(false);
+    // Os dois continuam em "Em andamento" — a ordem muda, a seção não.
+    expect(packages.every((item) => item.open)).toBe(true);
+  });
+
   it("sem resumo do informativo, cai no que as próprias missões dizem", () => {
     const only = task({ informativeId: "inf-x", status: "in_progress", creatorId: OTHER, assigneeId: OTHER });
     const [pkg] = groupInformativePackages([only], new Map(), new Map(), NOW);
