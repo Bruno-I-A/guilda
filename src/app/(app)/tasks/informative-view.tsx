@@ -216,6 +216,11 @@ export function InformativeView({
   taskHref: (taskId: string) => string;
 }) {
   const openPackages = packages.filter((pkg) => pkg.open);
+  // O indicador contava pacotes abertos na Guilda inteira e chamava aquilo de
+  // "trabalho pendente" — mas parte deles não pede nada de quem está olhando.
+  // Depois que a fila passou a separar os dois grupos, o número que não
+  // separava virou a informação mais enganosa da tela.
+  const comTrabalhoSeu = openPackages.filter((pkg) => pkg.hasOpenForViewer).length;
   const closedPackages = packages.filter((pkg) => !pkg.open);
   const visibleOpenTasks = openPackages.flatMap((pkg) => pkg.tasks);
   const unassigned = visibleOpenTasks.filter(
@@ -228,12 +233,18 @@ export function InformativeView({
       <ClanStatusStrip
         items={[
           {
-            label: plural(openPackages.length, "pacote em aberto", "pacotes em aberto"),
-            value: openPackages.length,
+            label: plural(
+              comTrabalhoSeu,
+              "pacote com trabalho seu",
+              "pacotes com trabalho seu",
+            ),
+            value: comTrabalhoSeu,
             detail:
               openPackages.length === 0
                 ? "nenhuma empresa com missão pendente"
-                : "empresas com trabalho pendente",
+                : comTrabalhoSeu === openPackages.length
+                  ? `todos os ${openPackages.length} em aberto`
+                  : `de ${openPackages.length} ${plural(openPackages.length, "pacote", "pacotes")} em aberto`,
           },
           {
             label: unassigned === 0 ? "tudo atribuído" : "sem responsável",
