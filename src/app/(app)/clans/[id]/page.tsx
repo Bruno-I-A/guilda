@@ -112,17 +112,22 @@ export default async function ClanPage({
   const role = viewer.role as OrgRole;
 
   const data = await withOrgTx(session.orgId, async (tx) => {
-    // As três não dependem uma da outra — encadeá-las custava três idas ao
-    // banco em série só porque estavam escritas em sequência. A existência do
-    // clã é checada depois; no caso raro de ele não existir, o custo é ter
-    // lido dois resultados vazios.
-    const clanQuery = tx
+    // As três são independentes, mas rodam em série de qualquer forma: o
+    // node-postgres NÃO faz pipelining — `_pulseQueryQueue` só envia a próxima
+    // query quando a anterior devolveu ReadyForQuery. Envolver isto em
+    // `Promise.all` não economiza uma ida ao banco sequer; a única forma de
+    // sobrepor seria uma transação por query (uma conexão cada), o que troca
+    // duas idas ao banco por pressão no pool de 10. Não vale para esta página.
+    // Escrito em sequência de propósito, para ninguém "otimizar" de novo.
+    const [clan] = await tx
       .select()
       .from(schema.clans)
       .where(and(eq(schema.clans.orgId, session.orgId), eq(schema.clans.id, id)));
 
+    if (!clan) return null;
+
     // Só integrantes que ainda são membros da organização.
-    const membershipsQuery = tx
+    const memberships = await tx
       .select({
         userId: schema.clanMemberships.userId,
         name: schema.user.name,
@@ -148,7 +153,7 @@ export default async function ClanPage({
       .orderBy(asc(schema.user.name));
 
     // Vínculos do visitante — a régua de quem pode abrir este clã.
-    const mineQuery = tx
+    const mine = await tx
       .select({ clanId: schema.clanMemberships.clanId })
       .from(schema.clanMemberships)
       .where(
@@ -157,13 +162,6 @@ export default async function ClanPage({
           eq(schema.clanMemberships.userId, session.user.id),
         ),
       );
-
-    const [[clan], memberships, mine] = await Promise.all([
-      clanQuery,
-      membershipsQuery,
-      mineQuery,
-    ]);
-    if (!clan) return null;
 
     return {
       clan,
