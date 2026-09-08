@@ -124,9 +124,17 @@ function PackageCard({
   // resposta a isso: quando a pessoa já fez a parte dela, o pacote inteiro
   // ficava tomado por linhas "Concluída" e o que restava sumia atrás delas.
   // O que já foi feito continua alcançável, mas sob pedido.
+  // Em "Em andamento" o card responde "o que falta", então só as abertas
+  // entram. Em "Pacotes encerrados" não sobrou nada aberto e o histórico É o
+  // conteúdo — sem isto, aquela seção viraria uma pilha de cartões vazios.
+  const linhas = pkg.open
+    ? pkg.tasks.filter((task) => isOpenStatus(task.status))
+    : pkg.tasks;
   const openTasks = pkg.tasks.filter((task) => isOpenStatus(task.status));
-  const doneTasks = pkg.tasks.filter((task) => !isOpenStatus(task.status));
   const outOfScope = pkg.statuses.length - pkg.tasks.length;
+  // Quanto do pacote ainda está em jogo fora do recorte — é o que dá sentido
+  // a um card sem nada pendente continuar em "Em andamento".
+  const resto = pkg.statuses.filter(isOpenStatus).length - openTasks.length;
 
   return (
     <article className="panel-cut grid bg-card/60">
@@ -160,46 +168,35 @@ function PackageCard({
         </div>
       </header>
 
-      {openTasks.length > 0 ? (
+      {linhas.length > 0 ? (
         <ul className="divide-y divide-border/50">
-          {openTasks.map((task) => (
+          {linhas.map((task) => (
             <li key={task.id}>
               <PackageRow task={task} taskHref={taskHref} />
             </li>
           ))}
         </ul>
       ) : (
+        // Uma linha, não três. A versão anterior escondia as concluídas mas
+        // deixava o aviso delas, o "ver" e a contagem de outras pessoas — num
+        // pacote sem nada pendente, isso era o card inteiro dizendo nada. O
+        // que já foi feito não volta aqui nem sob clique: pacote inteiro
+        // encerrado aparece em "Pacotes encerrados", e a linha da missão
+        // continua acessível por lá.
         <p className="px-4 py-3 text-sm text-muted-foreground">
-          {doneTasks.length > 0
-            ? "Nada pendente aqui no recorte atual."
-            : "Nenhuma missão deste pacote no recorte atual."}
+          {resto > 0
+            ? `Nada pendente para você — ${resto} ${plural(resto, "missão está", "missões estão")} com outras pessoas.`
+            : "Sua parte deste pacote está concluída."}
         </p>
       )}
 
-      {/* `details` nativo: abre sem JavaScript, e o card é Server Component. */}
-      {doneTasks.length > 0 ? (
-        <details className="border-t border-border/50">
-          <summary className="hud-label cursor-pointer list-none px-4 py-2 transition-colors hover:text-foreground">
-            {doneTasks.length} {plural(doneTasks.length, "concluída", "concluídas")} — ver
-          </summary>
-          <ul className="divide-y divide-border/50 border-t border-border/50">
-            {doneTasks.map((task) => (
-              <li key={task.id}>
-                <PackageRow task={task} taskHref={taskHref} />
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
-
-      {/* Ausência por RECORTE é outra coisa que ausência por conclusão — as
-          duas frases juntas confundiam quem tentava fechar a conta do 8/13. */}
-      {outOfScope > 0 ? (
+      {linhas.length > 0 && outOfScope > 0 ? (
         <p className="border-t border-border/50 px-4 py-2 text-xs text-muted-foreground">
           +{outOfScope} {plural(outOfScope, "missão", "missões")} de outras pessoas neste
           pacote.
         </p>
       ) : null}
+
     </article>
   );
 }
