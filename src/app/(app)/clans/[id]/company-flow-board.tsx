@@ -71,12 +71,12 @@ import {
   claimCompanyFlow,
   createCompanyFlow,
   deleteCompanyFlow,
+  loadCompanyFlowClientRecord,
   lookupCompanyFlowClientCnpj,
   lookupCompanyFlowCnpj,
   prepareCompanyFlowInformative,
   returnCompanyFlowToOwner,
   revealCompanyFlowGovPassword,
-  type CompanyDataLookupView,
   type CompanyFlowClientLookupView,
 } from "./company-flow-actions";
 
@@ -138,12 +138,17 @@ export interface CompanyFlowView {
   }[];
 }
 
+/**
+ * O que o seletor de empresa precisa — e SÓ isso. A ficha completa da empresa
+ * chega por `loadCompanyFlowClientRecord` quando uma é escolhida: carregá-la
+ * para todas as empresas ativas enchia o payload da aba com cinco colunas
+ * JSONB por empresa para preencher um dropdown.
+ */
 export interface CompanyFlowClientOption {
   id: string;
   name: string;
   cnpj: string | null;
   taxRegime: TaxRegime;
-  company: CompanyDataLookupView;
 }
 
 const FLOW_SOURCE_LABELS: Record<CompanyFlowSource, string> = {
@@ -838,6 +843,8 @@ function NewCompanyFlowDialog({
   const [companySearch, setCompanySearch] = useState("");
   const [companyPickerOpen, setCompanyPickerOpen] = useState(false);
   const companyCnpjRef = useRef("");
+  /** Última empresa escolhida: descarta ficha que chega depois de outra escolha. */
+  const selectedClientRef = useRef("");
   const [consultedCompany, setConsultedCompany] =
     useState<CompanyFlowClientLookupView | null>(null);
   const [companyDataSource, setCompanyDataSource] = useState<"cadastro" | "receita">("cadastro");
@@ -929,10 +936,24 @@ function NewCompanyFlowDialog({
     setCompanyPickerOpen(false);
     companyCnpjRef.current = client.cnpj ?? "";
     setCompanyDataSource("cadastro");
-    setConsultedCompany({
-      company: client.company,
-      client: { id: client.id, name: client.name },
-      matchedBy: "cnpj",
+    setConsultedCompany(null);
+    // A ficha vem agora, só desta empresa. Uma escolha depois da outra
+    // descarta a resposta da anterior — `companyCnpjRef` é o mesmo guarda que
+    // a consulta da Receita já usa para não pintar dado da empresa errada.
+    const pedido = client.id;
+    selectedClientRef.current = pedido;
+    startTransition(async () => {
+      const result = await loadCompanyFlowClientRecord({ clanId, clientId: pedido });
+      if (selectedClientRef.current !== pedido) return;
+      if (!result.ok || !result.data) {
+        toast.error(result.ok ? "Não foi possível carregar a ficha da empresa." : result.error);
+        return;
+      }
+      setConsultedCompany({
+        company: result.data,
+        client: { id: client.id, name: client.name },
+        matchedBy: "cnpj",
+      });
     });
   }
 
