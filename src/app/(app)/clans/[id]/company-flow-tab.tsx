@@ -13,7 +13,6 @@ import { isActiveClanMember } from "@/lib/clans/facts";
 
 import {
   CompanyFlowBoard,
-  type CompanyFlowClientOption,
   type CompanyFlowView,
 } from "./company-flow-board";
 
@@ -73,8 +72,18 @@ export async function CompanyFlowTab({
         )
         .orderBy(desc(schema.companyFlows.updatedAt)),
       isActiveClanMember(tx, orgId, clanId, viewerId),
+      // Só o que o seletor precisa. A ficha completa (QSA, endereço, CNAEs
+      // secundários, histórico de regime — cinco colunas JSONB por empresa) é
+      // carregada sob demanda para a empresa escolhida, em
+      // `loadCompanyFlowClientRecord`. Mandar tudo de todas as empresas ativas
+      // a cada abertura da aba era o custo de abrir o Fluxo.
       tx
-        .select()
+        .select({
+          id: schema.clients.id,
+          name: schema.clients.name,
+          cnpj: schema.clients.cnpj,
+          taxRegime: schema.clients.taxRegime,
+        })
         .from(schema.clients)
         .where(and(eq(schema.clients.orgId, orgId), eq(schema.clients.active, true)))
         .orderBy(asc(schema.clients.name)),
@@ -108,35 +117,7 @@ export async function CompanyFlowTab({
     return {
       flows: flows.map((row) => ({ ...row, createdByName: namesById.get(row.flow.createdBy) ?? "Pessoa removida" })),
       events,
-      clients: clients.map((client): CompanyFlowClientOption => ({
-        id: client.id,
-        name: client.name,
-        cnpj: client.cnpj,
-        taxRegime: client.taxRegime,
-        company: {
-          legalName: client.name,
-          tradeName: client.tradeName,
-          cnaeCode: client.cnaeCode,
-          cnaeDescription: client.cnaeDescription,
-          secondaryCnaes: client.secondaryCnaes ?? [],
-          openedAt: client.openedAt,
-          isSimplesOptant:
-            client.taxRegime === "simples" || client.taxRegime === "mei",
-          isMeiOptant: client.taxRegime === "mei",
-          cadastralSituation: client.cadastralSituation,
-          cadastralSituationDate: client.cadastralSituationDate,
-          companySize: client.companySize,
-          legalNature: client.legalNature,
-          shareCapital: client.shareCapital,
-          headquartersType: client.headquartersType,
-          email: client.revenueEmail,
-          phones: client.revenuePhones,
-          address: client.address,
-          qsa: client.qsa,
-          taxRegimes: client.taxRegimeHistory,
-          normalizedCnpj: client.cnpj ?? "",
-        },
-      })),
+      clients,
       viewerIsCorporateMember,
       holdsInformativeDuty: await holdsClanDuty(tx, orgId, clanId, viewerId, "informative"),
     };

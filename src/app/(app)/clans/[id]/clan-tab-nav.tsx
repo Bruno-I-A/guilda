@@ -1,3 +1,5 @@
+"use client";
+
 import {
   BriefcaseBusiness,
   CalendarCheck,
@@ -11,6 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import {
   type ClanTab,
@@ -45,6 +48,7 @@ function TabGroup({
   active: ClanTab;
   accent?: boolean;
 }) {
+  const router = useRouter();
   return (
     <div className="grid shrink-0 snap-start gap-1.5">
       <span className={cn("hud-label px-1", accent && "!text-primary/90")}>{label}</span>
@@ -57,10 +61,19 @@ function TabGroup({
         {items.map(({ key, label: itemLabel }) => {
           const Icon = TAB_ICONS[key];
           const isActive = active === key;
+          const href = `/clans/${clanId}?tab=${key}`;
           return (
             <Link
               key={key}
-              href={`/clans/${clanId}?tab=${key}`}
+              href={href}
+              // Medido na homologação: a ida e volta até a VPS custa ~141ms e o
+              // render da página só 40-60ms — o clique espera rede, não banco.
+              // Buscar ao passar o mouse cobre essa distância antes do clique.
+              // No hover (e não na viewport) porque a barra tem até seis abas:
+              // pré-buscar todas de saída gastaria render de servidor em aba
+              // que ninguém abre.
+              onMouseEnter={() => router.prefetch(href)}
+              onFocus={() => router.prefetch(href)}
               aria-current={isActive ? "page" : undefined}
               className={cn(
                 "relative flex min-h-11 shrink-0 items-center gap-2 px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
@@ -86,7 +99,8 @@ function TabGroup({
  * Seções do clã, em dois grupos: a MESA (missões e integrantes — igual em todo
  * clã) e o ESPAÇO da área (Fluxo no Societário, Carteira no Fiscal…). Antes
  * eram sete rótulos numa fileira só, e quem chegava não sabia onde vivia o
- * trabalho do seu clã. Server Component: navegar é trocar a URL.
+ * trabalho do seu clã. Virou Client Component só para pré-buscar a aba no
+ * hover — navegar continua sendo trocar a URL.
  */
 export function ClanTabNav({
   clanId,

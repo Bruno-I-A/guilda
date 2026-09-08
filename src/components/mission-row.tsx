@@ -9,6 +9,7 @@ import {
   isOverdue,
   STATUS_BADGE_CLASSES,
   STATUS_LABELS,
+  STATUS_TEXT_CLASSES,
   STATUS_RAIL_CLASSES,
 } from "@/lib/task-ui";
 import { cn } from "@/lib/utils";
@@ -105,9 +106,11 @@ export function MissionRow({
   );
 
   if (variant === "compact") {
-    // Uma linha secundária só: o que dá para ler de relance sem abrir.
+    // Uma linha secundária só: o que dá para ler de relance sem abrir. O
+    // status sai do texto corrido e ganha cor própria — junto do clã e do
+    // responsável ele virava mais um metadado, e a pessoa tinha de ler a
+    // linha inteira para saber se ainda havia trabalho ali.
     const parts = [
-      showStatus ? STATUS_LABELS[task.status] : null,
       task.clientName ?? task.clanName ?? null,
       task.assigneeName ?? null,
     ].filter(Boolean);
@@ -125,8 +128,14 @@ export function MissionRow({
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{task.title}</span>
           <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+            {showStatus ? (
+              <span className={cn("font-medium", STATUS_TEXT_CLASSES[task.status])}>
+                {STATUS_LABELS[task.status]}
+              </span>
+            ) : null}
+            {showStatus && parts.length > 0 ? <span aria-hidden>·</span> : null}
             {parts.length > 0 ? <span className="truncate">{parts.join(" · ")}</span> : null}
-            {parts.length > 0 && due ? <span aria-hidden>·</span> : null}
+            {(showStatus || parts.length > 0) && due ? <span aria-hidden>·</span> : null}
             {due}
           </span>
         </span>

@@ -283,6 +283,88 @@ export interface CompanyFlowClientLookupView {
 }
 
 /**
+ * Ficha da empresa a partir da linha do cadastro. Mesma forma que a consulta
+ * da Receita devolve, para o painel tratar as duas origens do mesmo jeito —
+ * o rótulo "Dados do cadastro" × "Dados atualizados pela consulta" é a única
+ * diferença que a pessoa vê.
+ */
+function companyRecordFromClient(
+  client: typeof schema.clients.$inferSelect,
+): CompanyDataLookupView {
+  return {
+    legalName: client.name,
+    tradeName: client.tradeName,
+    cnaeCode: client.cnaeCode,
+    cnaeDescription: client.cnaeDescription,
+    secondaryCnaes: client.secondaryCnaes ?? [],
+    openedAt: client.openedAt,
+    isSimplesOptant: client.taxRegime === "simples" || client.taxRegime === "mei",
+    isMeiOptant: client.taxRegime === "mei",
+    cadastralSituation: client.cadastralSituation,
+    cadastralSituationDate: client.cadastralSituationDate,
+    companySize: client.companySize,
+    legalNature: client.legalNature,
+    shareCapital: client.shareCapital,
+    headquartersType: client.headquartersType,
+    email: client.revenueEmail,
+    phones: client.revenuePhones,
+    address: client.address,
+    qsa: client.qsa,
+    taxRegimes: client.taxRegimeHistory,
+    normalizedCnpj: client.cnpj ?? "",
+  };
+}
+
+const clientRecordSchema = z.object({
+  clanId: z.uuid("Clã inválido."),
+  clientId: z.uuid("Empresa inválida."),
+});
+
+/**
+ * Ficha cadastral de UMA empresa, lida do cadastro (não da Receita).
+ *
+ * Existe para o painel do Fluxo não precisar carregar o cadastro inteiro: a
+ * lista de empresas do seletor só precisa de id, nome, CNPJ e regime, e a
+ * ficha completa — QSA, endereço, CNAEs secundários, histórico de regime —
+ * pesa cinco colunas JSONB por empresa. Mandar isso de todas as empresas
+ * ativas para o navegador a cada abertura da aba era o custo de abrir o
+ * Fluxo; agora só a empresa escolhida viaja.
+ */
+export async function loadCompanyFlowClientRecord(
+  input: z.input<typeof clientRecordSchema>,
+): Promise<ActionResult<CompanyDataLookupView>> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  const parsed = clientRecordSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+
+  return withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<CompanyDataLookupView>> => {
+    const corporate = await requireCorporateFlowClan(tx, {
+      orgId: ctx.orgId,
+      clanId: parsed.data.clanId,
+      userId: ctx.userId,
+      role: ctx.role,
+    });
+    if (!corporate || !canCreateCompanyFlow(corporate.facts)) {
+      return err("Apenas owner ou admin pode abrir um Fluxo.");
+    }
+
+    const [client] = await tx
+      .select()
+      .from(schema.clients)
+      .where(
+        and(
+          eq(schema.clients.orgId, ctx.orgId),
+          eq(schema.clients.id, parsed.data.clientId),
+        ),
+      );
+    if (!client) return err("Empresa não encontrada.");
+
+    return { ok: true, data: companyRecordFromClient(client) };
+  });
+}
+
+/**
  * Consulta usada no Novo Fluxo: além da Receita, resolve a empresa ativa do
  * painel para que alteração/baixa nunca seja vinculada ao cliente errado.
  */

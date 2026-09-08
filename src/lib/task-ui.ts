@@ -21,6 +21,23 @@ export const STATUS_BADGE_CLASSES: Record<TaskStatus, string> = {
   cancelled: "bg-muted text-muted-foreground/70 border-transparent",
 };
 
+/**
+ * Cor do RÓTULO de status na linha compacta. O trilho da borda é fino demais
+ * para distinguir quatro estados de relance, e o status escrito em cinza junto
+ * do clã e do responsável virava mais um metadado — a pessoa lia a linha
+ * inteira para descobrir se ainda havia trabalho ali. Concluída em ouro segue
+ * a mesma justificativa do medidor: é o único lugar onde "feito" e
+ * "recompensa creditada" são a mesma coisa.
+ */
+export const STATUS_TEXT_CLASSES: Record<TaskStatus, string> = {
+  pending: "text-silver",
+  in_progress: "text-primary",
+  awaiting_approval: "text-warning",
+  completed: "text-gold",
+  rejected: "text-destructive",
+  cancelled: "text-muted-foreground/70",
+};
+
 /** Trilho de cor na borda esquerda das linhas de missão (atrasada usa destructive). */
 export const STATUS_RAIL_CLASSES: Record<TaskStatus, string> = {
   pending: "border-l-silver/50",

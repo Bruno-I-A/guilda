@@ -3,9 +3,11 @@ import { ArrowLeft, Crown, Diamond } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { canViewClan } from "@/domain/clan-access";
@@ -34,6 +36,38 @@ import { FiscalInstallmentTab } from "./fiscal-installment-tab";
 import { OfficeFeeTab } from "./office-fee-tab";
 
 export const metadata: Metadata = { title: "Clã" };
+
+/**
+ * Enquanto a aba busca os dados dela. O `loading.tsx` só cobre a navegação
+ * para a rota; trocar de aba muda apenas a query string, e sem isto a página
+ * inteira ficava congelada na aba antiga até o servidor responder — parecia
+ * que o clique não tinha pegado.
+ */
+function ClanTabSkeleton() {
+  return (
+    <div className="grid gap-4" aria-busy="true" aria-live="polite">
+      <span className="sr-only">Carregando a seção do clã…</span>
+      <div className="flex items-center gap-3">
+        <Skeleton className="h-5 w-40 rounded-none" />
+        <span className="h-px flex-1 bg-border/60" />
+      </div>
+      <div className="grid gap-1.5">
+        {["w-3/4", "w-2/3", "w-4/5", "w-1/2"].map((width, index) => (
+          <div
+            key={index}
+            className="panel-cut panel-cut-sm flex items-center justify-between gap-3 border-l-2 border-l-border/60 px-4 py-2.5"
+          >
+            <div className="grid min-w-0 flex-1 gap-2">
+              <Skeleton className={`h-4 rounded-none ${width}`} />
+              <Skeleton className="h-3 w-40 rounded-none" />
+            </div>
+            <Skeleton className="h-[1.375rem] w-14 shrink-0 rounded-none" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export interface ClanMemberView {
   userId: string;
@@ -78,10 +112,18 @@ export default async function ClanPage({
   const role = viewer.role as OrgRole;
 
   const data = await withOrgTx(session.orgId, async (tx) => {
+    // As três são independentes, mas rodam em série de qualquer forma: o
+    // node-postgres NÃO faz pipelining — `_pulseQueryQueue` só envia a próxima
+    // query quando a anterior devolveu ReadyForQuery. Envolver isto em
+    // `Promise.all` não economiza uma ida ao banco sequer; a única forma de
+    // sobrepor seria uma transação por query (uma conexão cada), o que troca
+    // duas idas ao banco por pressão no pool de 10. Não vale para esta página.
+    // Escrito em sequência de propósito, para ninguém "otimizar" de novo.
     const [clan] = await tx
       .select()
       .from(schema.clans)
       .where(and(eq(schema.clans.orgId, session.orgId), eq(schema.clans.id, id)));
+
     if (!clan) return null;
 
     // Só integrantes que ainda são membros da organização.
@@ -245,100 +287,106 @@ export default async function ClanPage({
         </p>
       </div>
 
-      {activeTab === "missions" ? (
-        <MissionsTab
-          orgId={session.orgId}
-          clanId={clan.id}
-          memberships={memberships}
-          canDistribute={canDistributeClanTasks(clanFacts)}
-          canQuickComplete={canQuickCompleteUnassignedInformativeTask({
-            role,
-            leadsThisClan,
-            isActiveClanMember: memberships.some(
-              (membership) => membership.userId === session.user.id,
-            ),
-            isCustomerSuccessClan:
-              clan.slug === CUSTOMER_SUCCESS_CLAN_SLUG,
-          })}
-        />
-      ) : null}
+      {/* `key` na aba: trocar de aba remonta o limite e o esqueleto reaparece,
+          em vez de a aba anterior ficar na tela parecendo travada. O casco —
+          cabeçalho, navegação e descrição — é pintado na hora, sem esperar a
+          consulta da aba. */}
+      <Suspense key={activeTab} fallback={<ClanTabSkeleton />}>
+        {activeTab === "missions" ? (
+          <MissionsTab
+            orgId={session.orgId}
+            clanId={clan.id}
+            memberships={memberships}
+            canDistribute={canDistributeClanTasks(clanFacts)}
+            canQuickComplete={canQuickCompleteUnassignedInformativeTask({
+              role,
+              leadsThisClan,
+              isActiveClanMember: memberships.some(
+                (membership) => membership.userId === session.user.id,
+              ),
+              isCustomerSuccessClan:
+                clan.slug === CUSTOMER_SUCCESS_CLAN_SLUG,
+            })}
+          />
+        ) : null}
 
-      {activeTab === "members" ? (
-        <MembersTab
-          orgId={session.orgId}
-          clanId={clan.id}
-          memberships={memberships}
-          viewerId={session.user.id}
-        />
-      ) : null}
+        {activeTab === "members" ? (
+          <MembersTab
+            orgId={session.orgId}
+            clanId={clan.id}
+            memberships={memberships}
+            viewerId={session.user.id}
+          />
+        ) : null}
 
-      {activeTab === "commitments" ? (
-        <CommitmentsTab
-          orgId={session.orgId}
-          clanId={clan.id}
-          canManage={canManageClanCommitments(clanFacts)}
-          requestedYear={distributionYear}
-        />
-      ) : null}
+        {activeTab === "commitments" ? (
+          <CommitmentsTab
+            orgId={session.orgId}
+            clanId={clan.id}
+            canManage={canManageClanCommitments(clanFacts)}
+            requestedYear={distributionYear}
+          />
+        ) : null}
 
-      {activeTab === "portfolio" ? (
-        <PortfolioTab
-          orgId={session.orgId}
-          clanId={clan.id}
-          memberships={memberships}
-          viewerId={session.user.id}
-          canManage={canManageFiscalPortfolio(clanFacts)}
-          requestedView={fiscalView}
-          requestedYear={fiscalYear}
-          requestedMonth={fiscalMonth}
-        />
-      ) : null}
+        {activeTab === "portfolio" ? (
+          <PortfolioTab
+            orgId={session.orgId}
+            clanId={clan.id}
+            memberships={memberships}
+            viewerId={session.user.id}
+            canManage={canManageFiscalPortfolio(clanFacts)}
+            requestedView={fiscalView}
+            requestedYear={fiscalYear}
+            requestedMonth={fiscalMonth}
+          />
+        ) : null}
 
-      {activeTab === "mei" ? (
-        <MeiTab
-          orgId={session.orgId}
-          clanId={clan.id}
-          canManage={canManageFiscalPortfolio(clanFacts)}
-          requestedYear={meiYear}
-        />
-      ) : null}
+        {activeTab === "mei" ? (
+          <MeiTab
+            orgId={session.orgId}
+            clanId={clan.id}
+            canManage={canManageFiscalPortfolio(clanFacts)}
+            requestedYear={meiYear}
+          />
+        ) : null}
 
-      {activeTab === "installments" ? (
-        <FiscalInstallmentTab
-          orgId={session.orgId}
-          clanId={clan.id}
-          canManage={canManageFiscalPortfolio(clanFacts)}
-          requestedYear={fiscalYear}
-          requestedMonth={fiscalMonth}
-        />
-      ) : null}
+        {activeTab === "installments" ? (
+          <FiscalInstallmentTab
+            orgId={session.orgId}
+            clanId={clan.id}
+            canManage={canManageFiscalPortfolio(clanFacts)}
+            requestedYear={fiscalYear}
+            requestedMonth={fiscalMonth}
+          />
+        ) : null}
 
-      {activeTab === "fees" ? (
-        <OfficeFeeTab
-          orgId={session.orgId}
-          clanId={clan.id}
-          viewerId={session.user.id}
-          canManage={canManageFiscalPortfolio(clanFacts)}
-          memberships={memberships}
-          requestedView={feeView}
-          requestedYear={fiscalYear}
-          requestedMonth={fiscalMonth}
-        />
-      ) : null}
+        {activeTab === "fees" ? (
+          <OfficeFeeTab
+            orgId={session.orgId}
+            clanId={clan.id}
+            viewerId={session.user.id}
+            canManage={canManageFiscalPortfolio(clanFacts)}
+            memberships={memberships}
+            requestedView={feeView}
+            requestedYear={fiscalYear}
+            requestedMonth={fiscalMonth}
+          />
+        ) : null}
 
-      {activeTab === "closings" ? (
-        <ClosingsTab orgId={session.orgId} clanId={clan.id} params={filters} />
-      ) : null}
+        {activeTab === "closings" ? (
+          <ClosingsTab orgId={session.orgId} clanId={clan.id} params={filters} />
+        ) : null}
 
-      {activeTab === "flow" ? (
-        <CompanyFlowTab
-          orgId={session.orgId}
-          clanId={clan.id}
-          viewerId={session.user.id}
-          role={role}
-          leadsThisClan={leadsThisClan}
-        />
-      ) : null}
+        {activeTab === "flow" ? (
+          <CompanyFlowTab
+            orgId={session.orgId}
+            clanId={clan.id}
+            viewerId={session.user.id}
+            role={role}
+            leadsThisClan={leadsThisClan}
+          />
+        ) : null}
+      </Suspense>
     </div>
   );
 }
