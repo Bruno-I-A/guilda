@@ -9,11 +9,13 @@ import {
   Megaphone,
   Pin,
   Plus,
+  Search,
+  Undo2,
   UserRoundX,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +37,14 @@ import type { TaskStatus } from "@/domain/task-state";
 import type { ActionResult } from "@/lib/action-context";
 import { STATUS_BADGE_CLASSES, STATUS_LABELS } from "@/lib/task-ui";
 
-import { acknowledgeNotice, archiveNotice, publishNotice } from "./actions";
+import { toastWithUndo } from "@/lib/undo-toast";
+
+import {
+  acknowledgeNotice,
+  archiveNotice,
+  publishNotice,
+  unarchiveNotice,
+} from "./actions";
 
 export interface NoticeView {
   id: string;
@@ -170,10 +179,13 @@ function InformativeMissionSummary({
 export function NoticeBoard({
   notices,
   canEmphasize,
+  vendoArquivados,
 }: {
   notices: NoticeView[];
   canEmphasize: boolean;
   currentUserName: string;
+  /** Listando os arquivados em vez do que está em cartaz. */
+  vendoArquivados: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -182,6 +194,23 @@ export function NoticeBoard({
   const [body, setBody] = useState("");
   const [requiresAck, setRequiresAck] = useState(false);
   const [pinned, setPinned] = useState(false);
+  const [busca, setBusca] = useState("");
+
+  // Filtro no cliente: a página já traz no máximo 60 avisos, e uma ida ao
+  // servidor por tecla custaria ~300ms de rede para peneirar o que já está
+  // na memória.
+  const visiveis = useMemo(() => {
+    const alvo = busca.trim().toLocaleLowerCase("pt-BR");
+    if (!alvo) return notices;
+    const normaliza = (valor: string) =>
+      valor.normalize("NFD").replace(/[̀-ͯ]/g, "").toLocaleLowerCase("pt-BR");
+    const termo = normaliza(alvo);
+    return notices.filter(
+      (notice) =>
+        normaliza(notice.clientName ?? "").includes(termo) ||
+        normaliza(notice.title).includes(termo),
+    );
+  }, [notices, busca]);
 
   function run(action: () => Promise<ActionResult<unknown>>, success: string) {
     startTransition(async () => {
@@ -191,6 +220,29 @@ export function NoticeBoard({
         return;
       }
       toast.success(success);
+      router.refresh();
+    });
+  }
+
+  /**
+   * Arquivar tira o aviso da tela na hora e some com ele: antes disto não
+   * havia confirmação, nem lista de arquivados, nem ação de voltar. O desfazer
+   * chama o desarquivar de verdade, então sobrevive a um F5 — e a lista de
+   * arquivados continua sendo a rede de segurança para quem perder o aviso.
+   */
+  function arquivarComDesfazer(noticeId: string) {
+    startTransition(async () => {
+      const result = await archiveNotice({ noticeId });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toastWithUndo({
+        message: "Aviso arquivado.",
+        undo: () => unarchiveNotice({ noticeId }),
+        undoneMessage: "Aviso devolvido ao mural.",
+        onUndone: () => router.refresh(),
+      });
       router.refresh();
     });
   }
@@ -291,14 +343,41 @@ export function NoticeBoard({
         </DialogContent>
       </Dialog>
 
-      {notices.length === 0 ? (
+      {/* Busca e o acesso aos arquivados moram juntos: as duas respondem
+          "não estou achando um aviso". */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-56 flex-1">
+          <Search
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            value={busca}
+            onChange={(event) => setBusca(event.target.value)}
+            placeholder="Buscar por empresa ou título"
+            aria-label="Buscar aviso por empresa ou título"
+            className="pl-9"
+          />
+        </div>
+        <Button asChild variant={vendoArquivados ? "default" : "outline"}>
+          <Link href={vendoArquivados ? "/mural" : "/mural?arquivados=1"}>
+            <Archive aria-hidden />
+            {vendoArquivados ? "Ver o mural" : "Ver arquivados"}
+          </Link>
+        </Button>
+      </div>
+
+      {visiveis.length === 0 ? (
         <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
-          Nenhum aviso no mural. Quando uma empresa nova for cadastrada, ela
-          aparece aqui automaticamente.
+          {busca.trim()
+            ? `Nenhum aviso encontrado para “${busca.trim()}”.`
+            : vendoArquivados
+              ? "Nenhum aviso arquivado."
+              : "Nenhum aviso no mural. Quando uma empresa nova for cadastrada, ela aparece aqui automaticamente."}
         </p>
       ) : (
         <ul className="grid gap-3">
-          {notices.map((notice) => {
+          {visiveis.map((notice) => {
             const needsMyAck = notice.requiresAck && !notice.acknowledged;
 
             return (
@@ -340,13 +419,23 @@ export function NoticeBoard({
                       size="sm"
                       disabled={pending}
                       onClick={() =>
-                        run(
-                          () => archiveNotice({ noticeId: notice.id }),
-                          "Aviso arquivado.",
-                        )
+                        vendoArquivados
+                          ? run(
+                              () => unarchiveNotice({ noticeId: notice.id }),
+                              "Aviso devolvido ao mural.",
+                            )
+                          : arquivarComDesfazer(notice.id)
                       }
                     >
-                      <Archive className="size-4" aria-hidden /> Arquivar
+                      {vendoArquivados ? (
+                        <>
+                          <Undo2 className="size-4" aria-hidden /> Devolver ao mural
+                        </>
+                      ) : (
+                        <>
+                          <Archive className="size-4" aria-hidden /> Arquivar
+                        </>
+                      )}
                     </Button>
                   ) : null}
                 </div>

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
@@ -12,7 +12,15 @@ import { NoticeBoard, type NoticeView } from "./notice-board";
 
 export const metadata: Metadata = { title: "Mural" };
 
-export default async function MuralPage() {
+export default async function MuralPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ arquivados?: string }>;
+}) {
+  // O Mural mostra o que está em cartaz; os arquivados ficam a um clique,
+  // porque antes eles saíam da tela para sempre — sem filtro, sem lista, sem
+  // ação de voltar.
+  const vendoArquivados = (await searchParams).arquivados === "1";
   const session = await requireOrgSession();
   const viewer = await getActiveMember();
   if (!viewer) redirect("/onboarding");
@@ -24,7 +32,9 @@ export default async function MuralPage() {
       const noticeRows = await tx.query.guildNotices.findMany({
         where: and(
           eq(schema.guildNotices.orgId, session.orgId),
-          isNull(schema.guildNotices.archivedAt),
+          vendoArquivados
+            ? isNotNull(schema.guildNotices.archivedAt)
+            : isNull(schema.guildNotices.archivedAt),
         ),
         with: {
           author: { columns: { id: true, name: true } },
@@ -171,6 +181,7 @@ export default async function MuralPage() {
         notices={views}
         canEmphasize={canEmphasize}
         currentUserName={session.user.name}
+        vendoArquivados={vendoArquivados}
       />
     </div>
   );
