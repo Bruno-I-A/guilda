@@ -167,6 +167,72 @@ export async function acknowledgeNotice(input: {
 }
 
 /** Arquivar tira do mural sem apagar o histórico. Autor, líder ou admin. */
+/**
+ * Devolve ao Mural um aviso arquivado.
+ *
+ * Arquivar era um clique só, sem confirmação e SEM VOLTA: a página lista
+ * apenas `archived_at IS NULL` e não existia ação de desarquivar em lugar
+ * nenhum. Quem clicasse por engano — ou quisesse consultar um aviso antigo —
+ * não tinha caminho. Mesma régua de permissão de arquivar: quem publicou, a
+ * liderança do clã ou um admin.
+ */
+export async function unarchiveNotice(input: {
+  noticeId: string;
+}): Promise<ActionResult> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+
+  const parsed = noticeIdSchema.safeParse(input);
+  if (!parsed.success) return err("Aviso inválido.");
+
+  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
+    const [notice] = await tx
+      .select({
+        id: schema.guildNotices.id,
+        authorId: schema.guildNotices.authorId,
+        archivedAt: schema.guildNotices.archivedAt,
+      })
+      .from(schema.guildNotices)
+      .where(
+        and(
+          eq(schema.guildNotices.id, parsed.data.noticeId),
+          eq(schema.guildNotices.orgId, ctx.orgId),
+        ),
+      )
+      .for("update");
+    if (!notice) return err("Aviso não encontrado.");
+    if (!notice.archivedAt) return { ok: true };
+
+    const facts = await loadActorFacts(tx, ctx.orgId, ctx.userId, ctx.role);
+    if (
+      !canSeeNoticeAcknowledgements({
+        ...facts,
+        isAuthor: notice.authorId === ctx.userId,
+      })
+    ) {
+      return err("Apenas quem publicou, um líder ou um admin pode devolver o aviso.");
+    }
+
+    await tx
+      .update(schema.guildNotices)
+      .set({ archivedAt: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.guildNotices.id, notice.id),
+          eq(schema.guildNotices.orgId, ctx.orgId),
+        ),
+      );
+
+    return { ok: true };
+  });
+
+  if (result.ok) {
+    revalidatePath("/mural");
+    revalidatePath("/dashboard");
+  }
+  return result;
+}
+
 export async function archiveNotice(input: {
   noticeId: string;
 }): Promise<ActionResult> {
