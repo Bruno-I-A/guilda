@@ -239,7 +239,7 @@ export default async function DashboardPage() {
 
       <section className="grid gap-3">
         <div className="flex items-center gap-3">
-          <h2 className="hud-label">Suas missões</h2>
+          <h2>Suas missões</h2>
           <div className="divider-rune flex-1" />
           <Link
             href="/tasks"
@@ -307,7 +307,7 @@ export default async function DashboardPage() {
       <section className="grid gap-3">
         <div className="flex items-center gap-3">
           <ShieldCheck className="size-4 text-primary" aria-hidden />
-          <h2 className="hud-label">Missões dos seus clãs</h2>
+          <h2>Missões dos seus clãs</h2>
           <div className="divider-rune flex-1" />
           <Link
             href="/tasks?scope=my_clans"

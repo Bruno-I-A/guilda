@@ -5,6 +5,14 @@ const brlFormatter = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 2,
 });
 
+/** Digits enter from the cents: 1234 -> 12.34. Also accepts pasted BRL. */
+export function parseCurrencyDigits(input: string, allowNegative = false): string {
+  const digits = input.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+  if (!digits) return "";
+  const padded = digits.padStart(3, "0");
+  return `${allowNegative && input.includes("-") ? "-" : ""}${padded.slice(0, -2)}.${padded.slice(-2)}`;
+}
+
 /** Formata o valor canônico do banco para exibição em reais. */
 export function formatBRLCurrency(value: string | number | null | undefined): string {
   if (value === null || value === undefined || String(value).trim() === "") return "";

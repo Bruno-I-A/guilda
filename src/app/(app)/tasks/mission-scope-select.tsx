@@ -45,6 +45,7 @@ export function MissionScopeSelect({
     params.delete("status");
     params.delete("due");
     params.delete("origin");
+    params.delete("page");
     const query = params.toString();
     startTransition(() => {
       router.replace(query ? `${pathname}?${query}` : pathname);

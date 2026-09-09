@@ -28,9 +28,9 @@ function Rows({
   trailingFor?: (task: MissionListRow) => React.ReactNode;
 }) {
   return (
-    <ul className="grid gap-1.5">
+    <ul className="grid min-w-0 grid-cols-1 gap-1.5">
       {tasks.map((task) => (
-        <li key={task.id}>
+        <li key={task.id} className="min-w-0">
           <MissionRow
             task={task}
             href={taskHref(task.id)}
@@ -83,7 +83,7 @@ export function StandaloneView({
     const overdue = sections.todo.filter((task) => isTaskOverdue(task, now)).length;
 
     return (
-      <div className="grid gap-6">
+      <div className="grid min-w-0 grid-cols-1 gap-6">
         <ClanStatusStrip
           items={[
             {
@@ -138,11 +138,11 @@ export function StandaloneView({
             count={sections.approve.length}
             hint="leia o retorno e decida"
           >
-            <ul className="grid gap-2">
+            <ul className="grid min-w-0 grid-cols-1 gap-2">
               {sections.approve.map((task) => {
                 const delivery = deliveries?.get(task.id);
                 return (
-                  <li key={task.id} className="grid">
+                  <li key={task.id} className="grid min-w-0 grid-cols-1">
                     <MissionRow
                       task={task}
                       href={taskHref(task.id)}
@@ -221,7 +221,7 @@ export function StandaloneView({
   const overdue = split.open.filter((task) => isTaskOverdue(task, now)).length;
 
   return (
-    <div className="grid gap-6">
+    <div className="grid min-w-0 grid-cols-1 gap-6">
       <ClanStatusStrip
         items={[
           {

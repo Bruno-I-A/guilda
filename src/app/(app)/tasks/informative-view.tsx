@@ -137,8 +137,8 @@ function PackageCard({
   const resto = pkg.statuses.filter(isOpenStatus).length - openTasks.length;
 
   return (
-    <article className="panel-cut grid bg-card/60">
-      <header className="grid gap-2 border-b border-border/70 px-4 py-3 sm:flex sm:items-center sm:justify-between sm:gap-4">
+    <article className="panel-cut grid min-w-0 grid-cols-1 bg-card/60">
+      <header className="grid min-w-0 grid-cols-1 gap-2 border-b border-border/70 px-4 py-3 sm:flex sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="hud-label shrink-0 border border-primary/35 bg-primary/10 px-1.5 py-0.5 !text-primary">
@@ -171,7 +171,7 @@ function PackageCard({
       {linhas.length > 0 ? (
         <ul className="divide-y divide-border/50">
           {linhas.map((task) => (
-            <li key={task.id}>
+            <li key={task.id} className="min-w-0">
               <PackageRow task={task} taskHref={taskHref} />
             </li>
           ))}
@@ -229,7 +229,7 @@ export function InformativeView({
   const overdue = visibleOpenTasks.filter((task) => isTaskOverdue(task, now)).length;
 
   return (
-    <div className="grid gap-6">
+    <div className="grid min-w-0 grid-cols-1 gap-6">
       <ClanStatusStrip
         items={[
           {
@@ -275,7 +275,7 @@ export function InformativeView({
             .
           </MissionEmpty>
         ) : (
-          <div className="grid gap-3">
+          <div className="grid min-w-0 grid-cols-1 gap-3">
             {openPackages.map((pkg) => (
               <PackageCard key={pkg.informativeId} pkg={pkg} taskHref={taskHref} />
             ))}
@@ -285,7 +285,7 @@ export function InformativeView({
 
       {closedPackages.length > 0 ? (
         <ClosedMissions title="Pacotes encerrados" count={closedPackages.length}>
-          <div className="grid gap-3">
+          <div className="grid min-w-0 grid-cols-1 gap-3">
             {closedPackages.slice(0, CLOSED_PACKAGES_LIMIT).map((pkg) => (
               <PackageCard key={pkg.informativeId} pkg={pkg} taskHref={taskHref} />
             ))}
