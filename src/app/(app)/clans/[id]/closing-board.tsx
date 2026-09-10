@@ -3,6 +3,7 @@
 import {
   Check,
   ChevronDown,
+  CircleAlert,
   ListChecks,
   ClipboardCheck,
   FileCheck2,
@@ -436,8 +437,11 @@ function ObservationsPanel({
   const [texto, setTexto] = useState("");
   const [missaoDe, setMissaoDe] = useState<ClosingObservationView | null>(null);
 
-  const abertas = company.observations.filter((o) => o.state === "open");
-  const encaminhadas = company.observations.filter((o) => o.state !== "open");
+  // Em jogo = ainda pede acompanhamento de alguém: escrita e parada, ou já
+  // virou missão que não terminou. Resolvida é histórico.
+  const emJogo = company.observations.filter((o) => o.state !== "resolved");
+  const resolvidas = company.observations.filter((o) => o.state === "resolved");
+  const pendentes = company.observations.filter((o) => o.state === "open").length;
 
   function salvar() {
     if (!novoEscopo) return;
@@ -482,9 +486,16 @@ function ObservationsPanel({
   return (
     <section className="grid gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <ClanSectionHeading count={company.observations.length}>
-          Observações
-        </ClanSectionHeading>
+        <div className="flex min-w-0 items-center gap-2">
+          <ClanSectionHeading count={company.observations.length}>
+            Observações
+          </ClanSectionHeading>
+          {pendentes > 0 ? (
+            <span className="hud-label border border-warning/40 bg-warning/10 px-1.5 py-0.5 !text-warning">
+              {pendentes} esperando alguém
+            </span>
+          ) : null}
+        </div>
         {viewerCanManage ? (
           <div className="flex flex-wrap gap-1">
             <Button size="sm" variant="outline" onClick={() => setNovoEscopo("year")}>
@@ -561,20 +572,58 @@ function ObservationsPanel({
           Nenhuma observação em {year}.
         </p>
       ) : (
-        <ul className="grid gap-1.5">
-          {[...abertas, ...encaminhadas].map((observation) => (
-            <ObservationRow
-              key={observation.id}
-              clanId={clanId}
-              observation={observation}
-              company={company}
-              pending={pending}
-              viewerCanManage={viewerCanManage}
-              onToggleResolved={() => alternarResolvida(observation)}
-              onGenerateMission={() => setMissaoDe(observation)}
-            />
-          ))}
-        </ul>
+        <div className="grid gap-3">
+          {/* Duas listas, não uma ordenada: o que ainda espera alguém e o que
+              já foi tratado são leituras diferentes. O que terminou fica
+              dobrado, mesmo vocabulário das missões encerradas. */}
+          {emJogo.length > 0 ? (
+            <ul className="grid gap-1.5">
+              {emJogo.map((observation) => (
+                <ObservationRow
+                  key={observation.id}
+                  clanId={clanId}
+                  observation={observation}
+                  company={company}
+                  pending={pending}
+                  viewerCanManage={viewerCanManage}
+                  onToggleResolved={() => alternarResolvida(observation)}
+                  onGenerateMission={() => setMissaoDe(observation)}
+                />
+              ))}
+            </ul>
+          ) : (
+            <p className="px-1 text-sm text-muted-foreground">
+              Nada pendente — todas as observações de {year} foram resolvidas.
+            </p>
+          )}
+
+          {resolvidas.length > 0 ? (
+            <details className="group grid gap-1.5">
+              <summary className="hud-label flex cursor-pointer list-none items-center gap-2 py-1 transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+                <ChevronDown
+                  className="size-3.5 shrink-0 transition-transform group-open:rotate-180"
+                  aria-hidden
+                />
+                {resolvidas.length}{" "}
+                {resolvidas.length === 1 ? "resolvida" : "resolvidas"}
+              </summary>
+              <ul className="grid gap-1.5">
+                {resolvidas.map((observation) => (
+                  <ObservationRow
+                    key={observation.id}
+                    clanId={clanId}
+                    observation={observation}
+                    company={company}
+                    pending={pending}
+                    viewerCanManage={viewerCanManage}
+                    onToggleResolved={() => alternarResolvida(observation)}
+                    onGenerateMission={() => setMissaoDe(observation)}
+                  />
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </div>
       )}
 
       {missaoDe ? (
@@ -590,10 +639,34 @@ function ObservationsPanel({
   );
 }
 
-const OBSERVATION_STATE_CLASSES: Record<ObservationState, string> = {
-  open: "border-warning/40 bg-warning/10 text-warning",
-  assigned: "border-primary/40 bg-primary/10 text-primary",
-  resolved: "border-success/40 bg-success/10 text-success",
+/**
+ * Situação é ESTADO, não categoria: silver/primary/warning/success, como a
+ * esteira do Fluxo. Cada estado aparece em três lugares na mesma linha —
+ * trilho, ícone e rótulo — porque um selo pequeno no canto direito não se lia
+ * de relance numa lista.
+ */
+const OBSERVATION_STATE_STYLE: Record<
+  ObservationState,
+  { rail: string; text: string; chip: string; Icon: typeof Check }
+> = {
+  open: {
+    rail: "border-l-warning",
+    text: "text-warning",
+    chip: "border-warning/40 bg-warning/10 text-warning",
+    Icon: CircleAlert,
+  },
+  assigned: {
+    rail: "border-l-primary",
+    text: "text-primary",
+    chip: "border-primary/40 bg-primary/10 text-primary",
+    Icon: Send,
+  },
+  resolved: {
+    rail: "border-l-success/60",
+    text: "text-success",
+    chip: "border-success/40 bg-success/10 text-success",
+    Icon: Check,
+  },
 };
 
 function ObservationRow({
@@ -618,44 +691,59 @@ function ObservationRow({
       ? company.closings.find((closing) => closing.id === observation.closingId)?.title
       : null;
 
+  const estilo = OBSERVATION_STATE_STYLE[observation.state];
+  const resolvida = observation.state === "resolved";
+
   return (
     <li
       className={cn(
         "panel-cut panel-cut-sm grid gap-1.5 border-l-2 bg-background/40 px-3 py-2",
-        observation.state === "open" ? "border-l-warning/70" : "border-l-border/60",
+        estilo.rail,
+        // Resolvida sai de cena sem sair da tela: o que ainda espera alguém
+        // precisa vencer a disputa por atenção dentro da própria lista.
+        resolvida && "opacity-65",
       )}
     >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <p className="min-w-0 flex-1 whitespace-pre-wrap text-sm">{observation.body}</p>
-        <Badge
-          className={cn("h-5 shrink-0 px-1.5", OBSERVATION_STATE_CLASSES[observation.state])}
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1.5 border px-1.5 py-0.5 text-xs font-medium",
+            estilo.chip,
+          )}
         >
+          <estilo.Icon className="size-3.5" aria-hidden />
           {OBSERVATION_STATE_LABELS[observation.state]}
-        </Badge>
-      </div>
-
-      <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+        </span>
         <span className="hud-label">
           {periodo ?? OBSERVATION_SCOPE_LABELS[observation.scope]}
         </span>
-        <span aria-hidden>·</span>
+      </div>
+
+      <p
+        className={cn(
+          "min-w-0 whitespace-pre-wrap text-sm",
+          resolvida && "line-through decoration-muted-foreground/50",
+        )}
+      >
+        {observation.body}
+      </p>
+
+      <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
         <span>{observation.authorName ?? "autor não registrado"}</span>
         <span aria-hidden>·</span>
         <span className="font-mono tabular-nums">
           {new Date(observation.createdAt).toLocaleDateString("pt-BR")}
         </span>
+        {observation.resolvedAt ? (
+          <>
+            <span aria-hidden>·</span>
+            <span className={estilo.text}>
+              resolvida em{" "}
+              {new Date(observation.resolvedAt).toLocaleDateString("pt-BR")}
+            </span>
+          </>
+        ) : null}
       </p>
-
-      {observation.taskId ? (
-        <Link
-          href={clanTabHref(clanId, "closings")}
-          className="sr-only"
-          aria-hidden
-          tabIndex={-1}
-        >
-          {""}
-        </Link>
-      ) : null}
 
       {observation.taskId ? (
         <Link
@@ -991,13 +1079,16 @@ function CompanyCard({
                   {defisCompleted ? "DEFIS entregue" : "DEFIS pendente"}
                 </Badge>
               ) : null}
+              {/* Pendência precisa vencer os chips vizinhos (regime, ano,
+                  DEFIS), que são dado neutro. Encaminhado e resolvido descem
+                  para prata: continuam informando sem disputar atenção. */}
               {observationBadgeInfo ? (
                 <Badge
                   className={cn(
                     "h-5 px-1.5",
                     observationBadgeInfo.tone === "attention"
-                      ? "border-warning/30 bg-warning/10 text-warning"
-                      : "border-border/60 bg-secondary text-muted-foreground",
+                      ? "border-warning bg-warning/20 font-semibold text-warning"
+                      : "border-border/60 bg-secondary text-silver",
                   )}
                 >
                   <MessageSquareText aria-hidden /> {observationBadgeInfo.label}
