@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, lte, type SQL } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 import {
   Building2,
   CalendarRange,
@@ -7,6 +7,11 @@ import {
   Search,
 } from "lucide-react";
 import Link from "next/link";
+
+import {
+  observationState,
+  parseObservationScope,
+} from "@/domain/closing-observations";
 
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -21,6 +26,7 @@ import { cn } from "@/lib/utils";
 
 import {
   CompanyClosingBoard,
+  type ClosingObservationView,
   type CompanyClosingView,
 } from "./closing-board";
 import { ClanEmptyState, ClanSectionHeading } from "./clan-ui";
@@ -75,10 +81,13 @@ export async function ClosingsTab({
   orgId,
   clanId,
   params,
+  canManage,
 }: {
   orgId: string;
   clanId: string;
   params: ClosingsTabParams;
+  /** Só decide quais botões aparecem; as actions checam de novo no servidor. */
+  canManage: boolean;
 }) {
   const year = parseYear(params.year);
   const group = parseGroup(params.group);
@@ -97,7 +106,7 @@ export async function ClosingsTab({
     clientConditions.push(eq(schema.clients.taxRegime, group));
   }
 
-  const { clients, closings, annualControls } = await withOrgTx(
+  const { clients, closings, annualControls, observations, memberRows } = await withOrgTx(
     orgId,
     async (tx) => {
       const clients = await tx.query.clients.findMany({
@@ -122,7 +131,50 @@ export async function ClosingsTab({
           eq(schema.accountingClosingYears.year, year),
         ),
       });
-      return { clients, closings, annualControls };
+      // A missão vinculada entra junto: o card diz "virou missão" e em que pé
+      // ela está, sem obrigar a abrir a missão para descobrir.
+      const observations = await tx
+        .select({
+          id: schema.closingObservations.id,
+          clientId: schema.closingObservations.clientId,
+          scope: schema.closingObservations.scope,
+          closingId: schema.closingObservations.closingId,
+          body: schema.closingObservations.body,
+          authorName: schema.user.name,
+          taskId: schema.closingObservations.taskId,
+          taskTitle: schema.tasks.title,
+          taskStatus: schema.tasks.status,
+          taskAssignee: sql<string | null>`assignee.name`,
+          resolvedAt: schema.closingObservations.resolvedAt,
+          createdAt: schema.closingObservations.createdAt,
+        })
+        .from(schema.closingObservations)
+        .leftJoin(schema.user, eq(schema.user.id, schema.closingObservations.authorId))
+        .leftJoin(
+          schema.tasks,
+          and(
+            eq(schema.tasks.orgId, schema.closingObservations.orgId),
+            eq(schema.tasks.id, schema.closingObservations.taskId),
+          ),
+        )
+        .leftJoin(
+          sql`"user" as assignee`,
+          sql`assignee.id = ${schema.tasks.assigneeId}`,
+        )
+        .where(
+          and(
+            eq(schema.closingObservations.orgId, orgId),
+            eq(schema.closingObservations.year, year),
+          ),
+        )
+        .orderBy(asc(schema.closingObservations.createdAt));
+      const memberRows = await tx
+        .select({ userId: schema.member.userId, name: schema.user.name })
+        .from(schema.member)
+        .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+        .where(eq(schema.member.organizationId, orgId))
+        .orderBy(asc(schema.user.name));
+      return { clients, closings, annualControls, observations, memberRows };
     },
   );
 
@@ -152,6 +204,31 @@ export async function ClosingsTab({
     });
   }
 
+  const observationsByClient = new Map<string, ClosingObservationView[]>();
+  for (const observation of observations) {
+    const list = observationsByClient.get(observation.clientId) ?? [];
+    list.push({
+      id: observation.id,
+      scope: parseObservationScope(observation.scope),
+      closingId: observation.closingId,
+      body: observation.body,
+      authorName: observation.authorName,
+      taskId: observation.taskId,
+      taskTitle: observation.taskTitle,
+      taskStatus: observation.taskStatus,
+      taskAssignee: observation.taskAssignee,
+      // Estado derivado aqui, onde as datas ainda são Date — a interface
+      // recebe a conclusão, não os ingredientes.
+      state: observationState({
+        taskId: observation.taskId,
+        resolvedAt: observation.resolvedAt,
+      }),
+      resolvedAt: observation.resolvedAt?.toISOString() ?? null,
+      createdAt: observation.createdAt.toISOString(),
+    });
+    observationsByClient.set(observation.clientId, list);
+  }
+
   const annualByClient = new Map(
     annualControls.map((control) => [control.clientId, control]),
   );
@@ -166,14 +243,15 @@ export async function ClosingsTab({
       defisCompletedAt: annual?.defisCompletedAt?.toISOString() ?? null,
       defisNotes: annual?.defisNotes ?? null,
       closings: closingsByClient.get(client.id) ?? [],
+      observations: observationsByClient.get(client.id) ?? [],
     };
   });
 
+  // O filtro de observação passou a significar "tem recado esperando alguém",
+  // não "tem texto escrito": recado já resolvido não é pendência.
   function hasNotes(company: CompanyClosingView): boolean {
-    return Boolean(
-      company.yearNotes ||
-        company.defisNotes ||
-        company.closings.some((closing) => closing.notes),
+    return company.observations.some(
+      (observation) => observation.state === "open",
     );
   }
 
@@ -182,8 +260,9 @@ export async function ClosingsTab({
     const matchesQuery =
       !normalizedQuery ||
       company.name.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
-      company.yearNotes?.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
-      company.defisNotes?.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
+      company.observations.some((observation) =>
+        observation.body.toLocaleLowerCase("pt-BR").includes(normalizedQuery),
+      ) ||
       company.closings.some(
         (closing) =>
           closing.title.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
@@ -381,6 +460,8 @@ export async function ClosingsTab({
           clanId={clanId}
           companies={companies}
           year={year}
+          members={memberRows}
+          viewerCanManage={canManage}
         />
       ) : (
         <ClanEmptyState
