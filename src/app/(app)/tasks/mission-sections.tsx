@@ -24,9 +24,9 @@ export function MissionSection({
   className?: string;
 }) {
   return (
-    <section className={cn("grid gap-2", className)}>
+    <section className={cn("grid min-w-0 grid-cols-1 gap-2", className)}>
       <div className="flex items-center gap-3">
-        <h2 className="shrink-0">{title}</h2>
+        <h2 className="min-w-0 break-words">{title}</h2>
         {count !== undefined ? (
           <span className="font-mono text-xs tabular-nums text-muted-foreground">
             {count}
@@ -48,7 +48,7 @@ export function MissionEmpty({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="panel-cut panel-cut-sm grid gap-1 bg-card/35 px-4 py-4 text-center">
+    <div className="panel-cut panel-cut-sm grid min-w-0 grid-cols-1 gap-1 bg-card/35 px-4 py-4 text-center">
       <p className="text-sm font-medium">{title}</p>
       {children ? (
         <p className="text-xs leading-relaxed text-muted-foreground">{children}</p>
@@ -71,13 +71,13 @@ export function ClosedMissions({
   children: React.ReactNode;
 }) {
   return (
-    <details className="group grid gap-2">
+    <details className="group grid min-w-0 grid-cols-1 gap-2">
       <summary className="flex cursor-pointer list-none items-center gap-3 py-1 [&::-webkit-details-marker]:hidden">
         <ChevronDown
           className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
           aria-hidden
         />
-        <h2 className="shrink-0 text-muted-foreground group-open:text-foreground">
+        <h2 className="min-w-0 break-words text-muted-foreground group-open:text-foreground">
           {title}
         </h2>
         <span className="font-mono text-xs tabular-nums text-muted-foreground">
@@ -86,7 +86,7 @@ export function ClosedMissions({
         <span className="divider-rune min-w-6 flex-1" aria-hidden />
         <span className="hud-label hidden sm:inline group-open:hidden">abrir</span>
       </summary>
-      <div className="grid gap-1.5">{children}</div>
+      <div className="grid min-w-0 grid-cols-1 gap-1.5">{children}</div>
     </details>
   );
 }

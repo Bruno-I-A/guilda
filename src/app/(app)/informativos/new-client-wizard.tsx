@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatCnpj } from "@/domain/cnpj";
+import { CnpjInput } from "@/components/ui/cnpj-input";
 import { TAX_REGIME_LABELS, TAX_REGIMES, type TaxRegime } from "@/lib/clients-ui";
 
 import { lookupClientCnpj, prepareStructuredInformative } from "./actions";
@@ -148,10 +149,10 @@ export function NewClientWizard({
           <div className="grid gap-2">
             <Label htmlFor="wizard-cnpj">CNPJ</Label>
             <div className="flex gap-2">
-              <Input
+              <CnpjInput
                 id="wizard-cnpj"
                 value={cnpjInput}
-                onChange={(event) => setCnpjInput(event.target.value)}
+                onValueChange={setCnpjInput}
                 placeholder="00.000.000/0000-00"
                 inputMode="numeric"
                 className="font-mono"

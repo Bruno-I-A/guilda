@@ -9,6 +9,15 @@ export function normalizeCnpj(input: string): string {
   return input.replace(/\D/g, "");
 }
 
+/** Progressive input mask, including partial numbers and pasted punctuation. */
+export function formatCnpjInput(input: string): string {
+  return normalizeCnpj(input).slice(0, 14)
+    .replace(/^(\d{2})(\d)/, "$1.$2")
+    .replace(/^(\d{2}\.\d{3})(\d)/, "$1.$2")
+    .replace(/^(\d{2}\.\d{3}\.\d{3})(\d)/, "$1/$2")
+    .replace(/(\d{4})(\d{1,2})$/, "$1-$2");
+}
+
 function checkDigit(digits: string, weights: number[]): number {
   const sum = weights.reduce((acc, weight, i) => acc + weight * Number(digits[i]), 0);
   const rest = sum % 11;

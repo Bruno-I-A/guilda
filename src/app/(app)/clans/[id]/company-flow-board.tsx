@@ -18,7 +18,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useId, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { CnpjInput } from "@/components/ui/cnpj-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -836,6 +837,7 @@ function NewCompanyFlowDialog({
   clients: readonly CompanyFlowClientOption[];
 }) {
   const router = useRouter();
+  const fieldId = useId();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [kind, setKind] = useState<CompanyFlowKind>("opening");
@@ -1124,7 +1126,7 @@ function NewCompanyFlowDialog({
             description={opening ? "Tipo do fluxo e o enquadramento pretendido." : "Tipo do fluxo e a empresa envolvida."}
           />
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-1.5"><Label>Tipo</Label><Select value={kind} onValueChange={(value) => handleKindChange(value as CompanyFlowKind)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="opening">Abertura</SelectItem><SelectItem value="amendment">Alteração</SelectItem><SelectItem value="closure">Baixa</SelectItem></SelectContent></Select></div>
+            <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-1"}>Tipo</Label><Select value={kind} onValueChange={(value) => handleKindChange(value as CompanyFlowKind)}><SelectTrigger id={fieldId + "-field-1"}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="opening">Abertura</SelectItem><SelectItem value="amendment">Alteração</SelectItem><SelectItem value="closure">Baixa</SelectItem></SelectContent></Select></div>
             {opening ? null : (
               <div className="relative grid gap-1.5">
                 <Label htmlFor="flow-company-search">Empresa {kind === "amendment" ? "que será alterada" : "que será baixada"}</Label>
@@ -1175,8 +1177,8 @@ function NewCompanyFlowDialog({
                 </div>
               </div>
             )}
-            {opening ? <div className="grid gap-1.5"><Label>Regime tributário *</Label><Select value={taxRegime || undefined} onValueChange={(value) => setTaxRegime(value as TaxRegime)}><SelectTrigger><SelectValue placeholder="Selecione o regime" /></SelectTrigger><SelectContent>{TAX_REGIMES.map((value) => <SelectItem key={value} value={value}>{TAX_REGIME_LABELS[value]}</SelectItem>)}</SelectContent></Select></div> : null}
-            {opening ? <div className="grid gap-1.5"><Label>IPTU</Label><Input value={iptu} onChange={(event) => setIptu(event.target.value)} placeholder="Inscrição ou referência do IPTU" /></div> : null}
+            {opening ? <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-2"}>Regime tributário *</Label><Select value={taxRegime || undefined} onValueChange={(value) => setTaxRegime(value as TaxRegime)}><SelectTrigger id={fieldId + "-field-2"}><SelectValue placeholder="Selecione o regime" /></SelectTrigger><SelectContent>{TAX_REGIMES.map((value) => <SelectItem key={value} value={value}>{TAX_REGIME_LABELS[value]}</SelectItem>)}</SelectContent></Select></div> : null}
+            {opening ? <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-6"}>IPTU</Label><Input id={fieldId + "-field-6"} value={iptu} onChange={(event) => setIptu(event.target.value)} placeholder="Inscrição ou referência do IPTU" /></div> : null}
           </div>
 
           {!opening && consultedCompany ? (
@@ -1287,13 +1289,13 @@ function NewCompanyFlowDialog({
                 title="Nova empresa"
                 description="Como a empresa deve nascer: nome, atividades, capital, endereço e sócios."
               />
-              <div className="grid gap-1.5"><Label>Razão social pretendida</Label><Input value={legalName} onChange={(event) => setLegalName(event.target.value)} placeholder="Nome pretendido da empresa" /></div>
-              <div className="grid gap-1.5"><Label>Atividades</Label><Textarea value={activities} onChange={(event) => setActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div>
+              <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-7"}>Razão social pretendida</Label><Input id={fieldId + "-field-7"} value={legalName} onChange={(event) => setLegalName(event.target.value)} placeholder="Nome pretendido da empresa" /></div>
+              <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-8"}>Atividades</Label><Textarea id={fieldId + "-field-8"} value={activities} onChange={(event) => setActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="grid gap-1.5"><Label>Capital social</Label><CurrencyInput value={socialCapital} onValueChange={setSocialCapital} placeholder="R$ 0,00" /></div>
-                <div className="grid gap-1.5"><Label>Tamanho da sala</Label><Input value={roomSize} onChange={(event) => setRoomSize(event.target.value)} placeholder="Ex.: 45 m²" /></div>
+                <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-9"}>Capital social</Label><CurrencyInput id={fieldId + "-field-9"} value={socialCapital} onValueChange={setSocialCapital} placeholder="R$ 0,00" /></div>
+                <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-10"}>Tamanho da sala</Label><Input id={fieldId + "-field-10"} value={roomSize} onChange={(event) => setRoomSize(event.target.value)} placeholder="Ex.: 45 m²" /></div>
               </div>
-              <div className="grid gap-1.5"><Label>Endereço</Label><Textarea value={address} onChange={(event) => setAddress(event.target.value)} rows={2} placeholder="Rua, número, complemento, bairro, cidade/UF e CEP" /></div>
+              <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-11"}>Endereço</Label><Textarea id={fieldId + "-field-11"} value={address} onChange={(event) => setAddress(event.target.value)} rows={2} placeholder="Rua, número, complemento, bairro, cidade/UF e CEP" /></div>
               <QsaFields value={qsa} onChange={setQsa} />
             </>
           ) : null}
@@ -1334,24 +1336,24 @@ function NewCompanyFlowDialog({
                 })}
               </div>
 
-              {amendmentHas("legalName") ? <div className="grid gap-1.5"><Label>Nova razão social</Label><Input value={legalName} onChange={(event) => setLegalName(event.target.value)} placeholder="Digite a nova razão social" /></div> : null}
-              {amendmentHas("taxRegime") ? <div className="grid gap-1.5"><Label>Novo regime tributário</Label><Select value={taxRegime || undefined} onValueChange={(value) => setTaxRegime(value as TaxRegime)}><SelectTrigger><SelectValue placeholder="Selecione o novo regime" /></SelectTrigger><SelectContent>{TAX_REGIMES.map((value) => <SelectItem key={value} value={value}>{TAX_REGIME_LABELS[value]}</SelectItem>)}</SelectContent></Select></div> : null}
-              {amendmentHas("activities") ? <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-1.5"><Label>Atividades a adicionar</Label><Textarea value={activities} onChange={(event) => setActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div><div className="grid gap-1.5"><Label>Atividades a retirar</Label><Textarea value={removedActivities} onChange={(event) => setRemovedActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div></div> : null}
-              {amendmentHas("address") ? <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-1.5"><Label>Novo endereço</Label><Textarea value={address} onChange={(event) => setAddress(event.target.value)} rows={3} placeholder="Rua, número, complemento, bairro, cidade/UF e CEP" /></div><div className="grid gap-1.5"><Label>IPTU do novo endereço</Label><Input value={iptu} onChange={(event) => setIptu(event.target.value)} placeholder="Inscrição ou referência do IPTU" /></div></div> : null}
+              {amendmentHas("legalName") ? <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-12"}>Nova razão social</Label><Input id={fieldId + "-field-12"} value={legalName} onChange={(event) => setLegalName(event.target.value)} placeholder="Digite a nova razão social" /></div> : null}
+              {amendmentHas("taxRegime") ? <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-3"}>Novo regime tributário</Label><Select value={taxRegime || undefined} onValueChange={(value) => setTaxRegime(value as TaxRegime)}><SelectTrigger id={fieldId + "-field-3"}><SelectValue placeholder="Selecione o novo regime" /></SelectTrigger><SelectContent>{TAX_REGIMES.map((value) => <SelectItem key={value} value={value}>{TAX_REGIME_LABELS[value]}</SelectItem>)}</SelectContent></Select></div> : null}
+              {amendmentHas("activities") ? <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-13"}>Atividades a adicionar</Label><Textarea id={fieldId + "-field-13"} value={activities} onChange={(event) => setActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div><div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-14"}>Atividades a retirar</Label><Textarea id={fieldId + "-field-14"} value={removedActivities} onChange={(event) => setRemovedActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div></div> : null}
+              {amendmentHas("address") ? <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-15"}>Novo endereço</Label><Textarea id={fieldId + "-field-15"} value={address} onChange={(event) => setAddress(event.target.value)} rows={3} placeholder="Rua, número, complemento, bairro, cidade/UF e CEP" /></div><div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-16"}>IPTU do novo endereço</Label><Input id={fieldId + "-field-16"} value={iptu} onChange={(event) => setIptu(event.target.value)} placeholder="Inscrição ou referência do IPTU" /></div></div> : null}
               {amendmentHas("ownership") ? <AmendmentOwnershipFields socialCapital={socialCapital} onSocialCapitalChange={setSocialCapital} value={qsa} onChange={setQsa} /> : null}
-              {amendmentHas("contact") ? <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-1.5"><Label>Contato</Label><Input value={contactName} onChange={(event) => setContactName(event.target.value)} placeholder="Nome do contato" /></div><div className="grid gap-1.5"><Label>Telefone</Label><Input value={contactPhone} onChange={(event) => setContactPhone(event.target.value)} placeholder="(00) 00000-0000" /></div><div className="grid gap-1.5 sm:col-span-2"><Label>E-mail</Label><Input type="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} placeholder="contato@empresa.com" /></div></div> : null}
-              <div className="grid gap-1.5"><Label>Observações</Label><Textarea value={details} onChange={(event) => setDetails(event.target.value)} rows={5} placeholder="Descreva informações, cuidados ou outras alterações solicitadas" /></div>
+              {amendmentHas("contact") ? <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-17"}>Contato</Label><Input id={fieldId + "-field-17"} value={contactName} onChange={(event) => setContactName(event.target.value)} placeholder="Nome do contato" /></div><div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-18"}>Telefone</Label><Input id={fieldId + "-field-18"} value={contactPhone} onChange={(event) => setContactPhone(event.target.value)} placeholder="(00) 00000-0000" /></div><div className="grid gap-1.5 sm:col-span-2"><Label htmlFor={fieldId + "-field-19"}>E-mail</Label><Input id={fieldId + "-field-19"} type="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} placeholder="contato@empresa.com" /></div></div> : null}
+              <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-20"}>Observações</Label><Textarea id={fieldId + "-field-20"} value={details} onChange={(event) => setDetails(event.target.value)} rows={5} placeholder="Descreva informações, cuidados ou outras alterações solicitadas" /></div>
             </section>
           ) : null}
 
           {opening ? <><FormStep number={3} title="Contato e detalhes" description="Quem responde pela empresa e o pedido como veio do cliente." /><div className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-1.5"><Label>Contato</Label><Input value={contactName} onChange={(event) => setContactName(event.target.value)} placeholder="Nome do contato" /></div>
-            <div className="grid gap-1.5"><Label>Telefone</Label><Input value={contactPhone} onChange={(event) => setContactPhone(event.target.value)} placeholder="(00) 00000-0000" /></div>
-            <div className="grid gap-1.5"><Label>E-mail</Label><Input type="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} placeholder="contato@empresa.com" /></div>
+            <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-21"}>Contato</Label><Input id={fieldId + "-field-21"} value={contactName} onChange={(event) => setContactName(event.target.value)} placeholder="Nome do contato" /></div>
+            <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-22"}>Telefone</Label><Input id={fieldId + "-field-22"} value={contactPhone} onChange={(event) => setContactPhone(event.target.value)} placeholder="(00) 00000-0000" /></div>
+            <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-23"}>E-mail</Label><Input id={fieldId + "-field-23"} type="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} placeholder="contato@empresa.com" /></div>
           </div>
-          <div className="grid gap-1.5"><Label>{detailLabel}</Label><Textarea value={details} onChange={(event) => setDetails(event.target.value)} rows={4} placeholder={detailPlaceholder} /></div></> : null}
+          <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-24"}>{detailLabel}</Label><Textarea id={fieldId + "-field-24"} value={details} onChange={(event) => setDetails(event.target.value)} rows={4} placeholder={detailPlaceholder} /></div></> : null}
           {closing ? <FormStep number={2} title="Dados da baixa" description="Data, recibo e o que o Societário precisa saber." /> : null}
-          {closing ? <div className="grid gap-1.5"><Label>Observações da baixa</Label><Textarea value={details} onChange={(event) => setDetails(event.target.value)} rows={6} placeholder="Descreva a data da baixa, recibo e demais observações" /></div> : null}
+          {closing ? <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-25"}>Observações da baixa</Label><Textarea id={fieldId + "-field-25"} value={details} onChange={(event) => setDetails(event.target.value)} rows={6} placeholder="Descreva a data da baixa, recibo e demais observações" /></div> : null}
           {!opening ? (
             <FormStep
               number={3}
@@ -1369,12 +1371,12 @@ function NewCompanyFlowDialog({
               </div>
               <div className="grid gap-3 sm:grid-cols-[14rem_minmax(0,1fr)]">
                 <div className="grid gap-1.5">
-                  <Label>Valor cobrado</Label>
-                  <CurrencyInput value={billingAmount} onValueChange={setBillingAmount} placeholder="R$ 0,00" />
+                  <Label htmlFor={fieldId + "-field-4"}>Valor cobrado</Label>
+                  <CurrencyInput id={fieldId + "-field-4"} value={billingAmount} onValueChange={setBillingAmount} placeholder="R$ 0,00" />
                 </div>
                 <div className="grid gap-1.5">
-                  <Label>Descrição da cobrança</Label>
-                  <Input value={billingDescription} onChange={(event) => setBillingDescription(event.target.value)} placeholder="Ex.: Honorários pela alteração contratual" />
+                  <Label htmlFor={fieldId + "-field-5"}>Descrição da cobrança</Label>
+                  <Input id={fieldId + "-field-5"} value={billingDescription} onChange={(event) => setBillingDescription(event.target.value)} placeholder="Ex.: Honorários pela alteração contratual" />
                 </div>
               </div>
             </section>
@@ -1388,6 +1390,7 @@ function NewCompanyFlowDialog({
 }
 
 function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowView }) {
+  const fieldId = useId();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -1548,12 +1551,12 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
                 <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">{amendment ? "Confira as alterações destacadas acima. Ao confirmar, você registra que todos esses itens foram concluídos pelo Societário." : "Esta confirmação registra que a baixa foi concluída pelo Societário."}</div>
               ) : (
                 <>
-                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]"><div className="grid gap-1.5"><Label>CNPJ aprovado</Label><Input value={cnpj} onChange={(event) => setCnpj(event.target.value)} placeholder="00.000.000/0000-00" inputMode="numeric" /></div><Button type="button" className="self-end" variant="outline" disabled={pending || !cnpj.trim()} onClick={lookupCnpj}><Search aria-hidden /> Consultar CNPJ</Button></div>
-                  <div className="grid gap-1.5"><Label>Razão social oficial (Receita)</Label><Input value={approvedName} readOnly placeholder="Consulte o CNPJ para preencher" /><p className="text-xs text-muted-foreground">Este nome é conferido novamente pelo CNPJ ao devolver o Fluxo.</p></div>
-                  <div className="grid gap-1.5"><Label>Atividades aprovadas</Label><Textarea value={approvedActivities} onChange={(event) => setApprovedActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div>
+                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]"><div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-26"}>CNPJ aprovado</Label><CnpjInput id={fieldId + "-field-26"} value={cnpj} onValueChange={setCnpj} placeholder="00.000.000/0000-00" inputMode="numeric" /></div><Button type="button" className="self-end" variant="outline" disabled={pending || !cnpj.trim()} onClick={lookupCnpj}><Search aria-hidden /> Consultar CNPJ</Button></div>
+                  <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-27"}>Razão social oficial (Receita)</Label><Input id={fieldId + "-field-27"} value={approvedName} readOnly placeholder="Consulte o CNPJ para preencher" /><p className="text-xs text-muted-foreground">Este nome é conferido novamente pelo CNPJ ao devolver o Fluxo.</p></div>
+                  <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-28"}>Atividades aprovadas</Label><Textarea id={fieldId + "-field-28"} value={approvedActivities} onChange={(event) => setApprovedActivities(event.target.value)} rows={3} placeholder="Uma atividade por linha" /></div>
                 </>
               )}
-              {simpleConfirmation ? null : <div className="grid gap-1.5"><Label>Retorno e observações</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder="O que foi deferido, pendências ou cuidados" /></div>}
+              {simpleConfirmation ? null : <div className="grid gap-1.5"><Label htmlFor={fieldId + "-field-29"}>Retorno e observações</Label><Textarea id={fieldId + "-field-29"} value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder="O que foi deferido, pendências ou cuidados" /></div>}
               <Button
                 type="button"
                 variant={closure && rhVerificationState === "pending" ? "default" : "success"}

@@ -136,13 +136,21 @@ export function TaskActionBar({
     action: () => Promise<ActionResult>,
     successMessage: string,
     destino?: string | null,
+    onSuccess?: () => void,
   ) {
     startTransition(async () => {
-      const result = await action();
+      let result: ActionResult;
+      try {
+        result = await action();
+      } catch {
+        toast.error("Não foi possível salvar. Seu texto foi mantido; tente novamente.");
+        return;
+      }
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
+      onSuccess?.();
       toast.success(successMessage);
       if (destino) {
         router.push(destino);
@@ -164,7 +172,13 @@ export function TaskActionBar({
     undoneMessage: string,
   ) {
     startTransition(async () => {
-      const result = await action();
+      let result: ActionResult;
+      try {
+        result = await action();
+      } catch {
+        toast.error("Não foi possível salvar. Seu texto foi mantido; tente novamente.");
+        return;
+      }
       if (!result.ok) {
         toast.error(result.error);
         return;
@@ -194,7 +208,7 @@ export function TaskActionBar({
   }
 
   const hasPrimary =
-    can.claim || can.start || can.resume || can.complete || can.approve || can.reject;
+    can.claim || can.start || can.resume || can.complete || can.submit || can.approve || can.reject;
   if (
     !hasPrimary &&
     !can.edit &&
@@ -313,7 +327,7 @@ export function TaskActionBar({
       {can.cancel ? (
         <Button
           variant="ghost"
-          className="text-destructive hover:text-destructive"
+          className="touch-target text-destructive hover:text-destructive"
           disabled={pending}
           onClick={() => setCancelOpen(true)}
         >
@@ -324,7 +338,7 @@ export function TaskActionBar({
       {can.delete ? (
         <Button
           variant="ghost"
-          className="text-destructive hover:text-destructive"
+          className="touch-target text-destructive hover:text-destructive"
           disabled={pending}
           onClick={() => setDeleteOpen(true)}
         >
@@ -338,7 +352,7 @@ export function TaskActionBar({
         </Button>
       ) : null}
 
-      <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+      <Dialog open={transferOpen} onOpenChange={(open) => { if (!pending) setTransferOpen(open); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Transferir missão</DialogTitle>
@@ -353,7 +367,7 @@ export function TaskActionBar({
               value={effectiveTransferAssigneeId}
               onValueChange={setTransferAssigneeId}
             >
-              <SelectTrigger id="transfer-assignee" className="w-full">
+              <SelectTrigger id="transfer-assignee" disabled={pending} className="w-full">
                 <SelectValue placeholder="Escolha uma pessoa" />
               </SelectTrigger>
               <SelectContent>
@@ -369,6 +383,7 @@ export function TaskActionBar({
             <Label htmlFor="transfer-note">Nota (opcional)</Label>
             <Textarea
               id="transfer-note"
+              disabled={pending}
               value={transferNote}
               onChange={(event) => setTransferNote(event.target.value)}
               maxLength={2000}
@@ -377,13 +392,12 @@ export function TaskActionBar({
             />
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setTransferOpen(false)}>
+            <Button variant="outline" disabled={pending} onClick={() => setTransferOpen(false)}>
               Voltar
             </Button>
             <Button
               disabled={pending || !effectiveTransferAssigneeId}
               onClick={() => {
-                setTransferOpen(false);
                 run(
                   () =>
                     transferTask({
@@ -395,8 +409,12 @@ export function TaskActionBar({
                       note: transferNote.trim() || undefined,
                     }),
                   "Missão transferida.",
+                  undefined,
+                  () => {
+                    setTransferOpen(false);
+                    setTransferNote("");
+                  },
                 );
-                setTransferNote("");
               }}
             >
               Transferir missão
@@ -405,7 +423,7 @@ export function TaskActionBar({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={submitOpen} onOpenChange={setSubmitOpen}>
+      <Dialog open={submitOpen} onOpenChange={(open) => { if (!pending) setSubmitOpen(open); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Entregar com retorno</DialogTitle>
@@ -419,6 +437,7 @@ export function TaskActionBar({
             <Label htmlFor="submit-note">Retorno para {task.creatorName}</Label>
             <Textarea
               id="submit-note"
+              disabled={pending}
               value={submitNote}
               onChange={(event) => setSubmitNote(event.target.value)}
               placeholder="Ex.: Planilha atualizada, o total de agosto fechou em R$ 12.400. Falta só a nota da filial, que o cliente manda amanhã."
@@ -432,13 +451,12 @@ export function TaskActionBar({
             </p>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setSubmitOpen(false)}>
+            <Button variant="outline" disabled={pending} onClick={() => setSubmitOpen(false)}>
               Voltar
             </Button>
             <Button
               disabled={pending || submitNote.trim().length < 3}
               onClick={() => {
-                setSubmitOpen(false);
                 run(
                   () =>
                     submitTaskForApproval({
@@ -446,8 +464,12 @@ export function TaskActionBar({
                       note: submitNote.trim(),
                     }),
                   `Entregue. ${task.creatorName} recebeu o seu retorno.`,
+                  undefined,
+                  () => {
+                    setSubmitOpen(false);
+                    setSubmitNote("");
+                  },
                 );
-                setSubmitNote("");
               }}
             >
               <Send aria-hidden /> Entregar
@@ -456,7 +478,7 @@ export function TaskActionBar({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
+      <Dialog open={approveOpen} onOpenChange={(open) => { if (!pending) setApproveOpen(open); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Aprovar entrega</DialogTitle>
@@ -470,6 +492,7 @@ export function TaskActionBar({
             <Label htmlFor="approve-note">Comentário (opcional)</Label>
             <Textarea
               id="approve-note"
+              disabled={pending}
               value={approveNote}
               onChange={(event) => setApproveNote(event.target.value)}
               placeholder="Ex.: Perfeito, já enviei para o cliente. Obrigado!"
@@ -478,13 +501,12 @@ export function TaskActionBar({
             />
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setApproveOpen(false)}>
+            <Button variant="outline" disabled={pending} onClick={() => setApproveOpen(false)}>
               Voltar
             </Button>
             <Button
               disabled={pending}
               onClick={() => {
-                setApproveOpen(false);
                 run(
                   () =>
                     approveTask({
@@ -492,8 +514,12 @@ export function TaskActionBar({
                       note: approveNote.trim() || undefined,
                     }),
                   `Entrega aprovada. ${task.assigneeName ?? "A pessoa responsável"} recebeu ${task.xpValue} XP.`,
+                  undefined,
+                  () => {
+                    setApproveOpen(false);
+                    setApproveNote("");
+                  },
                 );
-                setApproveNote("");
               }}
             >
               <Check aria-hidden /> Aprovar e creditar XP
@@ -502,7 +528,7 @@ export function TaskActionBar({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
+      <Dialog open={rejectOpen} onOpenChange={(open) => { if (!pending) setRejectOpen(open); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Devolver para ajuste</DialogTitle>
@@ -515,6 +541,7 @@ export function TaskActionBar({
             <Label htmlFor="reject-note">Motivo</Label>
             <Textarea
               id="reject-note"
+              disabled={pending}
               value={rejectNote}
               onChange={(event) => setRejectNote(event.target.value)}
               placeholder="Ex.: Falta atualizar a planilha de custos…"
@@ -522,19 +549,22 @@ export function TaskActionBar({
             />
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setRejectOpen(false)}>
+            <Button variant="outline" disabled={pending} onClick={() => setRejectOpen(false)}>
               Voltar
             </Button>
             <Button
               variant="destructive"
               disabled={pending || rejectNote.trim().length < 3}
               onClick={() => {
-                setRejectOpen(false);
                 run(
                   () => rejectTask({ taskId: task.id, note: rejectNote.trim() }),
                   "Missão devolvida para ajustes.",
+                  undefined,
+                  () => {
+                    setRejectOpen(false);
+                    setRejectNote("");
+                  },
                 );
-                setRejectNote("");
               }}
             >
               Rejeitar com nota
@@ -597,7 +627,7 @@ export function TaskActionBar({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={revertOpen} onOpenChange={setRevertOpen}>
+      <Dialog open={revertOpen} onOpenChange={(open) => { if (!pending) setRevertOpen(open); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Reverter conclusão?</DialogTitle>
@@ -610,6 +640,7 @@ export function TaskActionBar({
             <Label htmlFor="revert-note">Motivo (opcional)</Label>
             <Textarea
               id="revert-note"
+              disabled={pending}
               value={revertNote}
               onChange={(event) => setRevertNote(event.target.value)}
               placeholder="Ex.: Concluída por engano, entrega incompleta…"
@@ -617,14 +648,13 @@ export function TaskActionBar({
             />
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setRevertOpen(false)}>
+            <Button variant="outline" disabled={pending} onClick={() => setRevertOpen(false)}>
               Voltar
             </Button>
             <Button
               variant="destructive"
               disabled={pending}
               onClick={() => {
-                setRevertOpen(false);
                 run(
                   () =>
                     revertCompletion({
@@ -632,8 +662,12 @@ export function TaskActionBar({
                       note: revertNote.trim() || undefined,
                     }),
                   "Conclusão revertida e XP estornado.",
+                  undefined,
+                  () => {
+                    setRevertOpen(false);
+                    setRevertNote("");
+                  },
                 );
-                setRevertNote("");
               }}
             >
               Reverter e estornar XP
@@ -642,7 +676,7 @@ export function TaskActionBar({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+      <Dialog open={editOpen} onOpenChange={(open) => { if (!pending) setEditOpen(open); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Editar missão</DialogTitle>
@@ -656,7 +690,6 @@ export function TaskActionBar({
             onSubmit={(event) => {
               event.preventDefault();
               const form = new FormData(event.currentTarget);
-              setEditOpen(false);
               run(
                 () =>
                   updateTask({
@@ -666,13 +699,15 @@ export function TaskActionBar({
                     dueDate: String(form.get("dueDate") ?? ""),
                   }),
                 "Missão atualizada!",
+                undefined,
+                () => setEditOpen(false),
               );
             }}
           >
             <div className="grid gap-2">
               <Label htmlFor="edit-title">Título</Label>
               <Input
-                id="edit-title"
+                id="edit-title" disabled={pending}
                 name="title"
                 defaultValue={task.title}
                 maxLength={200}
@@ -682,7 +717,7 @@ export function TaskActionBar({
             <div className="grid gap-2">
               <Label htmlFor="edit-description">Descrição</Label>
               <Textarea
-                id="edit-description"
+                id="edit-description" disabled={pending}
                 name="description"
                 defaultValue={task.description}
                 rows={4}
@@ -692,7 +727,7 @@ export function TaskActionBar({
             <div className="grid gap-2">
               <Label htmlFor="edit-dueDate">Prazo</Label>
               <Input
-                id="edit-dueDate"
+                id="edit-dueDate" disabled={pending}
                 name="dueDate"
                 type="date"
                 defaultValue={task.dueDate}

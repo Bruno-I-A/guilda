@@ -1,6 +1,8 @@
 import {
   and,
   asc,
+  count,
+  countDistinct,
   desc,
   eq,
   inArray,
@@ -31,6 +33,7 @@ import {
   type InformativeSummary,
   type MissionView,
 } from "@/domain/mission-triage";
+import { MISSION_PAGE_SIZE, PACKAGE_PAGE_SIZE, missionPage, missionViewHref } from "@/domain/mission-pagination";
 import type { TaskStatus } from "@/domain/task-state";
 import { requireOrgSession } from "@/lib/session";
 
@@ -121,6 +124,7 @@ export default async function TasksPage({
 }: {
   searchParams: Promise<{
     view?: string | string[];
+    page?: string | string[];
     scope?: string | string[];
     clan?: string | string[];
     person?: string | string[];
@@ -195,6 +199,7 @@ export default async function TasksPage({
   if (single(params.scope)) filters.set("scope", scope);
   if (scope === "clan" && clanId) filters.set("clan", clanId);
   if (scope === "person" && personId) filters.set("person", personId);
+  if (single(params.page)) filters.set("page", single(params.page)!);
   const currentHref = filters.size > 0 ? `/tasks?${filters}` : "/tasks";
   const taskHref = (taskId: string) =>
     `/tasks/${taskId}?returnTo=${encodeURIComponent(currentHref)}`;
@@ -230,21 +235,29 @@ export default async function TasksPage({
     open: MissionListRow[];
     closed: MissionListRow[];
     deliveries: Map<string, MissionDelivery>;
+    total: number;
+    pagination: ReturnType<typeof missionPage>;
   } | null = null;
-  let packages: InformativePackage<MissionListRow>[] = [];
+  let informative: {
+    packages: InformativePackage<MissionListRow>[];
+    total: number;
+    pagination: ReturnType<typeof missionPage>;
+  } | null = null;
 
   if (view === "standalone") {
     standalone = await withOrgTx(session.orgId, async (tx) => {
+      const openWhere = and(...conditions, isNull(schema.tasks.informativeId),
+        inArray(schema.tasks.status, [...OPEN_STATUSES]));
+      const [countRow] = await tx.select({ total: count() }).from(schema.tasks).where(openWhere);
+      const total = countRow.total;
+      const pagination = missionPage(single(params.page), total, MISSION_PAGE_SIZE);
       const [open, closed] = await Promise.all([
         tx.query.tasks.findMany({
-          where: and(
-            ...conditions,
-            isNull(schema.tasks.informativeId),
-            inArray(schema.tasks.status, [...OPEN_STATUSES]),
-          ),
+          where: openWhere,
           with: ROW_RELATIONS,
-          orderBy: [desc(schema.tasks.createdAt)],
-          limit: 300,
+          orderBy: [sql`${schema.tasks.dueDate} asc nulls last`, asc(schema.tasks.createdAt), asc(schema.tasks.id)],
+          limit: MISSION_PAGE_SIZE,
+          offset: pagination.offset,
         }),
         // Encerradas são histórico: só as últimas, para a página não crescer
         // com o passado inteiro da Guilda.
@@ -300,24 +313,36 @@ export default async function TasksPage({
         }
       }
 
-      return { open: open.map(toRow), closed: closed.map(toRow), deliveries };
+      return { open: open.map(toRow), closed: closed.map(toRow), deliveries, total, pagination };
     });
   } else {
-    packages = await withOrgTx(session.orgId, async (tx) => {
+    informative = await withOrgTx(session.orgId, async (tx) => {
+      const packageWhere = and(...conditions, isNotNull(schema.tasks.informativeId));
+      const [countRow] = await tx.select({ total: countDistinct(schema.tasks.informativeId) })
+        .from(schema.tasks).where(packageWhere);
+      const total = countRow.total;
+      const pagination = missionPage(single(params.page), total, PACKAGE_PAGE_SIZE);
+      // Paginate whole packages, with pending work first. Limiting individual
+      // tasks can hide an old pending task behind newer completed ones.
+      const selected = await tx.select({ id: schema.tasks.informativeId })
+        .from(schema.tasks)
+        .where(packageWhere)
+        .groupBy(schema.tasks.informativeId)
+        .orderBy(
+          sql`case when bool_or(${inArray(schema.tasks.status, [...OPEN_STATUSES])}) then 0 else 1 end`,
+          sql`min(${schema.tasks.dueDate}) filter (where ${inArray(schema.tasks.status, [...OPEN_STATUSES])}) asc nulls last`,
+          sql`max(${schema.tasks.createdAt}) desc`,
+          asc(schema.tasks.informativeId),
+        )
+        .limit(PACKAGE_PAGE_SIZE)
+        .offset(pagination.offset);
+      const informativeIds = selected.map((row) => row.id).filter((id): id is string => Boolean(id));
+      if (informativeIds.length === 0) return { packages: [], total, pagination };
       const rows = await tx.query.tasks.findMany({
-        where: and(...conditions, isNotNull(schema.tasks.informativeId)),
+        where: and(...conditions, inArray(schema.tasks.informativeId, informativeIds)),
         with: ROW_RELATIONS,
-        orderBy: [desc(schema.tasks.createdAt)],
-        limit: 500,
+        orderBy: [asc(schema.tasks.createdAt), asc(schema.tasks.id)],
       });
-      const informativeIds = [
-        ...new Set(
-          rows
-            .map((row) => row.informativeId)
-            .filter((id): id is string => Boolean(id)),
-        ),
-      ];
-      if (informativeIds.length === 0) return [];
 
       const [informativeRows, statusRows] = await Promise.all([
         tx
@@ -366,12 +391,22 @@ export default async function TasksPage({
         statuses.set(row.informativeId, list);
       }
 
-      return groupInformativePackages(rows.map(toRow), summaries, statuses, now);
+      return { packages: groupInformativePackages(rows.map(toRow), summaries, statuses, now), total, pagination };
     });
   }
 
+  const total = standalone?.total ?? informative?.total ?? 0;
+  const pagination = standalone?.pagination ?? informative?.pagination ?? missionPage(undefined, 0, MISSION_PAGE_SIZE);
+  const packages = informative?.packages ?? [];
+  const pageHref = (page: number) => {
+    const next = new URLSearchParams(filters);
+    if (page === 1) next.delete("page");
+    else next.set("page", String(page));
+    return next.size ? `/tasks?${next}` : "/tasks";
+  };
+
   return (
-    <div className="grid gap-5">
+    <div className="grid min-w-0 grid-cols-1 gap-5">
       <PageHeader
         title="Missões"
         description={VIEW_COPY[view].description}
@@ -397,8 +432,8 @@ export default async function TasksPage({
           label="Origem das missões"
           active={view}
           items={[
-            { key: "standalone", label: "Avulsas", href: "/tasks" },
-            { key: "informative", label: "Informativos", href: "/tasks?view=informative" },
+            { key: "standalone", label: "Avulsas", href: missionViewHref(filters, "standalone") },
+            { key: "informative", label: "Informativos", href: missionViewHref(filters, "informative") },
           ]}
         />
         <MissionScopeSelect
@@ -410,6 +445,12 @@ export default async function TasksPage({
         />
       </div>
 
+      {pagination.pages > 1 ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Página {pagination.page} de {pagination.pages} · {total} {view === "standalone" ? "missões abertas" : "pacotes"} neste recorte.
+          As contagens abaixo se referem aos itens desta página.
+        </p>
+      ) : null}
       {standalone ? (
         <StandaloneView
           scope={scope}
@@ -423,6 +464,13 @@ export default async function TasksPage({
       ) : (
         <InformativeView packages={packages} now={now} taskHref={taskHref} />
       )}
+      {pagination.pages > 1 ? (
+        <nav aria-label="Páginas das missões" className="flex flex-wrap items-center justify-between gap-3">
+          {pagination.page > 1 ? <Button asChild variant="outline"><Link href={pageHref(pagination.page - 1)}>Página anterior</Link></Button> : <span />}
+          <span className="text-sm text-muted-foreground">{pagination.page} / {pagination.pages}</span>
+          {pagination.page < pagination.pages ? <Button asChild variant="outline"><Link href={pageHref(pagination.page + 1)}>Próxima página</Link></Button> : <span />}
+        </nav>
+      ) : null}
     </div>
   );
 }

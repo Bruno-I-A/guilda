@@ -144,7 +144,7 @@ export function DashboardShortcuts({
     <section className="grid gap-3">
       <div className="flex items-center gap-3">
         <Sparkles className="size-4 text-primary" aria-hidden />
-        <h2 className="hud-label">Atalhos rápidos</h2>
+        <h2>Atalhos rápidos</h2>
         <div className="divider-rune flex-1" />
         <Button type="button" variant="ghost" size="sm" onClick={beginEditing}>
           <Pencil aria-hidden /> {shortcuts.length > 0 ? "Editar" : "Configurar"}

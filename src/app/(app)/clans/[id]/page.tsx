@@ -14,6 +14,7 @@ import { canViewClan } from "@/domain/clan-access";
 import {
   canDistributeClanTasks,
   canQuickCompleteUnassignedInformativeTask,
+  canManageClanClosings,
   canManageClanCommitments,
   canManageFiscalPortfolio,
   isAdminRole,
@@ -374,7 +375,12 @@ export default async function ClanPage({
         ) : null}
 
         {activeTab === "closings" ? (
-          <ClosingsTab orgId={session.orgId} clanId={clan.id} params={filters} />
+          <ClosingsTab
+            orgId={session.orgId}
+            clanId={clan.id}
+            params={filters}
+            canManage={canManageClanClosings(clanFacts)}
+          />
         ) : null}
 
         {activeTab === "flow" ? (

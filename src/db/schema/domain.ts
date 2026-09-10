@@ -869,6 +869,87 @@ export const accountingClosingYearsRelations = relations(
 export type AccountingClosingYear = typeof accountingClosingYears.$inferSelect;
 
 /**
+ * Onde a observação está pendurada dentro do ano da empresa. `closing` usa
+ * `closing_id`; os outros dois pendem do próprio ano.
+ */
+export const closingObservationScope = pgEnum("closing_observation_scope", [
+  "year",
+  "defis",
+  "closing",
+]);
+
+/**
+ * Observações dos Fechamentos, como ITENS e não como texto livre.
+ *
+ * Antes eram três blocos de texto — `accounting_closing_years.notes`,
+ * `.defis_notes` e `accounting_closings.notes`. Blob não tem identidade: não
+ * dá para dizer quem escreveu, quando, se já foi resolvido, nem pendurar nele
+ * a missão que resolveu o assunto. "Tem rubricas para configurar" ficava ali
+ * parado até alguém reparar, e quem faz as rubricas costuma ser de outra área.
+ *
+ * Cada observação carrega autor, data, estado (aberta/resolvida) e, quando
+ * vira trabalho de alguém, a missão gerada. As colunas de texto antigas
+ * continuam no schema por segurança, mas a aplicação não escreve mais nelas —
+ * o conteúdo delas virou a primeira observação de cada ano na migration.
+ */
+export const closingObservations = pgTable(
+  "closing_observations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    year: smallint("year").notNull(),
+    scope: closingObservationScope("scope").notNull().default("year"),
+    /** Preenchido só quando `scope = 'closing'`. */
+    closingId: uuid("closing_id").references(() => accountingClosings.id, {
+      onDelete: "cascade",
+    }),
+    body: text("body").notNull(),
+    /** Null nas migradas do texto livre antigo, que não registrava autor. */
+    authorId: text("author_id").references(() => user.id),
+    /**
+     * Missão gerada a partir desta observação. Sem FK, pelo mesmo motivo de
+     * `closed_by_task_id`: evita um ciclo físico entre tasks e fechamentos.
+     */
+    taskId: uuid("task_id"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedBy: text("resolved_by").references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("closing_observations_org_client_year_idx").on(t.orgId, t.clientId, t.year),
+    index("closing_observations_org_closing_idx").on(t.orgId, t.closingId),
+  ],
+);
+
+export const closingObservationsRelations = relations(
+  closingObservations,
+  ({ one }) => ({
+    client: one(clients, {
+      fields: [closingObservations.clientId],
+      references: [clients.id],
+    }),
+    author: one(user, {
+      fields: [closingObservations.authorId],
+      references: [user.id],
+      relationName: "closing_observation_author",
+    }),
+    resolvedByUser: one(user, {
+      fields: [closingObservations.resolvedBy],
+      references: [user.id],
+      relationName: "closing_observation_resolved_by",
+    }),
+  }),
+);
+
+export type ClosingObservation = typeof closingObservations.$inferSelect;
+
+/**
  * Templates de campanha (Fase 5b): checklist reutilizável POR REGIME
  * (~3–5 no total, não 250). Vários templates por regime são permitidos —
  * a criação de campanha (5c) seleciona qual usar. A instanciação COPIA

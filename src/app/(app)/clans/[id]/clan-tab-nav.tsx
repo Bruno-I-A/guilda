@@ -50,11 +50,11 @@ function TabGroup({
 }) {
   const router = useRouter();
   return (
-    <div className="grid shrink-0 snap-start gap-1.5">
+    <div className="grid min-w-0 gap-1.5">
       <span className={cn("hud-label px-1", accent && "!text-primary/90")}>{label}</span>
       <div
         className={cn(
-          "flex gap-1 border p-1 [clip-path:polygon(0.5rem_0,100%_0,100%_calc(100%-0.5rem),calc(100%-0.5rem)_100%,0_100%,0_0.5rem)]",
+          "flex flex-wrap gap-1 border p-1 [clip-path:polygon(0.5rem_0,100%_0,100%_calc(100%-0.5rem),calc(100%-0.5rem)_100%,0_100%,0_0.5rem)]",
           accent ? "border-primary/35 bg-primary/5" : "border-border/70 bg-card/30",
         )}
       >
@@ -120,7 +120,7 @@ export function ClanTabNav({
   return (
     <nav
       aria-label="Seções do clã"
-      className="flex w-full snap-x gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="flex w-full min-w-0 flex-col gap-3 pb-1 sm:flex-row sm:flex-wrap"
     >
       {own.length > 0 ? (
         <TabGroup

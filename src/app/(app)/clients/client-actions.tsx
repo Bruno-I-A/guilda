@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { CnpjInput } from "@/components/ui/cnpj-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -165,12 +166,12 @@ function ClientFormDialog({
           <div className="grid gap-2">
             <Label htmlFor="client-cnpj">CNPJ (opcional)</Label>
             <div className={cnpjLookup ? "grid gap-2 sm:grid-cols-[1fr_auto]" : undefined}>
-              <Input
+              <CnpjInput
                 id="client-cnpj"
                 name="cnpj"
                 value={cnpj}
-                onChange={(event) => {
-                  setCnpj(event.target.value);
+                onValueChange={(digits) => {
+                  setCnpj(digits);
                   setLookup(null);
                   setManualCnpj(null);
                 }}

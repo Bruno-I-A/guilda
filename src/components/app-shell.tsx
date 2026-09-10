@@ -170,7 +170,7 @@ function PendingBadge({ count, label }: { count: number; label: string }) {
   return (
     <span
       aria-label={`${count} ${label}`}
-      className="inline-flex min-w-5 items-center justify-center border border-destructive/80 bg-destructive px-1 font-mono text-[10px] leading-4 text-destructive-foreground [clip-path:polygon(0.2rem_0,100%_0,100%_calc(100%-0.2rem),calc(100%-0.2rem)_100%,0_100%,0_0.2rem)]"
+      className="inline-flex min-w-5 items-center justify-center border border-destructive/80 bg-destructive px-1 font-mono text-hud leading-4 text-destructive-foreground [clip-path:polygon(0.2rem_0,100%_0,100%_calc(100%-0.2rem),calc(100%-0.2rem)_100%,0_100%,0_0.2rem)]"
     >
       {count > 9 ? "9+" : count}
     </span>
@@ -242,7 +242,7 @@ export function AppShell({
                 <GuildSeal className="size-7" />
               </span>
               <span className="grid min-w-0 leading-none">
-                <span className="hud-label truncate text-[9px] tracking-[0.28em]">Mesa de comando</span>
+                <span className="hud-label truncate text-hud tracking-[0.28em]">Mesa de comando</span>
                 <span className="mt-1 font-heading text-xl font-semibold tracking-[0.11em]">Guilda</span>
               </span>
             </Link>
@@ -261,12 +261,12 @@ export function AppShell({
         <div className="mx-4 border border-sidebar-border bg-[linear-gradient(120deg,oklch(0.3_0.04_245_/_35%),transparent_65%)] px-3 py-3 [clip-path:polygon(0.55rem_0,100%_0,100%_calc(100%-0.55rem),calc(100%-0.55rem)_100%,0_100%,0_0.55rem)]">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="hud-label text-[9px]">Organização ativa</p>
+              <p className="hud-label text-hud">Organização ativa</p>
               <p className="mt-1 truncate font-heading text-base font-medium tracking-wide">{orgName}</p>
             </div>
             <span className="mt-1 size-2 shrink-0 border border-primary/80 bg-primary/40 [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]" aria-label="Organização ativa" />
           </div>
-          <p className="mt-2 border-t border-sidebar-border pt-2 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">ambiente de trabalho</p>
+          <p className="mt-2 border-t border-sidebar-border pt-2 font-mono text-hud uppercase tracking-[0.16em] text-muted-foreground">ambiente de trabalho</p>
         </div>
 
         <nav className="flex flex-1 flex-col overflow-y-auto px-4 py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Principal">
@@ -274,8 +274,8 @@ export function AppShell({
             {DESKTOP_NAV_GROUPS.map((group) => (
               <section key={group.code}>
                 <div className="flex items-center gap-2 px-1">
-                  <span className="font-mono text-[10px] text-primary/80">{group.code}</span>
-                  <p className="hud-label text-[9px]">{group.label}</p>
+                  <span className="font-mono text-hud text-primary/80">{group.code}</span>
+                  <p className="hud-label text-hud">{group.label}</p>
                   <span className="h-px flex-1 bg-sidebar-border" aria-hidden />
                 </div>
                 <div className="relative mt-2 grid gap-1">
@@ -307,7 +307,7 @@ export function AppShell({
                         {href === "/tasks" ? (
                           <PendingBadge count={pendingMissions} label="missão(ões) esperando por você" />
                         ) : null}
-                        {active ? <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-primary">agora</span> : <ChevronRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-70" aria-hidden />}
+                        {active ? <span className="font-mono text-hud uppercase tracking-[0.16em] text-primary">agora</span> : <ChevronRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-70" aria-hidden />}
                       </Link>
                     );
                   })}
@@ -319,8 +319,8 @@ export function AppShell({
           <div className="mt-auto pt-6">
             <div className="divider-rune mb-4" />
             <div className="flex items-center gap-2 px-1">
-              <span className="font-mono text-[10px] text-primary/80">04</span>
-              <p className="hud-label text-[9px]">Conta</p>
+              <span className="font-mono text-hud text-primary/80">04</span>
+              <p className="hud-label text-hud">Conta</p>
               <span className="h-px flex-1 bg-sidebar-border" aria-hidden />
             </div>
             <div className="mt-2 grid gap-1">
@@ -343,7 +343,7 @@ export function AppShell({
             <UserMenu user={user} role={role} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{user.name}</p>
-              <p className="mt-0.5 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{ROLE_LABELS[role] ?? role}</p>
+              <p className="mt-0.5 truncate font-mono text-hud uppercase tracking-[0.12em] text-muted-foreground">{ROLE_LABELS[role] ?? role}</p>
             </div>
             <span className="size-1.5 bg-success [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]" aria-label="Conectado" />
           </div>
