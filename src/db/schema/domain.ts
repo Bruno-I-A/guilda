@@ -2004,6 +2004,7 @@ export type FiscalImportReport = {
   createdProfiles?: number;
   updatedProfiles?: number;
   unchangedProfiles?: number;
+  assignedPortfolios?: number;
   rejectedRows?: number;
 };
 
