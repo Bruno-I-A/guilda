@@ -616,16 +616,21 @@ function multilineCellText(value: unknown): string | null {
   return null;
 }
 
-/** Converte SIM/NÃO/X/vazio sem descartar valores inesperados silenciosamente. */
+/** Converte os marcadores do controle fiscal sem descartar valores inesperados. */
 export function parseFiscalApplicability(
   input: unknown,
+  blankMeansNotRequired = false,
 ): ParsedFiscalApplicability {
   const raw = cellText(input);
   if (!raw || ["-", "—"].includes(raw)) {
-    return { value: null, raw, recognized: true };
+    return {
+      value: input !== undefined && blankMeansNotRequired ? "no" : null,
+      raw,
+      recognized: true,
+    };
   }
   const normalized = foldText(raw).replace(/\s/g, "");
-  if (["sim", "s", "yes", "true", "1"].includes(normalized)) {
+  if (["sim", "s", "yes", "true", "1", "x", "sm"].includes(normalized)) {
     return { value: "yes", raw, recognized: true };
   }
   if (["nao", "n", "no", "false", "0"].includes(normalized)) {
@@ -633,7 +638,6 @@ export function parseFiscalApplicability(
   }
   if (
     [
-      "x",
       "na",
       "n/a",
       "naoseaplica",
@@ -662,15 +666,24 @@ export interface ParsedFiscalDelivery {
   kind: FiscalDeliveryKind;
   /** Texto original limpo; preserva nomes de pessoas e combinações próprias. */
   detail: string | null;
+  applicability: FiscalApplicability;
   recognized: boolean;
 }
 
-export function parseFiscalDelivery(input: unknown): ParsedFiscalDelivery {
+export function parseFiscalDelivery(input: unknown, blankMeansNotRequired = false): ParsedFiscalDelivery {
   const detail = cellText(input);
   if (!detail || ["-", "—"].includes(detail)) {
-    return { kind: null, detail, recognized: true };
+    return {
+      kind: null,
+      detail: null,
+      applicability: input !== undefined && blankMeansNotRequired ? "no" : null,
+      recognized: true,
+    };
   }
   const normalized = foldText(detail);
+  if (["x", "sm"].includes(normalized)) {
+    return { kind: null, detail: null, applicability: "yes", recognized: true };
+  }
   const rules: Array<[FiscalDeliveryKind, RegExp]> = [
     ["onvio", /\bonvio\b/],
     ["malote", /\bmalote\b/],
@@ -681,8 +694,8 @@ export function parseFiscalDelivery(input: unknown): ParsedFiscalDelivery {
     ["in_person", /\b(?:presencial|retira|retirada)\b/],
   ];
   const match = rules.find(([, pattern]) => pattern.test(normalized));
-  if (match) return { kind: match[0], detail, recognized: true };
-  return { kind: "custom", detail, recognized: false };
+  if (match) return { kind: match[0], detail, applicability: "yes", recognized: true };
+  return { kind: "custom", detail, applicability: "yes", recognized: false };
 }
 
 /** Limpa ruído de célula sem alterar caixa, pontuação ou quebras intencionais. */
@@ -739,14 +752,15 @@ export interface ParsedFiscalImportRow {
 /** Prepara uma linha já mapeada pelo leitor de Excel para pré-visualização. */
 export function parseFiscalImportRow(
   row: RawFiscalImportRow,
+  blankMeansNotRequired = false,
 ): ParsedFiscalImportRow {
   const companyName = cellText(row.companyName);
-  const movements = parseFiscalApplicability(row.movements);
-  const incoming = parseFiscalApplicability(row.incoming);
-  const outgoing = parseFiscalApplicability(row.outgoing);
-  const guide = parseFiscalApplicability(row.guide);
-  const delivery = parseFiscalDelivery(row.delivery);
-  const nfs = parseFiscalApplicability(row.nfs);
+  const movements = parseFiscalApplicability(row.movements, blankMeansNotRequired);
+  const incoming = parseFiscalApplicability(row.incoming, blankMeansNotRequired);
+  const outgoing = parseFiscalApplicability(row.outgoing, blankMeansNotRequired);
+  const guide = parseFiscalApplicability(row.guide, blankMeansNotRequired);
+  const delivery = parseFiscalDelivery(row.delivery, blankMeansNotRequired);
+  const nfs = parseFiscalApplicability(row.nfs, blankMeansNotRequired);
   const issues: FiscalImportRowIssue[] = [];
 
   if (!companyName) {
@@ -778,6 +792,12 @@ export function parseFiscalImportRow(
       raw: delivery.detail,
       message:
         "Forma de entrega personalizada; confirme ou mantenha o texto original.",
+    });
+  } else if (delivery.applicability === "yes" && !delivery.detail) {
+    issues.push({
+      field: "delivery",
+      raw: cellText(row.delivery),
+      message: "Envio necessário, mas o canal não foi informado. Complete a ficha depois da importação.",
     });
   }
 
@@ -853,6 +873,9 @@ const HEADER_ALIASES: Readonly<Record<FiscalSpreadsheetField, readonly string[]>
     "forma de entrega",
   ],
   nfs: [
+    "nfe",
+    "nf e",
+    "nf-e",
     "nf s",
     "nfs",
     "nfs e",
@@ -951,7 +974,7 @@ function valueAt(
   field: FiscalSpreadsheetField,
 ): unknown {
   const index = columns[field];
-  return index === undefined ? undefined : row[index];
+  return index === undefined ? undefined : row[index] ?? null;
 }
 
 function isSummaryRow(
@@ -1060,7 +1083,7 @@ export function parseFiscalSpreadsheetRows(
       delivery: valueAt(rawData, columns, "delivery"),
       nfs: valueAt(rawData, columns, "nfs"),
       observations: valueAt(rawData, columns, "observations"),
-    });
+    }, true);
     if (!parsed.companyName) {
       rejectedRows.push({
         rowNumber,

@@ -80,6 +80,7 @@ export async function PortfolioTab({
           schema.fiscalClientProfiles.outgoingApplicability,
         guideApplicability: schema.fiscalClientProfiles.guideApplicability,
         nfsApplicability: schema.fiscalClientProfiles.nfsApplicability,
+        deliveryApplicability: schema.fiscalClientProfiles.deliveryApplicability,
         factorRApplicability:
           schema.fiscalClientProfiles.factorRApplicability,
         deliveryChannel: schema.fiscalClientProfiles.deliveryChannel,
@@ -159,6 +160,7 @@ export async function PortfolioTab({
     const outgoingApplicability = detail?.outgoingApplicability ?? "unknown";
     const guideApplicability = detail?.guideApplicability ?? "unknown";
     const nfsApplicability = detail?.nfsApplicability ?? "unknown";
+    const deliveryApplicability = detail?.deliveryApplicability ?? "unknown";
     const factorRApplicability = detail?.factorRApplicability ?? "unknown";
     const deliveryChannel = detail?.deliveryChannel ?? null;
     return {
@@ -174,6 +176,7 @@ export async function PortfolioTab({
         outgoingApplicability,
         guideApplicability,
         nfsApplicability,
+        deliveryApplicability,
         factorRApplicability,
         deliveryChannel,
         revenueReference: detail?.revenueReference ?? null,
@@ -186,6 +189,7 @@ export async function PortfolioTab({
           outgoingApplicability,
           guideApplicability,
           nfsApplicability,
+          deliveryApplicability,
           factorRApplicability,
           deliveryChannel,
         }),

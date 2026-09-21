@@ -27,6 +27,8 @@ import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 import { FISCAL_CLAN_SLUG } from "@/lib/clans/rules";
 import { fiscalProfileSnapshot } from "@/lib/fiscal/materialize";
 
+const FISCAL_IMPORT_PARSER_VERSION = 2;
+
 interface ImportSuggestionView {
   clientId: string;
   clientName: string;
@@ -48,6 +50,7 @@ export interface FiscalImportPreviewRow {
     incoming: string | null;
     outgoing: string | null;
     guide: string | null;
+    deliveryApplicability: string | null;
     delivery: string | null;
     nfs: string | null;
     observations: string | null;
@@ -68,6 +71,7 @@ export interface FiscalImportPreview {
       incoming: string;
       outgoing: string;
       guide: string;
+      deliveryApplicability: string;
       delivery: string | null;
       nfs: string;
       observations: string | null;
@@ -118,6 +122,7 @@ function compactImported(parsed: ParsedFiscalImportRow) {
     incoming: parsed.incoming.value,
     outgoing: parsed.outgoing.value,
     guide: parsed.guide.value,
+    deliveryApplicability: parsed.delivery.applicability,
     delivery: parsed.delivery.detail,
     nfs: parsed.nfs.value,
     observations: parsed.observations,
@@ -179,6 +184,7 @@ export async function previewFiscalSpreadsheet(
         incoming: schema.fiscalClientProfiles.incomingApplicability,
         outgoing: schema.fiscalClientProfiles.outgoingApplicability,
         guide: schema.fiscalClientProfiles.guideApplicability,
+        deliveryApplicability: schema.fiscalClientProfiles.deliveryApplicability,
         delivery: schema.fiscalClientProfiles.deliveryChannel,
         nfs: schema.fiscalClientProfiles.nfsApplicability,
         observations: schema.fiscalClientProfiles.permanentNotes,
@@ -256,6 +262,7 @@ export async function previewFiscalSpreadsheet(
             sourceName: (row.parsed.companyName ?? "").slice(0, 240),
             normalizedSourceName: normalized.slice(0, 240),
             rawData: {
+              parserVersion: FISCAL_IMPORT_PARSER_VERSION,
               cells: jsonSafeCells(row.rawData),
               parsed: compactImported(row.parsed),
               issues: row.parsed.issues,
@@ -302,6 +309,7 @@ export async function previewFiscalSpreadsheet(
                 incoming: client.incoming!,
                 outgoing: client.outgoing!,
                 guide: client.guide!,
+                deliveryApplicability: client.deliveryApplicability!,
                 delivery: client.delivery,
                 nfs: client.nfs!,
                 observations: client.observations,
@@ -434,6 +442,11 @@ export async function applyFiscalImport(
       )
       .for("update");
     if (rows.length !== rowIds.length) return err("Uma ou mais linhas não pertencem a este lote.");
+    if (rows.some((row) =>
+      (row.rawData as { parserVersion?: number }).parserVersion !== FISCAL_IMPORT_PARSER_VERSION
+    )) {
+      return err("A leitura desta planilha foi atualizada. Gere uma nova prévia antes de aplicar.");
+    }
     const rowById = new Map(rows.map((row) => [row.id, row]));
     // Alias é único por organização. Locks consultivos em ordem fixa
     // serializam dois lotes que tentem ensinar o mesmo nome ao mesmo tempo.
@@ -492,6 +505,29 @@ export async function applyFiscalImport(
       }
     }
 
+    // Valide todas as versões antes da primeira escrita. Um conflito na última
+    // linha não pode deixar as fichas anteriores aplicadas com o lote aberto.
+    const profiles = targetIds.length > 0
+      ? await tx
+          .select()
+          .from(schema.fiscalClientProfiles)
+          .where(and(
+            eq(schema.fiscalClientProfiles.orgId, ctx.orgId),
+            inArray(schema.fiscalClientProfiles.clientId, [...new Set(targetIds)]),
+          ))
+          .orderBy(asc(schema.fiscalClientProfiles.clientId))
+          .for("update")
+      : [];
+    const profileByClient = new Map(profiles.map((profile) => [profile.clientId, profile]));
+    for (const resolution of data.resolutions) {
+      if (resolution.action === "ignore") continue;
+      const profile = profileByClient.get(resolution.clientId);
+      if (!fiscalProfileVersionMatches(profile?.version, resolution.expectedProfileVersion)) {
+        const row = rowById.get(resolution.rowId)!;
+        return err(`Linha ${row.rowNumber}: a Ficha Fiscal desta empresa mudou depois da prévia. Gere uma nova prévia antes de aplicar.`);
+      }
+    }
+
     let imported = 0;
     let ignored = 0;
     const errors = 0;
@@ -505,9 +541,6 @@ export async function applyFiscalImport(
         ignored += 1;
         continue;
       }
-      if (!validClients.has(resolution.clientId)) {
-        return err("Empresa selecionada não pertence à organização.");
-      }
       const normalized = row.normalizedSourceName;
       const [existingAlias] = await tx
         .select()
@@ -519,27 +552,16 @@ export async function applyFiscalImport(
           ),
         )
         .limit(1);
-      if (existingAlias && existingAlias.clientId !== resolution.clientId) {
-        return err(`Linha ${row.rowNumber}: este alias já está ligado a outra empresa.`);
-      }
       const raw = row.rawData as { parsed?: Record<string, unknown> };
       const values = raw.parsed ?? {};
-      const [profile] = await tx
-        .select()
-        .from(schema.fiscalClientProfiles)
-        .where(and(eq(schema.fiscalClientProfiles.orgId, ctx.orgId), eq(schema.fiscalClientProfiles.clientId, resolution.clientId)))
-        .for("update");
-      if (!fiscalProfileVersionMatches(profile?.version, resolution.expectedProfileVersion)) {
-        return err(
-          `Linha ${row.rowNumber}: a Ficha Fiscal desta empresa mudou depois da prévia. Gere uma nova prévia antes de aplicar.`,
-        );
-      }
+      const profile = profileByClient.get(resolution.clientId);
       const base = {
         movementsApplicability: profile?.movementsApplicability ?? "unknown" as const,
         incomingApplicability: profile?.incomingApplicability ?? "unknown" as const,
         outgoingApplicability: profile?.outgoingApplicability ?? "unknown" as const,
         guideApplicability: profile?.guideApplicability ?? "unknown" as const,
         nfsApplicability: profile?.nfsApplicability ?? "unknown" as const,
+        deliveryApplicability: profile?.deliveryApplicability ?? "unknown" as const,
         deliveryChannel: profile?.deliveryChannel ?? null,
         permanentNotes: profile?.permanentNotes ?? null,
       };
@@ -549,7 +571,12 @@ export async function applyFiscalImport(
         outgoingApplicability: importedApplicability(values.outgoing) ?? base.outgoingApplicability,
         guideApplicability: importedApplicability(values.guide) ?? base.guideApplicability,
         nfsApplicability: importedApplicability(values.nfs) ?? base.nfsApplicability,
-        deliveryChannel: typeof values.delivery === "string" && values.delivery.trim() ? values.delivery.trim().slice(0, 120) : base.deliveryChannel,
+        deliveryApplicability: importedApplicability(values.deliveryApplicability) ?? base.deliveryApplicability,
+        deliveryChannel: importedApplicability(values.deliveryApplicability)
+          ? typeof values.delivery === "string" && values.delivery.trim()
+            ? values.delivery.trim().slice(0, 120)
+            : null
+          : base.deliveryChannel,
         permanentNotes: typeof values.observations === "string" && values.observations.trim() ? values.observations.trim() : base.permanentNotes,
         updatedBy: ctx.userId,
         updatedAt: new Date(),
@@ -560,6 +587,7 @@ export async function applyFiscalImport(
         "outgoingApplicability",
         "guideApplicability",
         "nfsApplicability",
+        "deliveryApplicability",
         "deliveryChannel",
         "permanentNotes",
       ].filter(

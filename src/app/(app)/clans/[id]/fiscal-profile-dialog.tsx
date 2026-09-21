@@ -48,6 +48,7 @@ export interface FiscalProfileView {
   outgoingApplicability: FiscalApplicability;
   guideApplicability: FiscalApplicability;
   nfsApplicability: FiscalApplicability;
+  deliveryApplicability: FiscalApplicability;
   factorRApplicability: FiscalApplicability;
   deliveryChannel: string | null;
   revenueReference: string | null;
@@ -68,7 +69,8 @@ const FIELD_LABELS: Record<string, string> = {
   incomingApplicability: "Entrada",
   outgoingApplicability: "Saída",
   guideApplicability: "Guia",
-  nfsApplicability: "NFS",
+  nfsApplicability: "Notas fiscais",
+  deliveryApplicability: "Entrega",
   factorRApplicability: "Fator R",
   deliveryChannel: "Entrega",
   revenueReference: "Referência de faturamento",
@@ -139,11 +141,12 @@ export function FiscalProfileDialog({
   const [outgoing, setOutgoing] = useState(profile.outgoingApplicability);
   const [guide, setGuide] = useState(profile.guideApplicability);
   const [nfs, setNfs] = useState(profile.nfsApplicability);
+  const [deliveryApplicability, setDeliveryApplicability] = useState(profile.deliveryApplicability);
   const [factorR, setFactorR] = useState(profile.factorRApplicability);
   const [delivery, setDelivery] = useState(profile.deliveryChannel ?? "");
   const [revenue, setRevenue] = useState(profile.revenueReference ?? "");
   const [notes, setNotes] = useState(profile.permanentNotes ?? "");
-  const hasUnknown = [movements, incoming, outgoing, guide, nfs, factorR].some(
+  const hasUnknown = [movements, incoming, outgoing, guide, nfs, deliveryApplicability, factorR].some(
     (value) => value === "unknown",
   );
 
@@ -153,6 +156,7 @@ export function FiscalProfileDialog({
     setOutgoing(profile.outgoingApplicability);
     setGuide(profile.guideApplicability);
     setNfs(profile.nfsApplicability);
+    setDeliveryApplicability(profile.deliveryApplicability);
     setFactorR(profile.factorRApplicability);
     setDelivery(profile.deliveryChannel ?? "");
     setRevenue(profile.revenueReference ?? "");
@@ -170,6 +174,7 @@ export function FiscalProfileDialog({
         outgoingApplicability: outgoing,
         guideApplicability: guide,
         nfsApplicability: nfs,
+        deliveryApplicability,
         factorRApplicability: factorR,
         deliveryChannel: delivery,
         revenueReference: revenue,
@@ -220,19 +225,20 @@ export function FiscalProfileDialog({
             <ApplicabilityField id={`${clientId}-incoming`} label="Entrada" value={incoming} disabled={!canManage} onValueChange={setIncoming} />
             <ApplicabilityField id={`${clientId}-outgoing`} label="Saída" value={outgoing} disabled={!canManage} onValueChange={setOutgoing} />
             <ApplicabilityField id={`${clientId}-guide`} label="Guia" value={guide} disabled={!canManage} onValueChange={setGuide} />
-            <ApplicabilityField id={`${clientId}-nfs`} label="NFS" value={nfs} disabled={!canManage} onValueChange={setNfs} />
+            <ApplicabilityField id={`${clientId}-nfs`} label="Importar notas (NF-e/NFS-e)" value={nfs} disabled={!canManage} onValueChange={setNfs} />
+            <ApplicabilityField id={`${clientId}-delivery-required`} label="Enviar guia" value={deliveryApplicability} disabled={!canManage} onValueChange={setDeliveryApplicability} />
             <ApplicabilityField id={`${clientId}-factor-r`} label="Controla Fator R" value={factorR} disabled={!canManage} onValueChange={setFactorR} />
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
-              <Label htmlFor={`${clientId}-delivery`}>Forma de entrega</Label>
+              <Label htmlFor={`${clientId}-delivery`}>Canal de envio da guia</Label>
               <Input
                 id={`${clientId}-delivery`}
                 value={delivery}
-                disabled={!canManage}
+                disabled={!canManage || deliveryApplicability !== "required"}
                 maxLength={120}
-                placeholder="Onvio, malote, e-mail, pessoa…"
+                placeholder={deliveryApplicability === "required" ? "Onvio, malote, e-mail, pessoa…" : "Não é necessário enviar"}
                 onChange={(event) => setDelivery(event.target.value)}
               />
             </div>

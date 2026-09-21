@@ -1988,6 +1988,7 @@ export type FiscalClientProfileSnapshot = {
   outgoingApplicability: (typeof fiscalApplicability.enumValues)[number];
   guideApplicability: (typeof fiscalApplicability.enumValues)[number];
   nfsApplicability: (typeof fiscalApplicability.enumValues)[number];
+  deliveryApplicability?: (typeof fiscalApplicability.enumValues)[number];
   deliveryChannel: string | null;
   factorRApplicability: (typeof fiscalApplicability.enumValues)[number];
   revenueReference: string | null;
@@ -2040,6 +2041,9 @@ export const fiscalClientProfiles = pgTable(
       .notNull()
       .default("unknown"),
     nfsApplicability: fiscalApplicability("nfs_applicability")
+      .notNull()
+      .default("unknown"),
+    deliveryApplicability: fiscalApplicability("delivery_applicability")
       .notNull()
       .default("unknown"),
     deliveryChannel: varchar("delivery_channel", { length: 120 }),

@@ -47,11 +47,11 @@ const profileSchema = z.object({
   outgoingApplicability: applicabilitySchema,
   guideApplicability: applicabilitySchema,
   nfsApplicability: applicabilitySchema,
+  deliveryApplicability: applicabilitySchema,
   factorRApplicability: applicabilitySchema,
   deliveryChannel: z
     .string()
     .trim()
-    .min(1, "Informe a forma de entrega.")
     .max(120, "Forma de entrega muito longa."),
   revenueReference: z
     .string()
@@ -72,6 +72,7 @@ const profileSchema = z.object({
       value.outgoingApplicability,
       value.guideApplicability,
       value.nfsApplicability,
+      value.deliveryApplicability,
       value.factorRApplicability,
     ].every((item) => item !== "unknown"),
   "Revise todos os campos marcados como não informados.",
@@ -108,8 +109,9 @@ function changedProfileFields(
     ["outgoingApplicability", current.outgoingApplicability, next.outgoingApplicability],
     ["guideApplicability", current.guideApplicability, next.guideApplicability],
     ["nfsApplicability", current.nfsApplicability, next.nfsApplicability],
+    ["deliveryApplicability", current.deliveryApplicability, next.deliveryApplicability],
     ["factorRApplicability", current.factorRApplicability, next.factorRApplicability],
-    ["deliveryChannel", current.deliveryChannel ?? "", next.deliveryChannel],
+    ["deliveryChannel", current.deliveryChannel ?? "", next.deliveryApplicability === "required" ? next.deliveryChannel : ""],
     ["revenueReference", current.revenueReference ?? "", next.revenueReference ?? ""],
     ["permanentNotes", current.permanentNotes ?? "", next.permanentNotes ?? ""],
   ] as const;
@@ -169,8 +171,9 @@ export async function saveFiscalClientProfile(
       outgoingApplicability: data.outgoingApplicability,
       guideApplicability: data.guideApplicability,
       nfsApplicability: data.nfsApplicability,
+      deliveryApplicability: data.deliveryApplicability,
       factorRApplicability: data.factorRApplicability,
-      deliveryChannel: data.deliveryChannel,
+      deliveryChannel: data.deliveryApplicability === "required" ? data.deliveryChannel || null : null,
       revenueReference: data.revenueReference || null,
       permanentNotes: data.permanentNotes || null,
       updatedBy: ctx.userId,
@@ -200,6 +203,7 @@ export async function saveFiscalClientProfile(
           "outgoingApplicability",
           "guideApplicability",
           "nfsApplicability",
+          "deliveryApplicability",
           "factorRApplicability",
           "deliveryChannel",
           "revenueReference",
@@ -370,9 +374,8 @@ export async function updateFiscalControl(
         outgoing: control.profileSnapshot.outgoingApplicability,
         guide: control.profileSnapshot.guideApplicability,
         nfs: control.profileSnapshot.nfsApplicability,
-        delivery: control.profileSnapshot.deliveryChannel
-          ? "required" as const
-          : "not_applicable" as const,
+        delivery: control.profileSnapshot.deliveryApplicability ??
+          (control.profileSnapshot.deliveryChannel ? "required" as const : "not_applicable" as const),
       }[data.stage];
       const applies = applicability === "required" || applicability === "unknown";
       if (applies && data.stepStatus === "not_applicable") {

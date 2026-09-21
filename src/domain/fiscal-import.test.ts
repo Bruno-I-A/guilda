@@ -183,7 +183,8 @@ describe("normalização das colunas do controle fiscal", () => {
     ["NÃO", "no"],
     ["nao", "no"],
     [false, "no"],
-    ["X", "not_applicable"],
+    ["X", "yes"],
+    ["SM", "yes"],
     ["Não se aplica", "not_applicable"],
     ["", null],
     [null, null],
@@ -200,6 +201,8 @@ describe("normalização das colunas do controle fiscal", () => {
       raw: "TALVEZ",
       recognized: false,
     });
+    expect(parseFiscalApplicability(null, true).value).toBe("no");
+    expect(parseFiscalApplicability(undefined, true).value).toBeNull();
   });
 
   test.each([
@@ -221,7 +224,14 @@ describe("normalização das colunas do controle fiscal", () => {
     expect(parseFiscalDelivery("IMP/CAROL")).toEqual({
       kind: "custom",
       detail: "IMP/CAROL",
+      applicability: "yes",
       recognized: false,
+    });
+    expect(parseFiscalDelivery("SM")).toEqual({
+      kind: null,
+      detail: null,
+      applicability: "yes",
+      recognized: true,
     });
   });
 
@@ -246,7 +256,7 @@ describe("normalização das colunas do controle fiscal", () => {
     expect(parsed.companyName).toBe("ANA PAULA GOUVEIA");
     expect(parsed.normalizedCompanyName.core).toBe("ana paula gouveia");
     expect(parsed.movements.value).toBe("no");
-    expect(parsed.outgoing.value).toBe("not_applicable");
+    expect(parsed.outgoing.value).toBe("yes");
     expect(parsed.nfs.value).toBe("yes");
     expect(parsed.delivery).toMatchObject({ kind: "custom", detail: "Cati" });
     expect(parsed.observations).toBe("Controlar Fator R.");
@@ -322,6 +332,29 @@ describe("leitura das linhas da planilha fiscal", () => {
       "delivery",
     ]);
     expect(result.missingColumns).toEqual(["guide", "nfs", "observations"]);
+  });
+
+  test("mapeia a estrutura da planilha da carteira sem perder notas ou confundir vazio com coluna ausente", () => {
+    const result = parseFiscalSpreadsheetRows([
+      ["EMPRESAS", "MOVIMENTOS", "ENTRADA", "SAIDA", "GUIA", "ENTREGA", "NFE", "OBSERVAÇÕES"],
+      ["Empresa Exemplo", "NÃO", "X", "SM", null, "ONVIO", "X", "Orientação"],
+      ["Outra Empresa", "SIM", "SM", "SM", "SM", "SM", "SM", null],
+    ]);
+    expect(result.missingColumns).toEqual([]);
+    expect(result.rows[0]?.parsed).toMatchObject({
+      movements: { value: "no" },
+      incoming: { value: "yes" },
+      outgoing: { value: "yes" },
+      guide: { value: "no" },
+      delivery: { applicability: "yes", detail: "ONVIO" },
+      nfs: { value: "yes" },
+    });
+    expect(result.rows[1]?.parsed.delivery).toMatchObject({
+      applicability: "yes",
+      detail: null,
+    });
+    expect(result.rows[1]?.parsed.issues.map((issue) => issue.field)).toContain("delivery");
+    expect(result.rows[1]?.parsed.nfs.value).toBe("yes");
   });
 
   test("separa vazios, cabeçalhos repetidos, totais e linhas sem empresa", () => {

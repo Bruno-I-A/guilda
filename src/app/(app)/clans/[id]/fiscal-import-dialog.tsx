@@ -44,7 +44,7 @@ const COLUMN_LABELS: Record<string, string> = {
   outgoing: "Saída",
   guide: "Guia",
   delivery: "Entrega",
-  nfs: "NFS",
+  nfs: "Notas fiscais",
   observations: "Observações",
 };
 
@@ -54,8 +54,10 @@ function importedSummary(row: FiscalImportPreview["rows"][number]): string {
     row.imported.incoming ? `Entrada: ${APPLICABILITY_IMPORT_LABEL[row.imported.incoming] ?? row.imported.incoming}` : null,
     row.imported.outgoing ? `Saída: ${APPLICABILITY_IMPORT_LABEL[row.imported.outgoing] ?? row.imported.outgoing}` : null,
     row.imported.guide ? `Guia: ${APPLICABILITY_IMPORT_LABEL[row.imported.guide] ?? row.imported.guide}` : null,
-    row.imported.delivery ? `Entrega: ${row.imported.delivery}` : null,
-    row.imported.nfs ? `NFS: ${APPLICABILITY_IMPORT_LABEL[row.imported.nfs] ?? row.imported.nfs}` : null,
+    row.imported.deliveryApplicability
+      ? `Envio: ${APPLICABILITY_IMPORT_LABEL[row.imported.deliveryApplicability] ?? row.imported.deliveryApplicability}${row.imported.delivery ? ` (${row.imported.delivery})` : ""}`
+      : null,
+    row.imported.nfs ? `Notas: ${APPLICABILITY_IMPORT_LABEL[row.imported.nfs] ?? row.imported.nfs}` : null,
   ].filter(Boolean);
   return parts.join(" · ");
 }
@@ -76,7 +78,7 @@ const ISSUE_FIELD_LABELS: Record<string, string> = {
   outgoing: "Saída",
   guide: "Guia",
   delivery: "Entrega",
-  nfs: "NFS",
+  nfs: "Notas fiscais",
   observations: "Observações",
 };
 
@@ -91,7 +93,8 @@ function profileDiffs(
     ["Entrada", current?.incoming, row.imported.incoming],
     ["Saída", current?.outgoing, row.imported.outgoing],
     ["Guia", current?.guide, row.imported.guide],
-    ["NFS", current?.nfs, row.imported.nfs],
+    ["Notas fiscais", current?.nfs, row.imported.nfs],
+    ["Envio da guia", current?.deliveryApplicability, row.imported.deliveryApplicability],
   ] as const;
   const changes: { field: string; before: string; after: string }[] =
     definitions.flatMap(([field, before, after]) => {
@@ -102,11 +105,11 @@ function profileDiffs(
       ? []
       : [{ field, before: beforeLabel, after: afterLabel }];
     });
-  if (row.imported.delivery && row.imported.delivery !== (current?.delivery ?? "")) {
+  if (row.imported.deliveryApplicability && row.imported.delivery !== (current?.delivery ?? null)) {
     changes.push({
-      field: "Entrega",
+      field: "Canal de envio",
       before: current?.delivery ?? "Não informada",
-      after: row.imported.delivery,
+      after: row.imported.delivery ?? "Não informado",
     });
   }
   if (
@@ -151,6 +154,14 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
         return !resolution?.ignored && !resolution?.clientId;
       }).length
     : 0;
+  const selectedCounts = new Map<string, number>();
+  for (const resolution of Object.values(resolutions)) {
+    if (resolution.ignored || !resolution.clientId) continue;
+    selectedCounts.set(resolution.clientId, (selectedCounts.get(resolution.clientId) ?? 0) + 1);
+  }
+  const duplicatedTargets = new Set(
+    [...selectedCounts].filter(([, count]) => count > 1).map(([clientId]) => clientId),
+  );
 
   function buildInitialResolutions(data: FiscalImportPreview) {
     return Object.fromEntries(
@@ -186,7 +197,7 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
   }
 
   function apply() {
-    if (!preview || unresolved > 0 || !confirmed) return;
+    if (!preview || unresolved > 0 || duplicatedTargets.size > 0 || !confirmed) return;
     startTransition(async () => {
       const result = await applyFiscalImport({
         clanId,
@@ -230,7 +241,7 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
             <DialogDescription>
               O Excel não precisa ter CNPJ. O sistema compara os nomes com o
               cadastro e pede sua confirmação quando houver diferença ou dúvida.
-              Nenhuma empresa nova é criada automaticamente.
+              Nenhuma empresa nova é criada e a carteira dos membros não é alterada.
             </DialogDescription>
           </DialogHeader>
 
@@ -247,7 +258,12 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
                 <Input id="fiscal-import-file" name="file" type="file" accept=".xlsx" required />
                 <p className="text-xs text-muted-foreground">
                   Até 5 MB. Cabeçalhos esperados: Empresas, Movimentos,
-                  Entrada, Saída, Guia, Entrega, NFS e Observações.
+                  Entrada, Saída, Guia, Entrega, NFE/NFS e Observações.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  X, SM e Sim = precisa fazer; célula vazia e Não = não precisa.
+                  Em Entrega, Onvio é o canal de envio da guia. SM exige envio,
+                  mas deixa o canal pendente para revisão na ficha.
                 </p>
               </div>
               <DialogFooter>
@@ -316,7 +332,7 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
                         {resolution?.ignored ? (
                           <Badge variant="outline">Linha ignorada</Badge>
                         ) : selectedName ? (
-                          <p className="flex items-center gap-1.5 text-sm"><Check className="size-4 text-success" aria-hidden /><span className="truncate">{selectedName}</span>{selectedClient && !selectedClient.active ? <Badge variant="outline">inativa</Badge> : null}{row.status !== "matched" ? <Badge variant="outline">confirmada manualmente</Badge> : null}</p>
+                          <p className="flex items-center gap-1.5 text-sm"><Check className="size-4 text-success" aria-hidden /><span className="truncate">{selectedName}</span>{duplicatedTargets.has(resolution.clientId!) ? <Badge variant="outline" className="border-warning/40 text-warning">duplicada</Badge> : null}{selectedClient && !selectedClient.active ? <Badge variant="outline">inativa</Badge> : null}{row.status !== "matched" ? <Badge variant="outline">confirmada manualmente</Badge> : null}</p>
                         ) : (
                           <p className="flex items-center gap-1.5 text-sm text-destructive"><AlertTriangle className="size-4" aria-hidden /> Sem conciliação</p>
                         )}
@@ -363,12 +379,13 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
 
               <label className="flex items-start gap-2 rounded-lg border bg-muted/25 p-3 text-xs">
                 <input type="checkbox" className="mt-0.5 accent-primary" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
-                <span>Revisei as conciliações acima e autorizo atualizar as Fichas Fiscais com os valores presentes na planilha. Campos ausentes serão preservados.</span>
+                <span>Revisei as conciliações acima e autorizo atualizar as Fichas Fiscais. Células vazias nas colunas presentes significam “não precisa fazer”; colunas ausentes serão preservadas. A carteira dos membros não será alterada.</span>
               </label>
               {unresolved > 0 ? <p className="text-xs text-destructive">Concilie ou ignore {unresolved} linha(s) antes de aplicar.</p> : null}
+              {duplicatedTargets.size > 0 ? <p className="text-xs text-warning">Há linhas apontando para a mesma empresa. Concilie com empresas diferentes ou ignore a linha duplicada antes de aplicar.</p> : null}
               <DialogFooter>
                 <Button type="button" variant="outline" disabled={pending} onClick={() => { setPreview(null); setResolutions({}); }}>Escolher outro arquivo</Button>
-                <Button type="button" disabled={pending || unresolved > 0 || !confirmed} onClick={apply}>{pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Upload aria-hidden />} Aplicar importação</Button>
+                <Button type="button" disabled={pending || unresolved > 0 || duplicatedTargets.size > 0 || !confirmed} onClick={apply}>{pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Upload aria-hidden />} Aplicar importação</Button>
               </DialogFooter>
             </div>
           )}

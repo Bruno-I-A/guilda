@@ -53,6 +53,7 @@ export function initialFiscalControlSteps(profile: {
   outgoingApplicability: FiscalApplicability;
   guideApplicability: FiscalApplicability;
   nfsApplicability: FiscalApplicability;
+  deliveryApplicability: FiscalApplicability;
   deliveryChannel: string | null;
 }): Record<FiscalStage, FiscalStepStatus> {
   return {
@@ -60,7 +61,7 @@ export function initialFiscalControlSteps(profile: {
     incoming: initialFiscalStepStatus(profile.incomingApplicability),
     outgoing: initialFiscalStepStatus(profile.outgoingApplicability),
     guide: initialFiscalStepStatus(profile.guideApplicability),
-    delivery: profile.deliveryChannel?.trim() ? "pending" : "not_applicable",
+    delivery: initialFiscalStepStatus(profile.deliveryApplicability),
     nfs: initialFiscalStepStatus(profile.nfsApplicability),
   };
 }
@@ -87,14 +88,14 @@ export interface FiscalProfileCompletenessFacts {
   outgoingApplicability?: FiscalApplicability | null;
   guideApplicability?: FiscalApplicability | null;
   nfsApplicability?: FiscalApplicability | null;
+  deliveryApplicability?: FiscalApplicability | null;
   factorRApplicability?: FiscalApplicability | null;
   deliveryChannel?: string | null;
 }
 
 /**
- * Receita e observações são opcionais; os cinco marcadores, Fator R e a
- * forma de entrega precisam ser explicitamente conhecidos para a ficha
- * deixar de aparecer como incompleta.
+ * Receita e observações são opcionais. A necessidade de envio é independente
+ * do canal; se houver envio, o canal continua pendente até ser informado.
  */
 export function fiscalProfileMissingFields(
   profile: FiscalProfileCompletenessFacts,
@@ -106,8 +107,9 @@ export function fiscalProfileMissingFields(
   if (!profile.incomingApplicability || profile.incomingApplicability === "unknown") missing.push("entrada");
   if (!profile.outgoingApplicability || profile.outgoingApplicability === "unknown") missing.push("saída");
   if (!profile.guideApplicability || profile.guideApplicability === "unknown") missing.push("guia");
-  if (!profile.nfsApplicability || profile.nfsApplicability === "unknown") missing.push("NFS");
+  if (!profile.nfsApplicability || profile.nfsApplicability === "unknown") missing.push("notas fiscais");
   if (!profile.factorRApplicability || profile.factorRApplicability === "unknown") missing.push("Fator R");
-  if (!profile.deliveryChannel?.trim()) missing.push("entrega");
+  if (!profile.deliveryApplicability || profile.deliveryApplicability === "unknown") missing.push("entrega");
+  else if (profile.deliveryApplicability === "required" && !profile.deliveryChannel?.trim()) missing.push("canal de entrega");
   return missing;
 }
