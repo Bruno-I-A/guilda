@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 import {
   applyFiscalImport,
@@ -229,23 +230,80 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
 
   return (
     <>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setEditingRowId(null);
+      }}>
         <DialogTrigger asChild>
           <Button type="button" variant="outline" size="sm">
             <FileSpreadsheet aria-hidden /> Importar planilha fiscal
           </Button>
         </DialogTrigger>
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-5xl">
+        <DialogContent className={cn("max-h-[92vh] overflow-y-auto", editingRow ? "sm:max-w-lg" : "sm:max-w-5xl")}>
           <DialogHeader>
-            <DialogTitle>Importar e conciliar planilha fiscal</DialogTitle>
+            <DialogTitle>{editingRow ? `Conciliar “${editingRow.sourceName}”` : "Importar e conciliar planilha fiscal"}</DialogTitle>
             <DialogDescription>
-              O Excel não precisa ter CNPJ. O sistema compara os nomes com o
-              cadastro e pede sua confirmação quando houver diferença ou dúvida.
-              Nenhuma empresa nova é criada e a carteira dos membros não é alterada.
+              {editingRow
+                ? "Escolha uma empresa já cadastrada. Esta decisão será memorizada como alias."
+                : "O Excel não precisa ter CNPJ. O sistema compara os nomes com o cadastro e pede sua confirmação quando houver diferença ou dúvida. Nenhuma empresa nova é criada e a carteira dos membros não é alterada."}
             </DialogDescription>
           </DialogHeader>
 
-          {!preview ? (
+          {editingRow ? (
+            <div className="grid gap-3">
+              {editingRow.suggestions.length > 0 ? (
+                <div className="grid gap-1.5">
+                  <span className="text-xs font-medium">Sugestões</span>
+                  {editingRow.suggestions.map((suggestion) => (
+                    <button key={suggestion.clientId} type="button" className="rounded-lg border p-2 text-left text-sm hover:bg-muted/50" onClick={() => { setRow(editingRow.id, { clientId: suggestion.clientId, ignored: false }); setEditingRowId(null); }}>
+                      <span className="flex items-center justify-between gap-2"><strong>{suggestion.clientName}</strong><Badge variant="outline">{Math.round(suggestion.score * 100)}%</Badge></span>
+                      <span className="text-[11px] text-muted-foreground">{suggestion.reasons[0]}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="grid gap-1.5">
+                <Label htmlFor="fiscal-import-client-search">Outra empresa cadastrada</Label>
+                <Input
+                  id="fiscal-import-client-search"
+                  value={clientSearch}
+                  placeholder="Digite parte do nome da empresa…"
+                  autoFocus
+                  onChange={(event) => setClientSearch(event.target.value)}
+                />
+                <div className="max-h-52 overflow-y-auto rounded-lg border p-1">
+                  {filteredClients.length > 0 ? (
+                    filteredClients.map((client) => (
+                      <button
+                        key={client.id}
+                        type="button"
+                        className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted/60"
+                        onClick={() => {
+                          setRow(editingRow.id, {
+                            clientId: client.id,
+                            ignored: false,
+                          });
+                          setEditingRowId(null);
+                        }}
+                      >
+                        <span>{client.name}</span>
+                        {!client.active ? <Badge variant="outline">inativa</Badge> : null}
+                      </button>
+                    ))
+                  ) : (
+                    <p className="px-2.5 py-3 text-xs text-muted-foreground">
+                      Nenhuma empresa encontrada.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditingRowId(null)}>
+                  Voltar à prévia
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : !preview ? (
             <form
               className="grid gap-4"
               onSubmit={(event) => {
@@ -392,63 +450,6 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(editingRow)} onOpenChange={(next) => !next && setEditingRowId(null)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Conciliar “{editingRow?.sourceName}”</DialogTitle>
-            <DialogDescription>Escolha uma empresa já cadastrada. Esta decisão será memorizada como alias.</DialogDescription>
-          </DialogHeader>
-          {editingRow ? (
-            <div className="grid gap-3">
-              {editingRow.suggestions.length > 0 ? (
-                <div className="grid gap-1.5">
-                  <span className="text-xs font-medium">Sugestões</span>
-                  {editingRow.suggestions.map((suggestion) => (
-                    <button key={suggestion.clientId} type="button" className="rounded-lg border p-2 text-left text-sm hover:bg-muted/50" onClick={() => { setRow(editingRow.id, { clientId: suggestion.clientId, ignored: false }); setEditingRowId(null); }}>
-                      <span className="flex items-center justify-between gap-2"><strong>{suggestion.clientName}</strong><Badge variant="outline">{Math.round(suggestion.score * 100)}%</Badge></span>
-                      <span className="text-[11px] text-muted-foreground">{suggestion.reasons[0]}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <div className="grid gap-1.5">
-                <Label>Outra empresa cadastrada</Label>
-                <Input
-                  value={clientSearch}
-                  placeholder="Digite parte do nome da empresa…"
-                  autoFocus
-                  onChange={(event) => setClientSearch(event.target.value)}
-                />
-                <div className="max-h-52 overflow-y-auto rounded-lg border p-1">
-                  {filteredClients.length > 0 ? (
-                    filteredClients.map((client) => (
-                      <button
-                        key={client.id}
-                        type="button"
-                        className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted/60"
-                        onClick={() => {
-                          setRow(editingRow.id, {
-                            clientId: client.id,
-                            ignored: false,
-                          });
-                          setEditingRowId(null);
-                        }}
-                      >
-                        <span>{client.name}</span>
-                        {!client.active ? <Badge variant="outline">inativa</Badge> : null}
-                      </button>
-                    ))
-                  ) : (
-                    <p className="px-2.5 py-3 text-xs text-muted-foreground">
-                      Nenhuma empresa encontrada.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
