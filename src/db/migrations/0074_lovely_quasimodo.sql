@@ -1,0 +1,2 @@
+ALTER TABLE "accounting_closings" ADD COLUMN "period_month" smallint;--> statement-breakpoint
+ALTER TABLE "accounting_closings" ADD CONSTRAINT "accounting_closings_period_month_check" CHECK ("accounting_closings"."period_month" is null or "accounting_closings"."period_month" between 1 and 12);

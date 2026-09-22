@@ -11,6 +11,7 @@ import {
   canManageClanClosings,
   type ClosingActorFacts,
 } from "@/domain/guild-permissions";
+import { accountingPeriodTitle } from "@/domain/accounting-period";
 import { CLOSING_YEAR_XP } from "@/domain/xp";
 import {
   err,
@@ -137,12 +138,19 @@ function optionalMoneySchema(
     });
 }
 
+const closingMonthSchema = z.preprocess(
+  (value) => {
+    if (value === "" || value === undefined || value === null) return null;
+    if (typeof value === "number") return value;
+    return typeof value === "string" && /^\d{1,2}$/.test(value)
+      ? Number(value)
+      : value;
+  },
+  z.number().int().min(1).max(12).nullable(),
+);
+
 const closingFields = {
-  title: z
-    .string()
-    .trim()
-    .min(2, "Descreva o fechamento.")
-    .max(160, "Descrição muito longa."),
+  periodMonth: closingMonthSchema,
   notes: z.string().trim().max(3000, "Observação muito longa."),
   cashBalance: optionalMoneySchema("Saldo de caixa"),
   periodResult: optionalMoneySchema("Resultado"),
@@ -159,6 +167,14 @@ const createClosingSchema = z.object({
   ...closingFields,
   clientId: z.uuid(),
   year: yearSchema,
+}).superRefine((data, ctx) => {
+  if (data.periodMonth === null) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["periodMonth"],
+      message: "Selecione o mês do fechamento.",
+    });
+  }
 });
 
 export async function createClosing(
@@ -193,7 +209,8 @@ export async function createClosing(
       .values({
         orgId: ctx.orgId,
         clientId: client.id,
-        title: data.title,
+        title: accountingPeriodTitle(data.year, data.periodMonth!),
+        periodMonth: data.periodMonth,
         dueDate: `${data.year}-12-31`,
         status: "completed",
         notes: data.notes || null,
@@ -244,9 +261,18 @@ export async function updateClosing(
         eq(schema.accountingClosings.id, data.closingId),
         eq(schema.accountingClosings.orgId, ctx.orgId),
       ),
-      columns: { id: true, completedAt: true, completedBy: true },
+      columns: {
+        id: true,
+        completedAt: true,
+        completedBy: true,
+        title: true,
+        periodMonth: true,
+      },
     });
     if (!closing) return err("Fechamento não encontrado.");
+    if (closing.periodMonth !== null && data.periodMonth === null) {
+      return err("Selecione o mês do fechamento.");
+    }
     const client = await tx.query.clients.findFirst({
       where: and(
         eq(schema.clients.id, data.clientId),
@@ -262,7 +288,11 @@ export async function updateClosing(
       .update(schema.accountingClosings)
       .set({
         clientId: client.id,
-        title: data.title,
+        title:
+          data.periodMonth === null
+            ? closing.title
+            : accountingPeriodTitle(data.year, data.periodMonth),
+        periodMonth: data.periodMonth,
         dueDate: `${data.year}-12-31`,
         status: "completed",
         notes: data.notes || null,

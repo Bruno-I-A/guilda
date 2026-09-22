@@ -33,9 +33,17 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { ClosingStatus } from "@/lib/closings-ui";
 import { formatBRLCurrency } from "@/lib/currency";
+import { ACCOUNTING_PERIOD_MONTHS } from "@/domain/accounting-period";
 import { CLOSING_YEAR_XP } from "@/domain/xp";
 import {
   TAX_REGIME_BADGE_CLASSES,
@@ -73,6 +81,7 @@ export interface ClosingView {
   id: string;
   clientId: string;
   title: string;
+  periodMonth: number | null;
   dueDate: string;
   status: ClosingStatus;
   notes: string | null;
@@ -115,7 +124,7 @@ export interface CompanyClosingView {
 interface ClosingFields {
   clientId: string;
   year: number;
-  title: string;
+  periodMonth: number | null;
   notes: string;
   cashBalance: string;
   periodResult: string;
@@ -149,7 +158,9 @@ function ClosingFormDialog({
         toast.error(result.error);
         return;
       }
-      toast.success(initial ? "Fechamento atualizado." : "Período adicionado.");
+      toast.success(
+        initial ? "Fechamento atualizado." : "Mês fechado registrado.",
+      );
       onOpenChange(false);
       router.refresh();
     });
@@ -175,10 +186,13 @@ function ClosingFormDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            {initial ? "Editar período" : "Adicionar período fechado"}
+            {initial ? "Editar fechamento mensal" : "Registrar mês fechado"}
           </DialogTitle>
           <DialogDescription>
-            {company.name} · registre somente um período que já foi fechado.
+            {company.name} · {year}.{" "}
+            {initial?.periodMonth === null
+              ? `Este registro antigo (“${initial.title}”) ainda não tem mês associado. Selecione o mês abaixo para habilitar o filtro mensal.`
+              : "Cada mês fechado fica em um registro separado."}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -189,7 +203,10 @@ function ClosingFormDialog({
             submit({
               clientId: company.id,
               year,
-              title: String(form.get("title") ?? ""),
+              periodMonth:
+                form.get("periodMonth") === "legacy"
+                  ? null
+                  : Number(form.get("periodMonth")) || null,
               notes: String(form.get("notes") ?? ""),
               cashBalance: String(form.get("cashBalance") ?? ""),
               periodResult: String(form.get("periodResult") ?? ""),
@@ -198,15 +215,37 @@ function ClosingFormDialog({
           }}
         >
           <div className="grid gap-2">
-            <Label htmlFor="closing-title">Período ou identificação</Label>
-            <Input
-              id="closing-title"
-              name="title"
-              defaultValue={initial?.title ?? ""}
-              placeholder="Ex.: Janeiro a abril ou Fechamento solicitado em maio"
-              maxLength={160}
-              required
-            />
+            <Label htmlFor="closing-period-month">Mês fechado</Label>
+            <Select
+              name="periodMonth"
+              required={!initial}
+              defaultValue={
+                initial
+                  ? initial.periodMonth === null
+                    ? "legacy"
+                    : String(initial.periodMonth)
+                  : undefined
+              }
+            >
+              <SelectTrigger id="closing-period-month" className="w-full">
+                <SelectValue placeholder="Selecione o mês fechado" />
+              </SelectTrigger>
+              <SelectContent>
+                {initial?.periodMonth === null ? (
+                  <SelectItem value="legacy">
+                    Sem mês informado (registro antigo)
+                  </SelectItem>
+                ) : null}
+                {ACCOUNTING_PERIOD_MONTHS.map((month, index) => (
+                  <SelectItem key={month} value={String(index + 1)}>
+                    {month} de {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Registre um mês por vez; para novembro e dezembro, crie dois fechamentos.
+            </p>
           </div>
 
           <div className="grid gap-2">

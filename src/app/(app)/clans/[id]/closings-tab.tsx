@@ -8,14 +8,31 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+import { Button } from "@/components/ui/button";
 import {
   observationState,
   parseObservationScope,
 } from "@/domain/closing-observations";
+import {
+  ACCOUNTING_PERIOD_MONTHS,
+  matchesAccountingClosingFilters,
+  type AccountingMonthFilter,
+  type AccountingObservationFilter,
+  type AccountingPeriodStatusFilter,
+  type AccountingYearFilter,
+} from "@/domain/accounting-period";
 
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import {
@@ -30,9 +47,6 @@ import {
   type CompanyClosingView,
 } from "./closing-board";
 import { ClanEmptyState, ClanSectionHeading } from "./clan-ui";
-
-type YearFilter = "all" | "open" | "completed";
-type ObservationFilter = "all" | "with" | "without" | "pending";
 
 function todayInSaoPaulo(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -67,6 +81,8 @@ export interface ClosingsTabParams {
   yearStatus?: string;
   observationStatus?: string;
   periodClosings?: string;
+  periodStatus?: string;
+  periodMonth?: string;
 }
 
 /**
@@ -91,7 +107,7 @@ export async function ClosingsTab({
   const year = parseYear(params.year);
   const group = parseGroup(params.group);
   const legacyStatus = params.status;
-  const yearStatus: YearFilter =
+  const yearStatus: AccountingYearFilter =
     params.yearStatus === "open" || params.yearStatus === "completed"
       ? params.yearStatus
       : legacyStatus === "open" || legacyStatus === "completed"
@@ -101,7 +117,7 @@ export async function ClosingsTab({
     params.observationStatus === "none"
       ? "without"
       : params.observationStatus;
-  const observationStatus: ObservationFilter =
+  const observationStatus: AccountingObservationFilter =
     requestedObservationStatus === "with" ||
     requestedObservationStatus === "without" ||
     requestedObservationStatus === "pending"
@@ -109,9 +125,22 @@ export async function ClosingsTab({
       : legacyStatus === "notes"
         ? "pending"
         : "all";
-  const periodClosings =
-    params.periodClosings === "1" ||
-    (params.periodClosings === undefined && legacyStatus === "periods");
+  const periodStatus: AccountingPeriodStatusFilter =
+    params.periodStatus === "some" || params.periodStatus === "none"
+      ? params.periodStatus
+      : params.periodClosings === "1" ||
+          (params.periodStatus === undefined && legacyStatus === "periods")
+        ? "some"
+        : "all";
+  const parsedPeriodMonth = Number(params.periodMonth);
+  const periodMonth: AccountingMonthFilter =
+    params.periodMonth === "unknown"
+      ? "unknown"
+      : Number.isInteger(parsedPeriodMonth) &&
+          parsedPeriodMonth >= 1 &&
+          parsedPeriodMonth <= 12
+        ? parsedPeriodMonth
+        : "all";
   const q = (params.q ?? "").trim();
 
   const clientConditions: SQL[] = [
@@ -205,6 +234,7 @@ export async function ClosingsTab({
       id: closing.id,
       clientId: closing.clientId,
       title: closing.title,
+      periodMonth: closing.periodMonth,
       dueDate: closing.dueDate,
       status: closing.status,
       notes: closing.notes,
@@ -220,6 +250,9 @@ export async function ClosingsTab({
     list.sort((a, b) => {
       if (a.status === "completed" && b.status !== "completed") return 1;
       if (a.status !== "completed" && b.status === "completed") return -1;
+      const monthOrderA = a.periodMonth ?? 13;
+      const monthOrderB = b.periodMonth ?? 13;
+      if (monthOrderA !== monthOrderB) return monthOrderA - monthOrderB;
       return a.dueDate.localeCompare(b.dueDate);
     });
   }
@@ -289,18 +322,28 @@ export async function ClosingsTab({
           closing.notes?.toLocaleLowerCase("pt-BR").includes(normalizedQuery),
       );
     if (!matchesQuery) return false;
-    if (yearStatus === "open" && company.yearClosedAt) return false;
-    if (yearStatus === "completed" && !company.yearClosedAt) return false;
-    if (observationStatus === "with" && company.observations.length === 0) return false;
-    if (observationStatus === "without" && company.observations.length > 0) return false;
-    if (observationStatus === "pending" && !hasNotes(company)) return false;
-    if (periodClosings && company.closings.length === 0) return false;
-    return true;
+    return matchesAccountingClosingFilters(
+      {
+        yearClosed: Boolean(company.yearClosedAt),
+        observationCount: company.observations.length,
+        hasPendingObservation: hasNotes(company),
+        closingMonths: company.closings.map((closing) => closing.periodMonth),
+      },
+      {
+        year: yearStatus,
+        observations: observationStatus,
+        periods: periodStatus,
+        month: periodMonth,
+      },
+    );
   });
 
   const closedCount = allCompanies.filter((company) => company.yearClosedAt).length;
   const openCount = allCompanies.length - closedCount;
   const notesCount = allCompanies.filter(hasNotes).length;
+  const noPeriodCount = allCompanies.filter(
+    (company) => company.closings.length === 0,
+  ).length;
   const defisPendingCount =
     group === "simples"
       ? allCompanies.filter(
@@ -317,9 +360,10 @@ export async function ClosingsTab({
       year: number;
       group: ClosingGroup;
       q: string;
-      yearStatus: YearFilter;
-      observationStatus: ObservationFilter;
-      periodClosings: boolean;
+      yearStatus: AccountingYearFilter;
+      observationStatus: AccountingObservationFilter;
+      periodStatus: AccountingPeriodStatusFilter;
+      periodMonth: AccountingMonthFilter;
     }>,
   ): string {
     const next = {
@@ -328,7 +372,8 @@ export async function ClosingsTab({
       q,
       yearStatus,
       observationStatus,
-      periodClosings,
+      periodStatus,
+      periodMonth,
       ...overrides,
     };
     const query = new URLSearchParams({
@@ -341,7 +386,10 @@ export async function ClosingsTab({
     if (next.observationStatus !== "all") {
       query.set("observationStatus", next.observationStatus);
     }
-    if (next.periodClosings) query.set("periodClosings", "1");
+    if (next.periodStatus !== "all") query.set("periodStatus", next.periodStatus);
+    if (next.periodMonth !== "all") {
+      query.set("periodMonth", String(next.periodMonth));
+    }
     return `/clans/${clanId}?${query}`;
   }
 
@@ -391,7 +439,8 @@ export async function ClosingsTab({
               group: item.key,
               yearStatus: "all",
               observationStatus: "all",
-              periodClosings: false,
+              periodStatus: "all",
+              periodMonth: "all",
               q: "",
             })}
             aria-current={group === item.key ? "page" : undefined}
@@ -421,10 +470,16 @@ export async function ClosingsTab({
           </Badge>
         </div>
         <Progress value={progress} className="h-2" />
-        <div className="grid grid-cols-3 gap-2 text-center font-mono text-xs">
+        <div className="grid grid-cols-2 gap-2 text-center font-mono text-xs sm:grid-cols-4">
           <div>
             <p className="text-lg font-semibold text-foreground">{openCount}</p>
             <p className="text-muted-foreground">anos em aberto</p>
+          </div>
+          <div>
+            <p className={cn("text-lg font-semibold", noPeriodCount && "text-warning")}>
+              {noPeriodCount}
+            </p>
+            <p className="text-muted-foreground">sem períodos no ano</p>
           </div>
           <div>
             <p className={cn("text-lg font-semibold", notesCount && "text-warning")}>
@@ -448,106 +503,126 @@ export async function ClosingsTab({
         </div>
       </section>
 
-      <div className="grid gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="grid gap-2">
-            <nav
-              aria-label="Filtrar situação do ano"
-              className="flex max-w-full overflow-x-auto border-y border-border/80 bg-card/20"
-            >
-              {(
-                [
-                  ["all", "Todos os anos"],
-                  ["open", "Ano em aberto"],
-                  ["completed", "Ano fechado"],
-                ] as const
-              ).map(([key, label]) => (
-                <Link
-                  key={key}
-                  href={href({ yearStatus: key })}
-                  aria-current={yearStatus === key ? "page" : undefined}
-                  className={cn(
-                    "relative min-h-10 whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors",
-                    yearStatus === key
-                      ? "bg-primary/8 text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:bg-primary"
-                      : "text-muted-foreground hover:bg-muted/30 hover:text-foreground",
-                  )}
-                >
-                  {label}
-                </Link>
-              ))}
-            </nav>
-            <nav
-              aria-label="Filtrar observações"
-              className="flex max-w-full overflow-x-auto border-y border-border/80 bg-card/20"
-            >
-              {(
-                [
-                  ["all", "Todas"],
-                  ["with", "Com observação"],
-                  ["without", "Sem observação"],
-                  ["pending", "Com pendência"],
-                ] as const
-              ).map(([key, label]) => (
-                <Link
-                  key={key}
-                  href={href({ observationStatus: key })}
-                  aria-current={observationStatus === key ? "page" : undefined}
-                  className={cn(
-                    "relative min-h-10 whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors",
-                    observationStatus === key
-                      ? "bg-primary/8 text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:bg-primary"
-                      : "text-muted-foreground hover:bg-muted/30 hover:text-foreground",
-                  )}
-                >
-                  {label}
-                </Link>
-              ))}
-              <Link
-                href={href({ periodClosings: !periodClosings })}
-                aria-current={periodClosings ? "page" : undefined}
-                className={cn(
-                  "relative min-h-10 whitespace-nowrap border-l border-border/80 px-3 py-2 text-sm font-medium transition-colors",
-                  periodClosings
-                    ? "bg-primary/8 text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:bg-primary"
-                    : "text-muted-foreground hover:bg-muted/30 hover:text-foreground",
-                )}
-              >
-                Com fechamentos no período
-              </Link>
-            </nav>
+      <form
+        action={`/clans/${clanId}`}
+        method="get"
+        className="panel-cut grid gap-4 border bg-card/20 p-4"
+      >
+        <input type="hidden" name="tab" value="closings" />
+        <input type="hidden" name="year" value={year} />
+        <input type="hidden" name="group" value={group} />
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h3>Encontrar empresas</h3>
+            <p className="text-sm text-muted-foreground">
+              Escolha os critérios e aplique todos de uma vez.
+            </p>
           </div>
-          <form className="relative" action={`/clans/${clanId}`}>
-            <input type="hidden" name="tab" value="closings" />
-            <input type="hidden" name="year" value={year} />
-            <input type="hidden" name="group" value={group} />
-            {yearStatus !== "all" ? (
-              <input type="hidden" name="yearStatus" value={yearStatus} />
-            ) : null}
-            {observationStatus !== "all" ? (
-              <input type="hidden" name="observationStatus" value={observationStatus} />
-            ) : null}
-            {periodClosings ? (
-              <input type="hidden" name="periodClosings" value="1" />
-            ) : null}
-            <Search
-              className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
-            <Input
-              type="search"
-              name="q"
-              defaultValue={q}
-              placeholder="Buscar empresa ou período…"
-              className="w-64 pl-8"
-              aria-label="Buscar empresa ou período"
-            />
-          </form>
+          <p className="font-mono text-sm text-muted-foreground">
+            {companies.length} {companies.length === 1 ? "empresa" : "empresas"}
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Os filtros selecionados são combinados.
-        </p>
-      </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-1.5">
+            <Label htmlFor="closing-year-filter">Encerramento anual</Label>
+            <Select name="yearStatus" defaultValue={yearStatus}>
+              <SelectTrigger id="closing-year-filter" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="open">Ano em aberto</SelectItem>
+                <SelectItem value="completed">Ano fechado</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="closing-period-status-filter">Períodos no ano</Label>
+            <Select name="periodStatus" defaultValue={periodStatus}>
+              <SelectTrigger id="closing-period-status-filter" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Com ou sem períodos</SelectItem>
+                <SelectItem value="some">Com períodos lançados</SelectItem>
+                <SelectItem value="none">Sem períodos lançados</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="closing-month-filter">Mês de fechamento</Label>
+            <Select
+              name="periodMonth"
+              defaultValue={String(periodMonth)}
+            >
+              <SelectTrigger id="closing-month-filter" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os meses</SelectItem>
+                <SelectItem value="unknown">
+                  Mês não informado (registro antigo)
+                </SelectItem>
+                {ACCOUNTING_PERIOD_MONTHS.map((month, index) => (
+                  <SelectItem key={month} value={String(index + 1)}>
+                    {month}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="closing-observation-filter">Observações</Label>
+            <Select name="observationStatus" defaultValue={observationStatus}>
+              <SelectTrigger id="closing-observation-filter" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas</SelectItem>
+                <SelectItem value="with">Com observação</SelectItem>
+                <SelectItem value="without">Sem observação</SelectItem>
+                <SelectItem value="pending">Com pendência aberta</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="closing-search">Buscar</Label>
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                id="closing-search"
+                type="search"
+                name="q"
+                defaultValue={q}
+                placeholder="Empresa ou período"
+                className="w-full pl-8"
+              />
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 border-t border-border/70 pt-3">
+          <Button type="submit">Aplicar filtros</Button>
+          <Button asChild variant="outline">
+            <Link
+              href={href({
+                yearStatus: "all",
+                periodStatus: "all",
+                periodMonth: "all",
+                observationStatus: "all",
+                q: "",
+              })}
+            >
+              Limpar filtros
+            </Link>
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            As opções selecionadas são combinadas.
+          </span>
+        </div>
+      </form>
 
       {companies.length > 0 ? (
         <CompanyClosingBoard
@@ -565,7 +640,7 @@ export async function ClosingsTab({
             : "Nenhuma empresa com estes filtros"}
           description={allCompanies.length === 0
             ? "Cadastre uma empresa para começar."
-            : "Ajuste a busca ou selecione outra situação."}
+            : "A combinação atual não encontrou empresas. Ajuste os filtros ou use Limpar filtros."}
           className="relative"
         />
       )}
