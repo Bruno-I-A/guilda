@@ -22,11 +22,19 @@ export type AccountingObservationFilter =
 export type AccountingPeriodStatusFilter = "all" | "some" | "none";
 export type AccountingMonthFilter = number | "all" | "unknown";
 
+export function completedAccountingMonths(
+  closings: readonly { periodMonth: number | null; status: string }[],
+): (number | null)[] {
+  return closings
+    .filter((closing) => closing.status === "completed")
+    .map((closing) => closing.periodMonth);
+}
+
 export interface AccountingClosingFilterFacts {
   yearClosed: boolean;
   observationCount: number;
   hasPendingObservation: boolean;
-  closingMonths: readonly (number | null)[];
+  completedMonths: readonly (number | null)[];
 }
 
 export function matchesAccountingClosingFilters(
@@ -49,24 +57,14 @@ export function matchesAccountingClosingFilters(
   if (filters.observations === "pending" && !facts.hasPendingObservation) {
     return false;
   }
-  if (filters.periods === "some" && facts.closingMonths.length === 0) {
-    return false;
-  }
-  if (filters.periods === "none" && facts.closingMonths.length > 0) {
-    return false;
-  }
-  if (
-    filters.month === "unknown" &&
-    !facts.closingMonths.includes(null)
-  ) {
-    return false;
-  }
-  if (
-    typeof filters.month === "number" &&
-    !facts.closingMonths.includes(filters.month)
-  ) {
-    return false;
-  }
+  const hasClosingInScope =
+    filters.month === "all"
+      ? facts.completedMonths.length > 0
+      : facts.completedMonths.includes(
+          filters.month === "unknown" ? null : filters.month,
+        );
+  if (filters.periods === "some" && !hasClosingInScope) return false;
+  if (filters.periods === "none" && hasClosingInScope) return false;
   return true;
 }
 

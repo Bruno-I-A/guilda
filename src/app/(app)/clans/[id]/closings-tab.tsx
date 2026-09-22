@@ -15,6 +15,7 @@ import {
 } from "@/domain/closing-observations";
 import {
   ACCOUNTING_PERIOD_MONTHS,
+  completedAccountingMonths,
   matchesAccountingClosingFilters,
   type AccountingMonthFilter,
   type AccountingObservationFilter,
@@ -327,7 +328,7 @@ export async function ClosingsTab({
         yearClosed: Boolean(company.yearClosedAt),
         observationCount: company.observations.length,
         hasPendingObservation: hasNotes(company),
-        closingMonths: company.closings.map((closing) => closing.periodMonth),
+        completedMonths: completedAccountingMonths(company.closings),
       },
       {
         year: yearStatus,
@@ -354,6 +355,23 @@ export async function ClosingsTab({
     allCompanies.length === 0
       ? 0
       : Math.round((closedCount / allCompanies.length) * 100);
+  const focusedMonth = typeof periodMonth === "number" ? periodMonth : null;
+  const monthClosedCount = focusedMonth === null
+    ? 0
+    : allCompanies.filter((company) =>
+        completedAccountingMonths(company.closings).includes(focusedMonth),
+      ).length;
+  const monthPendingCount = allCompanies.length - monthClosedCount;
+  const monthProgress = allCompanies.length === 0
+    ? 0
+    : Math.round((monthClosedCount / allCompanies.length) * 100);
+  const unclassifiedCount = allCompanies.filter((company) =>
+    company.closings.some(
+      (closing) => closing.periodMonth === null && closing.status === "completed",
+    ),
+  ).length;
+  const fullMonthlyList =
+    yearStatus === "all" && observationStatus === "all" && !q;
 
   function href(
     overrides: Partial<{
@@ -457,6 +475,81 @@ export async function ClosingsTab({
         ))}
       </nav>
 
+      {focusedMonth !== null ? (
+        <section
+          className="panel-cut texture-iron grid gap-4 p-4"
+          aria-label={`Progresso de ${ACCOUNTING_PERIOD_MONTHS[focusedMonth - 1]} de ${year}`}
+        >
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="hud-label">
+                Fechamento de {ACCOUNTING_PERIOD_MONTHS[focusedMonth - 1]} de {year}
+              </p>
+              <p className="mt-1 text-xl font-semibold">
+                {monthClosedCount} de {allCompanies.length} empresas fechadas
+              </p>
+              <p className="mt-1 font-mono text-sm text-warning">
+                {monthPendingCount}{" "}
+                {monthPendingCount === 1 ? "empresa pendente" : "empresas pendentes"}
+              </p>
+            </div>
+            <Badge className="border-primary/25 bg-primary/10 font-mono text-primary">
+              {monthProgress}%
+            </Badge>
+          </div>
+          <Progress value={monthProgress} className="h-2" />
+          <div className="flex flex-wrap gap-2">
+            <Button
+              asChild
+              size="sm"
+              variant={
+                fullMonthlyList && periodStatus === "none" ? "default" : "outline"
+              }
+            >
+              <Link
+                href={href({
+                  periodStatus: "none",
+                  yearStatus: "all",
+                  observationStatus: "all",
+                  q: "",
+                })}
+              >
+                Ver pendentes ({monthPendingCount})
+              </Link>
+            </Button>
+            <Button
+              asChild
+              size="sm"
+              variant={
+                fullMonthlyList && periodStatus === "some" ? "default" : "outline"
+              }
+            >
+              <Link
+                href={href({
+                  periodStatus: "some",
+                  yearStatus: "all",
+                  observationStatus: "all",
+                  q: "",
+                })}
+              >
+                Ver fechadas ({monthClosedCount})
+              </Link>
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            O progresso considera todas as empresas deste regime, mesmo que outros filtros estejam ativos.
+          </p>
+          {unclassifiedCount > 0 ? (
+            <p className="text-xs text-warning">
+              {unclassifiedCount}{" "}
+              {unclassifiedCount === 1 ? "empresa tem" : "empresas têm"}{" "}
+              fechamento antigo sem mês classificado. Edite esses registros para
+              incluí-los no progresso mensal.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       <section className="panel-cut texture-iron grid gap-4 p-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -537,20 +630,20 @@ export async function ClosingsTab({
             </Select>
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor="closing-period-status-filter">Períodos no ano</Label>
+            <Label htmlFor="closing-period-status-filter">Situação do período</Label>
             <Select name="periodStatus" defaultValue={periodStatus}>
               <SelectTrigger id="closing-period-status-filter" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Com ou sem períodos</SelectItem>
-                <SelectItem value="some">Com períodos lançados</SelectItem>
-                <SelectItem value="none">Sem períodos lançados</SelectItem>
+                <SelectItem value="all">Todas</SelectItem>
+                <SelectItem value="some">Com fechamento</SelectItem>
+                <SelectItem value="none">Sem fechamento</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor="closing-month-filter">Mês de fechamento</Label>
+            <Label htmlFor="closing-month-filter">Mês a acompanhar</Label>
             <Select
               name="periodMonth"
               defaultValue={String(periodMonth)}
@@ -619,7 +712,8 @@ export async function ClosingsTab({
             </Link>
           </Button>
           <span className="text-xs text-muted-foreground">
-            As opções selecionadas são combinadas.
+            Escolha um mês e “Sem fechamento” para ver quem falta nele. Sem mês
+            escolhido, a situação vale para o ano inteiro.
           </span>
         </div>
       </form>
@@ -629,6 +723,7 @@ export async function ClosingsTab({
           clanId={clanId}
           companies={companies}
           year={year}
+          focusMonth={focusedMonth}
           members={memberRows}
           viewerCanManage={canManage}
         />
