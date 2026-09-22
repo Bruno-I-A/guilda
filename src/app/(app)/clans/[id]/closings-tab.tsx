@@ -31,7 +31,8 @@ import {
 } from "./closing-board";
 import { ClanEmptyState, ClanSectionHeading } from "./clan-ui";
 
-type StatusFilter = "all" | "open" | "notes" | "completed" | "periods";
+type YearFilter = "all" | "open" | "completed";
+type ObservationFilter = "all" | "pending" | "none";
 
 function todayInSaoPaulo(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -57,17 +58,15 @@ function parseGroup(value: string | undefined): ClosingGroup {
     : "simples";
 }
 
-function parseStatus(value: string | undefined): StatusFilter {
-  return value === "open" || value === "notes" || value === "completed" || value === "periods"
-    ? value
-    : "all";
-}
-
 export interface ClosingsTabParams {
   year?: string;
   group?: string;
   q?: string;
+  /** `status` remains accepted for bookmarks created by the previous filter UI. */
   status?: string;
+  yearStatus?: string;
+  observationStatus?: string;
+  periodClosings?: string;
 }
 
 /**
@@ -91,7 +90,22 @@ export async function ClosingsTab({
 }) {
   const year = parseYear(params.year);
   const group = parseGroup(params.group);
-  const status = parseStatus(params.status);
+  const legacyStatus = params.status;
+  const yearStatus: YearFilter =
+    params.yearStatus === "open" || params.yearStatus === "completed"
+      ? params.yearStatus
+      : legacyStatus === "open" || legacyStatus === "completed"
+        ? legacyStatus
+        : "all";
+  const observationStatus: ObservationFilter =
+    params.observationStatus === "pending" || params.observationStatus === "none"
+      ? params.observationStatus
+      : legacyStatus === "notes"
+        ? "pending"
+        : "all";
+  const periodClosings =
+    params.periodClosings === "1" ||
+    (params.periodClosings === undefined && legacyStatus === "periods");
   const q = (params.q ?? "").trim();
 
   const clientConditions: SQL[] = [
@@ -269,10 +283,11 @@ export async function ClosingsTab({
           closing.notes?.toLocaleLowerCase("pt-BR").includes(normalizedQuery),
       );
     if (!matchesQuery) return false;
-    if (status === "open") return !company.yearClosedAt;
-    if (status === "notes") return hasNotes(company);
-    if (status === "completed") return Boolean(company.yearClosedAt);
-    if (status === "periods") return company.closings.length > 0;
+    if (yearStatus === "open" && company.yearClosedAt) return false;
+    if (yearStatus === "completed" && !company.yearClosedAt) return false;
+    if (observationStatus === "pending" && !hasNotes(company)) return false;
+    if (observationStatus === "none" && company.observations.length > 0) return false;
+    if (periodClosings && company.closings.length === 0) return false;
     return true;
   });
 
@@ -295,17 +310,31 @@ export async function ClosingsTab({
       year: number;
       group: ClosingGroup;
       q: string;
-      status: StatusFilter;
+      yearStatus: YearFilter;
+      observationStatus: ObservationFilter;
+      periodClosings: boolean;
     }>,
   ): string {
-    const next = { year, group, q, status, ...overrides };
+    const next = {
+      year,
+      group,
+      q,
+      yearStatus,
+      observationStatus,
+      periodClosings,
+      ...overrides,
+    };
     const query = new URLSearchParams({
       tab: "closings",
       year: String(next.year),
       group: next.group,
     });
     if (next.q) query.set("q", next.q);
-    if (next.status !== "all") query.set("status", next.status);
+    if (next.yearStatus !== "all") query.set("yearStatus", next.yearStatus);
+    if (next.observationStatus !== "all") {
+      query.set("observationStatus", next.observationStatus);
+    }
+    if (next.periodClosings) query.set("periodClosings", "1");
     return `/clans/${clanId}?${query}`;
   }
 
@@ -351,7 +380,13 @@ export async function ClosingsTab({
         {CLOSING_GROUPS.map((item) => (
           <Link
             key={item.key}
-            href={href({ group: item.key, status: "all", q: "" })}
+            href={href({
+              group: item.key,
+              yearStatus: "all",
+              observationStatus: "all",
+              periodClosings: false,
+              q: "",
+            })}
             aria-current={group === item.key ? "page" : undefined}
             className={cn(
               "relative min-h-11 px-2 py-2 text-center text-xs font-medium transition-colors sm:text-sm",
@@ -388,7 +423,7 @@ export async function ClosingsTab({
             <p className={cn("text-lg font-semibold", notesCount && "text-warning")}>
               {notesCount}
             </p>
-            <p className="text-muted-foreground">com observação</p>
+            <p className="text-muted-foreground">com pendência</p>
           </div>
           <div>
             <p
@@ -406,55 +441,104 @@ export async function ClosingsTab({
         </div>
       </section>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <nav
-          aria-label="Filtrar por situação"
-          className="flex max-w-full overflow-x-auto border-y border-border/80 bg-card/20"
-        >
-          {(
-            [
-              ["all", "Todas"],
-              ["open", "Ano em aberto"],
-              ["notes", "Com observação"],
-              ["periods", "Com fechamentos no período"],
-              ["completed", "Ano fechado"],
-            ] as const
-          ).map(([key, label]) => (
-            <Link
-              key={key}
-              href={href({ status: key })}
-              aria-current={status === key ? "page" : undefined}
-              className={cn(
-                "relative min-h-10 whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors",
-                status === key
-                  ? "bg-primary/8 text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:bg-primary"
-                  : "text-muted-foreground hover:bg-muted/30 hover:text-foreground",
-              )}
+      <div className="grid gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="grid gap-2">
+            <nav
+              aria-label="Filtrar situação do ano"
+              className="flex max-w-full overflow-x-auto border-y border-border/80 bg-card/20"
             >
-              {label}
-            </Link>
-          ))}
-        </nav>
-        <form className="relative" action={`/clans/${clanId}`}>
-          <input type="hidden" name="tab" value="closings" />
-          <input type="hidden" name="year" value={year} />
-          <input type="hidden" name="group" value={group} />
-          {status !== "all" ? (
-            <input type="hidden" name="status" value={status} />
-          ) : null}
-          <Search
-            className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden
-          />
-          <Input
-            type="search"
-            name="q"
-            defaultValue={q}
-            placeholder="Buscar empresa ou período…"
-            className="w-64 pl-8"
-            aria-label="Buscar empresa ou período"
-          />
-        </form>
+              {(
+                [
+                  ["all", "Todos os anos"],
+                  ["open", "Ano em aberto"],
+                  ["completed", "Ano fechado"],
+                ] as const
+              ).map(([key, label]) => (
+                <Link
+                  key={key}
+                  href={href({ yearStatus: key })}
+                  aria-current={yearStatus === key ? "page" : undefined}
+                  className={cn(
+                    "relative min-h-10 whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors",
+                    yearStatus === key
+                      ? "bg-primary/8 text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:bg-primary"
+                      : "text-muted-foreground hover:bg-muted/30 hover:text-foreground",
+                  )}
+                >
+                  {label}
+                </Link>
+              ))}
+            </nav>
+            <nav
+              aria-label="Filtrar observações"
+              className="flex max-w-full overflow-x-auto border-y border-border/80 bg-card/20"
+            >
+              {(
+                [
+                  ["all", "Todas as observações"],
+                  ["pending", "Com pendência"],
+                  ["none", "Sem observação"],
+                ] as const
+              ).map(([key, label]) => (
+                <Link
+                  key={key}
+                  href={href({ observationStatus: key })}
+                  aria-current={observationStatus === key ? "page" : undefined}
+                  className={cn(
+                    "relative min-h-10 whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors",
+                    observationStatus === key
+                      ? "bg-primary/8 text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:bg-primary"
+                      : "text-muted-foreground hover:bg-muted/30 hover:text-foreground",
+                  )}
+                >
+                  {label}
+                </Link>
+              ))}
+              <Link
+                href={href({ periodClosings: !periodClosings })}
+                aria-current={periodClosings ? "page" : undefined}
+                className={cn(
+                  "relative min-h-10 whitespace-nowrap border-l border-border/80 px-3 py-2 text-sm font-medium transition-colors",
+                  periodClosings
+                    ? "bg-primary/8 text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:bg-primary"
+                    : "text-muted-foreground hover:bg-muted/30 hover:text-foreground",
+                )}
+              >
+                Com fechamentos no período
+              </Link>
+            </nav>
+          </div>
+          <form className="relative" action={`/clans/${clanId}`}>
+            <input type="hidden" name="tab" value="closings" />
+            <input type="hidden" name="year" value={year} />
+            <input type="hidden" name="group" value={group} />
+            {yearStatus !== "all" ? (
+              <input type="hidden" name="yearStatus" value={yearStatus} />
+            ) : null}
+            {observationStatus !== "all" ? (
+              <input type="hidden" name="observationStatus" value={observationStatus} />
+            ) : null}
+            {periodClosings ? (
+              <input type="hidden" name="periodClosings" value="1" />
+            ) : null}
+            <Search
+              className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              type="search"
+              name="q"
+              defaultValue={q}
+              placeholder="Buscar empresa ou período…"
+              className="w-64 pl-8"
+              aria-label="Buscar empresa ou período"
+            />
+          </form>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Os filtros selecionados são combinados.
+        </p>
       </div>
 
       {companies.length > 0 ? (
