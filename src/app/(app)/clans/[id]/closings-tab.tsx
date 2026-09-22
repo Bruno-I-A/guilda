@@ -32,7 +32,7 @@ import {
 import { ClanEmptyState, ClanSectionHeading } from "./clan-ui";
 
 type YearFilter = "all" | "open" | "completed";
-type ObservationFilter = "all" | "pending" | "none";
+type ObservationFilter = "all" | "with" | "without" | "pending";
 
 function todayInSaoPaulo(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -97,9 +97,15 @@ export async function ClosingsTab({
       : legacyStatus === "open" || legacyStatus === "completed"
         ? legacyStatus
         : "all";
+  const requestedObservationStatus =
+    params.observationStatus === "none"
+      ? "without"
+      : params.observationStatus;
   const observationStatus: ObservationFilter =
-    params.observationStatus === "pending" || params.observationStatus === "none"
-      ? params.observationStatus
+    requestedObservationStatus === "with" ||
+    requestedObservationStatus === "without" ||
+    requestedObservationStatus === "pending"
+      ? requestedObservationStatus
       : legacyStatus === "notes"
         ? "pending"
         : "all";
@@ -285,8 +291,9 @@ export async function ClosingsTab({
     if (!matchesQuery) return false;
     if (yearStatus === "open" && company.yearClosedAt) return false;
     if (yearStatus === "completed" && !company.yearClosedAt) return false;
+    if (observationStatus === "with" && company.observations.length === 0) return false;
+    if (observationStatus === "without" && company.observations.length > 0) return false;
     if (observationStatus === "pending" && !hasNotes(company)) return false;
-    if (observationStatus === "none" && company.observations.length > 0) return false;
     if (periodClosings && company.closings.length === 0) return false;
     return true;
   });
@@ -476,9 +483,10 @@ export async function ClosingsTab({
             >
               {(
                 [
-                  ["all", "Todas as observações"],
+                  ["all", "Todas"],
+                  ["with", "Com observação"],
+                  ["without", "Sem observação"],
                   ["pending", "Com pendência"],
-                  ["none", "Sem observação"],
                 ] as const
               ).map(([key, label]) => (
                 <Link
