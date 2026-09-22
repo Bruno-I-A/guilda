@@ -118,7 +118,7 @@ const STAGES: Array<{
   { key: "outgoing", field: "outgoingStatus", label: "Saída" },
   { key: "guide", field: "guideStatus", label: "Guia" },
   { key: "delivery", field: "deliveryStatus", label: "Envio" },
-  { key: "nfs", field: "nfsStatus", label: "NFS" },
+  { key: "nfs", field: "nfsStatus", label: "Notas" },
 ];
 
 const STAGE_LABELS: Record<FiscalStage, string> = {
@@ -127,7 +127,7 @@ const STAGE_LABELS: Record<FiscalStage, string> = {
   outgoing: "Saída",
   guide: "Guia",
   delivery: "Entrega",
-  nfs: "NFS",
+  nfs: "Importar notas",
 };
 
 function eventText(event: FiscalControlRowView["history"][number]): string {
@@ -220,7 +220,7 @@ function activityLabel(
   if (stage.key === "delivery") {
     return row.profileSnapshot.deliveryChannel
       ? `Envio da guia · ${row.profileSnapshot.deliveryChannel}`
-      : "Envio da guia";
+      : "Envio da guia · canal a definir";
   }
   return stage.label;
 }

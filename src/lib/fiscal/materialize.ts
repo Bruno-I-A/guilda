@@ -22,6 +22,7 @@ export function fiscalProfileSnapshot(
     outgoingApplicability: profile.outgoingApplicability,
     guideApplicability: profile.guideApplicability,
     nfsApplicability: profile.nfsApplicability,
+    deliveryApplicability: profile.deliveryApplicability,
     deliveryChannel: profile.deliveryChannel,
     factorRApplicability: profile.factorRApplicability,
     revenueReference: profile.revenueReference,

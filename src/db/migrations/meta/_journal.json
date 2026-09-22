@@ -512,6 +512,13 @@
       "when": 1789042853639,
       "tag": "0072_workable_warbird",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1790016346985,
+      "tag": "0073_aspiring_captain_stacy",
+      "breakpoints": true
     }
   ]
 }

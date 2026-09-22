@@ -746,21 +746,36 @@ function ObservationRow({
       </p>
 
       {observation.taskId ? (
-        <Link
-          href={`/tasks/${observation.taskId}?returnTo=${encodeURIComponent(
-            clanTabHref(clanId, "closings"),
-          )}`}
-          className="flex flex-wrap items-center gap-2 text-xs text-primary hover:underline"
-        >
-          <ListChecks className="size-3.5 shrink-0" aria-hidden />
-          <span className="truncate">{observation.taskTitle ?? "Missão gerada"}</span>
-          {observation.taskStatus ? (
-            <span className="text-muted-foreground">
-              · {STATUS_LABELS[observation.taskStatus]}
-              {observation.taskAssignee ? ` · ${observation.taskAssignee}` : ""}
-            </span>
-          ) : null}
-        </Link>
+        <div className="grid gap-2 border border-primary/35 bg-primary/5 p-3 sm:flex sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-2">
+            <ListChecks className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+            <div className="grid min-w-0 gap-1">
+              <p className="text-xs font-semibold text-primary">
+                Missão criada a partir desta observação
+              </p>
+              <p className="truncate text-sm font-medium">
+                {observation.taskTitle ?? "Missão vinculada"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {observation.taskStatus
+                  ? `Status: ${STATUS_LABELS[observation.taskStatus]}`
+                  : "Status da missão indisponível"}
+                {observation.taskAssignee
+                  ? ` · Responsável: ${observation.taskAssignee}`
+                  : " · Sem responsável"}
+              </p>
+            </div>
+          </div>
+          <Link
+            href={`/tasks/${observation.taskId}?returnTo=${encodeURIComponent(
+              clanTabHref(clanId, "closings"),
+            )}`}
+            aria-label={`Abrir missão: ${observation.taskTitle ?? "Missão vinculada"}`}
+            className="flex min-h-9 w-fit shrink-0 items-center gap-1.5 border border-primary/40 px-3 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
+          >
+            Abrir missão <ListChecks className="size-4" aria-hidden />
+          </Link>
+        </div>
       ) : null}
 
       {viewerCanManage ? (
@@ -954,14 +969,14 @@ function CompanyCard({
   const hasClosings = company.closings.length > 0;
   // O selo dizia "observação" tanto para recado resolvido quanto para pedido
   // parado ha um mes. Agora diz quantos esperam alguem.
-  const observationBadgeInfo = observationBadge(
-    summarizeObservations(
-      company.observations.map((observation) => ({
-        taskId: observation.taskId,
-        resolvedAt: observation.resolvedAt ? new Date(observation.resolvedAt) : null,
-      })),
-    ),
+  const observationSummary = summarizeObservations(
+    company.observations.map((observation) => ({
+      taskId: observation.taskId,
+      resolvedAt: observation.resolvedAt ? new Date(observation.resolvedAt) : null,
+    })),
   );
+  const observationBadgeInfo = observationBadge(observationSummary);
+  const linkedMissionCount = observationSummary.assigned;
 
   function toggleYear() {
     if (
@@ -1079,10 +1094,9 @@ function CompanyCard({
                   {defisCompleted ? "DEFIS entregue" : "DEFIS pendente"}
                 </Badge>
               ) : null}
-              {/* Pendência precisa vencer os chips vizinhos (regime, ano,
-                  DEFIS), que são dado neutro. Encaminhado e resolvido descem
-                  para prata: continuam informando sem disputar atenção. */}
-              {observationBadgeInfo ? (
+              {/* Observações abertas continuam em alerta; missões vinculadas
+                  ganham um selo primário para aparecer junto ao título. */}
+              {observationBadgeInfo && !(linkedMissionCount > 0 && observationBadgeInfo.tone === "idle") ? (
                 <Badge
                   className={cn(
                     "h-5 px-1.5",
@@ -1092,6 +1106,14 @@ function CompanyCard({
                   )}
                 >
                   <MessageSquareText aria-hidden /> {observationBadgeInfo.label}
+                </Badge>
+              ) : null}
+              {linkedMissionCount > 0 ? (
+                <Badge className="h-6 border-2 border-primary/70 bg-primary/20 px-2 font-semibold text-primary">
+                  <ListChecks aria-hidden />
+                  {linkedMissionCount === 1
+                    ? "1 missão criada"
+                    : `${linkedMissionCount} missões criadas`}
                 </Badge>
               ) : null}
             </div>

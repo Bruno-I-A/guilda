@@ -16,6 +16,7 @@ import {
   type ParsedFiscalImportRow,
 } from "@/domain/fiscal-import";
 import { fiscalProfileVersionMatches } from "@/domain/fiscal-control";
+import { authorizePortfolioChange } from "@/domain/fiscal-portfolio";
 import { canManageFiscalOperations } from "@/domain/guild-permissions";
 import {
   err,
@@ -26,6 +27,8 @@ import { loadClanScopedFacts } from "@/lib/clans/facts";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 import { FISCAL_CLAN_SLUG } from "@/lib/clans/rules";
 import { fiscalProfileSnapshot } from "@/lib/fiscal/materialize";
+
+const FISCAL_IMPORT_PARSER_VERSION = 2;
 
 interface ImportSuggestionView {
   clientId: string;
@@ -48,6 +51,7 @@ export interface FiscalImportPreviewRow {
     incoming: string | null;
     outgoing: string | null;
     guide: string | null;
+    deliveryApplicability: string | null;
     delivery: string | null;
     nfs: string | null;
     observations: string | null;
@@ -62,17 +66,22 @@ export interface FiscalImportPreview {
     id: string;
     name: string;
     active: boolean;
+    holderId: string | null;
+    holderName: string | null;
+    pendingFiscalAssignment: boolean;
     profile: {
       version: number;
       movements: string;
       incoming: string;
       outgoing: string;
       guide: string;
+      deliveryApplicability: string;
       delivery: string | null;
       nfs: string;
       observations: string | null;
     } | null;
   }[];
+  members: readonly { userId: string; name: string }[];
   missingColumns: readonly string[];
   rejected: number;
   rejectedRows: readonly { rowNumber: number; message: string }[];
@@ -118,6 +127,7 @@ function compactImported(parsed: ParsedFiscalImportRow) {
     incoming: parsed.incoming.value,
     outgoing: parsed.outgoing.value,
     guide: parsed.guide.value,
+    deliveryApplicability: parsed.delivery.applicability,
     delivery: parsed.delivery.detail,
     nfs: parsed.nfs.value,
     observations: parsed.observations,
@@ -173,12 +183,16 @@ export async function previewFiscalSpreadsheet(
         id: schema.clients.id,
         name: schema.clients.name,
         active: schema.clients.active,
+        holderId: schema.fiscalPortfolios.userId,
+        holderName: schema.user.name,
+        pendingFiscalAssignment: schema.clients.pendingFiscalAssignment,
         profileId: schema.fiscalClientProfiles.id,
         profileVersion: schema.fiscalClientProfiles.version,
         movements: schema.fiscalClientProfiles.movementsApplicability,
         incoming: schema.fiscalClientProfiles.incomingApplicability,
         outgoing: schema.fiscalClientProfiles.outgoingApplicability,
         guide: schema.fiscalClientProfiles.guideApplicability,
+        deliveryApplicability: schema.fiscalClientProfiles.deliveryApplicability,
         delivery: schema.fiscalClientProfiles.deliveryChannel,
         nfs: schema.fiscalClientProfiles.nfsApplicability,
         observations: schema.fiscalClientProfiles.permanentNotes,
@@ -191,6 +205,14 @@ export async function previewFiscalSpreadsheet(
           eq(schema.fiscalClientProfiles.clientId, schema.clients.id),
         ),
       )
+      .leftJoin(
+        schema.fiscalPortfolios,
+        and(
+          eq(schema.fiscalPortfolios.orgId, schema.clients.orgId),
+          eq(schema.fiscalPortfolios.clientId, schema.clients.id),
+        ),
+      )
+      .leftJoin(schema.user, eq(schema.user.id, schema.fiscalPortfolios.userId))
       .where(
         and(
           eq(schema.clients.orgId, ctx.orgId),
@@ -198,6 +220,22 @@ export async function previewFiscalSpreadsheet(
         ),
       )
       .orderBy(asc(schema.clients.name));
+    const members = await tx
+      .select({ userId: schema.clanMemberships.userId, name: schema.user.name })
+      .from(schema.clanMemberships)
+      .innerJoin(schema.user, eq(schema.user.id, schema.clanMemberships.userId))
+      .innerJoin(
+        schema.member,
+        and(
+          eq(schema.member.userId, schema.clanMemberships.userId),
+          eq(schema.member.organizationId, schema.clanMemberships.orgId),
+        ),
+      )
+      .where(and(
+        eq(schema.clanMemberships.orgId, ctx.orgId),
+        eq(schema.clanMemberships.clanId, clanId),
+      ))
+      .orderBy(asc(schema.user.name));
     const aliases = await tx
       .select({
         id: schema.fiscalClientAliases.id,
@@ -256,6 +294,7 @@ export async function previewFiscalSpreadsheet(
             sourceName: (row.parsed.companyName ?? "").slice(0, 240),
             normalizedSourceName: normalized.slice(0, 240),
             rawData: {
+              parserVersion: FISCAL_IMPORT_PARSER_VERSION,
               cells: jsonSafeCells(row.rawData),
               parsed: compactImported(row.parsed),
               issues: row.parsed.issues,
@@ -295,6 +334,9 @@ export async function previewFiscalSpreadsheet(
           id: client.id,
           name: client.name,
           active: client.active,
+          holderId: client.holderId,
+          holderName: client.holderName,
+          pendingFiscalAssignment: client.pendingFiscalAssignment,
           profile: client.profileId
             ? {
                 version: client.profileVersion!,
@@ -302,12 +344,14 @@ export async function previewFiscalSpreadsheet(
                 incoming: client.incoming!,
                 outgoing: client.outgoing!,
                 guide: client.guide!,
+                deliveryApplicability: client.deliveryApplicability!,
                 delivery: client.delivery,
                 nfs: client.nfs!,
                 observations: client.observations,
               }
             : null,
         })),
+        members,
         missingColumns: parsedSheet.missingColumns,
         rejected: parsedSheet.rejectedRows.length,
         rejectedRows: parsedSheet.rejectedRows.map((row) => ({
@@ -356,6 +400,8 @@ const applySchema = z.object({
           action: z.literal("apply"),
           clientId: z.uuid(),
           expectedProfileVersion: z.number().int().min(1).nullable(),
+          responsibleUserId: z.string().min(1).nullable(),
+          expectedHolderId: z.string().min(1).nullable(),
         }),
       ]),
     )
@@ -377,6 +423,7 @@ export interface FiscalImportApplyResult {
   createdProfiles: number;
   updatedProfiles: number;
   unchangedProfiles: number;
+  assignedPortfolios: number;
 }
 
 export async function applyFiscalImport(
@@ -434,6 +481,11 @@ export async function applyFiscalImport(
       )
       .for("update");
     if (rows.length !== rowIds.length) return err("Uma ou mais linhas não pertencem a este lote.");
+    if (rows.some((row) =>
+      (row.rawData as { parserVersion?: number }).parserVersion !== FISCAL_IMPORT_PARSER_VERSION
+    )) {
+      return err("A leitura desta planilha foi atualizada. Gere uma nova prévia antes de aplicar.");
+    }
     const rowById = new Map(rows.map((row) => [row.id, row]));
     // Alias é único por organização. Locks consultivos em ordem fixa
     // serializam dois lotes que tentem ensinar o mesmo nome ao mesmo tempo.
@@ -443,9 +495,36 @@ export async function applyFiscalImport(
       );
     }
     const targetIds = data.resolutions.flatMap((item) => item.action === "apply" ? [item.clientId] : []);
+    const assigneeIds = [...new Set(data.resolutions.flatMap((item) =>
+      item.action === "apply" && item.responsibleUserId ? [item.responsibleUserId] : [],
+    ))];
+    const assignees = assigneeIds.length > 0
+      ? await tx
+          .select({ userId: schema.clanMemberships.userId })
+          .from(schema.clanMemberships)
+          .innerJoin(
+            schema.member,
+            and(
+              eq(schema.member.userId, schema.clanMemberships.userId),
+              eq(schema.member.organizationId, schema.clanMemberships.orgId),
+            ),
+          )
+          .where(and(
+            eq(schema.clanMemberships.orgId, ctx.orgId),
+            eq(schema.clanMemberships.clanId, data.clanId),
+            inArray(schema.clanMemberships.userId, assigneeIds),
+          ))
+      : [];
+    if (new Set(assignees.map((assignee) => assignee.userId)).size !== assigneeIds.length) {
+      return err("A carteira só pode ficar com integrantes ativos do clã Fiscal.");
+    }
     const clients = targetIds.length > 0
       ? await tx
-          .select({ id: schema.clients.id })
+          .select({
+            id: schema.clients.id,
+            active: schema.clients.active,
+            pendingFiscalAssignment: schema.clients.pendingFiscalAssignment,
+          })
           .from(schema.clients)
           .where(
             and(
@@ -460,6 +539,35 @@ export async function applyFiscalImport(
     const validClients = new Set(clients.map((client) => client.id));
     if (validClients.size !== new Set(targetIds).size) {
       return err("Uma das empresas selecionadas não pertence à organização.");
+    }
+    const portfolios = targetIds.length > 0
+      ? await tx
+          .select({ clientId: schema.fiscalPortfolios.clientId, userId: schema.fiscalPortfolios.userId })
+          .from(schema.fiscalPortfolios)
+          .where(and(
+            eq(schema.fiscalPortfolios.orgId, ctx.orgId),
+            inArray(schema.fiscalPortfolios.clientId, targetIds),
+          ))
+      : [];
+    const holderByClient = new Map(portfolios.map((portfolio) => [portfolio.clientId, portfolio.userId]));
+    const clientById = new Map(clients.map((client) => [client.id, client]));
+    for (const resolution of data.resolutions) {
+      if (resolution.action === "ignore" || !resolution.responsibleUserId) continue;
+      const currentHolderId = holderByClient.get(resolution.clientId) ?? null;
+      if (currentHolderId !== resolution.expectedHolderId) {
+        return err("A carteira de uma empresa mudou depois da prévia. Gere outra prévia antes de aplicar.");
+      }
+      if (currentHolderId === resolution.responsibleUserId) continue;
+      const client = clientById.get(resolution.clientId)!;
+      if (client.pendingFiscalAssignment) {
+        return err("Uma empresa ainda aguarda a confirmação de entrada na carteira. Confirme-a na seção de novas empresas antes de atribuir pela planilha.");
+      }
+      const decision = authorizePortfolioChange({
+        clientIsActive: client.active,
+        currentHolderId,
+        target: { userId: resolution.responsibleUserId, isActiveClanMember: true },
+      });
+      if (!decision.allowed) return err(decision.reason);
     }
 
     const resolutionByRow = new Map(data.resolutions.map((item) => [item.rowId, item]));
@@ -492,21 +600,42 @@ export async function applyFiscalImport(
       }
     }
 
+    // Valide todas as versões antes da primeira escrita. Um conflito na última
+    // linha não pode deixar as fichas anteriores aplicadas com o lote aberto.
+    const profiles = targetIds.length > 0
+      ? await tx
+          .select()
+          .from(schema.fiscalClientProfiles)
+          .where(and(
+            eq(schema.fiscalClientProfiles.orgId, ctx.orgId),
+            inArray(schema.fiscalClientProfiles.clientId, [...new Set(targetIds)]),
+          ))
+          .orderBy(asc(schema.fiscalClientProfiles.clientId))
+          .for("update")
+      : [];
+    const profileByClient = new Map(profiles.map((profile) => [profile.clientId, profile]));
+    for (const resolution of data.resolutions) {
+      if (resolution.action === "ignore") continue;
+      const profile = profileByClient.get(resolution.clientId);
+      if (!fiscalProfileVersionMatches(profile?.version, resolution.expectedProfileVersion)) {
+        const row = rowById.get(resolution.rowId)!;
+        return err(`Linha ${row.rowNumber}: a Ficha Fiscal desta empresa mudou depois da prévia. Gere uma nova prévia antes de aplicar.`);
+      }
+    }
+
     let imported = 0;
     let ignored = 0;
     const errors = 0;
     let createdProfiles = 0;
     let updatedProfiles = 0;
     let unchangedProfiles = 0;
+    let assignedPortfolios = 0;
     for (const resolution of data.resolutions) {
       const row = rowById.get(resolution.rowId)!;
       if (resolution.action === "ignore") {
         await tx.update(schema.fiscalImportRows).set({ status: "ignored", resolvedBy: ctx.userId, updatedAt: new Date() }).where(eq(schema.fiscalImportRows.id, row.id));
         ignored += 1;
         continue;
-      }
-      if (!validClients.has(resolution.clientId)) {
-        return err("Empresa selecionada não pertence à organização.");
       }
       const normalized = row.normalizedSourceName;
       const [existingAlias] = await tx
@@ -519,27 +648,16 @@ export async function applyFiscalImport(
           ),
         )
         .limit(1);
-      if (existingAlias && existingAlias.clientId !== resolution.clientId) {
-        return err(`Linha ${row.rowNumber}: este alias já está ligado a outra empresa.`);
-      }
       const raw = row.rawData as { parsed?: Record<string, unknown> };
       const values = raw.parsed ?? {};
-      const [profile] = await tx
-        .select()
-        .from(schema.fiscalClientProfiles)
-        .where(and(eq(schema.fiscalClientProfiles.orgId, ctx.orgId), eq(schema.fiscalClientProfiles.clientId, resolution.clientId)))
-        .for("update");
-      if (!fiscalProfileVersionMatches(profile?.version, resolution.expectedProfileVersion)) {
-        return err(
-          `Linha ${row.rowNumber}: a Ficha Fiscal desta empresa mudou depois da prévia. Gere uma nova prévia antes de aplicar.`,
-        );
-      }
+      const profile = profileByClient.get(resolution.clientId);
       const base = {
         movementsApplicability: profile?.movementsApplicability ?? "unknown" as const,
         incomingApplicability: profile?.incomingApplicability ?? "unknown" as const,
         outgoingApplicability: profile?.outgoingApplicability ?? "unknown" as const,
         guideApplicability: profile?.guideApplicability ?? "unknown" as const,
         nfsApplicability: profile?.nfsApplicability ?? "unknown" as const,
+        deliveryApplicability: profile?.deliveryApplicability ?? "unknown" as const,
         deliveryChannel: profile?.deliveryChannel ?? null,
         permanentNotes: profile?.permanentNotes ?? null,
       };
@@ -549,7 +667,12 @@ export async function applyFiscalImport(
         outgoingApplicability: importedApplicability(values.outgoing) ?? base.outgoingApplicability,
         guideApplicability: importedApplicability(values.guide) ?? base.guideApplicability,
         nfsApplicability: importedApplicability(values.nfs) ?? base.nfsApplicability,
-        deliveryChannel: typeof values.delivery === "string" && values.delivery.trim() ? values.delivery.trim().slice(0, 120) : base.deliveryChannel,
+        deliveryApplicability: importedApplicability(values.deliveryApplicability) ?? base.deliveryApplicability,
+        deliveryChannel: importedApplicability(values.deliveryApplicability)
+          ? typeof values.delivery === "string" && values.delivery.trim()
+            ? values.delivery.trim().slice(0, 120)
+            : null
+          : base.deliveryChannel,
         permanentNotes: typeof values.observations === "string" && values.observations.trim() ? values.observations.trim() : base.permanentNotes,
         updatedBy: ctx.userId,
         updatedAt: new Date(),
@@ -560,6 +683,7 @@ export async function applyFiscalImport(
         "outgoingApplicability",
         "guideApplicability",
         "nfsApplicability",
+        "deliveryApplicability",
         "deliveryChannel",
         "permanentNotes",
       ].filter(
@@ -608,6 +732,34 @@ export async function applyFiscalImport(
         unchangedProfiles += 1;
       }
 
+      if (resolution.responsibleUserId) {
+        const currentHolderId = holderByClient.get(resolution.clientId) ?? null;
+        if (currentHolderId !== resolution.responsibleUserId) {
+          await tx.insert(schema.fiscalPortfolios).values({
+            orgId: ctx.orgId,
+            clientId: resolution.clientId,
+            userId: resolution.responsibleUserId,
+            assignedBy: ctx.userId,
+          }).onConflictDoUpdate({
+            target: [schema.fiscalPortfolios.orgId, schema.fiscalPortfolios.clientId],
+            set: {
+              userId: resolution.responsibleUserId,
+              assignedBy: ctx.userId,
+              updatedAt: new Date(),
+            },
+          });
+          await tx.insert(schema.fiscalPortfolioEvents).values({
+            orgId: ctx.orgId,
+            clientId: resolution.clientId,
+            fromUserId: currentHolderId,
+            toUserId: resolution.responsibleUserId,
+            actorId: ctx.userId,
+            note: "Atribuído durante a importação da planilha fiscal.",
+          });
+          assignedPortfolios += 1;
+        }
+      }
+
       const alias = existingAlias ?? (
         await tx.insert(schema.fiscalClientAliases).values({
           orgId: ctx.orgId,
@@ -645,6 +797,7 @@ export async function applyFiscalImport(
       createdProfiles,
       updatedProfiles,
       unchangedProfiles,
+      assignedPortfolios,
       rejectedRows: batch.errorRows,
     };
     await tx.update(schema.fiscalImportBatches).set({
@@ -666,6 +819,7 @@ export async function applyFiscalImport(
         createdProfiles,
         updatedProfiles,
         unchangedProfiles,
+        assignedPortfolios,
       },
     };
   });

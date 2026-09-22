@@ -27,6 +27,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 import {
   applyFiscalImport,
@@ -35,7 +43,11 @@ import {
   type FiscalImportPreview,
 } from "./fiscal-import-actions";
 
-type Resolution = { clientId: string | null; ignored: boolean };
+type Resolution = {
+  clientId: string | null;
+  ignored: boolean;
+  responsibleUserId: string | null;
+};
 
 const COLUMN_LABELS: Record<string, string> = {
   companyName: "Empresas",
@@ -44,7 +56,7 @@ const COLUMN_LABELS: Record<string, string> = {
   outgoing: "Saída",
   guide: "Guia",
   delivery: "Entrega",
-  nfs: "NFS",
+  nfs: "Notas fiscais",
   observations: "Observações",
 };
 
@@ -54,8 +66,10 @@ function importedSummary(row: FiscalImportPreview["rows"][number]): string {
     row.imported.incoming ? `Entrada: ${APPLICABILITY_IMPORT_LABEL[row.imported.incoming] ?? row.imported.incoming}` : null,
     row.imported.outgoing ? `Saída: ${APPLICABILITY_IMPORT_LABEL[row.imported.outgoing] ?? row.imported.outgoing}` : null,
     row.imported.guide ? `Guia: ${APPLICABILITY_IMPORT_LABEL[row.imported.guide] ?? row.imported.guide}` : null,
-    row.imported.delivery ? `Entrega: ${row.imported.delivery}` : null,
-    row.imported.nfs ? `NFS: ${APPLICABILITY_IMPORT_LABEL[row.imported.nfs] ?? row.imported.nfs}` : null,
+    row.imported.deliveryApplicability
+      ? `Envio: ${APPLICABILITY_IMPORT_LABEL[row.imported.deliveryApplicability] ?? row.imported.deliveryApplicability}${row.imported.delivery ? ` (${row.imported.delivery})` : ""}`
+      : null,
+    row.imported.nfs ? `Notas: ${APPLICABILITY_IMPORT_LABEL[row.imported.nfs] ?? row.imported.nfs}` : null,
   ].filter(Boolean);
   return parts.join(" · ");
 }
@@ -76,7 +90,7 @@ const ISSUE_FIELD_LABELS: Record<string, string> = {
   outgoing: "Saída",
   guide: "Guia",
   delivery: "Entrega",
-  nfs: "NFS",
+  nfs: "Notas fiscais",
   observations: "Observações",
 };
 
@@ -91,7 +105,8 @@ function profileDiffs(
     ["Entrada", current?.incoming, row.imported.incoming],
     ["Saída", current?.outgoing, row.imported.outgoing],
     ["Guia", current?.guide, row.imported.guide],
-    ["NFS", current?.nfs, row.imported.nfs],
+    ["Notas fiscais", current?.nfs, row.imported.nfs],
+    ["Envio da guia", current?.deliveryApplicability, row.imported.deliveryApplicability],
   ] as const;
   const changes: { field: string; before: string; after: string }[] =
     definitions.flatMap(([field, before, after]) => {
@@ -102,11 +117,11 @@ function profileDiffs(
       ? []
       : [{ field, before: beforeLabel, after: afterLabel }];
     });
-  if (row.imported.delivery && row.imported.delivery !== (current?.delivery ?? "")) {
+  if (row.imported.deliveryApplicability && row.imported.delivery !== (current?.delivery ?? null)) {
     changes.push({
-      field: "Entrega",
+      field: "Canal de envio",
       before: current?.delivery ?? "Não informada",
-      after: row.imported.delivery,
+      after: row.imported.delivery ?? "Não informado",
     });
   }
   if (
@@ -130,6 +145,7 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
   const [resolutions, setResolutions] = useState<Record<string, Resolution>>({});
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [clientSearch, setClientSearch] = useState("");
+  const [bulkResponsible, setBulkResponsible] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [summary, setSummary] = useState<FiscalImportApplyResult | null>(null);
 
@@ -151,6 +167,14 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
         return !resolution?.ignored && !resolution?.clientId;
       }).length
     : 0;
+  const selectedCounts = new Map<string, number>();
+  for (const resolution of Object.values(resolutions)) {
+    if (resolution.ignored || !resolution.clientId) continue;
+    selectedCounts.set(resolution.clientId, (selectedCounts.get(resolution.clientId) ?? 0) + 1);
+  }
+  const duplicatedTargets = new Set(
+    [...selectedCounts].filter(([, count]) => count > 1).map(([clientId]) => clientId),
+  );
 
   function buildInitialResolutions(data: FiscalImportPreview) {
     return Object.fromEntries(
@@ -159,6 +183,7 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
         {
           clientId: row.status === "matched" ? row.suggestedClientId : null,
           ignored: false,
+          responsibleUserId: null,
         },
       ]),
     );
@@ -176,17 +201,59 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
       setResolutions(buildInitialResolutions(result.data));
       setSummary(null);
       setConfirmed(false);
+      setBulkResponsible("");
       toast.success("Planilha lida. Revise a conciliação antes de aplicar.");
     });
   }
 
-  function setRow(rowId: string, next: Resolution) {
-    setResolutions((current) => ({ ...current, [rowId]: next }));
+  function setRow(rowId: string, next: Partial<Resolution>) {
+    setResolutions((current) => {
+      const previous = current[rowId] ?? {
+        clientId: null,
+        ignored: false,
+        responsibleUserId: null,
+      };
+      return { ...current, [rowId]: { ...previous, ...next } };
+    });
     setConfirmed(false);
   }
 
+  function reconcileRow(rowId: string, clientId: string) {
+    const previous = resolutions[rowId];
+    setRow(rowId, {
+      clientId,
+      ignored: false,
+      responsibleUserId: previous?.clientId === clientId
+        ? previous.responsibleUserId
+        : null,
+    });
+    setEditingRowId(null);
+  }
+
+  function assignToReconciledRows() {
+    if (!preview || !bulkResponsible) return;
+    const eligible = new Set(preview.clients.filter((client) =>
+      client.active && !client.pendingFiscalAssignment,
+    ).map((client) => client.id));
+    const count = preview.rows.filter((row) => {
+      const resolution = resolutions[row.id];
+      return resolution?.clientId && !resolution.ignored && eligible.has(resolution.clientId);
+    }).length;
+    setResolutions((current) => Object.fromEntries(
+      Object.entries(current).map(([rowId, resolution]) => [
+        rowId,
+        resolution.clientId && !resolution.ignored && eligible.has(resolution.clientId)
+          ? { ...resolution, responsibleUserId: bulkResponsible }
+          : resolution,
+      ]),
+    ));
+    setConfirmed(false);
+    setBulkResponsible("");
+    toast.success(`Responsável selecionado para ${count} linha(s).`);
+  }
+
   function apply() {
-    if (!preview || unresolved > 0 || !confirmed) return;
+    if (!preview || unresolved > 0 || duplicatedTargets.size > 0 || !confirmed) return;
     startTransition(async () => {
       const result = await applyFiscalImport({
         clanId,
@@ -203,6 +270,10 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
                   preview.clients.find(
                     (client) => client.id === resolution.clientId,
                   )?.profile?.version ?? null,
+                responsibleUserId: resolution.responsibleUserId,
+                expectedHolderId: preview.clients.find(
+                  (client) => client.id === resolution.clientId,
+                )?.holderId ?? null,
               };
         }),
       });
@@ -218,23 +289,74 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
 
   return (
     <>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setEditingRowId(null);
+      }}>
         <DialogTrigger asChild>
           <Button type="button" variant="outline" size="sm">
             <FileSpreadsheet aria-hidden /> Importar planilha fiscal
           </Button>
         </DialogTrigger>
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-5xl">
+        <DialogContent className={cn("max-h-[92vh] overflow-y-auto", editingRow ? "sm:max-w-lg" : "sm:max-w-5xl")}>
           <DialogHeader>
-            <DialogTitle>Importar e conciliar planilha fiscal</DialogTitle>
+            <DialogTitle>{editingRow ? `Conciliar “${editingRow.sourceName}”` : "Importar e conciliar planilha fiscal"}</DialogTitle>
             <DialogDescription>
-              O Excel não precisa ter CNPJ. O sistema compara os nomes com o
-              cadastro e pede sua confirmação quando houver diferença ou dúvida.
-              Nenhuma empresa nova é criada automaticamente.
+              {editingRow
+                ? "Escolha uma empresa já cadastrada. Esta decisão será memorizada como alias."
+                : "O Excel não precisa ter CNPJ. Confira cada empresa, sua ficha e o responsável antes de aplicar. A importação não cria empresas novas."}
             </DialogDescription>
           </DialogHeader>
 
-          {!preview ? (
+          {editingRow ? (
+            <div className="grid gap-3">
+              {editingRow.suggestions.length > 0 ? (
+                <div className="grid gap-1.5">
+                  <span className="text-xs font-medium">Sugestões</span>
+                  {editingRow.suggestions.map((suggestion) => (
+                    <button key={suggestion.clientId} type="button" className="rounded-lg border p-2 text-left text-sm hover:bg-muted/50" onClick={() => reconcileRow(editingRow.id, suggestion.clientId)}>
+                      <span className="flex items-center justify-between gap-2"><strong>{suggestion.clientName}</strong><Badge variant="outline">{Math.round(suggestion.score * 100)}%</Badge></span>
+                      <span className="text-[11px] text-muted-foreground">{suggestion.reasons[0]}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="grid gap-1.5">
+                <Label htmlFor="fiscal-import-client-search">Outra empresa cadastrada</Label>
+                <Input
+                  id="fiscal-import-client-search"
+                  value={clientSearch}
+                  placeholder="Digite parte do nome da empresa…"
+                  autoFocus
+                  onChange={(event) => setClientSearch(event.target.value)}
+                />
+                <div className="max-h-52 overflow-y-auto rounded-lg border p-1">
+                  {filteredClients.length > 0 ? (
+                    filteredClients.map((client) => (
+                      <button
+                        key={client.id}
+                        type="button"
+                        className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted/60"
+                        onClick={() => reconcileRow(editingRow.id, client.id)}
+                      >
+                        <span>{client.name}</span>
+                        {!client.active ? <Badge variant="outline">inativa</Badge> : null}
+                      </button>
+                    ))
+                  ) : (
+                    <p className="px-2.5 py-3 text-xs text-muted-foreground">
+                      Nenhuma empresa encontrada.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditingRowId(null)}>
+                  Voltar à prévia
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : !preview ? (
             <form
               className="grid gap-4"
               onSubmit={(event) => {
@@ -247,7 +369,12 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
                 <Input id="fiscal-import-file" name="file" type="file" accept=".xlsx" required />
                 <p className="text-xs text-muted-foreground">
                   Até 5 MB. Cabeçalhos esperados: Empresas, Movimentos,
-                  Entrada, Saída, Guia, Entrega, NFS e Observações.
+                  Entrada, Saída, Guia, Entrega, NFE/NFS e Observações.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  X, SM e Sim = precisa fazer; célula vazia e Não = não precisa.
+                  Em Entrega, Onvio é o canal de envio da guia. SM exige envio,
+                  mas deixa o canal pendente para revisão na ficha.
                 </p>
               </div>
               <DialogFooter>
@@ -263,6 +390,7 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
                 <div className="rounded-lg bg-success/10 p-3 text-center"><strong className="block font-mono text-xl text-success">{summary.createdProfiles}</strong><span className="text-xs">fichas criadas</span></div>
                 <div className="rounded-lg bg-primary/10 p-3 text-center"><strong className="block font-mono text-xl text-primary">{summary.updatedProfiles}</strong><span className="text-xs">atualizadas</span></div>
                 <div className="rounded-lg bg-muted/40 p-3 text-center"><strong className="block font-mono text-xl">{summary.unchangedProfiles}</strong><span className="text-xs">sem mudança</span></div>
+                <div className="rounded-lg bg-primary/10 p-3 text-center"><strong className="block font-mono text-xl text-primary">{summary.assignedPortfolios}</strong><span className="text-xs">carteiras atribuídas</span></div>
                 <div className="rounded-lg bg-muted/40 p-3 text-center"><strong className="block font-mono text-xl">{summary.ignored}</strong><span className="text-xs">ignoradas</span></div>
                 <div className="rounded-lg bg-destructive/10 p-3 text-center"><strong className="block font-mono text-xl text-destructive">{summary.errors}</strong><span className="text-xs">rejeitadas/erros</span></div>
                 <div className="rounded-lg bg-muted/40 p-3 text-center"><strong className="block font-mono text-xl">{summary.imported}</strong><span className="text-xs">linhas aplicadas</span></div>
@@ -297,6 +425,28 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
                 </div>
               ) : null}
 
+              <div className="flex flex-wrap items-end gap-2 rounded-lg border bg-muted/25 p-3">
+                <div className="min-w-48 flex-1 space-y-1.5">
+                  <Label htmlFor="fiscal-import-bulk-owner">Responsável para linhas conciliadas</Label>
+                  <Select value={bulkResponsible} onValueChange={setBulkResponsible}>
+                    <SelectTrigger id="fiscal-import-bulk-owner" className="w-full">
+                      <SelectValue placeholder="Escolha um integrante do Fiscal" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {preview.members.map((member) => (
+                        <SelectItem key={member.userId} value={member.userId}>{member.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button type="button" variant="outline" disabled={!bulkResponsible} onClick={assignToReconciledRows}>
+                  Atribuir às conciliadas
+                </Button>
+                <p className="w-full text-xs text-muted-foreground">
+                  Aplica às linhas já conciliadas e aptas. Você pode ajustar cada responsável abaixo; deixar sem escolha preserva a carteira atual.
+                </p>
+              </div>
+
               <div className="grid max-h-[48vh] gap-2 overflow-y-auto pr-1">
                 {preview.rows.map((row) => {
                   const resolution = resolutions[row.id];
@@ -316,7 +466,7 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
                         {resolution?.ignored ? (
                           <Badge variant="outline">Linha ignorada</Badge>
                         ) : selectedName ? (
-                          <p className="flex items-center gap-1.5 text-sm"><Check className="size-4 text-success" aria-hidden /><span className="truncate">{selectedName}</span>{selectedClient && !selectedClient.active ? <Badge variant="outline">inativa</Badge> : null}{row.status !== "matched" ? <Badge variant="outline">confirmada manualmente</Badge> : null}</p>
+                          <p className="flex items-center gap-1.5 text-sm"><Check className="size-4 text-success" aria-hidden /><span className="truncate">{selectedName}</span>{duplicatedTargets.has(resolution.clientId!) ? <Badge variant="outline" className="border-warning/40 text-warning">duplicada</Badge> : null}{selectedClient && !selectedClient.active ? <Badge variant="outline">inativa</Badge> : null}{row.status !== "matched" ? <Badge variant="outline">confirmada manualmente</Badge> : null}</p>
                         ) : (
                           <p className="flex items-center gap-1.5 text-sm text-destructive"><AlertTriangle className="size-4" aria-hidden /> Sem conciliação</p>
                         )}
@@ -351,6 +501,33 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
                             ) : null}
                           </details>
                         ) : null}
+                        {selectedClient ? (
+                          <div className="mt-2 grid gap-1">
+                            <span className="text-xs text-muted-foreground">
+                              Atual: {selectedClient.holderName ?? "sem responsável"}
+                            </span>
+                            <Select
+                              value={resolution?.responsibleUserId ?? "__keep__"}
+                              onValueChange={(userId) => setRow(row.id, {
+                                responsibleUserId: userId === "__keep__" ? null : userId,
+                              })}
+                              disabled={resolution?.ignored || !selectedClient.active || selectedClient.pendingFiscalAssignment}
+                            >
+                              <SelectTrigger className="w-full" aria-label={`Responsável fiscal de ${row.sourceName}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__keep__">Manter responsável atual</SelectItem>
+                                {preview.members.map((member) => (
+                                  <SelectItem key={member.userId} value={member.userId}>{member.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {selectedClient.pendingFiscalAssignment ? (
+                              <span className="text-xs text-warning">Empresa nova: confirme a entrada na carteira separadamente.</span>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="flex gap-1">
                         <Button type="button" variant="outline" size="sm" onClick={() => { setClientSearch(""); setEditingRowId(row.id); }}><Pencil aria-hidden /> Conciliar</Button>
@@ -363,75 +540,19 @@ export function FiscalImportDialog({ clanId }: { clanId: string }) {
 
               <label className="flex items-start gap-2 rounded-lg border bg-muted/25 p-3 text-xs">
                 <input type="checkbox" className="mt-0.5 accent-primary" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
-                <span>Revisei as conciliações acima e autorizo atualizar as Fichas Fiscais com os valores presentes na planilha. Campos ausentes serão preservados.</span>
+                <span>Revisei as conciliações e os responsáveis. Autorizo atualizar as Fichas Fiscais e atribuir as carteiras selecionadas. Células vazias nas colunas presentes significam “não precisa fazer”; colunas ausentes serão preservadas. Sem escolha de responsável, a carteira atual permanece.</span>
               </label>
               {unresolved > 0 ? <p className="text-xs text-destructive">Concilie ou ignore {unresolved} linha(s) antes de aplicar.</p> : null}
+              {duplicatedTargets.size > 0 ? <p className="text-xs text-warning">Há linhas apontando para a mesma empresa. Concilie com empresas diferentes ou ignore a linha duplicada antes de aplicar.</p> : null}
               <DialogFooter>
                 <Button type="button" variant="outline" disabled={pending} onClick={() => { setPreview(null); setResolutions({}); }}>Escolher outro arquivo</Button>
-                <Button type="button" disabled={pending || unresolved > 0 || !confirmed} onClick={apply}>{pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Upload aria-hidden />} Aplicar importação</Button>
+                <Button type="button" disabled={pending || unresolved > 0 || duplicatedTargets.size > 0 || !confirmed} onClick={apply}>{pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Upload aria-hidden />} Aplicar importação</Button>
               </DialogFooter>
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(editingRow)} onOpenChange={(next) => !next && setEditingRowId(null)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Conciliar “{editingRow?.sourceName}”</DialogTitle>
-            <DialogDescription>Escolha uma empresa já cadastrada. Esta decisão será memorizada como alias.</DialogDescription>
-          </DialogHeader>
-          {editingRow ? (
-            <div className="grid gap-3">
-              {editingRow.suggestions.length > 0 ? (
-                <div className="grid gap-1.5">
-                  <span className="text-xs font-medium">Sugestões</span>
-                  {editingRow.suggestions.map((suggestion) => (
-                    <button key={suggestion.clientId} type="button" className="rounded-lg border p-2 text-left text-sm hover:bg-muted/50" onClick={() => { setRow(editingRow.id, { clientId: suggestion.clientId, ignored: false }); setEditingRowId(null); }}>
-                      <span className="flex items-center justify-between gap-2"><strong>{suggestion.clientName}</strong><Badge variant="outline">{Math.round(suggestion.score * 100)}%</Badge></span>
-                      <span className="text-[11px] text-muted-foreground">{suggestion.reasons[0]}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <div className="grid gap-1.5">
-                <Label>Outra empresa cadastrada</Label>
-                <Input
-                  value={clientSearch}
-                  placeholder="Digite parte do nome da empresa…"
-                  autoFocus
-                  onChange={(event) => setClientSearch(event.target.value)}
-                />
-                <div className="max-h-52 overflow-y-auto rounded-lg border p-1">
-                  {filteredClients.length > 0 ? (
-                    filteredClients.map((client) => (
-                      <button
-                        key={client.id}
-                        type="button"
-                        className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted/60"
-                        onClick={() => {
-                          setRow(editingRow.id, {
-                            clientId: client.id,
-                            ignored: false,
-                          });
-                          setEditingRowId(null);
-                        }}
-                      >
-                        <span>{client.name}</span>
-                        {!client.active ? <Badge variant="outline">inativa</Badge> : null}
-                      </button>
-                    ))
-                  ) : (
-                    <p className="px-2.5 py-3 text-xs text-muted-foreground">
-                      Nenhuma empresa encontrada.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
