@@ -969,14 +969,14 @@ function CompanyCard({
   const hasClosings = company.closings.length > 0;
   // O selo dizia "observação" tanto para recado resolvido quanto para pedido
   // parado ha um mes. Agora diz quantos esperam alguem.
-  const observationBadgeInfo = observationBadge(
-    summarizeObservations(
-      company.observations.map((observation) => ({
-        taskId: observation.taskId,
-        resolvedAt: observation.resolvedAt ? new Date(observation.resolvedAt) : null,
-      })),
-    ),
+  const observationSummary = summarizeObservations(
+    company.observations.map((observation) => ({
+      taskId: observation.taskId,
+      resolvedAt: observation.resolvedAt ? new Date(observation.resolvedAt) : null,
+    })),
   );
+  const observationBadgeInfo = observationBadge(observationSummary);
+  const linkedMissionCount = observationSummary.assigned;
 
   function toggleYear() {
     if (
@@ -1094,10 +1094,9 @@ function CompanyCard({
                   {defisCompleted ? "DEFIS entregue" : "DEFIS pendente"}
                 </Badge>
               ) : null}
-              {/* Pendência precisa vencer os chips vizinhos (regime, ano,
-                  DEFIS), que são dado neutro. Encaminhado e resolvido descem
-                  para prata: continuam informando sem disputar atenção. */}
-              {observationBadgeInfo ? (
+              {/* Observações abertas continuam em alerta; missões vinculadas
+                  ganham um selo primário para aparecer junto ao título. */}
+              {observationBadgeInfo && !(linkedMissionCount > 0 && observationBadgeInfo.tone === "idle") ? (
                 <Badge
                   className={cn(
                     "h-5 px-1.5",
@@ -1107,6 +1106,14 @@ function CompanyCard({
                   )}
                 >
                   <MessageSquareText aria-hidden /> {observationBadgeInfo.label}
+                </Badge>
+              ) : null}
+              {linkedMissionCount > 0 ? (
+                <Badge className="h-6 border-2 border-primary/70 bg-primary/20 px-2 font-semibold text-primary">
+                  <ListChecks aria-hidden />
+                  {linkedMissionCount === 1
+                    ? "1 missão criada"
+                    : `${linkedMissionCount} missões criadas`}
                 </Badge>
               ) : null}
             </div>
