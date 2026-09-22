@@ -746,21 +746,36 @@ function ObservationRow({
       </p>
 
       {observation.taskId ? (
-        <Link
-          href={`/tasks/${observation.taskId}?returnTo=${encodeURIComponent(
-            clanTabHref(clanId, "closings"),
-          )}`}
-          className="flex flex-wrap items-center gap-2 text-xs text-primary hover:underline"
-        >
-          <ListChecks className="size-3.5 shrink-0" aria-hidden />
-          <span className="truncate">{observation.taskTitle ?? "Missão gerada"}</span>
-          {observation.taskStatus ? (
-            <span className="text-muted-foreground">
-              · {STATUS_LABELS[observation.taskStatus]}
-              {observation.taskAssignee ? ` · ${observation.taskAssignee}` : ""}
-            </span>
-          ) : null}
-        </Link>
+        <div className="grid gap-2 border border-primary/35 bg-primary/5 p-3 sm:flex sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-2">
+            <ListChecks className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+            <div className="grid min-w-0 gap-1">
+              <p className="text-xs font-semibold text-primary">
+                Missão criada a partir desta observação
+              </p>
+              <p className="truncate text-sm font-medium">
+                {observation.taskTitle ?? "Missão vinculada"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {observation.taskStatus
+                  ? `Status: ${STATUS_LABELS[observation.taskStatus]}`
+                  : "Status da missão indisponível"}
+                {observation.taskAssignee
+                  ? ` · Responsável: ${observation.taskAssignee}`
+                  : " · Sem responsável"}
+              </p>
+            </div>
+          </div>
+          <Link
+            href={`/tasks/${observation.taskId}?returnTo=${encodeURIComponent(
+              clanTabHref(clanId, "closings"),
+            )}`}
+            aria-label={`Abrir missão: ${observation.taskTitle ?? "Missão vinculada"}`}
+            className="flex min-h-9 w-fit shrink-0 items-center gap-1.5 border border-primary/40 px-3 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
+          >
+            Abrir missão <ListChecks className="size-4" aria-hidden />
+          </Link>
+        </div>
       ) : null}
 
       {viewerCanManage ? (

@@ -31,7 +31,7 @@ import {
 } from "./closing-board";
 import { ClanEmptyState, ClanSectionHeading } from "./clan-ui";
 
-type StatusFilter = "all" | "open" | "notes" | "completed";
+type StatusFilter = "all" | "open" | "notes" | "completed" | "periods";
 
 function todayInSaoPaulo(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -58,7 +58,7 @@ function parseGroup(value: string | undefined): ClosingGroup {
 }
 
 function parseStatus(value: string | undefined): StatusFilter {
-  return value === "open" || value === "notes" || value === "completed"
+  return value === "open" || value === "notes" || value === "completed" || value === "periods"
     ? value
     : "all";
 }
@@ -272,6 +272,7 @@ export async function ClosingsTab({
     if (status === "open") return !company.yearClosedAt;
     if (status === "notes") return hasNotes(company);
     if (status === "completed") return Boolean(company.yearClosedAt);
+    if (status === "periods") return company.closings.length > 0;
     return true;
   });
 
@@ -415,6 +416,7 @@ export async function ClosingsTab({
               ["all", "Todas"],
               ["open", "Ano em aberto"],
               ["notes", "Com observação"],
+              ["periods", "Com fechamentos no período"],
               ["completed", "Ano fechado"],
             ] as const
           ).map(([key, label]) => (
