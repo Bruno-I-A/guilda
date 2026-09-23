@@ -222,7 +222,12 @@ export default async function MuralPage({
   return (
     <div className="grid gap-5">
       <PageHeader title="Mural" description="Acompanhe os Informativos por responsável. Confirme sua parte depois de encerrar suas missões; a leitura é uma confirmação separada." />
-      <SegmentedNav items={tabs} active={section} label="Filas do Mural" />
+      <SegmentedNav
+        items={tabs}
+        active={section}
+        label="Filas do Mural"
+        className="grid grid-cols-2 gap-0 overflow-x-visible sm:flex sm:gap-1 sm:overflow-x-auto"
+      />
       <form action="/mural" method="get" className="flex flex-wrap items-center gap-2">
         <input type="hidden" name="aba" value={section} />
         <div className="relative min-w-56 flex-1">
