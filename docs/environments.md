@@ -9,12 +9,13 @@
 | Produção | `main` | Operação real | Postgres exclusivo de produção |
 
 O trabalho normal é enviado para `develop`. Quando a versão estiver aprovada,
-abre-se um Pull Request de `develop` para `main`. A publicação da `main` é
-acionada manualmente na action **Guilda pipeline**, marcando
-`deploy_production`, depois que testes e build passarem.
+abre-se um Pull Request de `develop` para `main`. A action **Guilda pipeline**
+tem um acionamento manual de produção (`deploy_production`), mas um merge na
+`main` já publicou automaticamente em 03/09/2026. Trate o merge como possível
+deploy imediato até conferir e desligar essa integração no Easypanel.
 
-O webhook global antigo do Easypanel foi desativado. Assim, pushes em qualquer
-branch não reiniciam a produção por acidente.
+O webhook global antigo do Easypanel foi desativado. Isso não prova que as
+integrações Git de cada serviço estejam desligadas.
 
 ## Estado atual (02/09/2026)
 
@@ -45,10 +46,14 @@ qualquer deploy que a altere.
 
 ## Deploy da homologação
 
-O job `deploy-staging` da pipeline publica a cada push na `develop`, **desde que**
-o secret `EASYPANEL_STAGING_DEPLOY_URL` exista no GitHub. Enquanto ele não for
-cadastrado, o job avisa e sai em 0 — a pipeline não fica vermelha, e o deploy
-é acionado manualmente pelo painel.
+O job `deploy-staging` da pipeline aciona o webhook a cada push na `develop`
+**se** o secret `EASYPANEL_STAGING_DEPLOY_URL` existir. Sem ele, o job sai em 0
+sem acionar o webhook. Em 23/09/2026, porém, a aplicação de homologação passou
+a servir os commits `13ff3f6` e `ea134cf` após o push, mesmo com o secret vazio;
+o Mural novo e a migration 0075 funcionaram no navegador. Há outro caminho de
+publicação ativo no painel, provavelmente a integração Git do serviço, ainda
+não inspecionado. Verifique a versão servida; nem o status verde nem a mensagem
+do job bastam para concluir que houve ou não deploy.
 
 ## Variáveis do serviço de homologação
 
@@ -102,7 +107,9 @@ Todas exclusivas. Nenhuma pode repetir valor da produção.
 2. Confirmar que a action da `develop` está verde.
 3. Abrir e revisar o Pull Request `develop` → `main`.
 4. Fazer backup do banco de produção quando houver migration de risco.
-5. Mesclar o Pull Request.
-6. Em **Actions → Guilda pipeline → Run workflow**, selecionar `main`, marcar
-   `deploy_production` e acompanhar o deploy no Easypanel.
+5. Mesclar o Pull Request e acompanhar o Easypanel imediatamente: já houve
+   publicação automática no push da `main`.
+6. Se não houver publicação automática, em **Actions → Guilda pipeline → Run
+   workflow**, selecionar `main`, marcar `deploy_production` e acompanhar o
+   deploy no Easypanel.
 7. Fazer uma verificação rápida no domínio de produção.

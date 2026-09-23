@@ -65,11 +65,11 @@ jobs:
       - name: Acionar Easypanel
         env:
           DEPLOY_URL: ${{ secrets.EASYPANEL_STAGING_DEPLOY_URL }}
-        # Sem o secret cadastrado a homologação ainda não existe no Easypanel.
-        # Sair em 0 evita que todo push na develop falhe até o painel ficar de pé.
+        # Sem o secret, esta job não aciona o webhook. Uma integração Git do
+        # Easypanel pode publicar por outro caminho; o status verde não prova deploy.
         run: |
           if [ -z "$DEPLOY_URL" ]; then
-            echo "EASYPANEL_STAGING_DEPLOY_URL não configurado; homologação ainda não existe. Nada a publicar."
+            echo "EASYPANEL_STAGING_DEPLOY_URL não configurado; esta job não acionou deploy. Confira a versão servida no Easypanel."
             exit 0
           fi
           curl --fail-with-body --silent --show-error --request POST "$DEPLOY_URL"
