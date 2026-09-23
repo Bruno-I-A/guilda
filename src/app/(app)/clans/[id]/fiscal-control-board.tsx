@@ -57,6 +57,7 @@ import {
   type TaxRegime,
 } from "@/lib/clients-ui";
 import { cn } from "@/lib/utils";
+import { formatAppDateTime } from "@/lib/date-time";
 
 import {
   createFiscalExceptionMission,
@@ -331,7 +332,7 @@ function ControlDetailsDialog({
                 <li key={event.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/30 px-2.5 py-1.5 text-xs">
                   <span>{eventText(event)}</span>
                   <span className="text-muted-foreground">
-                    {event.actorName} · {new Date(event.createdAt).toLocaleString("pt-BR")}
+                    {event.actorName} · {formatAppDateTime(event.createdAt)}
                   </span>
                 </li>
               ))}
@@ -340,7 +341,7 @@ function ControlDetailsDialog({
         ) : null}
         <DialogFooter>
           <span className="mr-auto text-xs text-muted-foreground">
-            Última alteração: {new Date(row.updatedAt).toLocaleString("pt-BR")}
+            Última alteração: {formatAppDateTime(row.updatedAt)}
           </span>
         </DialogFooter>
       </DialogContent>

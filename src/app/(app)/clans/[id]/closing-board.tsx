@@ -43,6 +43,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { ClosingStatus } from "@/lib/closings-ui";
 import { formatBRLCurrency } from "@/lib/currency";
+import { APP_TIME_ZONE, formatAppDate } from "@/lib/date-time";
 import {
   ACCOUNTING_PERIOD_MONTHS,
   completedAccountingMonths,
@@ -337,6 +338,7 @@ function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: APP_TIME_ZONE,
   }).format(new Date(value));
 }
 
@@ -796,14 +798,14 @@ function ObservationRow({
         <span>{observation.authorName ?? "autor não registrado"}</span>
         <span aria-hidden>·</span>
         <span className="font-mono tabular-nums">
-          {new Date(observation.createdAt).toLocaleDateString("pt-BR")}
+          {formatAppDate(observation.createdAt)}
         </span>
         {observation.resolvedAt ? (
           <>
             <span aria-hidden>·</span>
             <span className={estilo.text}>
               resolvida em{" "}
-              {new Date(observation.resolvedAt).toLocaleDateString("pt-BR")}
+              {formatAppDate(observation.resolvedAt)}
             </span>
           </>
         ) : null}

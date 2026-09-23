@@ -66,6 +66,7 @@ import type { TaskStatus } from "@/domain/task-state";
 import { TAX_REGIME_LABELS, TAX_REGIMES, type TaxRegime } from "@/lib/clients-ui";
 import { searchCompanyFlowClients } from "@/lib/company-flows/client-search";
 import { formatBRLCurrency } from "@/lib/currency";
+import { formatAppDate, formatAppDateTime } from "@/lib/date-time";
 import { cn } from "@/lib/utils";
 
 import {
@@ -372,7 +373,7 @@ function flowStageDescription(row: CompanyFlowView): string {
       return "Informativo em preparação";
     case "completed":
       return row.completedAt
-        ? `Concluído em ${new Date(row.completedAt).toLocaleDateString("pt-BR")}`
+        ? `Concluído em ${formatAppDate(row.completedAt)}`
         : "Fluxo concluído";
     case "cancelled":
       return "Fluxo cancelado";
@@ -1519,7 +1520,7 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-        <DialogHeader><DialogTitle>{COMPANY_FLOW_KIND_LABELS[row.kind]} · {companyName}</DialogTitle><DialogDescription>Criado por {row.createdByName} em {new Date(row.createdAt).toLocaleString("pt-BR")}</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{COMPANY_FLOW_KIND_LABELS[row.kind]} · {companyName}</DialogTitle><DialogDescription>Criado por {row.createdByName} em {formatAppDateTime(row.createdAt)}</DialogDescription></DialogHeader>
         <div className="grid gap-4 text-sm">
           {/* Onde o pedido está na esteira, antes de qualquer detalhe. */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 pb-3">
@@ -1536,7 +1537,7 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
           ) : rhVerificationState === "confirmed" ? (
             <section className="rounded-md border border-success/35 bg-success/5 p-3" role="status">
               <h3 className="flex items-center gap-2 text-success"><ShieldCheck className="size-4" aria-hidden /> Folha e pró-labore confirmados pelo RH</h3>
-              <p className="mt-1 text-xs text-muted-foreground">Validação concluída{row.rhVerificationCompletedAt ? ` em ${new Date(row.rhVerificationCompletedAt).toLocaleString("pt-BR")}` : ""}. A confirmação da baixa está liberada para o Societário.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Validação concluída{row.rhVerificationCompletedAt ? ` em ${formatAppDateTime(row.rhVerificationCompletedAt)}` : ""}. A confirmação da baixa está liberada para o Societário.</p>
             </section>
           ) : null}
           {row.hasGovSecret ? <section className="rounded-md border border-primary/30 bg-primary/5 p-3"><p className="flex items-center gap-1.5 font-medium"><KeyRound className="size-4" aria-hidden /> Acesso Gov.br protegido</p>{revealedSecret ? <p className="mt-2 rounded bg-background px-2 py-1 font-mono text-sm break-all">{revealedSecret}</p> : <Button type="button" className="mt-2" variant="outline" size="sm" disabled={pending || !row.canReturn} onClick={revealSecret}><Eye aria-hidden /> Revelar senha</Button>}</section> : null}
@@ -1573,7 +1574,7 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
           {row.status === "informative_drafting" ? <p className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">A preparação do Informativo está aberta. Você pode gerar o texto novamente até criar a prévia em Informativos.</p> : null}
           {row.status === "sent_to_corporate" && row.canClaim ? <Button type="button" disabled={pending} onClick={claim}><UserRoundCheck aria-hidden /> {row.isAssignedToViewer ? "Confirmar recebimento" : "Assumir processamento"}</Button> : null}
           {row.status === "completed" ? <div className="rounded-md border border-success/30 bg-success/5 p-3 text-sm text-success"><CheckCircle2 className="mr-1 inline size-4" aria-hidden /> Informativo gerado e Fluxo concluído. A confirmação das missões segue em Informativos.</div> : null}
-          {row.history.length > 0 ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Histórico</h3>{row.history.map((event) => <div key={event.id} className="rounded-md bg-muted/35 px-3 py-2 text-xs"><span className="font-medium">{eventLabel(event.eventType, row.kind)}</span><span className="text-muted-foreground"> · {event.actorName} · {new Date(event.createdAt).toLocaleString("pt-BR")}</span>{event.note ? <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{event.note}</p> : null}</div>)}</section> : null}
+          {row.history.length > 0 ? <section className="grid gap-2 border-t pt-4"><h3 className="font-medium">Histórico</h3>{row.history.map((event) => <div key={event.id} className="rounded-md bg-muted/35 px-3 py-2 text-xs"><span className="font-medium">{eventLabel(event.eventType, row.kind)}</span><span className="text-muted-foreground"> · {event.actorName} · {formatAppDateTime(event.createdAt)}</span>{event.note ? <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{event.note}</p> : null}</div>)}</section> : null}
         </div>
         <DialogFooter className="gap-2 sm:justify-between">
           <p className="mr-auto text-xs text-muted-foreground">Cancelar preserva o histórico; excluir remove o Fluxo definitivamente.</p>
@@ -1762,7 +1763,7 @@ export function CompanyFlowBoard({
                 <p className="text-sm">{flowStageDescription(row)}</p>
                 <p className="text-xs text-muted-foreground">
                   {row.resultCnpj ? formatCnpj(row.resultCnpj) : `Origem: ${FLOW_SOURCE_LABELS[row.source]}`}
-                  {` · atualizado ${new Date(row.updatedAt).toLocaleDateString("pt-BR")}`}
+                  {` · atualizado ${formatAppDate(row.updatedAt)}`}
                   {row.assignedName && row.status !== "in_progress" ? ` · Societário: ${row.assignedName}` : ""}
                   {` · pedido por ${row.createdByName}`}
                 </p>
