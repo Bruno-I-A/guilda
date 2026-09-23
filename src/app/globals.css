@@ -100,6 +100,13 @@
    */
   --success: oklch(0.75 0.1 168);
   --warning: oklch(0.72 0.14 62);
+  /* Cores categóricas dos clãs no editor de missões; não indicam status. */
+  --category-societario: oklch(0.74 0.085 255);
+  --category-contabilidade: oklch(0.76 0.08 220);
+  --category-fiscal: oklch(0.76 0.08 185);
+  --category-rh: oklch(0.77 0.09 330);
+  --category-financeiro: oklch(0.75 0.09 290);
+  --category-sucesso-do-cliente: oklch(0.76 0.085 160);
   /* Cor de marca externa do Telegram (#2AABEE). Token só para não ficar solta. */
   --telegram: #2aabee;
   /* Brasão: ferro do escudo, aresta polida, bisel interno e o entalhe de Yggdrasil. */
@@ -189,6 +196,40 @@
 }
 
 @layer utilities {
+  .clan-mission-group {
+    --clan-mission-accent: var(--primary);
+    border-left: 3px solid var(--clan-mission-accent);
+  }
+  .clan-mission-group[data-clan="societario"] {
+    --clan-mission-accent: var(--category-societario);
+  }
+  .clan-mission-group[data-clan="contabilidade"] {
+    --clan-mission-accent: var(--category-contabilidade);
+  }
+  .clan-mission-group[data-clan="fiscal"] {
+    --clan-mission-accent: var(--category-fiscal);
+  }
+  .clan-mission-group[data-clan="rh"] {
+    --clan-mission-accent: var(--category-rh);
+  }
+  .clan-mission-group[data-clan="financeiro"] {
+    --clan-mission-accent: var(--category-financeiro);
+  }
+  .clan-mission-group[data-clan="sucesso-do-cliente"] {
+    --clan-mission-accent: var(--category-sucesso-do-cliente);
+  }
+  .clan-mission-heading {
+    background: color-mix(in oklab, var(--clan-mission-accent) 9%, var(--card));
+  }
+  .clan-mission-accent {
+    color: var(--clan-mission-accent);
+  }
+  .clan-mission-index {
+    color: var(--clan-mission-accent);
+    background: color-mix(in oklab, var(--clan-mission-accent) 13%, transparent);
+    border: 1px solid color-mix(in oklab, var(--clan-mission-accent) 40%, transparent);
+  }
+
   /* Ruído de metal escovado + luz fria vinda de cima. Para cards de vitrine. */
   .texture-iron {
     background-image:
