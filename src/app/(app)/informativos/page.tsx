@@ -14,6 +14,7 @@ import { canHandleInformatives, isAdminRole } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
 import { informativeDraftPayloadSchema } from "@/lib/ai/informative-schema";
 import { companyFlowMissionPresets } from "@/lib/informatives/mission-presets";
+import { informativeTasksRevision } from "@/lib/informatives/revision";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 
 import { InformativePanel, type DraftView } from "./informative-panel";
@@ -179,6 +180,7 @@ export default async function InformativosPage({
     if (parsed.success && pendingDraft.expiresAt > new Date()) {
       draft = {
         informativeId: pendingDraft.id,
+        revision: informativeTasksRevision(parsed.data.tasks),
         expiresAt: pendingDraft.expiresAt.toISOString(),
         kind: parsed.data.kind,
         company: {

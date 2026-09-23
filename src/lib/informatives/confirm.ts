@@ -30,6 +30,7 @@ import {
   isAccountantChangeInformative,
 } from "@/domain/company-flow";
 import { deactivateClosureClientWhenTasksFinish } from "./closure-completion";
+import { informativeTasksRevision } from "./revision";
 
 import type { InformativeActor } from "./draft";
 
@@ -339,6 +340,7 @@ export async function confirmInformative(
   options: {
     connectionId?: string | null;
     decisions?: readonly InformativeTaskDecision[];
+    expectedRevision?: string;
   } = {},
 ): Promise<InformativeResult> {
   return withOrgTx(actor.orgId, async (tx): Promise<InformativeResult> => {
@@ -371,6 +373,15 @@ export async function confirmInformative(
       };
     }
     const payload: InformativeDraftPayload = parsed.data;
+    if (
+      options.expectedRevision &&
+      informativeTasksRevision(payload.tasks) !== options.expectedRevision
+    ) {
+      return {
+        ok: false,
+        message: "A prévia mudou em outra aba. Atualize a página antes de confirmar.",
+      };
+    }
     if (payload.unresolvedAssignees.length) {
       return {
         ok: false,
