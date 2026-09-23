@@ -14,7 +14,7 @@ import {
 import * as schema from "@/db/schema";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
 import { inferTaxRegimeFromCnpj } from "@/domain/client-tax-regime";
-import { canHandleInformatives, isAdminRole } from "@/domain/guild-permissions";
+import { canHandleInformatives } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
 import { informativeDraftPayloadSchema } from "@/lib/ai/informative-schema";
 import {
@@ -46,6 +46,7 @@ import {
   informativeTasksRevision,
   reviseInformativeTasks,
 } from "@/lib/informatives/revision";
+import { canAccessCompanyFlowInformative } from "@/lib/informatives/flow-access";
 import { listActiveClans } from "@/lib/org";
 
 /**
@@ -84,7 +85,7 @@ async function leadsAnyActiveClan(
   return Boolean(row);
 }
 
-async function requireInformativeActor(): Promise<
+async function requireInformativeActor(target?: { flowId?: string; informativeId?: string }): Promise<
   { ok: true; actor: InformativeActor } | { ok: false; error: string }
 > {
   const ctx = await requireMemberContext();
@@ -94,8 +95,14 @@ async function requireInformativeActor(): Promise<
     leadsAnyActiveClan(tx, ctx.orgId, ctx.userId),
   );
 
-  if (!canHandleInformatives({ role: ctx.role as OrgRole, leadsAnyClan })) {
-    return err("Apenas um líder de clã, admin ou owner pode processar informativos.");
+  const canHandle = canHandleInformatives({ role: ctx.role as OrgRole, leadsAnyClan });
+  const canHandleLinkedFlow = target && await withOrgTx(ctx.orgId, (tx) =>
+    canAccessCompanyFlowInformative(tx, {
+      orgId: ctx.orgId, userId: ctx.userId, role: ctx.role as OrgRole,
+    }, target),
+  );
+  if (!canHandle && !canHandleLinkedFlow) {
+    return err("Apenas líder, admin, owner ou responsável pelo Informativo deste Fluxo pode continuar.");
   }
 
   return {
@@ -304,7 +311,7 @@ async function attachInformativeToFlow(
   informativeId: string,
 ): Promise<boolean> {
   return withOrgTx(actor.orgId, async (tx) => {
-    if (!isAdminRole(actor.role)) return false;
+    if (!await canAccessCompanyFlowInformative(tx, actor, { flowId })) return false;
     const [flow] = await tx
       .select({
         id: schema.companyFlows.id,
@@ -354,13 +361,12 @@ async function attachInformativeToFlow(
 export async function prepareStructuredInformative(
   input: z.input<typeof structuredInformativeSchema>,
 ): Promise<ActionResult<{ informativeId: string }>> {
-  const gate = await requireInformativeActor();
-  if (!gate.ok) return gate;
-
   const parsed = structuredInformativeSchema.safeParse(input);
   if (!parsed.success) {
     return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
   }
+  const gate = await requireInformativeActor({ flowId: parsed.data.flowId });
+  if (!gate.ok) return gate;
   if (
     parsed.data.resolvedCompany &&
     !validateCnpj(parsed.data.resolvedCompany.normalizedCnpj)
@@ -467,9 +473,10 @@ export async function prepareStructuredInformative(
       summary = `${direct.kind === "amendment" ? "Alteração" : "Baixa"} de ${client.name}.`;
     }
   } else if (parsed.data.flowId) {
-    if (!isAdminRole(gate.actor.role)) {
-      return err("Apenas owner ou admin pode preparar o Informativo de um Fluxo.");
-    }
+    const canAccessFlow = await withOrgTx(gate.actor.orgId, (tx) =>
+      canAccessCompanyFlowInformative(tx, gate.actor, { flowId: parsed.data.flowId }),
+    );
+    if (!canAccessFlow) return err("Você não pode preparar o Informativo deste Fluxo.");
     const flow = await withOrgTx(gate.actor.orgId, async (tx) => {
       const [row] = await tx
         .select({
@@ -616,22 +623,22 @@ export async function analyzeInformative(input: {
   flowId?: string;
   directCompany?: { clientId: string; kind: "amendment" | "closure" };
 }): Promise<ActionResult<{ informativeId: string }>> {
-  const gate = await requireInformativeActor();
-  if (!gate.ok) return gate;
-
   const parsed = analyzeSchema.safeParse(input);
   if (!parsed.success) {
     return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
   }
+  const gate = await requireInformativeActor({ flowId: parsed.data.flowId });
+  if (!gate.ok) return gate;
 
   let flowContext: CompanyFlowDraftContext | undefined;
   let sourceForAi = parsed.data.sourceText;
   let sourceToSave = parsed.data.sourceText;
   const flowId = parsed.data.flowId;
   if (flowId) {
-    if (!isAdminRole(gate.actor.role)) {
-      return err("Apenas owner ou admin pode preparar o Informativo de um Fluxo.");
-    }
+    const canAccessFlow = await withOrgTx(gate.actor.orgId, (tx) =>
+      canAccessCompanyFlowInformative(tx, gate.actor, { flowId }),
+    );
+    if (!canAccessFlow) return err("Você não pode preparar o Informativo deste Fluxo.");
     const actions = companyFlowActionsText(parsed.data.sourceText);
     if (!actions) {
       return err("Mantenha o título AÇÕES e descreva abaixo o que cada setor precisa fazer.");
@@ -783,13 +790,12 @@ const reviseDraftSchema = z.object({
 export async function reviseInformativeDraft(
   input: z.input<typeof reviseDraftSchema>,
 ): Promise<ActionResult> {
-  const gate = await requireInformativeActor();
-  if (!gate.ok) return gate;
-
   const parsed = reviseDraftSchema.safeParse(input);
   if (!parsed.success) {
     return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
   }
+  const gate = await requireInformativeActor({ informativeId: parsed.data.informativeId });
+  if (!gate.ok) return gate;
   const { informativeId, expectedRevision, change } = parsed.data;
 
   const result = await withOrgTx(gate.actor.orgId, async (tx) => {
@@ -891,13 +897,12 @@ export async function confirmInformativeDraft(input: {
   expectedRevision: string;
   decisions?: InformativeTaskDecision[];
 }): Promise<ActionResult<{ taskIds: string[]; message: string }>> {
-  const gate = await requireInformativeActor();
-  if (!gate.ok) return gate;
-
   const parsed = confirmSchema.safeParse(input);
   if (!parsed.success) {
     return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
   }
+  const gate = await requireInformativeActor({ informativeId: parsed.data.informativeId });
+  if (!gate.ok) return gate;
 
   const result = await confirmInformative(gate.actor, parsed.data.informativeId, {
     expectedRevision: parsed.data.expectedRevision,
@@ -912,19 +917,21 @@ export async function confirmInformativeDraft(input: {
   revalidatePath("/mural");
   revalidatePath("/clients");
   revalidatePath("/dashboard");
+  revalidatePath("/profile");
+  revalidatePath("/leaderboard");
+  revalidatePath("/tasks/[id]", "page");
   return { ok: true, data: { taskIds: result.taskIds, message: result.message } };
 }
 
 export async function cancelInformativeDraft(input: {
   informativeId: string;
 }): Promise<ActionResult<{ message: string }>> {
-  const gate = await requireInformativeActor();
-  if (!gate.ok) return gate;
-
   const parsed = z
     .object({ informativeId: z.uuid("Informativo inválido.") })
     .safeParse(input);
   if (!parsed.success) return err("Informativo inválido.");
+  const gate = await requireInformativeActor({ informativeId: parsed.data.informativeId });
+  if (!gate.ok) return gate;
 
   const result = await cancelInformative(gate.actor, parsed.data.informativeId);
   if (!result.ok) return err(result.message);

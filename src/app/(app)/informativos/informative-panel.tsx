@@ -128,6 +128,9 @@ export function InformativePanel({
   amendmentSummary,
   flowSummary,
   flowMissionPresets = [],
+  generalAccess = true,
+  flowTaskId,
+  expiredDraftId,
 }: {
   draft: DraftView | null;
   clans: ClanMissionEditorClan[];
@@ -137,6 +140,9 @@ export function InformativePanel({
   amendmentSummary?: AmendmentSummaryView | null;
   flowSummary?: FlowInformativeSummaryView | null;
   flowMissionPresets?: readonly ClanMissionPreset[];
+  generalAccess?: boolean;
+  flowTaskId?: string | null;
+  expiredDraftId?: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -218,15 +224,17 @@ export function InformativePanel({
       toast.success(result.data?.message ?? "Missões criadas.");
       setMissionGroups([emptyClanMissionGroup()]);
       setDecisions({});
-      router.refresh();
+      if (flowTaskId) router.push(`/tasks/${flowTaskId}`);
+      else router.refresh();
     });
   }
 
   function handleCancel() {
-    if (!draft) return;
+    const informativeId = draft?.informativeId ?? expiredDraftId;
+    if (!informativeId) return;
     startTransition(async () => {
       const result = await cancelInformativeDraft({
-        informativeId: draft.informativeId,
+        informativeId,
       });
       if (!result.ok) {
         toast.error(result.error);
@@ -234,7 +242,8 @@ export function InformativePanel({
       }
       toast.info(result.data?.message ?? "Prévia cancelada.");
       setDecisions({});
-      router.refresh();
+      if (flowTaskId) router.push(`/tasks/${flowTaskId}`);
+      else router.refresh();
     });
   }
 
@@ -298,6 +307,14 @@ export function InformativePanel({
 
   return (
     <div className="grid gap-5">
+      {expiredDraftId ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4">
+          <p className="text-sm">A prévia deste Fluxo expirou. Descarte-a para gerar outra.</p>
+          <Button variant="outline" size="sm" disabled={pending} onClick={handleCancel}>
+            Descartar prévia expirada
+          </Button>
+        </div>
+      ) : null}
       {wizardOpen ? (
         <NewClientWizard clans={clans} onDone={() => setWizardOpen(false)} />
       ) : accountantChangeOpen ? (
@@ -312,20 +329,22 @@ export function InformativePanel({
       ) : (
         <div className="grid gap-2">
           <div className="flex flex-wrap justify-end gap-2">
-            {!flowId ? (
+            {generalAccess && !flowId ? (
               <Button variant="outline" size="sm" onClick={() => setDirectKind("amendment")}>
                 Alteração de empresa
               </Button>
             ) : null}
-            {!flowId ? (
+            {generalAccess && !flowId ? (
               <Button variant="outline" size="sm" onClick={() => setDirectKind("closure")}>
                 Baixa de empresa
               </Button>
             ) : null}
-            {!flowId ? <Button variant="outline" size="sm" onClick={() => setAccountantChangeOpen(true)}>Baixa por desligamento</Button> : null}
-            <Button variant="outline" size="sm" onClick={() => setWizardOpen(true)}>
-              <Building2 className="size-4" aria-hidden /> Novo cliente
-            </Button>
+            {generalAccess && !flowId ? <Button variant="outline" size="sm" onClick={() => setAccountantChangeOpen(true)}>Baixa por desligamento</Button> : null}
+            {generalAccess ? (
+              <Button variant="outline" size="sm" onClick={() => setWizardOpen(true)}>
+                <Building2 className="size-4" aria-hidden /> Novo cliente
+              </Button>
+            ) : null}
           </div>
           {amendmentSummary ? (
             <section className="grid gap-4 rounded-lg border border-primary/35 bg-primary/[0.04] p-4">
@@ -404,12 +423,14 @@ export function InformativePanel({
             <span className="text-xs text-muted-foreground">
               {structuredMissionCount} {structuredMissionCount === 1 ? "missão" : "missões"} · sem processamento de IA
             </span>
-            <Button
-              onClick={handleAnalyze}
-              disabled={pending || !missionGroupsValid}
-            >
-              <ListChecks className="size-4" aria-hidden /> Gerar prévia
-            </Button>
+            {!flowId || (!draft && !expiredDraftId) ? (
+              <Button
+                onClick={handleAnalyze}
+                disabled={pending || !missionGroupsValid}
+              >
+                <ListChecks className="size-4" aria-hidden /> Gerar prévia
+              </Button>
+            ) : null}
           </div>
         </div>
       )}

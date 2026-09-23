@@ -21,6 +21,7 @@ import {
   periodsPerYear,
 } from "@/domain/commitments";
 import { createTaskRecord } from "@/lib/tasks/create";
+import { completeTaskFromSystem } from "@/lib/tasks/complete";
 import {
   amendmentClientRegistrationUpdate,
   amendmentRequiresExternalRegistrationTask,
@@ -927,6 +928,14 @@ export async function confirmInformative(
         },
         actorId: actor.userId,
       });
+      if (flow.informativeTaskId) {
+        await completeTaskFromSystem(tx, {
+          orgId: actor.orgId,
+          taskId: flow.informativeTaskId,
+          actorId: actor.userId,
+          note: "Concluída pela confirmação do Informativo do Fluxo.",
+        });
+      }
     }
 
     const missionMessage =

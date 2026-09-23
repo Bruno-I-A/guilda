@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, or } from "drizzle-orm";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 
 import { PageHeader } from "@/components/page-header";
 import { withOrgTx } from "@/db/org-tx";
@@ -10,11 +11,12 @@ import {
   companyFlowAmendmentChanges,
   companyFlowDisplayName,
 } from "@/domain/company-flow";
-import { canHandleInformatives, isAdminRole } from "@/domain/guild-permissions";
+import { canHandleInformatives } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
 import { informativeDraftPayloadSchema } from "@/lib/ai/informative-schema";
 import { companyFlowMissionPresets } from "@/lib/informatives/mission-presets";
 import { informativeTasksRevision } from "@/lib/informatives/revision";
+import { canAccessCompanyFlowInformative } from "@/lib/informatives/flow-access";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 
 import { InformativePanel, type DraftView } from "./informative-panel";
@@ -98,18 +100,34 @@ export default async function InformativosPage({
     },
   );
 
-  const canHandle = canHandleInformatives({ role, leadsAnyClan });
-  const flowForInformative = flowId && isAdminRole(role)
+  const validFlowId = flowId && z.uuid().safeParse(flowId).success ? flowId : null;
+  const canAccessFlow = validFlowId
+    ? await withOrgTx(session.orgId, (tx) =>
+        canAccessCompanyFlowInformative(tx, {
+          orgId: session.orgId, userId: session.user.id, role,
+        }, { flowId: validFlowId }),
+      )
+    : false;
+  const canHandle = canHandleInformatives({ role, leadsAnyClan }) || canAccessFlow;
+  const flowForInformative = validFlowId && canAccessFlow
     ? await withOrgTx(session.orgId, async (tx) => {
         const [row] = await tx
           .select({
             flow: schema.companyFlows,
+            informative: schema.informatives,
             existingClientName: schema.clients.name,
             existingClientCnpj: schema.clients.cnpj,
             existingClientTaxRegime: schema.clients.taxRegime,
             rhVerificationTaskStatus: schema.tasks.status,
           })
           .from(schema.companyFlows)
+          .leftJoin(
+            schema.informatives,
+            and(
+              eq(schema.informatives.orgId, schema.companyFlows.orgId),
+              eq(schema.informatives.id, schema.companyFlows.informativeId),
+            ),
+          )
           .leftJoin(
             schema.clients,
             and(
@@ -127,9 +145,18 @@ export default async function InformativosPage({
           .where(
             and(
               eq(schema.companyFlows.orgId, session.orgId),
-              eq(schema.companyFlows.id, flowId),
-              eq(schema.companyFlows.status, "informative_drafting"),
-              isNull(schema.companyFlows.informativeId),
+              eq(schema.companyFlows.id, validFlowId),
+              or(
+                and(
+                  eq(schema.companyFlows.status, "informative_drafting"),
+                  isNull(schema.companyFlows.informativeId),
+                ),
+                and(
+                  eq(schema.companyFlows.status, "completed"),
+                  eq(schema.informatives.status, "pending"),
+                  eq(schema.informatives.requestedBy, session.user.id),
+                ),
+              ),
             ),
           );
         return row ?? null;
@@ -175,13 +202,14 @@ export default async function InformativosPage({
 
   // O payload é JSONB: validar antes de renderizar, nunca confiar na forma.
   let draft: DraftView | null = null;
-  if (pendingDraft) {
-    const parsed = informativeDraftPayloadSchema.safeParse(pendingDraft.payload);
-    if (parsed.success && pendingDraft.expiresAt > new Date()) {
+  const selectedDraft = validFlowId ? flowForInformative?.informative : pendingDraft;
+  if (selectedDraft) {
+    const parsed = informativeDraftPayloadSchema.safeParse(selectedDraft.payload);
+    if (parsed.success && selectedDraft.expiresAt > new Date()) {
       draft = {
-        informativeId: pendingDraft.id,
+        informativeId: selectedDraft.id,
         revision: informativeTasksRevision(parsed.data.tasks),
-        expiresAt: pendingDraft.expiresAt.toISOString(),
+        expiresAt: selectedDraft.expiresAt.toISOString(),
         kind: parsed.data.kind,
         company: {
           legalName: parsed.data.company.legalName,
@@ -223,7 +251,7 @@ export default async function InformativosPage({
         description="Escolha os clãs, descreva as missões e confirme a prévia. Nada é criado antes da sua confirmação."
       />
 
-      {canHandle ? (
+      {canHandle && (!validFlowId || flowForInformative) ? (
         <InformativePanel
           key={flowForInformative?.flow.id ?? "informativo-geral"}
           draft={draft}
@@ -234,10 +262,15 @@ export default async function InformativosPage({
           amendmentSummary={amendmentSummary}
           flowSummary={flowSummary}
           flowMissionPresets={flowMissionPresets}
+          generalAccess={canHandleInformatives({ role, leadsAnyClan })}
+          flowTaskId={flowForInformative?.flow.informativeTaskId}
+          expiredDraftId={selectedDraft && !draft ? selectedDraft.id : null}
         />
       ) : (
         <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
-          Processar informativo é função de líder de clã, admin ou owner.
+          {validFlowId && canAccessFlow
+            ? "Este Fluxo não tem uma preparação disponível para você. Abra a missão para continuar."
+            : "Processar informativo é função de líder de clã, admin ou owner, ou do responsável pelo Informativo deste Fluxo."}
         </p>
       )}
     </div>

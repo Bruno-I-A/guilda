@@ -351,6 +351,23 @@ async function transitionTask(options: {
     if (!options.allowedFrom.includes(task.status)) {
       return err("A missão não está mais neste estado — atualize a página.");
     }
+    if (
+      options.to === "completed" ||
+      options.to === "awaiting_approval" ||
+      (task.status === "completed" && options.to === "in_progress")
+    ) {
+      const [informativeFlow] = await tx
+        .select({ id: schema.companyFlows.id })
+        .from(schema.companyFlows)
+        .where(and(
+          eq(schema.companyFlows.orgId, ctx.orgId),
+          eq(schema.companyFlows.informativeTaskId, task.id),
+        ))
+        .limit(1);
+      if (informativeFlow) {
+        return err("Esta missão acompanha o Informativo do Fluxo e é concluída automaticamente na confirmação.");
+      }
+    }
     const linkedRhVerificationFlow =
       options.to === "cancelled" ||
       (task.status === "completed" && options.to === "in_progress")

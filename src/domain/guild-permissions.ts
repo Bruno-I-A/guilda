@@ -201,15 +201,17 @@ export interface CompanyFlowInformativeFacts
   extends Pick<CompanyFlowActorFacts, "role"> {
   /** É a pessoa designada no clã como responsável por redigir Informativos. */
   holdsInformativeDuty: boolean;
+  /** Recebeu a missão vinculada ao Fluxo, inclusive após transferência. */
+  isInformativeTaskAssignee?: boolean;
 }
 
 /**
  * A ponte para Informativos era decisão exclusiva de dono/admin. Com a
- * atribuição nominal, quem foi designado para redigir também abre a prévia —
- * senão a missão que ele recebe seria impossível de executar por quem a recebeu.
+ * atribuição nominal, quem foi designado para redigir ou recebeu a missão
+ * transferida também abre a prévia do respectivo Fluxo.
  */
 export function canPrepareCompanyFlowInformative(
   actor: CompanyFlowInformativeFacts,
 ): boolean {
-  return isAdminRole(actor.role) || actor.holdsInformativeDuty;
+  return isAdminRole(actor.role) || actor.holdsInformativeDuty || Boolean(actor.isInformativeTaskAssignee);
 }
