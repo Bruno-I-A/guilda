@@ -1662,6 +1662,37 @@ export const guildNoticeReads = pgTable(
   ],
 );
 
+/** Conclusão individual do trabalho ligado a um Informativo no Mural. */
+export const guildNoticeWork = pgTable(
+  "guild_notice_work",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    noticeId: uuid("notice_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "guild_notice_work_org_notice_fk",
+      columns: [t.orgId, t.noticeId],
+      foreignColumns: [guildNotices.orgId, guildNotices.id],
+    }).onDelete("cascade"),
+    uniqueIndex("guild_notice_work_org_notice_user_uidx").on(
+      t.orgId,
+      t.noticeId,
+      t.userId,
+    ),
+    index("guild_notice_work_org_user_idx").on(t.orgId, t.userId),
+  ],
+);
+
 export const guildNoticesRelations = relations(guildNotices, ({ one, many }) => ({
   author: one(user, {
     fields: [guildNotices.authorId],

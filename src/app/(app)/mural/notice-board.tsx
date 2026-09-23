@@ -9,13 +9,12 @@ import {
   Megaphone,
   Pin,
   Plus,
-  Search,
   Undo2,
   UserRoundX,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +33,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import type { TaskStatus } from "@/domain/task-state";
+import type { MuralSection } from "@/domain/mural-work";
 import type { ActionResult } from "@/lib/action-context";
 import { STATUS_BADGE_CLASSES, STATUS_LABELS } from "@/lib/task-ui";
 
@@ -42,7 +42,9 @@ import { toastWithUndo } from "@/lib/undo-toast";
 import {
   acknowledgeNotice,
   archiveNotice,
+  confirmNoticeWork,
   publishNotice,
+  reopenNoticeWork,
   unarchiveNotice,
 } from "./actions";
 
@@ -61,6 +63,7 @@ export interface NoticeView {
   ackCount: number;
   totalMembers: number;
   pendingNames: string[];
+  work: { section: MuralSection; total: number; closed: number };
   missionSummary: {
     total: number;
     completed: number;
@@ -72,6 +75,7 @@ export interface NoticeView {
       status: TaskStatus;
       clanName: string | null;
       assigneeName: string | null;
+      isMine: boolean;
     }>;
   } | null;
 }
@@ -88,8 +92,10 @@ function formatPublished(value: string): string {
 
 function InformativeMissionSummary({
   summary,
+  returnTo,
 }: {
   summary: NonNullable<NoticeView["missionSummary"]>;
+  returnTo: string;
 }) {
   const open = summary.total - summary.completed - summary.cancelled;
   const progress = summary.total > 0
@@ -100,7 +106,7 @@ function InformativeMissionSummary({
   return (
     <section className="mt-4 grid gap-3 border-t pt-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="flex items-center gap-2 text-sm font-medium">
+        <h3 className="flex items-center gap-2 font-medium">
           <ListChecks className="size-4 text-primary" aria-hidden />
           Missões deste Informativo
         </h3>
@@ -116,26 +122,15 @@ function InformativeMissionSummary({
 
       <Progress value={progress} className="h-2" />
 
-      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-        <span className="rounded-md bg-muted/35 px-2.5 py-2">
-          <strong className="block font-mono text-base">{summary.total}</strong>
-          Geradas
-        </span>
-        <span className="rounded-md bg-muted/35 px-2.5 py-2">
-          <strong className="block font-mono text-base text-success">{summary.completed}</strong>
-          Concluídas
-        </span>
-        <span className="rounded-md bg-muted/35 px-2.5 py-2">
-          <strong className="block font-mono text-base text-primary">{open}</strong>
-          Em aberto
-        </span>
-        <span className="rounded-md bg-muted/35 px-2.5 py-2">
-          <strong className="flex items-center gap-1 font-mono text-base text-warning">
-            {summary.unassigned > 0 ? <UserRoundX className="size-3.5" aria-hidden /> : null}
-            {summary.unassigned}
-          </strong>
-          Sem responsável
-        </span>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span><strong className="font-mono text-success">{summary.completed}</strong> concluídas</span>
+        <span><strong className="font-mono text-primary">{open}</strong> em aberto</span>
+        {summary.unassigned > 0 ? (
+          <span className="inline-flex items-center gap-1 text-warning">
+            <UserRoundX className="size-3.5" aria-hidden />
+            <strong className="font-mono">{summary.unassigned}</strong> sem responsável
+          </span>
+        ) : null}
       </div>
 
       {summary.total === 0 ? (
@@ -148,16 +143,18 @@ function InformativeMissionSummary({
             Ver resumo das {summary.total} {summary.total === 1 ? "missão" : "missões"}
           </summary>
           <ul className="divide-y border-t">
-            {summary.items.map((task) => (
+            {[...summary.items].sort((a, b) => Number(b.isMine) - Number(a.isMine)).map((task) => (
               <li key={task.id}>
                 <Link
-                  href={`/tasks/${task.id}?returnTo=${encodeURIComponent("/mural")}`}
-                  className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm hover:bg-muted/25"
+                  href={`/tasks/${task.id}?returnTo=${encodeURIComponent(returnTo)}`}
+                  className={task.isMine
+                    ? "flex flex-wrap items-center justify-between gap-2 border-l-2 border-primary bg-primary/5 px-3 py-2.5 text-sm hover:bg-primary/10"
+                    : "flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm hover:bg-muted/25"}
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{task.title}</span>
                     <span className="block truncate text-xs text-muted-foreground">
-                      {[task.clanName, task.assigneeName ?? "Sem responsável"]
+                      {[task.clanName, task.isMine ? "Você" : task.assigneeName ?? "Sem responsável"]
                         .filter(Boolean)
                         .join(" · ")}
                     </span>
@@ -179,13 +176,17 @@ function InformativeMissionSummary({
 export function NoticeBoard({
   notices,
   canEmphasize,
-  vendoArquivados,
+  section,
+  returnTo,
+  teamCount,
+  hasSearch,
 }: {
   notices: NoticeView[];
   canEmphasize: boolean;
-  currentUserName: string;
-  /** Listando os arquivados em vez do que está em cartaz. */
-  vendoArquivados: boolean;
+  section: MuralSection;
+  returnTo: string;
+  teamCount: number;
+  hasSearch: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -194,23 +195,6 @@ export function NoticeBoard({
   const [body, setBody] = useState("");
   const [requiresAck, setRequiresAck] = useState(false);
   const [pinned, setPinned] = useState(false);
-  const [busca, setBusca] = useState("");
-
-  // Filtro no cliente: a página já traz no máximo 60 avisos, e uma ida ao
-  // servidor por tecla custaria ~300ms de rede para peneirar o que já está
-  // na memória.
-  const visiveis = useMemo(() => {
-    const alvo = busca.trim().toLocaleLowerCase("pt-BR");
-    if (!alvo) return notices;
-    const normaliza = (valor: string) =>
-      valor.normalize("NFD").replace(/[̀-ͯ]/g, "").toLocaleLowerCase("pt-BR");
-    const termo = normaliza(alvo);
-    return notices.filter(
-      (notice) =>
-        normaliza(notice.clientName ?? "").includes(termo) ||
-        normaliza(notice.title).includes(termo),
-    );
-  }, [notices, busca]);
 
   function run(action: () => Promise<ActionResult<unknown>>, success: string) {
     startTransition(async () => {
@@ -260,7 +244,7 @@ export function NoticeBoard({
       setRequiresAck(false);
       setPinned(false);
       setOpen(false);
-      router.refresh();
+      router.push("/mural?aba=team");
     });
   }
 
@@ -343,52 +327,40 @@ export function NoticeBoard({
         </DialogContent>
       </Dialog>
 
-      {/* Busca e o acesso aos arquivados moram juntos: as duas respondem
-          "não estou achando um aviso". */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-56 flex-1">
-          <Search
-            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden
-          />
-          <Input
-            value={busca}
-            onChange={(event) => setBusca(event.target.value)}
-            placeholder="Buscar por empresa ou título"
-            aria-label="Buscar aviso por empresa ou título"
-            className="pl-9"
-          />
+      {notices.length === 0 ? (
+        <div className="panel-cut grid gap-2 border border-dashed p-8 text-center text-sm text-muted-foreground">
+          <p>{hasSearch
+            ? "Nenhum informativo nesta aba corresponde à busca. Limpe a busca ou escolha outra aba."
+            : section === "mine"
+              ? "Nenhum Informativo com missão atribuída a você está pendente."
+              : section === "team"
+                ? "Nenhum Informativo para acompanhar na equipe."
+                : section === "resolved"
+                  ? "Você ainda não confirmou sua parte em nenhum Informativo."
+                  : "Nenhum aviso arquivado."}</p>
+          {!hasSearch && section === "mine" && teamCount > 0 ? (
+            <Button asChild variant="outline" className="mx-auto mt-1">
+              <Link href="/mural?aba=team">Acompanhar equipe · {teamCount}</Link>
+            </Button>
+          ) : null}
         </div>
-        <Button asChild variant={vendoArquivados ? "default" : "outline"}>
-          <Link href={vendoArquivados ? "/mural" : "/mural?arquivados=1"}>
-            <Archive aria-hidden />
-            {vendoArquivados ? "Ver o mural" : "Ver arquivados"}
-          </Link>
-        </Button>
-      </div>
-
-      {visiveis.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
-          {busca.trim()
-            ? `Nenhum aviso encontrado para “${busca.trim()}”.`
-            : vendoArquivados
-              ? "Nenhum aviso arquivado."
-              : "Nenhum aviso no mural. Quando uma empresa nova for cadastrada, ela aparece aqui automaticamente."}
-        </p>
       ) : (
         <ul className="grid gap-3">
-          {visiveis.map((notice) => {
+          {notices.map((notice) => {
             const needsMyAck = notice.requiresAck && !notice.acknowledged;
+            const nextTask = notice.missionSummary?.items.find(
+              (task) => task.isMine && task.status !== "completed" && task.status !== "cancelled",
+            );
 
             return (
               <li
                 key={notice.id}
                 id={`aviso-${notice.id}`}
-                className={
-                  needsMyAck
-                    ? "panel-cut rounded-lg border border-primary/50 bg-card/70 p-4"
-                    : "panel-cut rounded-lg border bg-card/50 p-4"
-                }
+                className={section === "resolved"
+                  ? "panel-cut border border-success/30 bg-card/50 p-4"
+                  : section === "mine" || needsMyAck
+                    ? "panel-cut border border-primary/45 bg-card/70 p-4"
+                    : "panel-cut border bg-card/50 p-4"}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -406,6 +378,11 @@ export function NoticeBoard({
                           <Megaphone className="size-3" aria-hidden /> Aviso
                         </Badge>
                       )}
+                      {needsMyAck ? (
+                        <Badge variant="outline" className="border-warning/35 bg-warning/10 text-warning">
+                          Leitura pendente
+                        </Badge>
+                      ) : null}
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {notice.authorName} · {formatPublished(notice.publishedAt)}
@@ -419,7 +396,7 @@ export function NoticeBoard({
                       size="sm"
                       disabled={pending}
                       onClick={() =>
-                        vendoArquivados
+                        section === "archived"
                           ? run(
                               () => unarchiveNotice({ noticeId: notice.id }),
                               "Aviso devolvido ao mural.",
@@ -427,7 +404,7 @@ export function NoticeBoard({
                           : arquivarComDesfazer(notice.id)
                       }
                     >
-                      {vendoArquivados ? (
+                      {section === "archived" ? (
                         <>
                           <Undo2 className="size-4" aria-hidden /> Devolver ao mural
                         </>
@@ -440,12 +417,47 @@ export function NoticeBoard({
                   ) : null}
                 </div>
 
-                <p className="mt-3 whitespace-pre-wrap text-sm text-muted-foreground">
-                  {notice.body}
-                </p>
+                {notice.work.total > 0 && section !== "archived" ? (
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-l-2 border-primary bg-primary/5 px-3 py-2.5">
+                    <div>
+                      <p className="text-sm font-medium">
+                        {section === "resolved" ? "Sua parte concluída" :
+                          notice.work.closed === notice.work.total ? "Suas missões encerradas" : "Sua parte neste Informativo"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {notice.work.closed} de {notice.work.total} {notice.work.total === 1 ? "missão sua encerrada" : "missões suas encerradas"}
+                        {section === "mine" && notice.work.closed === notice.work.total ? " · confirme para mover a Resolvidos" : ""}
+                      </p>
+                    </div>
+                    {section === "mine" && notice.work.closed === notice.work.total ? (
+                      <Button size="sm" disabled={pending} onClick={() => run(() => confirmNoticeWork({ noticeId: notice.id }), "Sua parte foi movida para Resolvidos.")}>
+                        <Check className="size-4" aria-hidden /> Confirmar minha parte
+                      </Button>
+                    ) : section === "mine" && nextTask ? (
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/tasks/${nextTask.id}?returnTo=${encodeURIComponent(returnTo)}`}>
+                          Abrir minha próxima missão
+                        </Link>
+                      </Button>
+                    ) : section === "resolved" ? (
+                      <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => reopenNoticeWork({ noticeId: notice.id }), "Informativo devolvido à sua fila.")}>
+                        <Undo2 className="size-4" aria-hidden /> Reabrir minha parte
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : section === "team" ? (
+                  <p className="mt-3 border-l-2 border-border px-3 py-1 text-xs text-muted-foreground">
+                    Sem missão atribuída a você. Acompanhe o andamento da equipe abaixo.
+                  </p>
+                ) : null}
+
+                <details className="mt-3 rounded-md border bg-background/20">
+                  <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground">{notice.missionSummary ? "Ler Informativo completo" : "Ler aviso completo"}</summary>
+                  <p className="whitespace-pre-wrap border-t px-3 py-3 text-sm text-muted-foreground">{notice.body}</p>
+                </details>
 
                 {notice.missionSummary ? (
-                  <InformativeMissionSummary summary={notice.missionSummary} />
+                  <InformativeMissionSummary summary={notice.missionSummary} returnTo={returnTo} />
                 ) : null}
 
                 {notice.requiresAck ? (
