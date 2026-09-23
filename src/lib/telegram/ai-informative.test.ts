@@ -19,6 +19,7 @@ const CLAN_ID = "123e4567-e89b-12d3-a456-426614174000";
 const baseDraft = {
   kind: "general_task",
   sourceFormat: "business_mission",
+  freeNotice: null,
   company: {
     systemCode: null,
     legalName: null,

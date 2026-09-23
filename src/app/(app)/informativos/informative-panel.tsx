@@ -57,6 +57,7 @@ import {
 import { NewClientWizard } from "./new-client-wizard";
 import { AccountantChangeWizard } from "./accountant-change-wizard";
 import { DirectCompanyInformativeWizard } from "./direct-company-informative-wizard";
+import { FreeInformativeWizard } from "./free-informative-wizard";
 
 export interface DraftTaskView {
   index: number;
@@ -75,6 +76,7 @@ export interface DraftView {
   revision: string;
   expiresAt: string;
   kind: "new_client" | "client_change" | "client_closure" | "general_task";
+  freeNotice: { title: string; body: string } | null;
   company: {
     legalName: string | null;
     cnpj: string | null;
@@ -170,6 +172,7 @@ export function InformativePanel({
   const [wizardOpen, setWizardOpen] = useState(false);
   const [accountantChangeOpen, setAccountantChangeOpen] = useState(false);
   const [directKind, setDirectKind] = useState<"amendment" | "closure" | null>(null);
+  const [freeOpen, setFreeOpen] = useState(false);
 
   const pendingTasks = draft?.tasks.filter((t) => t.assignmentType === "pending") ?? [];
   const undecided = pendingTasks.filter((task) => !decisions[task.index]);
@@ -185,7 +188,8 @@ export function InformativePanel({
     !draft ||
     (draft.tasks.length === 0 &&
       !draft.company.createClient &&
-      draft.kind !== "client_change") ||
+      draft.kind !== "client_change" &&
+      !draft.freeNotice) ||
     draft.unresolvedAssignees.length > 0 ||
     undecided.length > 0;
 
@@ -326,9 +330,20 @@ export function InformativePanel({
           clients={clients}
           onDone={() => setDirectKind(null)}
         />
+      ) : freeOpen ? (
+        <FreeInformativeWizard
+          clans={clans}
+          clients={clients}
+          onDone={() => setFreeOpen(false)}
+        />
       ) : (
         <div className="grid gap-2">
           <div className="flex flex-wrap justify-end gap-2">
+            {generalAccess && !flowId ? (
+              <Button variant="outline" size="sm" onClick={() => setFreeOpen(true)}>
+                <Plus className="size-4" aria-hidden /> Informativo livre
+              </Button>
+            ) : null}
             {generalAccess && !flowId ? (
               <Button variant="outline" size="sm" onClick={() => setDirectKind("amendment")}>
                 Alteração de empresa
@@ -437,15 +452,24 @@ export function InformativePanel({
 
       {!draft ? null : (
         <div className="panel-cut grid gap-4 rounded-lg border bg-card/50 p-4">
+          {draft.freeNotice ? (
+            <section className="grid gap-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+              <p className="hud-label">Prévia do aviso no Mural</p>
+              <h3>{draft.freeNotice.title}</h3>
+              <p className="max-w-prose whitespace-pre-wrap text-sm">{draft.freeNotice.body}</p>
+            </section>
+          ) : null}
           <div>
             <h2 className="font-medium">
-              {draft.company.legalName ?? "Missões sem empresa"}
+              {draft.company.legalName ?? (draft.freeNotice ? "Sem empresa vinculada" : "Missões sem empresa")}
             </h2>
-            <p className="text-xs text-muted-foreground">
-              {draft.company.cnpj ? `${draft.company.cnpj} · ` : ""}
-              {draft.company.taxRegime ?? "regime não informado"}
-              {draft.company.createClient ? " · empresa nova, será cadastrada" : ""}
-            </p>
+            {draft.company.legalName ? (
+              <p className="text-xs text-muted-foreground">
+                {draft.company.cnpj ? `${draft.company.cnpj} · ` : ""}
+                {draft.company.taxRegime ?? "regime não informado"}
+                {draft.company.createClient ? " · empresa nova, será cadastrada" : ""}
+              </p>
+            ) : null}
             {draft.company.cnaeDescription ? (
               <p className="text-xs text-muted-foreground">
                 {draft.company.cnaeDescription}
@@ -533,7 +557,9 @@ export function InformativePanel({
 
           {draft.tasks.length === 0 ? (
             <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
-              {draft.kind === "client_change"
+              {draft.freeNotice
+                ? "Nenhuma missão será criada. Ao confirmar, este informativo será publicado no Mural."
+                : draft.kind === "client_change"
                 ? "Esta alteração não exige missão adicional. Ao confirmar, o cadastro e o mural serão atualizados."
                 : draft.company.createClient
                   ? "Nenhuma missão nesta prévia. Ao confirmar, a empresa será cadastrada e entrará na carteira do Fiscal."
@@ -666,7 +692,11 @@ export function InformativePanel({
               <Trash2 className="size-4" aria-hidden /> Descartar prévia
             </Button>
             <Button onClick={handleConfirm} disabled={pending || blocked}>
-              {draft.tasks.length === 0
+              {draft.freeNotice
+                ? draft.tasks.length === 0
+                  ? "Publicar informativo"
+                  : `Publicar e criar ${draft.tasks.length} ${draft.tasks.length === 1 ? "missão" : "missões"}`
+                : draft.tasks.length === 0
                 ? draft.kind === "client_change"
                   ? "Confirmar alteração"
                   : "Cadastrar empresa"

@@ -211,6 +211,7 @@ export default async function InformativosPage({
         revision: informativeTasksRevision(parsed.data.tasks),
         expiresAt: selectedDraft.expiresAt.toISOString(),
         kind: parsed.data.kind,
+        freeNotice: parsed.data.freeNotice,
         company: {
           legalName: parsed.data.company.legalName,
           cnpj: parsed.data.company.cnpj,

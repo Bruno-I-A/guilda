@@ -290,11 +290,17 @@ const structuredInformativeSchema = z.object({
       observations: z.string().trim().max(5_000),
     }),
   ]).optional(),
+  freeNotice: z.object({
+    clientId: z.uuid("Empresa inválida.").nullable(),
+    title: z.string().trim().min(3, "Informe o assunto.").max(160),
+    body: z.string().trim().min(3, "Escreva o informativo.").max(5_000),
+  }).optional(),
 }).superRefine((data, ctx) => {
   const origins = [
     Boolean(data.resolvedCompany),
     Boolean(data.flowId),
     Boolean(data.directCompany),
+    Boolean(data.freeNotice),
   ].filter(Boolean).length;
   if (origins > 1) {
     ctx.addIssue({
@@ -386,6 +392,7 @@ export async function prepareStructuredInformative(
   let sourceText = structuredInformativeSourceText(parsed.data.missions, clans);
   let observations: string[] = [];
   let summary: string | undefined;
+  let freeNotice: { title: string; body: string } | undefined;
 
   if (parsed.data.resolvedCompany) {
     const resolved = parsed.data.resolvedCompany;
@@ -405,6 +412,44 @@ export async function prepareStructuredInformative(
       createClient: !existing,
     };
     kind = "new_client";
+  } else if (parsed.data.freeNotice) {
+    const notice = parsed.data.freeNotice;
+    if (notice.clientId) {
+      const client = await withOrgTx(gate.actor.orgId, (tx) =>
+        tx.query.clients.findFirst({
+          where: and(
+            eq(schema.clients.orgId, gate.actor.orgId),
+            eq(schema.clients.id, notice.clientId!),
+            eq(schema.clients.active, true),
+          ),
+          columns: {
+            id: true, name: true, cnpj: true, taxRegime: true,
+            cnaeCode: true, cnaeDescription: true, secondaryCnaes: true,
+            openedAt: true,
+          },
+        }),
+      );
+      if (!client) return err("Empresa ativa não encontrada.");
+      company = {
+        legalName: client.name,
+        normalizedCnpj: client.cnpj && validateCnpj(client.cnpj) ? client.cnpj : null,
+        taxRegime: client.taxRegime,
+        clientId: client.id,
+        createClient: false,
+        cnaeCode: client.cnaeCode,
+        cnaeDescription: client.cnaeDescription,
+        secondaryCnaes: client.secondaryCnaes,
+        openedAt: client.openedAt,
+      };
+    }
+    freeNotice = {
+      title: company?.legalName
+        ? `${company.legalName.slice(0, 90)} — ${notice.title}`.slice(0, 160)
+        : notice.title,
+      body: notice.body,
+    };
+    summary = freeNotice.title;
+    sourceText = [freeNotice.title, freeNotice.body, sourceText].join("\n\n");
   } else if (parsed.data.directCompany) {
     const direct = parsed.data.directCompany;
     const client = await withOrgTx(gate.actor.orgId, (tx) =>
@@ -567,6 +612,7 @@ export async function prepareStructuredInformative(
   if (
     parsed.data.missions.length === 0 &&
     kind !== "client_change" &&
+    !freeNotice &&
     !company?.createClient
   ) {
     return err("Adicione ao menos uma missão.");
@@ -581,6 +627,7 @@ export async function prepareStructuredInformative(
       kind,
       summary,
       observations,
+      freeNotice,
     });
   } catch (error) {
     console.error("informativo estruturado: falha ao montar prévia", error);

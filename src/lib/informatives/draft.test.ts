@@ -24,11 +24,13 @@ function payload(
     createClient?: boolean;
     unresolvedAssignees?: string[];
     kind?: InformativeDraftPayload["kind"];
+    freeNotice?: InformativeDraftPayload["freeNotice"];
   } = {},
 ): InformativeDraftPayload {
   return {
     kind: overrides.kind ?? "new_client",
     sourceFormat: "informative",
+    freeNotice: overrides.freeNotice ?? null,
     company: {
       systemCode: null,
       legalName: "EMPRESA TESTE LTDA",
@@ -97,6 +99,13 @@ describe("draftIsBlocked", () => {
 
   test("zero missão bloqueia quando não há empresa nova — nada a fazer", () => {
     expect(draftIsBlocked(payload({ tasks: [], createClient: false }))).toBe(true);
+  });
+
+  test("aviso livre sem missão pode ser publicado", () => {
+    expect(draftIsBlocked(payload({
+      tasks: [], createClient: false, kind: "general_task",
+      freeNotice: { title: "Inatividade", body: "Cliente inativo desde setembro." },
+    }))).toBe(false);
   });
 
   test("nome não reconhecido bloqueia mesmo com empresa nova", () => {
