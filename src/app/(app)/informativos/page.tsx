@@ -249,7 +249,7 @@ export default async function InformativosPage({
     <div className="grid gap-5">
       <PageHeader
         title="Informativos"
-        description="Escolha os clãs, descreva as missões e confirme a prévia. Nada é criado antes da sua confirmação."
+        description="Crie um aviso livre ou prepare missões por clã. Revise a prévia antes de publicar."
       />
 
       {canHandle && (!validFlowId || flowForInformative) ? (
