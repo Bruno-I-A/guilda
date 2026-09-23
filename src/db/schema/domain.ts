@@ -766,6 +766,7 @@ export const accountingClosings = pgTable(
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" }),
     title: varchar("title", { length: 160 }).notNull(),
+    periodMonth: smallint("period_month"),
     dueDate: date("due_date", { mode: "string" }).notNull(),
     status: closingStatus("status").notNull().default("pending"),
     notes: text("notes"),
@@ -785,6 +786,10 @@ export const accountingClosings = pgTable(
   (t) => [
     index("accounting_closings_org_due_date_idx").on(t.orgId, t.dueDate),
     index("accounting_closings_org_client_idx").on(t.orgId, t.clientId),
+    check(
+      "accounting_closings_period_month_check",
+      sql`${t.periodMonth} is null or ${t.periodMonth} between 1 and 12`,
+    ),
   ],
 );
 
@@ -1654,6 +1659,37 @@ export const guildNoticeReads = pgTable(
       t.userId,
     ),
     index("guild_notice_reads_org_user_idx").on(t.orgId, t.userId),
+  ],
+);
+
+/** Conclusão individual do trabalho ligado a um Informativo no Mural. */
+export const guildNoticeWork = pgTable(
+  "guild_notice_work",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    noticeId: uuid("notice_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "guild_notice_work_org_notice_fk",
+      columns: [t.orgId, t.noticeId],
+      foreignColumns: [guildNotices.orgId, guildNotices.id],
+    }).onDelete("cascade"),
+    uniqueIndex("guild_notice_work_org_notice_user_uidx").on(
+      t.orgId,
+      t.noticeId,
+      t.userId,
+    ),
+    index("guild_notice_work_org_user_idx").on(t.orgId, t.userId),
   ],
 );
 
