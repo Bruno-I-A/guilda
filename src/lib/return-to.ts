@@ -39,7 +39,18 @@ export function parseReturnTo(
       return { href: pathname, label: "Início" };
     }
     if (pathname === "/mural") {
-      return { href: pathname, label: "Mural" };
+      const params = new URLSearchParams();
+      const tab = parsed.searchParams.get("aba");
+      if (tab === "mine" || tab === "team" || tab === "resolved" || tab === "archived") {
+        params.set("aba", tab);
+      }
+      const query = parsed.searchParams.get("q")?.trim().slice(0, 100);
+      if (query) params.set("q", query);
+      const page = parsed.searchParams.get("pagina");
+      if (page && /^\d+$/.test(page) && Number(page) > 1 && Number(page) <= 1_000_000) {
+        params.set("pagina", page);
+      }
+      return { href: params.size ? `${pathname}?${params}` : pathname, label: "Mural" };
     }
     if (CLAN_PATH.test(pathname)) {
       // A aba vive na query: sem ela a pessoa volta para o clã, mas cai em

@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -120,6 +120,65 @@ export async function publishNotice(input: {
 }
 
 const noticeIdSchema = z.object({ noticeId: z.uuid("Aviso inválido.") });
+
+/** Confirma somente a parte da pessoa logada, nunca a da equipe inteira. */
+export async function confirmNoticeWork(input: { noticeId: string }): Promise<ActionResult> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  const parsed = noticeIdSchema.safeParse(input);
+  if (!parsed.success) return err("Aviso inválido.");
+
+  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
+    const [notice] = await tx
+      .select({ id: schema.guildNotices.id, informativeId: schema.guildNotices.informativeId, archivedAt: schema.guildNotices.archivedAt })
+      .from(schema.guildNotices)
+      .where(and(eq(schema.guildNotices.orgId, ctx.orgId), eq(schema.guildNotices.id, parsed.data.noticeId)))
+      .for("update");
+    if (!notice || !notice.informativeId || notice.archivedAt) return err("Informativo não encontrado no Mural.");
+
+    const mine = await tx
+      .select({ status: schema.tasks.status })
+      .from(schema.tasks)
+      .where(and(
+        eq(schema.tasks.orgId, ctx.orgId),
+        eq(schema.tasks.informativeId, notice.informativeId),
+        eq(schema.tasks.assigneeId, ctx.userId),
+      ))
+      .for("update");
+    if (mine.length === 0) return err("Este Informativo não tem missões atribuídas a você.");
+    if (mine.some((task) => task.status !== "completed" && task.status !== "cancelled")) {
+      return err("Encerre todas as suas missões antes de confirmar sua parte.");
+    }
+
+    await tx.insert(schema.guildNoticeWork)
+      .values({ orgId: ctx.orgId, noticeId: notice.id, userId: ctx.userId, resolvedAt: sql`clock_timestamp()` })
+      .onConflictDoUpdate({
+        target: [schema.guildNoticeWork.orgId, schema.guildNoticeWork.noticeId, schema.guildNoticeWork.userId],
+        set: { resolvedAt: sql`clock_timestamp()` },
+      });
+    return { ok: true };
+  });
+  if (result.ok) revalidatePath("/mural");
+  return result;
+}
+
+/** Permite desfazer uma confirmação pessoal sem alterar missões ou leituras. */
+export async function reopenNoticeWork(input: { noticeId: string }): Promise<ActionResult> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  const parsed = noticeIdSchema.safeParse(input);
+  if (!parsed.success) return err("Aviso inválido.");
+
+  await withOrgTx(ctx.orgId, async (tx) => {
+    await tx.delete(schema.guildNoticeWork).where(and(
+      eq(schema.guildNoticeWork.orgId, ctx.orgId),
+      eq(schema.guildNoticeWork.noticeId, parsed.data.noticeId),
+      eq(schema.guildNoticeWork.userId, ctx.userId),
+    ));
+  });
+  revalidatePath("/mural");
+  return { ok: true };
+}
 
 /**
  * Confirma a leitura. O userId vem SEMPRE da sessão — nunca do cliente,

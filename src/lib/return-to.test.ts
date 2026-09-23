@@ -23,6 +23,17 @@ describe("destinos aceitos", () => {
     expect(parseReturnTo("/mural")).toEqual({ href: "/mural", label: "Mural" });
   });
 
+  test("mural preserva aba, busca e página da fila", () => {
+    expect(parseReturnTo("/mural?aba=resolved&q=Campo+Verde&pagina=2")).toEqual({
+      href: "/mural?aba=resolved&q=Campo+Verde&pagina=2",
+      label: "Mural",
+    });
+    expect(parseReturnTo("/mural?aba=invalida&destino=https://evil.com")).toEqual({
+      href: "/mural",
+      label: "Mural",
+    });
+  });
+
   test("dashboard volta para o início", () => {
     expect(parseReturnTo("/dashboard")).toEqual({
       href: "/dashboard",
