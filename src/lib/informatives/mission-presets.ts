@@ -5,6 +5,45 @@ export interface ClanMissionPreset {
   descriptions: string[];
 }
 
+export const OPENING_MISSION_PRESETS: readonly ClanMissionPreset[] = [
+  {
+    clanSlug: "contabilidade",
+    descriptions: [
+      "Configurar a rotina contábil da nova empresa.\nConfirmar o tratamento da distribuição de lucros e se há alguma necessidade adicional.",
+    ],
+  },
+  {
+    clanSlug: "fiscal",
+    descriptions: [
+      "Configurar a emissão de notas fiscais.\nConfirmar o regime tributário, o sistema de emissão usado pelo cliente e se ele precisa de auxílio na configuração inicial.",
+    ],
+  },
+  {
+    clanSlug: "rh",
+    descriptions: [
+      "Definir pró-labore e admissões.\nConfirmar o valor do pró-labore e se há funcionários a registrar ou transferir de outra empresa.",
+    ],
+  },
+  {
+    clanSlug: "financeiro",
+    descriptions: [
+      "Confirmar valores da abertura e honorários mensais.\nRegistrar os valores, o dia de vencimento e a primeira competência acordados com o cliente.",
+    ],
+  },
+  {
+    clanSlug: "sucesso-do-cliente",
+    descriptions: [
+      "Enviar boas-vindas ao cliente.\nEncaminhar a mensagem de boas-vindas e convidar o cliente a acompanhar os canais de informativos no WhatsApp, Instagram e Facebook.",
+      "Agendar o certificado digital.\nOrientar o cliente sobre a importância do certificado e combinar sua emissão, se necessária.",
+      "Incluir o cliente no ONVIO.\nConferir os dados e habilitar o acesso ao sistema.",
+      "Arquivar a documentação física.\nGuardar os documentos do processo na pasta suspensa correspondente no armário, se houver documentos físicos.",
+      "Oferecer conta digital e Open Finance.\nApresentar os serviços ao cliente e registrar se há interesse.",
+      "Incluir o cliente no VERI.\nConferir os dados e habilitar o acesso ao sistema.",
+      "Organizar a documentação no servidor.\nSalvar os arquivos do cliente na pasta correspondente, com a estrutura de pastas da equipe.",
+    ],
+  },
+];
+
 export const DIRECT_CLOSURE_MISSION_PRESETS: readonly ClanMissionPreset[] = [
   { clanSlug: "societario", descriptions: ["Baixar o Alvará."] },
   {
@@ -70,7 +109,12 @@ export function companyFlowMissionPresets(input: {
 }): ClanMissionPreset[] {
   const presets: ClanMissionPreset[] = [];
 
-  if (input.kind === "closure") {
+  if (input.kind === "opening") {
+    presets.push(...OPENING_MISSION_PRESETS.map((preset) => ({
+      clanSlug: preset.clanSlug,
+      descriptions: [...preset.descriptions],
+    })));
+  } else if (input.kind === "closure") {
     presets.push(...DIRECT_CLOSURE_MISSION_PRESETS.map((preset) => ({
       clanSlug: preset.clanSlug,
       descriptions:

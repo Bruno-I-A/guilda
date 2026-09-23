@@ -4,9 +4,44 @@ import {
   accountantChangeMissionPresets,
   companyFlowMissionPresets,
   DIRECT_CLOSURE_MISSION_PRESETS,
+  OPENING_MISSION_PRESETS,
 } from "./mission-presets";
 
 describe("presets dos informativos estruturados", () => {
+  test("oferece as 11 missões genéricas de abertura nos cinco clãs", () => {
+    const descriptions = OPENING_MISSION_PRESETS.flatMap(
+      (preset) => preset.descriptions,
+    );
+
+    expect(OPENING_MISSION_PRESETS.map((preset) => preset.clanSlug)).toEqual([
+      "contabilidade",
+      "fiscal",
+      "rh",
+      "financeiro",
+      "sucesso-do-cliente",
+    ]);
+    expect(descriptions).toHaveLength(11);
+    expect(descriptions.join(" ")).not.toMatch(
+      /slaviero|mateus|edio|700,00|400,00|dia 10|dezembro/i,
+    );
+  });
+
+  test("o Fluxo de abertura recebe o mesmo modelo sem modificar os padrões", () => {
+    const presets = companyFlowMissionPresets({
+      kind: "opening",
+      amendmentRequiresExternalRegistration: false,
+      rhVerificationConfirmed: false,
+      billingAmount: null,
+      billingDescription: null,
+    });
+
+    expect(presets).toEqual(OPENING_MISSION_PRESETS);
+    presets[0].descriptions[0] = "Editada para esta empresa";
+    expect(OPENING_MISSION_PRESETS[0].descriptions[0]).not.toBe(
+      "Editada para esta empresa",
+    );
+  });
+
   test("mantém as sete missões padrão da baixa direta", () => {
     expect(
       DIRECT_CLOSURE_MISSION_PRESETS.flatMap((preset) => preset.descriptions),

@@ -19,13 +19,15 @@ import {
 import { formatCnpj } from "@/domain/cnpj";
 import { CnpjInput } from "@/components/ui/cnpj-input";
 import { TAX_REGIME_LABELS, TAX_REGIMES, type TaxRegime } from "@/lib/clients-ui";
+import { OPENING_MISSION_PRESETS } from "@/lib/informatives/mission-presets";
 
 import { lookupClientCnpj, prepareStructuredInformative } from "./actions";
 import {
   ClanMissionEditor,
   clanMissionGroupsAreValid,
-  emptyClanMissionGroup,
+  clanMissionGroupsFromPresets,
   flattenClanMissionGroups,
+  type ClanMissionEditorClan,
   type ClanMissionGroupDraft,
 } from "./clan-mission-editor";
 
@@ -54,7 +56,7 @@ export function NewClientWizard({
   clans,
   onDone,
 }: {
-  clans: readonly { id: string; name: string }[];
+  clans: readonly ClanMissionEditorClan[];
   onDone: () => void;
 }) {
   const router = useRouter();
@@ -62,9 +64,10 @@ export function NewClientWizard({
   const [pending, startTransition] = useTransition();
   const [cnpjInput, setCnpjInput] = useState("");
   const [company, setCompany] = useState<CompanyForm | null>(null);
-  const [missionGroups, setMissionGroups] = useState<ClanMissionGroupDraft[]>([
-    emptyClanMissionGroup("new-client-clan-group-1"),
-  ]);
+  const [missionGroups, setMissionGroups] = useState<ClanMissionGroupDraft[]>(
+    () =>
+      clanMissionGroupsFromPresets(clans, OPENING_MISSION_PRESETS, "novo-cliente"),
+  );
 
   const digits = cnpjInput.replace(/\D/g, "");
 
@@ -279,6 +282,7 @@ export function NewClientWizard({
             groups={missionGroups}
             onChange={setMissionGroups}
             disabled={pending}
+            description="Missões padrão de abertura. Revise, edite ou remova o que não se aplicar a esta empresa antes de gerar a prévia."
           />
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground">
@@ -287,7 +291,11 @@ export function NewClientWizard({
             </span>
             <Button
               onClick={handleAnalyze}
-              disabled={pending || !clanMissionGroupsAreValid(missionGroups)}
+              disabled={
+                pending ||
+                (missionGroups.length > 0 &&
+                  !clanMissionGroupsAreValid(missionGroups))
+              }
             >
               <ListChecks className="size-4" aria-hidden /> Gerar prévia
             </Button>
