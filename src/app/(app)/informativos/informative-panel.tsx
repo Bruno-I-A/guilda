@@ -6,6 +6,8 @@ import {
   Building2,
   Flag,
   ListChecks,
+  Pencil,
+  Plus,
   Repeat2,
   Trash2,
   UserRound,
@@ -17,12 +19,23 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { CADENCE_LABELS, type CommitmentCadence } from "@/domain/commitments";
 import type { ClanMissionPreset } from "@/lib/informatives/mission-presets";
 
@@ -30,6 +43,7 @@ import {
   cancelInformativeDraft,
   confirmInformativeDraft,
   prepareStructuredInformative,
+  reviseInformativeDraft,
 } from "./actions";
 import {
   ClanMissionEditor,
@@ -58,6 +72,7 @@ export interface DraftTaskView {
 
 export interface DraftView {
   informativeId: string;
+  revision: string;
   expiresAt: string;
   kind: "new_client" | "client_change" | "client_closure" | "general_task";
   company: {
@@ -102,6 +117,7 @@ interface FlowInformativeSummaryView {
 
 /** Destino escolhido na tela para uma linha que veio pendente. */
 type Decision = { kind: "clan"; clanId: string } | { kind: "person"; assigneeId: string };
+type TaskEditor = { type: "add" } | { type: "edit"; index: number };
 
 export function InformativePanel({
   draft,
@@ -125,6 +141,10 @@ export function InformativePanel({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [decisions, setDecisions] = useState<Record<number, Decision>>({});
+  const [taskEditor, setTaskEditor] = useState<TaskEditor | null>(null);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDescription, setTaskDescription] = useState("");
+  const [taskClanId, setTaskClanId] = useState("");
   const [missionGroups, setMissionGroups] = useState<ClanMissionGroupDraft[]>(
     () => {
       const presets = clanMissionGroupsFromPresets(
@@ -184,6 +204,7 @@ export function InformativePanel({
     startTransition(async () => {
       const result = await confirmInformativeDraft({
         informativeId: draft.informativeId,
+        expectedRevision: draft.revision,
         decisions: Object.entries(decisions).map(([index, decision]) => ({
           index: Number(index),
           clanId: decision.kind === "clan" ? decision.clanId : null,
@@ -212,6 +233,64 @@ export function InformativePanel({
         return;
       }
       toast.info(result.data?.message ?? "Prévia cancelada.");
+      setDecisions({});
+      router.refresh();
+    });
+  }
+
+  function openTaskEditor(task?: DraftTaskView) {
+    setTaskEditor(task ? { type: "edit", index: task.index } : { type: "add" });
+    setTaskTitle(task?.title ?? "");
+    setTaskDescription(task?.description ?? "");
+    setTaskClanId(task ? "keep" : "");
+  }
+
+  function saveTaskRevision() {
+    if (!draft || !taskEditor) return;
+    const change = taskEditor.type === "add"
+      ? {
+          type: "add" as const,
+          title: taskTitle,
+          description: taskDescription,
+          clanId: taskClanId,
+        }
+      : {
+          type: "edit" as const,
+          index: taskEditor.index,
+          title: taskTitle,
+          description: taskDescription,
+          clanId: taskClanId === "keep" ? null : taskClanId,
+        };
+    startTransition(async () => {
+      const result = await reviseInformativeDraft({
+        informativeId: draft.informativeId,
+        expectedRevision: draft.revision,
+        change,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(taskEditor.type === "add" ? "Missão adicionada à prévia." : "Missão atualizada na prévia.");
+      setTaskEditor(null);
+      setDecisions({});
+      router.refresh();
+    });
+  }
+
+  function removeTaskFromDraft(task: DraftTaskView) {
+    if (!draft) return;
+    startTransition(async () => {
+      const result = await reviseInformativeDraft({
+        informativeId: draft.informativeId,
+        expectedRevision: draft.revision,
+        change: { type: "remove", index: task.index },
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Missão removida da prévia.");
       setDecisions({});
       router.refresh();
     });
@@ -413,11 +492,31 @@ export function InformativePanel({
             </div>
           ) : null}
 
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+            <div>
+              <h3>Missões da prévia</h3>
+              <p className="text-xs text-muted-foreground">
+                Revise as missões antes de confirmar. Nada foi criado ainda.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pending || draft.tasks.length >= 60}
+              onClick={() => openTaskEditor()}
+            >
+              <Plus aria-hidden /> Adicionar missão
+            </Button>
+          </div>
+
           {draft.tasks.length === 0 ? (
             <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
               {draft.kind === "client_change"
                 ? "Esta alteração não exige missão adicional. Ao confirmar, o cadastro e o mural serão atualizados."
-                : "Nenhuma missão nesta prévia — as linhas eram combinado ou “sem particularidades”. A empresa será cadastrada e entra na fila da carteira do Fiscal."}
+                : draft.company.createClient
+                  ? "Nenhuma missão nesta prévia. Ao confirmar, a empresa será cadastrada e entrará na carteira do Fiscal."
+                  : "Nenhuma missão nesta prévia. Adicione uma missão antes de confirmar ou descarte a prévia."}
             </p>
           ) : null}
 
@@ -426,7 +525,31 @@ export function InformativePanel({
               const decision = decisions[task.index];
               return (
                 <li key={task.index} className="rounded-md border p-3">
-                  <p className="font-medium">{task.title}</p>
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="min-w-0 flex-1 font-medium">{task.title}</p>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={pending}
+                        onClick={() => openTaskEditor(task)}
+                        aria-label={`Editar missão ${task.title}`}
+                      >
+                        <Pencil aria-hidden /> Editar
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={pending}
+                        onClick={() => removeTaskFromDraft(task)}
+                        aria-label={`Remover missão ${task.title}`}
+                      >
+                        <Trash2 aria-hidden /> Remover
+                      </Button>
+                    </div>
+                  </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {task.description}
                   </p>
@@ -539,6 +662,82 @@ export function InformativePanel({
           ) : null}
         </div>
       )}
+
+      {taskEditor && draft ? (
+        <Dialog open onOpenChange={(open) => !open && setTaskEditor(null)}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>
+                {taskEditor.type === "add" ? "Adicionar missão" : "Editar missão"}
+              </DialogTitle>
+              <DialogDescription>
+                As alterações ficam na prévia até você confirmar a criação das missões.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4">
+              <div className="grid gap-1.5">
+                <Label htmlFor="informative-task-title">Título</Label>
+                <Input
+                  id="informative-task-title"
+                  value={taskTitle}
+                  onChange={(event) => setTaskTitle(event.target.value)}
+                  maxLength={200}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="informative-task-description">Descrição</Label>
+                <Textarea
+                  id="informative-task-description"
+                  value={taskDescription}
+                  onChange={(event) => setTaskDescription(event.target.value)}
+                  maxLength={5000}
+                  rows={4}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="informative-task-clan">Clã responsável</Label>
+                <Select value={taskClanId} onValueChange={setTaskClanId}>
+                  <SelectTrigger id="informative-task-clan" className="w-full">
+                    <SelectValue placeholder="Escolha um clã" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {taskEditor.type === "edit" ? (
+                      <SelectItem value="keep">Manter destino atual</SelectItem>
+                    ) : null}
+                    {clans.map((clan) => (
+                      <SelectItem key={clan.id} value={clan.id}>
+                        {clan.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {taskEditor.type === "edit" ? (
+                  <p className="text-xs text-muted-foreground">
+                    Escolher outro clã substitui o destino atual da missão.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" disabled={pending} onClick={() => setTaskEditor(null)}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                disabled={
+                  pending ||
+                  taskTitle.trim().length < 3 ||
+                  !taskDescription.trim() ||
+                  !taskClanId
+                }
+                onClick={saveTaskRevision}
+              >
+                Salvar na prévia
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   );
 }

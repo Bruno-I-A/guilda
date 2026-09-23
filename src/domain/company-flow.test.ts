@@ -577,6 +577,16 @@ describe("nome de exibição do Fluxo", () => {
       ).toBe("Padaria Aurora ME");
     },
   );
+  test("alteração não troca o nome da empresa pelo texto livre do pedido", () => {
+    expect(
+      companyFlowDisplayName({
+        ...base,
+        kind: "amendment",
+        existingClientName: "KUNERT COMERCIO LTDA",
+        requestedLegalName: "Tentar manter a atual, mas se não der...",
+      }),
+    ).toBe("KUNERT COMERCIO LTDA");
+  });
 
   test("sem nenhum nome, não devolve string vazia", () => {
     expect(companyFlowDisplayName({ ...base, kind: "closure" })).toBe(

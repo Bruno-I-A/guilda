@@ -16,6 +16,7 @@ import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
 import { inferTaxRegimeFromCnpj } from "@/domain/client-tax-regime";
 import { canHandleInformatives, isAdminRole } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
+import { informativeDraftPayloadSchema } from "@/lib/ai/informative-schema";
 import {
   err,
   requireMemberContext,
@@ -41,6 +42,10 @@ import {
   structuredInformativeSourceText,
   type StructuredInformativeCompany,
 } from "@/lib/informatives/structured";
+import {
+  informativeTasksRevision,
+  reviseInformativeTasks,
+} from "@/lib/informatives/revision";
 import { listActiveClans } from "@/lib/org";
 
 /**
@@ -744,6 +749,131 @@ export async function analyzeInformative(input: {
   return { ok: true, data: { informativeId: saved.id } };
 }
 
+const revisionFields = {
+  title: z.string().trim().min(3, "Informe o título da missão.").max(200),
+  description: z
+    .string()
+    .trim()
+    .min(1, "Informe a descrição da missão.")
+    .max(5000),
+};
+
+const reviseDraftSchema = z.object({
+  informativeId: z.uuid("Informativo inválido."),
+  expectedRevision: z.string().regex(/^[a-f0-9]{64}$/, "Prévia inválida."),
+  change: z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("edit"),
+      index: z.number().int().min(0).max(59),
+      ...revisionFields,
+      clanId: z.uuid("Clã inválido.").nullable(),
+    }),
+    z.object({
+      type: z.literal("add"),
+      ...revisionFields,
+      clanId: z.uuid("Escolha um clã válido."),
+    }),
+    z.object({
+      type: z.literal("remove"),
+      index: z.number().int().min(0).max(59),
+    }),
+  ]),
+});
+
+export async function reviseInformativeDraft(
+  input: z.input<typeof reviseDraftSchema>,
+): Promise<ActionResult> {
+  const gate = await requireInformativeActor();
+  if (!gate.ok) return gate;
+
+  const parsed = reviseDraftSchema.safeParse(input);
+  if (!parsed.success) {
+    return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+  }
+  const { informativeId, expectedRevision, change } = parsed.data;
+
+  const result = await withOrgTx(gate.actor.orgId, async (tx) => {
+    const [draft] = await tx
+      .select()
+      .from(schema.informatives)
+      .where(
+        and(
+          eq(schema.informatives.id, informativeId),
+          eq(schema.informatives.orgId, gate.actor.orgId),
+          eq(schema.informatives.requestedBy, gate.actor.userId),
+          eq(schema.informatives.status, "pending"),
+        ),
+      )
+      .for("update");
+    if (!draft) return err("Prévia não encontrada ou já confirmada.");
+    if (draft.expiresAt <= new Date()) return err("A prévia expirou. Gere outra.");
+
+    const payload = informativeDraftPayloadSchema.safeParse(draft.payload);
+    if (!payload.success) return err("A prévia está inválida. Gere outra.");
+    if (informativeTasksRevision(payload.data.tasks) !== expectedRevision) {
+      return err("A prévia mudou em outra aba. Atualize a página antes de editar.");
+    }
+
+    let destination: { id: string; name: string } | null = null;
+    if (change.type !== "remove" && change.clanId) {
+      const [clan] = await tx
+        .select({ id: schema.clans.id, name: schema.clans.name })
+        .from(schema.clans)
+        .where(
+          and(
+            eq(schema.clans.orgId, gate.actor.orgId),
+            eq(schema.clans.id, change.clanId),
+            eq(schema.clans.active, true),
+          ),
+        );
+      if (!clan) return err("Clã ativo não encontrado.");
+      destination = clan;
+    }
+
+    if (change.type === "add" && payload.data.tasks.length >= 60) {
+      return err("A prévia aceita no máximo 60 missões.");
+    }
+    if (change.type !== "add" && !payload.data.tasks[change.index]) {
+      return err("Missão não encontrada nesta prévia.");
+    }
+
+    let revised;
+    if (change.type === "remove") {
+      revised = reviseInformativeTasks(payload.data, change);
+    } else if (change.type === "add") {
+      if (!destination) return err("Escolha um clã ativo para a missão.");
+      revised = reviseInformativeTasks(payload.data, {
+        type: "add",
+        title: change.title,
+        description: change.description,
+        destination,
+      });
+    } else {
+      revised = reviseInformativeTasks(payload.data, {
+        type: "edit",
+        index: change.index,
+        title: change.title,
+        description: change.description,
+        destination,
+      });
+    }
+    await tx
+      .update(schema.informatives)
+      .set({ payload: revised })
+      .where(
+        and(
+          eq(schema.informatives.id, draft.id),
+          eq(schema.informatives.orgId, gate.actor.orgId),
+          eq(schema.informatives.status, "pending"),
+        ),
+      );
+    return { ok: true } as const;
+  });
+
+  if (result.ok) revalidatePath("/informativos");
+  return result;
+}
+
 const decisionSchema = z.object({
   index: z.number().int().min(0).max(59),
   clanId: z.uuid("Clã inválido.").nullish(),
@@ -752,11 +882,13 @@ const decisionSchema = z.object({
 
 const confirmSchema = z.object({
   informativeId: z.uuid("Informativo inválido."),
+  expectedRevision: z.string().regex(/^[a-f0-9]{64}$/, "Prévia inválida."),
   decisions: z.array(decisionSchema).max(60).optional(),
 });
 
 export async function confirmInformativeDraft(input: {
   informativeId: string;
+  expectedRevision: string;
   decisions?: InformativeTaskDecision[];
 }): Promise<ActionResult<{ taskIds: string[]; message: string }>> {
   const gate = await requireInformativeActor();
@@ -768,6 +900,7 @@ export async function confirmInformativeDraft(input: {
   }
 
   const result = await confirmInformative(gate.actor, parsed.data.informativeId, {
+    expectedRevision: parsed.data.expectedRevision,
     decisions: parsed.data.decisions,
   });
 
