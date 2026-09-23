@@ -47,6 +47,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   COMPANY_FLOW_KIND_LABELS,
   COMPANY_FLOW_STATUS_LABELS,
+  companyFlowDisplayName,
   companyFlowRhVerificationState,
   formatQsaParticipation,
   parseQsaParticipation,
@@ -1403,9 +1404,7 @@ function FlowDetailDialog({ clanId, row }: { clanId: string; row: CompanyFlowVie
   const closure = row.kind === "closure";
   const simpleConfirmation = amendment || closure;
   const rhVerificationState = getRhVerificationState(row);
-  const companyName = amendment
-    ? row.existingClientName ?? row.approvedLegalName ?? row.requestedLegalName ?? "Empresa"
-    : row.approvedLegalName ?? row.requestedLegalName ?? row.existingClientName ?? "Empresa";
+  const companyName = companyFlowDisplayName(row);
 
   function claim() {
     startTransition(async () => {
@@ -1754,8 +1753,8 @@ export function CompanyFlowBoard({
                   <span className="hud-label shrink-0 border border-primary/35 bg-primary/10 px-1.5 py-0.5 !text-primary">
                     {COMPANY_FLOW_KIND_LABELS[row.kind]}
                   </span>
-                  <h3 className="min-w-0 truncate">
-                    {row.approvedLegalName ?? row.requestedLegalName ?? row.existingClientName ?? "Empresa"}
+                  <h3 className="min-w-0 break-words">
+                    {companyFlowDisplayName(row)}
                   </h3>
                   <RhVerificationBadge state={getRhVerificationState(row)} />
                 </div>
