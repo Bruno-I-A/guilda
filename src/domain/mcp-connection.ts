@@ -8,15 +8,22 @@ export const MCP_AGENT_LABELS: Record<McpAgentKind, string> = {
 export function buildMcpConnectionCommand(input: {
   agent: McpAgentKind;
   endpoint: string;
-  token: string;
 }): string {
+  const readToken = `$guildaToken = [System.Net.NetworkCredential]::new('', (Read-Host 'Cole a chave da Guilda' -AsSecureString)).Password`;
+
   if (input.agent === "claude") {
-    return `claude mcp add --transport http --scope user --header "Authorization: Bearer ${input.token}" guilda ${input.endpoint}`;
+    return [
+      readToken,
+      `claude mcp add --transport http --scope user --header "Authorization: Bearer $guildaToken" guilda ${input.endpoint}`,
+      "Remove-Variable guildaToken",
+    ].join("\n");
   }
 
   return [
-    `$env:GUILDA_MCP_TOKEN = "${input.token}"`,
-    `[Environment]::SetEnvironmentVariable("GUILDA_MCP_TOKEN", "${input.token}", "User")`,
+    readToken,
+    "$env:GUILDA_MCP_TOKEN = $guildaToken",
+    `[Environment]::SetEnvironmentVariable("GUILDA_MCP_TOKEN", $guildaToken, "User")`,
     `codex mcp add guilda --url ${input.endpoint} --bearer-token-env-var GUILDA_MCP_TOKEN`,
+    "Remove-Variable guildaToken",
   ].join("\n");
 }

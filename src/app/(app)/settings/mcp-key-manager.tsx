@@ -109,17 +109,16 @@ export function McpKeyManager({
     setCopied(true);
   }
 
-  function connectionCommand(token: string) {
+  function connectionCommand() {
     return buildMcpConnectionCommand({
       agent,
       endpoint: `${window.location.origin}/api/mcp`,
-      token,
     });
   }
 
   async function copyCommand() {
     if (!newToken) return;
-    await navigator.clipboard.writeText(connectionCommand(newToken));
+    await navigator.clipboard.writeText(connectionCommand());
     setCommandCopied(true);
   }
 
@@ -236,7 +235,7 @@ export function McpKeyManager({
               </p>
             </div>
             <pre className="overflow-x-auto whitespace-pre-wrap rounded-sm bg-background p-3 text-xs">
-              <code>{connectionCommand(newToken)}</code>
+              <code>{connectionCommand()}</code>
             </pre>
             <Button variant="outline" onClick={copyCommand} className="w-fit">
               {commandCopied ? <Check aria-hidden /> : <Copy aria-hidden />}
@@ -244,10 +243,16 @@ export function McpKeyManager({
             </Button>
             {agent === "codex" ? (
               <p className="text-xs text-muted-foreground">
-                Execute no PowerShell. A variável também fica salva para as
-                próximas sessões do Codex.
+                Copie a chave acima, execute o comando no PowerShell e cole a
+                chave quando ele pedir. A variável fica salva para as próximas
+                sessões do Codex.
               </p>
-            ) : null}
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Copie a chave acima, execute o comando no PowerShell e cole a
+                chave quando ele pedir.
+              </p>
+            )}
           </div>
         </div>
       ) : null}
