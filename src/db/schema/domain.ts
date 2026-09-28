@@ -20,7 +20,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-import { organization, user } from "./auth";
+import { mcpAgentKeys, organization, user } from "./auth";
 
 /**
  * Tabelas de domínio do Guilda.
@@ -388,6 +388,58 @@ export const taskEvents = pgTable(
   (t) => [
     uniqueIndex("task_events_org_id_uidx").on(t.orgId, t.id),
     index("task_events_org_task_idx").on(t.orgId, t.taskId),
+  ],
+);
+
+/** Auditoria adicional que identifica qual cliente MCP executou a operação. */
+export const mcpAuditEvents = pgTable(
+  "mcp_audit_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    agentKeyId: uuid("agent_key_id")
+      .notNull()
+      .references(() => mcpAgentKeys.id),
+    actingUserId: text("acting_user_id")
+      .notNull()
+      .references(() => user.id),
+    tool: varchar("tool", { length: 80 }).notNull(),
+    resourceType: varchar("resource_type", { length: 40 }),
+    resourceId: text("resource_id"),
+    success: boolean("success").notNull(),
+    summary: text("summary"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("mcp_audit_events_org_created_idx").on(t.orgId, t.createdAt),
+    index("mcp_audit_events_org_agent_idx").on(t.orgId, t.agentKeyId),
+  ],
+);
+
+/** Recibos tornam reenvios de comandos MCP seguros após timeout do cliente. */
+export const mcpCommandReceipts = pgTable(
+  "mcp_command_receipts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    agentKeyId: uuid("agent_key_id")
+      .notNull()
+      .references(() => mcpAgentKeys.id),
+    idempotencyKey: varchar("idempotency_key", { length: 100 }).notNull(),
+    tool: varchar("tool", { length: 80 }).notNull(),
+    result: jsonb("result").$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("mcp_command_receipts_agent_idempotency_uidx").on(
+      t.agentKeyId,
+      t.idempotencyKey,
+    ),
+    index("mcp_command_receipts_org_created_idx").on(t.orgId, t.createdAt),
   ],
 );
 

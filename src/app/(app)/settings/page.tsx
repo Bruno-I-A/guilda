@@ -15,8 +15,10 @@ import {
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { canManageClanMembership } from "@/domain/guild-permissions";
+import { canProvisionMcpKey } from "@/domain/mcp-access";
 import type { OrgRole } from "@/domain/task-state";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
+import { listMcpAgentKeys } from "@/lib/mcp/access";
 
 import { ClanMembershipManager } from "./clan-membership-manager";
 import {
@@ -25,6 +27,7 @@ import {
   ClanRoutingManager,
   CreateClanDialog,
 } from "./clan-configuration-manager";
+import { McpKeyManager } from "./mcp-key-manager";
 
 export const metadata: Metadata = { title: "Configurações" };
 
@@ -39,7 +42,8 @@ export default async function SettingsPage() {
     redirect("/dashboard");
   }
 
-  const { clans, orgMembers } = await withOrgTx(session.orgId, async (tx) => {
+  const [{ clans, orgMembers }, mcpKeys] = await Promise.all([
+    withOrgTx(session.orgId, async (tx) => {
     const clanRows = await tx.query.clans.findMany({
       where: eq(schema.clans.orgId, session.orgId),
       with: {
@@ -52,14 +56,26 @@ export default async function SettingsPage() {
       orderBy: [asc(schema.clans.name)],
     });
     const memberRows = await tx
-      .select({ userId: schema.member.userId, name: schema.user.name })
+      .select({ userId: schema.member.userId, name: schema.user.name, role: schema.member.role })
       .from(schema.member)
       .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
       .where(eq(schema.member.organizationId, session.orgId))
       .orderBy(asc(schema.user.name));
-    return { clans: clanRows, orgMembers: memberRows };
-  });
+      return { clans: clanRows, orgMembers: memberRows };
+    }),
+    listMcpAgentKeys(session.orgId),
+  ]);
   const orgMemberIds = new Set(orgMembers.map((row) => row.userId));
+  const provisionableMembers = orgMembers.filter((target) =>
+    canProvisionMcpKey({
+      creatorUserId: session.user.id,
+      creatorRole: viewer.role as OrgRole,
+      targetUserId: target.userId,
+      targetRole: target.role as OrgRole,
+    }),
+  );
+  const provisionableUserIds = new Set(provisionableMembers.map((member) => member.userId));
+  const manageableMcpKeys = mcpKeys.filter((key) => provisionableUserIds.has(key.userId));
 
   const semClan = orgMembers.filter(
     (orgMember) =>
@@ -97,6 +113,8 @@ export default async function SettingsPage() {
           </span>
         </div>
       ) : null}
+
+      <McpKeyManager members={provisionableMembers} keys={manageableMcpKeys} />
 
       <section className="grid gap-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
