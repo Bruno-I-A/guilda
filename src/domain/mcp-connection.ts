@@ -14,7 +14,7 @@ export function buildMcpConnectionCommand(input: {
   if (input.agent === "claude") {
     return [
       readToken,
-      `claude mcp add --transport http --scope user --header "Authorization: Bearer $guildaToken" guilda ${input.endpoint}`,
+      `claude mcp add --transport http --scope user guilda ${input.endpoint} --header "Authorization: Bearer $guildaToken"`,
       "Remove-Variable guildaToken",
     ].join("\n");
   }

@@ -20,8 +20,9 @@ describe("comandos de conexão MCP", () => {
 
     expect(command).toContain("Read-Host 'Cole a chave da Guilda' -AsSecureString");
     expect(command).toContain(
-      `claude mcp add --transport http --scope user --header "Authorization: Bearer $guildaToken" guilda ${endpoint}`,
+      `claude mcp add --transport http --scope user guilda ${endpoint} --header "Authorization: Bearer $guildaToken"`,
     );
+    expect(command.indexOf(endpoint)).toBeLessThan(command.indexOf("--header"));
   });
 
   it("não incorpora a chave no comando copiável", () => {
