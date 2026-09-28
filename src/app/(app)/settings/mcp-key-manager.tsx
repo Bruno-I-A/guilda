@@ -23,6 +23,12 @@ const SCOPE_LABELS: Record<McpScope, string> = {
   "missions:assign": "Atribuir e transferir",
   "missions:review": "Aprovar e rejeitar",
   "missions:cancel": "Cancelar missões",
+  "closings:read": "Consultar fechamentos",
+  "closings:write": "Operar fechamentos",
+  "informatives:read": "Consultar informativos",
+  "informatives:write": "Operar informativos",
+  "mural:read": "Consultar o Mural",
+  "mural:write": "Operar o Mural",
 };
 
 const SCOPE_TOOLS: Record<McpScope, string> = {
@@ -33,6 +39,12 @@ const SCOPE_TOOLS: Record<McpScope, string> = {
   "missions:assign": "transferir responsável",
   "missions:review": "aprovar e rejeitar",
   "missions:cancel": "cancelar missão",
+  "closings:read": "listar e detalhar períodos, anos e observações",
+  "closings:write": "criar, editar, concluir, reabrir e excluir",
+  "informatives:read": "listar e detalhar prévias e pacotes",
+  "informatives:write": "preparar, confirmar e cancelar",
+  "mural:read": "listar avisos, leituras e andamento",
+  "mural:write": "publicar, confirmar, resolver e arquivar",
 };
 
 type KeyRow = {
@@ -178,11 +190,11 @@ export function McpKeyManager({
         </div>
         <fieldset className="grid gap-2">
           <legend className="text-sm font-medium">
-            Grupos de permissão (7)
+            Grupos de permissão ({MCP_SCOPES.length})
           </legend>
           <p className="text-xs text-muted-foreground">
-            Eles liberam até 16 ferramentas, sempre limitadas pelo acesso da
-            pessoa representada na Guilda.
+            Eles liberam ferramentas operacionais, sempre limitadas pelo papel
+            e pelos vínculos da pessoa representada na Guilda.
           </p>
           <div className="grid gap-2 sm:grid-cols-2">
             {MCP_SCOPES.map((scope) => (

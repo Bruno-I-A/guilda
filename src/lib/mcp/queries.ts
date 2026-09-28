@@ -6,6 +6,7 @@ import { withOrgTx, type OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { isAdminRole } from "@/domain/guild-permissions";
 import { authorizeTransition, type TaskStatus } from "@/domain/task-state";
+import { mcpMissionTransitionTargets } from "@/domain/mcp-access";
 
 import type { McpActor } from "./access";
 
@@ -236,7 +237,7 @@ export async function missionDetails(actor: McpActor, taskId: string) {
         fromInformative: task.informativeId !== null,
       },
     };
-    const possible: TaskStatus[] = ["in_progress", "awaiting_approval", "completed", "rejected", "cancelled"];
+    const possible = mcpMissionTransitionTargets(task.status);
     return {
       id: task.id,
       title: task.title,

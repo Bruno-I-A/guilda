@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/db/org-tx", () => ({ withOrgTx: vi.fn() }));
+vi.mock("@/db/index", () => ({ db: {} }));
 
 import type { McpActor } from "@/lib/mcp/access";
 
@@ -59,22 +60,42 @@ describe("Guilda MCP", () => {
     const { tools } = await rpc("tools/list");
     expect(tools.map((tool: { name: string }) => tool.name).sort()).toEqual([
       "aprovar_missao",
+      "adicionar_observacao_fechamento",
+      "alterar_ano_fechamento",
+      "alterar_arquivamento_mural",
+      "alterar_defis",
+      "alterar_status_fechamento",
+      "alterar_trabalho_mural",
       "buscar_empresas",
+      "cancelar_informativo",
       "cancelar_missao",
+      "confirmar_informativo",
+      "confirmar_leitura_mural",
       "concluir_missao",
       "contexto_da_guilda",
+      "criar_fechamento",
+      "criar_informativo",
       "criar_missao",
+      "detalhar_fechamento",
+      "detalhar_informativo",
       "detalhar_missao",
+      "editar_fechamento",
       "editar_missao",
       "entregar_missao",
+      "excluir_fechamento",
       "iniciar_missao",
       "listar_clas",
+      "listar_fechamentos",
+      "listar_informativos",
       "listar_integrantes",
+      "listar_mural",
       "listar_missoes",
+      "publicar_no_mural",
       "rejeitar_missao",
+      "resolver_observacao_fechamento",
       "resumo_de_missoes",
       "transferir_missao",
-    ]);
+    ].sort());
   });
 
   it("recusa chamada antes do banco quando a chave não tem o escopo", async () => {
@@ -84,5 +105,19 @@ describe("Guilda MCP", () => {
     });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("missions:read");
+  });
+
+  it("mantém os domínios operacionais restritos a admin e owner", async () => {
+    const member = {
+      ...actor,
+      role: "member" as const,
+      scopes: ["mural:read" as const],
+    };
+    const result = await rpc("tools/call", {
+      name: "listar_mural",
+      arguments: { archived: false },
+    }, member);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("admin ou owner");
   });
 });

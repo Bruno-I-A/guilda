@@ -13,6 +13,7 @@ import {
   missionDetails,
   searchClients,
 } from "@/lib/mcp/queries";
+import { registerOperationalTools } from "@/mcp/operational-tools";
 
 const INSTRUCTIONS = `Acesso operacional à Guilda em nome de um membro real.
 
@@ -333,6 +334,8 @@ export function createGuildaMcpServer(actor: McpActor): McpServer {
       return result.ok ? text(result) : failure(result.error);
     },
   );
+
+  registerOperationalTools(server, actor);
 
   return server;
 }

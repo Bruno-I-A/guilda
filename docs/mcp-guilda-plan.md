@@ -343,7 +343,21 @@ em cerca de **2 a 3 dias úteis**.
 
 ## Evolução posterior
 
-Depois de estabilizar missões, o mesmo modelo pode receber ferramentas para
-informativos, mural, fechamentos e carteiras. Administração de membros, papéis,
-clãs, integrações e parâmetros da organização deve continuar como uma fase
-separada, com escopos próprios e uma política explícita de confirmação.
+### Implantada em 28/09/2026 — operação administrativa
+
+Owner e admin passaram a operar, com escopos próprios e auditoria MCP:
+
+- Fechamentos: listagem, detalhe, período, situação, ano, DEFIS e observações;
+- Informativos: listagem, detalhe, preparação estruturada, confirmação e cancelamento;
+- Mural: listagem, pendências de leitura, publicação, confirmação pessoal,
+  conclusão pessoal do trabalho e arquivamento reversível.
+
+As escritas usam recibo idempotente; edições e exclusões sensíveis exigem a
+versão lida. Confirmar leitura ou trabalho no Mural continua sempre em nome da
+pessoa representada, nunca em nome de terceiros. Informativos continuam sendo
+prévia antes de confirmação e só o solicitante representado decide a própria
+prévia.
+
+Administração de membros, papéis, clãs, integrações, parâmetros da organização
+e carteiras continua como fase separada, com escopos próprios e política
+explícita de confirmação.
