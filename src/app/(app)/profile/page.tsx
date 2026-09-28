@@ -18,6 +18,7 @@ import { XpBar } from "@/components/xp-bar";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { levelProgress } from "@/domain/xp";
+import { listMcpAgentKeys } from "@/lib/mcp/access";
 import { initials, ROLE_LABELS } from "@/lib/people";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 import { formatDateTime } from "@/lib/task-ui";
@@ -29,6 +30,7 @@ import {
   getXpHistory,
 } from "@/lib/xp-queries";
 
+import { McpKeyManager } from "../settings/mcp-key-manager";
 import { TelegramSettings } from "./telegram-settings";
 import type { TelegramPreferencesView } from "./telegram-types";
 
@@ -64,7 +66,7 @@ export default async function ProfilePage() {
     redirect("/onboarding");
   }
 
-  const [totalXp, completedCount, history, telegramData, botUsername] = await Promise.all([
+  const [totalXp, completedCount, history, telegramData, botUsername, mcpKeys] = await Promise.all([
     getUserXpTotal(session.orgId, session.user.id),
     countCompletedTasks(session.orgId, session.user.id),
     getXpHistory(session.orgId, session.user.id),
@@ -88,6 +90,7 @@ export default async function ProfilePage() {
       return { connection, preferences };
     }),
     getTelegramBotUsername(),
+    listMcpAgentKeys(session.orgId, session.user.id),
   ]);
   const progress = levelProgress(totalXp);
   const xpIntoLevel = progress.totalXp - progress.currentLevelXp;
@@ -173,6 +176,16 @@ export default async function ProfilePage() {
         }
         botUsername={botUsername}
         configured={Boolean(telegramConfig.botToken && botUsername)}
+      />
+
+      <McpKeyManager
+        selfService
+        members={[{
+          userId: session.user.id,
+          name: session.user.name,
+          role: member.role,
+        }]}
+        keys={mcpKeys}
       />
 
       <Card className="panel-cut rounded-none border-0 ring-0">

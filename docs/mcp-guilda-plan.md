@@ -17,6 +17,12 @@ O primeiro ciclo não dará aos agentes poderes de administração da organizaç
 como alterar papéis, membros, clãs, XP, integrações ou credenciais. Esses poderes
 podem virar ferramentas próprias depois, com escopos e revisão separados.
 
+Na interface, cada integrante gera a própria chave em **Perfil → Meus agentes**,
+escolhe Codex ou Claude Code e recebe o comando de conexão pronto. Owner pode
+provisionar qualquer pessoa em Configurações; admin pode provisionar a si e
+membros, nunca owner ou outro admin. Os sete escopos exibidos são grupos que
+controlam as 16 ferramentas do servidor MCP.
+
 ## Decisões de arquitetura
 
 ### 1. O MCP ficará dentro da aplicação Guilda

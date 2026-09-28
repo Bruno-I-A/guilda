@@ -194,7 +194,7 @@ export async function createMcpAgentKey(input: {
   });
 }
 
-export async function listMcpAgentKeys(orgId: string) {
+export async function listMcpAgentKeys(orgId: string, userId?: string) {
   return withOrgTx(orgId, (tx) =>
     tx
       .select({
@@ -210,7 +210,14 @@ export async function listMcpAgentKeys(orgId: string) {
       })
       .from(schema.mcpAgentKeys)
       .innerJoin(schema.user, eq(schema.user.id, schema.mcpAgentKeys.userId))
-      .where(eq(schema.mcpAgentKeys.organizationId, orgId))
+      .where(
+        userId
+          ? and(
+              eq(schema.mcpAgentKeys.organizationId, orgId),
+              eq(schema.mcpAgentKeys.userId, userId),
+            )
+          : eq(schema.mcpAgentKeys.organizationId, orgId),
+      )
       .orderBy(desc(schema.mcpAgentKeys.createdAt)),
   );
 }

@@ -36,6 +36,7 @@ export async function createMcpKeyAction(input: {
       scopes: parsed.data.scopes,
     });
     revalidatePath("/settings");
+    revalidatePath("/profile");
     return { ok: true, data: { token: key.token } };
   } catch (error) {
     return err(error instanceof Error ? error.message : "Não foi possível gerar a chave.");
@@ -56,6 +57,7 @@ export async function revokeMcpKeyAction(input: { keyId: string }): Promise<Acti
     });
     if (!found) return err("Chave não encontrada.");
     revalidatePath("/settings");
+    revalidatePath("/profile");
     return { ok: true };
   } catch (error) {
     return err(error instanceof Error ? error.message : "Não foi possível revogar a chave.");
