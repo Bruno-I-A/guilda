@@ -22,6 +22,7 @@ import { isActiveClanMember, loadClanScopedFacts } from "@/lib/clans/facts";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 import { CONTABILIDADE_CLAN_SLUG } from "@/lib/clans/rules";
 import { reconcileClosingYearLedger } from "@/lib/closings/closing-year-xp";
+import { taskClosesPeriod } from "@/domain/closing-from-task";
 import { createTaskRecord } from "@/lib/tasks/create";
 import {
   enqueueTelegramNotificationIfEnabled,
@@ -989,8 +990,11 @@ const closingFromTaskSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Vencimento inválido."),
   cashBalance: optionalMoneySchema("Saldo de caixa"),
   periodResult: optionalMoneySchema("Resultado"),
+  // Mesma régua do formulário manual (`closingFields`): empréstimo de sócio
+  // não aceita negativo. Eu tinha invertido aqui, e duas réguas diferentes
+  // para o mesmo campo é como elas divergem sem ninguém ver.
   shareholderLoan: optionalMoneySchema("Empréstimo de sócio", {
-    nonnegative: false,
+    nonnegative: true,
   }),
 });
 
@@ -1096,8 +1100,7 @@ export async function createClosingFromTask(
       // Trabalho ainda não entregue (pendente ou em andamento) nasce pendente,
       // e aí sim quem fecha é a aprovação, por `syncClosingFromTask` — que
       // continua valendo: o UPDATE dele ignora período já fechado.
-      const trabalhoFeito =
-        task.status === "completed" || task.status === "awaiting_approval";
+      const trabalhoFeito = taskClosesPeriod(task.status);
       const agora = new Date();
 
       const [created] = await tx

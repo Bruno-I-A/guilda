@@ -1,9 +1,13 @@
 import "server-only";
 
-import { and, eq, isNotNull, isNull, ne } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import {
+  TASK_STATUSES_THAT_CLOSE_PERIOD,
+  taskClosesPeriod,
+} from "@/domain/closing-from-task";
 import type { TaskStatus } from "@/domain/task-state";
 import {
   lockClosingYear,
@@ -27,8 +31,21 @@ export async function syncClosingFromTask(
   }
 
   if (task.closingId) {
-    if (input.toStatus === "completed") {
-      const completedBy = completedTaskAssigneeId(task, "completed");
+    // Um período acompanha se o TRABALHO está feito, não se a missão foi
+    // aprovada: entregue aguardando aprovação já é balanço pronto, e é assim
+    // que o período nasce quando gerado pela missão. Tratar só `completed`
+    // deixava o período fechado quando a entrega era devolvida para ajuste —
+    // o trabalho voltava a ser feito e o fechamento continuava dizendo que
+    // estava pronto.
+    const entrouEmTrabalhoFeito = taskClosesPeriod(input.toStatus);
+    const saiuDeTrabalhoFeito =
+      taskClosesPeriod(input.fromStatus) && !entrouEmTrabalhoFeito;
+
+    if (entrouEmTrabalhoFeito) {
+      const completedBy =
+        input.toStatus === "completed"
+          ? completedTaskAssigneeId(task, "completed")
+          : task.assigneeId;
       await tx
         .update(schema.accountingClosings)
         .set({
@@ -45,12 +62,12 @@ export async function syncClosingFromTask(
             ne(schema.accountingClosings.status, "completed"),
           ),
         );
-    } else if (input.fromStatus === "completed") {
+    } else if (saiuDeTrabalhoFeito) {
       const otherCompleted = await tx.query.tasks.findFirst({
         where: and(
           eq(schema.tasks.orgId, task.orgId),
           eq(schema.tasks.closingId, task.closingId),
-          eq(schema.tasks.status, "completed"),
+          inArray(schema.tasks.status, [...TASK_STATUSES_THAT_CLOSE_PERIOD]),
           isNotNull(schema.tasks.assigneeId),
           ne(schema.tasks.id, task.id),
         ),

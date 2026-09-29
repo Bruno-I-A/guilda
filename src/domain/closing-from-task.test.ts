@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   parseBrazilianAmount,
+  taskClosesPeriod,
   parseClosingFigures,
   suggestedClosingTitle,
 } from "./closing-from-task";
@@ -132,5 +133,32 @@ describe("título sugerido para o período", () => {
       maxLength: 40,
     });
     expect(titulo.length).toBeLessThanOrEqual(40);
+  });
+});
+
+describe("quando a missão fecha o período", () => {
+  test("entregue aguardando aprovação já conta como trabalho feito", () => {
+    // A entrega traz o balanço pronto; a aprovação é o aceite de quem pediu,
+    // não a execução. Era isso que deixava o período pendente com os números
+    // já dentro dele.
+    expect(taskClosesPeriod("awaiting_approval")).toBe(true);
+  });
+
+  test("concluída fecha", () => {
+    expect(taskClosesPeriod("completed")).toBe(true);
+  });
+
+  test.each(["pending", "in_progress", "rejected", "cancelled"] as const)(
+    "%s não fecha — e sair para um desses reabre o período",
+    (status) => {
+      expect(taskClosesPeriod(status)).toBe(false);
+    },
+  );
+
+  test("devolver para ajuste deixa de ser estado de trabalho feito", () => {
+    // O caso que o Bruno reportou: entregue → devolvida mantinha o período
+    // fechado, porque a régua antiga só olhava `completed`.
+    expect(taskClosesPeriod("awaiting_approval")).toBe(true);
+    expect(taskClosesPeriod("rejected")).toBe(false);
   });
 });

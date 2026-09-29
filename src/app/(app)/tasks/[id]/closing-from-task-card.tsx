@@ -145,11 +145,15 @@ export function ClosingFromTaskCard({
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="grid gap-1.5">
           <Label htmlFor="cft-cash">Saldo de caixa</Label>
+          {/* Caixa e resultado aceitam negativo: caixa descoberto existe e
+              prejuízo é resultado negativo. Só o empréstimo de sócio não
+              aceita, igual ao formulário manual. */}
           <CurrencyInput
             id="cft-cash"
             name="cashBalance"
             value={cashBalance}
             onValueChange={setCashBalance}
+            allowNegative
           />
         </div>
         <div className="grid gap-1.5">
@@ -159,6 +163,7 @@ export function ClosingFromTaskCard({
             name="periodResult"
             value={periodResult}
             onValueChange={setPeriodResult}
+            allowNegative
           />
         </div>
         <div className="grid gap-1.5">
