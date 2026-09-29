@@ -1087,10 +1087,17 @@ export async function createClosingFromTask(
         );
       if (!client) return err("A empresa da missão não pertence à organização.");
 
-      // Missão já concluída não vai passar por transição nenhuma, então o
-      // período nasce fechado por ela. Missão em aberto nasce pendente e quem
-      // fecha é a aprovação, por `syncClosingFromTask`.
-      const jaConcluida = task.status === "completed";
+      // O período nasce FECHADO quando o trabalho já foi feito — concluída ou
+      // entregue aguardando aprovação. É como a equipe registra manualmente:
+      // faz o balanço e só então lança o período, já fechado. Deixá-lo
+      // pendente à espera da aprovação era elegante no papel e errado na
+      // prática: o card ficava "pendente" com os números já lá dentro.
+      //
+      // Trabalho ainda não entregue (pendente ou em andamento) nasce pendente,
+      // e aí sim quem fecha é a aprovação, por `syncClosingFromTask` — que
+      // continua valendo: o UPDATE dele ignora período já fechado.
+      const trabalhoFeito =
+        task.status === "completed" || task.status === "awaiting_approval";
       const agora = new Date();
 
       const [created] = await tx
@@ -1100,14 +1107,17 @@ export async function createClosingFromTask(
           clientId: client.id,
           title: data.title,
           dueDate: data.dueDate,
-          status: jaConcluida ? "completed" : "pending",
+          status: trabalhoFeito ? "completed" : "pending",
           cashBalance: data.cashBalance ?? null,
           periodResult: data.periodResult ?? null,
           shareholderLoan: data.shareholderLoan ?? null,
           createdBy: ctx.userId,
-          completedBy: jaConcluida ? task.assigneeId : null,
-          completedAt: jaConcluida ? task.completedAt ?? agora : null,
-          completedByTaskId: jaConcluida ? task.id : null,
+          // Crédito para quem FEZ o balanço, não para quem clicou em gerar —
+          // é o mesmo que `syncClosingFromTask` faz, então os dois caminhos
+          // contam a mesma história na linha "Registrado por".
+          completedBy: trabalhoFeito ? task.assigneeId : null,
+          completedAt: trabalhoFeito ? task.completedAt ?? agora : null,
+          completedByTaskId: trabalhoFeito ? task.id : null,
         })
         .returning({ id: schema.accountingClosings.id });
 
