@@ -961,3 +961,176 @@ export async function createMissionFromClosingObservation(
   }
   return result;
 }
+
+/* ------------------------------------------------------------------ *
+ * Fechamento gerado a partir de uma missão
+ *
+ * O balanço de uma empresa era anotado duas vezes: a pessoa fazia a missão e
+ * escrevia caixa e resultado no retorno, e depois alguém repetia os mesmos
+ * números no período da aba Fechamentos.
+ *
+ * O elo já existia e estava inalcançável: `syncClosingFromTask` fecha o
+ * período quando a missão vinculada conclui e o reabre quando ela é
+ * revertida. Faltava alguém preencher `tasks.closing_id` — é o que esta ação
+ * faz, e por isso ela NÃO marca o período como concluído por conta própria
+ * quando a missão ainda não terminou: quem fecha é a aprovação, pelo caminho
+ * que já existe.
+ * ------------------------------------------------------------------ */
+
+const closingFromTaskSchema = z.object({
+  taskId: z.uuid("Missão inválida."),
+  title: z
+    .string()
+    .trim()
+    .min(3, "Dê um título ao período.")
+    .max(160, "Título muito longo."),
+  dueDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Vencimento inválido."),
+  cashBalance: optionalMoneySchema("Saldo de caixa"),
+  periodResult: optionalMoneySchema("Resultado"),
+  shareholderLoan: optionalMoneySchema("Empréstimo de sócio", {
+    nonnegative: false,
+  }),
+});
+
+/**
+ * Prova que quem chama pode operar os Fechamentos, SEM exigir que saiba o id
+ * do clã: a tela da missão não conhece a Contabilidade. Acha o clã pelo slug
+ * e delega para o mesmo gate das demais ações.
+ */
+async function requireClosingManagerByOrg(
+  tx: OrgTx,
+  ctx: MemberContext,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const [contabilidade] = await tx
+    .select({ id: schema.clans.id })
+    .from(schema.clans)
+    .where(
+      and(
+        eq(schema.clans.orgId, ctx.orgId),
+        eq(schema.clans.slug, CONTABILIDADE_CLAN_SLUG),
+        eq(schema.clans.active, true),
+      ),
+    )
+    .limit(1);
+  if (!contabilidade) {
+    return err("O clã Contabilidade precisa estar ativo para registrar fechamentos.");
+  }
+  return requireClosingManager(tx, ctx, contabilidade.id);
+}
+
+export async function createClosingFromTask(
+  input: z.input<typeof closingFromTaskSchema>,
+): Promise<ActionResult<{ closingId: string; year: number; alreadyLinked: boolean }>> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  const parsed = closingFromTaskSchema.safeParse(input);
+  if (!parsed.success) {
+    return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+  }
+  const data = parsed.data;
+
+  const result = await withOrgTx(
+    ctx.orgId,
+    async (
+      tx,
+    ): Promise<ActionResult<{ closingId: string; year: number; alreadyLinked: boolean }>> => {
+      const gate = await requireClosingManagerByOrg(tx, ctx);
+      if (!gate.ok) return gate;
+
+      const [task] = await tx
+        .select({
+          id: schema.tasks.id,
+          clientId: schema.tasks.clientId,
+          closingId: schema.tasks.closingId,
+          status: schema.tasks.status,
+          assigneeId: schema.tasks.assigneeId,
+          completedAt: schema.tasks.completedAt,
+        })
+        .from(schema.tasks)
+        .where(
+          and(eq(schema.tasks.orgId, ctx.orgId), eq(schema.tasks.id, data.taskId)),
+        )
+        .for("update");
+      if (!task) return err("Missão não encontrada.");
+      if (!task.clientId) {
+        return err(
+          "Esta missão não está ligada a uma empresa — sem empresa não há fechamento para gerar.",
+        );
+      }
+      if (task.closingId) {
+        const [existente] = await tx
+          .select({ dueDate: schema.accountingClosings.dueDate })
+          .from(schema.accountingClosings)
+          .where(
+            and(
+              eq(schema.accountingClosings.orgId, ctx.orgId),
+              eq(schema.accountingClosings.id, task.closingId),
+            ),
+          );
+        return {
+          ok: true,
+          data: {
+            closingId: task.closingId,
+            year: Number(existente?.dueDate?.slice(0, 4) ?? data.dueDate.slice(0, 4)),
+            alreadyLinked: true,
+          },
+        };
+      }
+
+      const [client] = await tx
+        .select({ id: schema.clients.id })
+        .from(schema.clients)
+        .where(
+          and(eq(schema.clients.orgId, ctx.orgId), eq(schema.clients.id, task.clientId)),
+        );
+      if (!client) return err("A empresa da missão não pertence à organização.");
+
+      // Missão já concluída não vai passar por transição nenhuma, então o
+      // período nasce fechado por ela. Missão em aberto nasce pendente e quem
+      // fecha é a aprovação, por `syncClosingFromTask`.
+      const jaConcluida = task.status === "completed";
+      const agora = new Date();
+
+      const [created] = await tx
+        .insert(schema.accountingClosings)
+        .values({
+          orgId: ctx.orgId,
+          clientId: client.id,
+          title: data.title,
+          dueDate: data.dueDate,
+          status: jaConcluida ? "completed" : "pending",
+          cashBalance: data.cashBalance ?? null,
+          periodResult: data.periodResult ?? null,
+          shareholderLoan: data.shareholderLoan ?? null,
+          createdBy: ctx.userId,
+          completedBy: jaConcluida ? task.assigneeId : null,
+          completedAt: jaConcluida ? task.completedAt ?? agora : null,
+          completedByTaskId: jaConcluida ? task.id : null,
+        })
+        .returning({ id: schema.accountingClosings.id });
+
+      await tx
+        .update(schema.tasks)
+        .set({ closingId: created.id, updatedAt: agora })
+        .where(and(eq(schema.tasks.orgId, ctx.orgId), eq(schema.tasks.id, task.id)));
+
+      return {
+        ok: true,
+        data: {
+          closingId: created.id,
+          year: Number(data.dueDate.slice(0, 4)),
+          alreadyLinked: false,
+        },
+      };
+    },
+  );
+
+  if (result.ok) {
+    revalidatePath("/clans/[id]", "page");
+    revalidatePath(`/tasks/${input.taskId}`);
+    revalidatePath("/tasks");
+  }
+  return result;
+}
