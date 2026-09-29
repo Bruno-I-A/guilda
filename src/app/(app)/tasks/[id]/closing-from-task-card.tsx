@@ -21,9 +21,10 @@ import type { ClosingFigures } from "@/domain/closing-from-task";
  * aba Fechamentos. Aqui o período nasce da própria missão, já com os números
  * que vieram no retorno — quando dá para lê-los com segurança.
  *
- * O período NÃO nasce concluído se a missão ainda não terminou: quem o fecha é
- * a aprovação, pelo caminho que já existia (`syncClosingFromTask`). É por isso
- * que vincular antes de aprovar é o melhor momento.
+ * O período nasce FECHADO quando o trabalho já foi feito — missão concluída ou
+ * entregue aguardando aprovação —, que é como a equipe registra manualmente.
+ * Trabalho ainda não entregue gera período pendente, e aí quem o fecha é a
+ * aprovação, por `syncClosingFromTask`.
  */
 export function ClosingFromTaskCard({
   taskId,
@@ -59,8 +60,7 @@ export function ClosingFromTaskCard({
       <div className="panel-cut flex flex-wrap items-center gap-x-3 gap-y-1 border border-success/30 bg-success/5 px-4 py-3 text-sm">
         <CalendarRange className="size-4 shrink-0 text-success" aria-hidden />
         <span>
-          Vinculada ao fechamento de <strong>{clientName}</strong>. Concluir esta
-          missão marca o período como fechado.
+          Vinculada ao fechamento de <strong>{clientName}</strong>.
         </span>
         <Link
           href={`/clans/${linkedClosing.clanId}?tab=closings&year=${linkedClosing.year}&q=${encodeURIComponent(clientName)}`}
