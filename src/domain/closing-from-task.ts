@@ -1,3 +1,5 @@
+import type { TaskStatus } from "./task-state";
+
 /**
  * Ponte entre a missão e o fechamento (funções puras).
  *
@@ -10,6 +12,24 @@
  * período quando a missão vinculada conclui, e reabre quando ela é revertida.
  * O que faltava era alguém preencher `tasks.closing_id`.
  */
+
+/**
+ * Estados da missão em que o TRABALHO está feito, para efeito de fechamento.
+ * `awaiting_approval` entra porque a entrega já traz o balanço pronto — a
+ * aprovação é o aceite de quem pediu, não a execução.
+ *
+ * Mora aqui, com nome, porque a regra é usada em dois lugares distantes: ao
+ * gerar o período a partir da missão e ao sincronizá-lo nas transições. Duas
+ * cópias da mesma lista é como elas divergem sem ninguém ver.
+ */
+export const TASK_STATUSES_THAT_CLOSE_PERIOD = [
+  "completed",
+  "awaiting_approval",
+] as const satisfies readonly TaskStatus[];
+
+export function taskClosesPeriod(status: TaskStatus): boolean {
+  return (TASK_STATUSES_THAT_CLOSE_PERIOD as readonly TaskStatus[]).includes(status);
+}
 
 export interface ClosingFigures {
   cashBalance: string | null;
