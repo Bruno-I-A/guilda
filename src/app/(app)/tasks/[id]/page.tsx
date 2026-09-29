@@ -42,6 +42,13 @@ import {
 import { parseReturnTo } from "@/lib/return-to";
 import { cn } from "@/lib/utils";
 
+import {
+  parseClosingFigures,
+  suggestedClosingTitle,
+} from "@/domain/closing-from-task";
+import { CONTABILIDADE_CLAN_SLUG } from "@/lib/clans/rules";
+
+import { ClosingFromTaskCard } from "./closing-from-task-card";
 import { TaskActionBar } from "./task-action-bar";
 
 export const metadata: Metadata = { title: "Missão" };
@@ -334,6 +341,39 @@ export default async function TaskDetailPage({
       (event) =>
         event.toStatus === "completed" && event.fromStatus === "awaiting_approval",
     );
+  // Ponte com os Fechamentos: a missão de balanço já carrega a empresa e, no
+  // retorno, os números que o período quer. Sem esta ponte o mesmo trabalho
+  // era anotado nos dois lugares.
+  const contabilidade = task.clientId
+    ? await withOrgTx(session.orgId, async (tx) => {
+        const [cla] = await tx
+          .select({ id: schema.clans.id })
+          .from(schema.clans)
+          .where(
+            and(
+              eq(schema.clans.orgId, session.orgId),
+              eq(schema.clans.slug, CONTABILIDADE_CLAN_SLUG),
+              eq(schema.clans.active, true),
+            ),
+          )
+          .limit(1);
+        if (!cla) return null;
+        const [periodo] = task.closingId
+          ? await tx
+              .select({ dueDate: schema.accountingClosings.dueDate })
+              .from(schema.accountingClosings)
+              .where(
+                and(
+                  eq(schema.accountingClosings.orgId, session.orgId),
+                  eq(schema.accountingClosings.id, task.closingId),
+                ),
+              )
+          : [];
+        return { clanId: cla.id, closingYear: periodo?.dueDate?.slice(0, 4) ?? null };
+      })
+    : null;
+  const figurasDoRetorno = parseClosingFigures(delivery?.note ?? null);
+
   const overdue = isOverdue(task.dueDate, task.status);
   const timeline = [
     ...task.events.map((event) => ({ kind: "event" as const, date: event.createdAt, event })),
@@ -429,6 +469,33 @@ export default async function TaskDetailPage({
             </p>
           </div>
         </div>
+      ) : null}
+
+      {contabilidade && task.client?.name ? (
+        <ClosingFromTaskCard
+          taskId={task.id}
+          clientName={task.client.name}
+          suggestedTitle={suggestedClosingTitle({
+            taskTitle: task.title,
+            clientName: task.client.name,
+          })}
+          suggestedDueDate={
+            task.dueDate
+              ? task.dueDate.toISOString().slice(0, 10)
+              : new Date().toISOString().slice(0, 10)
+          }
+          figures={figurasDoRetorno}
+          linkedClosing={
+            task.closingId
+              ? {
+                  clanId: contabilidade.clanId,
+                  year: Number(
+                    contabilidade.closingYear ?? new Date().getFullYear(),
+                  ),
+                }
+              : null
+          }
+        />
       ) : null}
 
       <TaskActionBar
