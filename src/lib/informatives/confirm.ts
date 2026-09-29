@@ -21,6 +21,7 @@ import {
   periodsPerYear,
 } from "@/domain/commitments";
 import { createTaskRecord } from "@/lib/tasks/create";
+import { completeTaskFromSystem } from "@/lib/tasks/complete";
 import {
   amendmentClientRegistrationUpdate,
   amendmentRequiresExternalRegistrationTask,
@@ -446,7 +447,8 @@ export async function confirmInformative(
     if (
       tasks.length === 0 &&
       !payload.company.createClient &&
-      payload.kind !== "client_change"
+      payload.kind !== "client_change" &&
+      !payload.freeNotice
     ) {
       return { ok: false, message: "Nenhuma missão válida nesta prévia." };
     }
@@ -522,6 +524,9 @@ export async function confirmInformative(
         columns: { id: true },
       });
       clientId = existing?.id ?? null;
+    }
+    if (payload.freeNotice && payload.company.clientId && !clientId) {
+      return { ok: false, message: "A empresa deste informativo não está mais ativa. Gere outra prévia." };
     }
     let createdClient = false;
     if (
@@ -713,7 +718,19 @@ export async function confirmInformative(
       !linkedFlow &&
       payload.kind === "client_closure" &&
       isAccountantChangeInformative(informative.sourceText);
-    if (linkedFlow?.flow.kind === "opening" && flowLegalName) {
+    if (payload.freeNotice) {
+      const notice = await publishGuildNotice(tx, {
+        orgId: actor.orgId,
+        authorId: actor.userId,
+        kind: "notice",
+        title: payload.freeNotice.title,
+        body: payload.freeNotice.body,
+        clientId,
+        informativeId: informative.id,
+        requiresAck: true,
+      });
+      noticePublished = Boolean(notice);
+    } else if (linkedFlow?.flow.kind === "opening" && flowLegalName) {
       const flow = linkedFlow.flow;
       const notice = await publishGuildNotice(tx, {
         orgId: actor.orgId,
@@ -927,11 +944,21 @@ export async function confirmInformative(
         },
         actorId: actor.userId,
       });
+      if (flow.informativeTaskId) {
+        await completeTaskFromSystem(tx, {
+          orgId: actor.orgId,
+          taskId: flow.informativeTaskId,
+          actorId: actor.userId,
+          note: "Concluída pela confirmação do Informativo do Fluxo.",
+        });
+      }
     }
 
     const missionMessage =
       taskIds.length === 0
-        ? "Nenhuma missão a criar — as linhas eram combinado ou sem particularidades."
+        ? payload.freeNotice
+          ? "Informativo confirmado sem missões."
+          : "Nenhuma missão a criar — as linhas eram combinado ou sem particularidades."
         : payload.company.legalName
           ? `${taskIds.length} missão(ões) criada(s) para ${payload.company.legalName}.`
           : `${taskIds.length} missão(ões) criada(s).`;

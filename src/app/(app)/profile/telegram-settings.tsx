@@ -26,6 +26,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { APP_TIME_ZONE } from "@/lib/date-time";
 
 import {
   createTelegramLink,
@@ -269,6 +270,7 @@ export function TelegramSettings({
                       {new Intl.DateTimeFormat("pt-BR", {
                         hour: "2-digit",
                         minute: "2-digit",
+                        timeZone: APP_TIME_ZONE,
                       }).format(new Date(linkState.expiresAt))}
                     </p>
                   )}

@@ -89,4 +89,22 @@ describe("buildStructuredInformativePayload", () => {
     expect(payload.observations).toEqual(["Razão social atualizada"]);
     expect(payload.warnings).toEqual([]);
   });
+
+  test("preserva assunto e texto de um aviso livre sem missão", () => {
+    const payload = buildStructuredInformativePayload({
+      clans,
+      missions: [],
+      kind: "general_task",
+      freeNotice: {
+        title: "EMPRESA TESTE LTDA — Inatividade",
+        body: "A empresa permanecerá inativa a partir de setembro.",
+      },
+    });
+
+    expect(payload.tasks).toEqual([]);
+    expect(payload.freeNotice).toEqual({
+      title: "EMPRESA TESTE LTDA — Inatividade",
+      body: "A empresa permanecerá inativa a partir de setembro.",
+    });
+  });
 });

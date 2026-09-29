@@ -6,6 +6,9 @@ import {
   timestamp,
   boolean,
   integer,
+  jsonb,
+  uuid,
+  varchar,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -146,6 +149,43 @@ export const rateLimit = pgTable("rate_limit", {
   count: integer("count").notNull(),
   lastRequest: bigint("last_request", { mode: "number" }).notNull(),
 });
+
+/**
+ * Credenciais do MCP. Esta é uma tabela de autenticação, consultada antes de
+ * existir um contexto de organização; por isso ela não usa a RLS das tabelas
+ * de domínio. A chave continua presa a uma organização e a um membro real, e
+ * toda operação posterior entra por withOrgTx.
+ */
+export const mcpAgentKeys = pgTable(
+  "mcp_agent_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 80 }).notNull(),
+    tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(),
+    tokenLastFour: varchar("token_last_four", { length: 4 }).notNull(),
+    scopes: jsonb("scopes").$type<string[]>().notNull().default([]),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("mcp_agent_keys_org_user_idx").on(
+      table.organizationId,
+      table.userId,
+    ),
+    index("mcp_agent_keys_active_idx")
+      .on(table.organizationId, table.revokedAt),
+  ],
+);
 
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),

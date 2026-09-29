@@ -4,6 +4,7 @@ import {
   ArrowRightLeft,
   Ban,
   Check,
+  ClipboardPenLine,
   Hand,
   Pencil,
   Play,
@@ -37,6 +38,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionResult } from "@/lib/action-context";
 import { toastWithUndo } from "@/lib/undo-toast";
+import { prepareCompanyFlowInformative } from "../../clans/[id]/company-flow-actions";
 
 import {
   approveTask,
@@ -78,6 +80,7 @@ export function TaskActionBar({
   restrictTransferToTaskClan,
   returnTo,
   startDestination,
+  informativeFlow,
 }: {
   task: TaskView;
   can: {
@@ -100,6 +103,7 @@ export function TaskActionBar({
   returnTo: string;
   /** Para onde ir ao iniciar. `null` em missão comum, que fica na própria tela. */
   startDestination?: string | null;
+  informativeFlow?: { flowId: string; clanId: string; hasDraft: boolean } | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -208,7 +212,7 @@ export function TaskActionBar({
   }
 
   const hasPrimary =
-    can.claim || can.start || can.resume || can.complete || can.submit || can.approve || can.reject;
+    can.claim || can.start || can.resume || can.complete || can.submit || can.approve || can.reject || Boolean(informativeFlow);
   if (
     !hasPrimary &&
     !can.edit &&
@@ -222,6 +226,35 @@ export function TaskActionBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {informativeFlow ? (
+        <Button
+          disabled={pending}
+          onClick={() => {
+            const destination = `/informativos?flowId=${informativeFlow.flowId}`;
+            if (informativeFlow.hasDraft) {
+              router.push(destination);
+              return;
+            }
+            startTransition(async () => {
+              try {
+                const result = await prepareCompanyFlowInformative({
+                  clanId: informativeFlow.clanId,
+                  flowId: informativeFlow.flowId,
+                });
+                if (!result.ok) {
+                  toast.error(result.error);
+                  return;
+                }
+                router.push(destination);
+              } catch {
+                toast.error("Não foi possível abrir o Informativo. Tente novamente.");
+              }
+            });
+          }}
+        >
+          <ClipboardPenLine aria-hidden /> {informativeFlow.hasDraft ? "Continuar Informativo" : "Gerar Informativo"}
+        </Button>
+      ) : null}
       {can.claim ? (
         <Button
           disabled={pending}
@@ -235,6 +268,7 @@ export function TaskActionBar({
 
       {can.start ? (
         <Button
+          variant={informativeFlow ? "outline" : "default"}
           disabled={pending}
           onClick={() =>
             run(

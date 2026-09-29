@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { withOrgTx } from "@/db/org-tx";
+import { canAccessCompanyFlowInformative } from "@/lib/informatives/flow-access";
 import { clanTabHref } from "@/lib/clan-tabs";
 import * as schema from "@/db/schema";
 import { isTransferableTaskStatus } from "@/domain/clans";
@@ -60,7 +61,7 @@ export default async function TaskDetailPage({
   const voltarPara = parseReturnTo((await searchParams).returnTo);
   if (!z.uuid().safeParse(id).success) notFound();
 
-  const { task, viewerClanMembership, candidateMemberships, fluxoVinculado } =
+  const { task, viewerClanMembership, candidateMemberships, fluxoVinculado, canOpenInformative } =
     await withOrgTx(
     session.orgId,
     async (tx) => {
@@ -94,14 +95,27 @@ export default async function TaskDetailPage({
           viewerClanMembership: null,
           candidateMemberships: [],
           fluxoVinculado: null,
+          canOpenInformative: false,
         };
       }
 
       // O vínculo mora no Fluxo (processing_task_id / informative_task_id), então
       // a busca é reversa. Os dois índices únicos parciais tornam isso barato.
       const [fluxoVinculado] = await tx
-        .select({ clanId: schema.companyFlows.societarioClanId })
+        .select({
+          id: schema.companyFlows.id,
+          clanId: schema.companyFlows.societarioClanId,
+          informativeTaskId: schema.companyFlows.informativeTaskId,
+          informativeId: schema.companyFlows.informativeId,
+          flowStatus: schema.companyFlows.status,
+          informativeRequestedBy: schema.informatives.requestedBy,
+          informativeStatus: schema.informatives.status,
+        })
         .from(schema.companyFlows)
+        .leftJoin(schema.informatives, and(
+          eq(schema.informatives.orgId, schema.companyFlows.orgId),
+          eq(schema.informatives.id, schema.companyFlows.informativeId),
+        ))
         .where(
           and(
             eq(schema.companyFlows.orgId, session.orgId),
@@ -112,6 +126,13 @@ export default async function TaskDetailPage({
           ),
         )
         .limit(1);
+      const canOpenInformative = fluxoVinculado?.informativeTaskId === taskRow.id
+        ? await canAccessCompanyFlowInformative(tx, {
+            orgId: session.orgId,
+            userId: session.user.id,
+            role: member.role as OrgRole,
+          }, { flowId: fluxoVinculado.id })
+        : false;
 
       const [viewerMembership, candidates] = await Promise.all([
         taskRow.clanId
@@ -164,10 +185,12 @@ export default async function TaskDetailPage({
         viewerClanMembership: viewerMembership ?? null,
         candidateMemberships: candidates,
         fluxoVinculado: fluxoVinculado ?? null,
+        canOpenInformative,
       };
     },
   );
   if (!task) notFound();
+  const isFlowInformativeTask = fluxoVinculado?.informativeTaskId === task.id;
 
   // Quem registrou a última conclusão — é quem a janela de arrependimento
   // libera. Os eventos já vêm carregados, então não custa consulta nova.
@@ -205,16 +228,19 @@ export default async function TaskDetailPage({
       authorizeTransition("in_progress", context).allowed,
     complete:
       task.status === "in_progress" &&
+      !isFlowInformativeTask &&
       authorizeTransition("completed", context).allowed,
     // Entregar é para quem PEDIU. Auto-missão conclui direto: entregar um
     // retorno a si mesmo só criaria um passo a mais para o mesmo XP. Na missão
     // de Informativo o retorno vira opção — Concluir é o caminho normal.
     submit:
       task.status === "in_progress" &&
+      !isFlowInformativeTask &&
       task.creatorId !== task.assigneeId &&
       authorizeTransition("awaiting_approval", context).allowed,
     approve:
       task.status === "awaiting_approval" &&
+      !isFlowInformativeTask &&
       authorizeTransition("completed", context).allowed,
     reject:
       task.status === "awaiting_approval" &&
@@ -239,6 +265,7 @@ export default async function TaskDetailPage({
     }).allowed,
     revert:
       task.status === "completed" &&
+      !isFlowInformativeTask &&
       authorizeTransition("in_progress", context).allowed,
     transfer:
       isTransferableTaskStatus(task.status) &&
@@ -421,7 +448,23 @@ export default async function TaskDetailPage({
         restrictTransferToTaskClan={!isAdmin}
         returnTo={voltarPara.href}
         startDestination={
-          fluxoVinculado ? clanTabHref(fluxoVinculado.clanId, "flow") : null
+          fluxoVinculado && !isFlowInformativeTask
+            ? clanTabHref(fluxoVinculado.clanId, "flow")
+            : null
+        }
+        informativeFlow={
+          isFlowInformativeTask && canOpenInformative &&
+          ["pending", "in_progress", "rejected"].includes(task.status) &&
+          ["awaiting_owner", "informative_drafting", "completed"].includes(fluxoVinculado.flowStatus) &&
+          (!fluxoVinculado.informativeId ||
+            (fluxoVinculado.informativeStatus === "pending" &&
+              fluxoVinculado.informativeRequestedBy === session.user.id))
+            ? {
+                flowId: fluxoVinculado.id,
+                clanId: fluxoVinculado.clanId,
+                hasDraft: Boolean(fluxoVinculado.informativeId),
+              }
+            : null
         }
       />
 

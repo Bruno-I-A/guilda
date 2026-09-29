@@ -26,7 +26,6 @@ import { TAX_REGIMES } from "@/lib/clients-ui";
 import {
   canClaimCompanyFlow,
   canCreateCompanyFlow,
-  canPrepareCompanyFlowInformative,
   canReturnCompanyFlow,
 } from "@/domain/guild-permissions";
 import {
@@ -34,7 +33,8 @@ import {
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
-import { findClanDutyHolder, holdsClanDuty } from "@/lib/clans/duties";
+import { findClanDutyHolder } from "@/lib/clans/duties";
+import { canAccessCompanyFlowInformative } from "@/lib/informatives/flow-access";
 import { isActiveClanMember, loadClanScopedFacts } from "@/lib/clans/facts";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 import { RH_CLAN_SLUG, SOCIETARIO_CLAN_SLUG } from "@/lib/clans/rules";
@@ -888,10 +888,6 @@ export async function prepareCompanyFlowInformative(
     if (!corporate) return err("Clã Societário não encontrado.");
     // A atribuicao nominal existe justamente para que o Informativo saia sem
     // depender de um admin: quem recebe a missao precisa poder executa-la.
-    const holdsInformativeDuty = await holdsClanDuty(tx, ctx.orgId, data.clanId, ctx.userId, "informative");
-    if (!canPrepareCompanyFlowInformative({ ...corporate.facts, holdsInformativeDuty })) {
-      return err("Só owner, admin ou o responsável por Informativos do clã pode preparar o Informativo.");
-    }
     const [flow] = await tx
       .select({
         flow: schema.companyFlows,
@@ -906,6 +902,9 @@ export async function prepareCompanyFlowInformative(
       .where(and(eq(schema.companyFlows.orgId, ctx.orgId), eq(schema.companyFlows.id, data.flowId), eq(schema.companyFlows.societarioClanId, data.clanId)))
       .for("update", { of: schema.companyFlows });
     if (!flow) return err("Fluxo não encontrado.");
+    if (!await canAccessCompanyFlowInformative(tx, ctx, { flowId: flow.flow.id })) {
+      return err("Só owner, admin ou o responsável pelo Informativo deste Fluxo pode prepará-lo.");
+    }
     if (flow.flow.status !== "awaiting_owner" && flow.flow.status !== "informative_drafting") {
       return err("O processamento precisa estar confirmado antes de preparar o Informativo.");
     }

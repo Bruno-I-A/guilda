@@ -752,7 +752,8 @@ export function draftIsBlocked(payload: InformativeDraftPayload): boolean {
     // trabalho a fazer — criar a empresa e enfileirá-la na carteira.
     (payload.tasks.length === 0 &&
       !payload.company.createClient &&
-      payload.kind !== "client_change") ||
+      payload.kind !== "client_change" &&
+      !payload.freeNotice) ||
     payload.unresolvedAssignees.length > 0 ||
     payload.tasks.some((task) => task.assignmentType === "pending")
   );

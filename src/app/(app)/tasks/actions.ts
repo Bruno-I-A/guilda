@@ -1,6 +1,6 @@
 "use server";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -12,7 +12,6 @@ import {
 } from "@/domain/clans";
 import {
   authorizeTaskDeletion,
-  authorizeTransition,
   type TaskStatus,
 } from "@/domain/task-state";
 import { canQuickCompleteUnassignedInformativeTask } from "@/domain/guild-permissions";
@@ -31,7 +30,7 @@ import {
   loadClanScopedFacts,
 } from "@/lib/clans/facts";
 import { createTaskRecord } from "@/lib/tasks/create";
-import { encodeTaskCallback } from "@/lib/telegram/endpoint";
+import { transitionTaskForActor } from "@/lib/tasks/transition-service";
 import {
   enqueueTelegramNotificationIfEnabled,
   notificationPayload,
@@ -233,7 +232,6 @@ export async function createTask(
   }
   return result;
 }
-
 const updateTaskSchema = z.object({
   taskId: z.uuid(),
   title: z.string().trim().min(3, "Título muito curto.").max(200, "Título muito longo."),
@@ -338,260 +336,13 @@ async function transitionTask(options: {
   const idParse = z.uuid().safeParse(options.taskId);
   if (!idParse.success) return err("Missão inválida.");
 
-  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
-    // Lock da linha: transições concorrentes serializam aqui e a segunda
-    // falha na validação de estado (não há transição dupla).
-    const [task] = await tx
-      .select()
-      .from(schema.tasks)
-      .where(and(eq(schema.tasks.id, idParse.data), eq(schema.tasks.orgId, ctx.orgId)))
-      .for("update");
-
-    if (!task) return err("Missão não encontrada.");
-    if (!options.allowedFrom.includes(task.status)) {
-      return err("A missão não está mais neste estado — atualize a página.");
-    }
-    const linkedRhVerificationFlow =
-      options.to === "cancelled" ||
-      (task.status === "completed" && options.to === "in_progress")
-        ? await findRhVerificationFlow(tx, ctx.orgId, task.id)
-        : null;
-    if (
-      options.to === "cancelled" &&
-      linkedRhVerificationFlow &&
-      linkedRhVerificationFlow.status !== "cancelled"
-    ) {
-      return err("Esta é a verificação obrigatória do RH. Cancele o Fluxo de baixa para cancelar a missão.");
-    }
-    if (
-      task.status === "completed" &&
-      options.to === "in_progress" &&
-      linkedRhVerificationFlow &&
-      !["sent_to_corporate", "in_progress"].includes(linkedRhVerificationFlow.status)
-    ) {
-      return err("A confirmação do RH não pode ser revertida porque o Fluxo de baixa já avançou para o dono.");
-    }
-    if (options.to === "completed" && !task.assigneeId) {
-      return err("A missão precisa ter uma pessoa responsável antes da conclusão.");
-    }
-    if (task.status === "completed" && options.to === "in_progress") {
-      if (!task.assigneeId) {
-        return err("A missão concluída não possui mais uma pessoa responsável.");
-      }
-
-      // Reativar a missão volta a impedir a remoção do responsável. O
-      // mesmo mutex do trigger de DELETE fecha a janela entre validar o
-      // vínculo e persistir o novo estado ativo.
-      await lockActiveClansForMembershipRead(tx, ctx.orgId);
-      const [activeMember] = await tx
-        .select({ userId: schema.member.userId })
-        .from(schema.member)
-        .where(
-          and(
-            eq(schema.member.organizationId, ctx.orgId),
-            eq(schema.member.userId, task.assigneeId),
-          ),
-        )
-        .limit(1);
-      if (!activeMember) {
-        return err(
-          "A pessoa responsável não pertence mais à organização. Transfira a missão antes de reativá-la.",
-        );
-      }
-
-      if (task.clanId) {
-        const [activeClanMembership] = await tx
-          .select({ id: schema.clanMemberships.id })
-          .from(schema.clanMemberships)
-          .innerJoin(
-            schema.clans,
-            and(
-              eq(schema.clans.orgId, schema.clanMemberships.orgId),
-              eq(schema.clans.id, schema.clanMemberships.clanId),
-            ),
-          )
-          .where(
-            and(
-              eq(schema.clanMemberships.orgId, ctx.orgId),
-              eq(schema.clanMemberships.clanId, task.clanId),
-              eq(schema.clanMemberships.userId, task.assigneeId),
-              eq(schema.clans.orgId, ctx.orgId),
-              eq(schema.clans.active, true),
-            ),
-          )
-          .limit(1);
-        if (!activeClanMembership) {
-          return err(
-            "A pessoa responsável não pertence mais ao clã ativo da missão. Transfira-a antes de reativá-la.",
-          );
-        }
-      }
-    }
-
-    // Quem registrou a conclusão só importa para o desfazer: é a pessoa que a
-    // janela de arrependimento libera. Fora desse caso não vale a consulta.
-    let completedBy: string | null = null;
-    if (task.status === "completed" && options.to === "in_progress") {
-      const [conclusao] = await tx
-        .select({ actorId: schema.taskEvents.actorId })
-        .from(schema.taskEvents)
-        .where(
-          and(
-            eq(schema.taskEvents.orgId, ctx.orgId),
-            eq(schema.taskEvents.taskId, task.id),
-            eq(schema.taskEvents.toStatus, "completed"),
-          ),
-        )
-        .orderBy(desc(schema.taskEvents.createdAt))
-        .limit(1);
-      completedBy = conclusao?.actorId ?? null;
-    }
-
-    const decision = authorizeTransition(options.to, {
-      actor: { id: ctx.userId, role: ctx.role },
-      task: {
-        creatorId: task.creatorId,
-        assigneeId: task.assigneeId,
-        status: task.status,
-        completedAt: task.completedAt,
-        completedBy,
-        fromInformative: task.informativeId !== null,
-      },
-    });
-    if (!decision.allowed) {
-      return err(decision.reason);
-    }
-
-    const now = new Date();
-    await tx
-      .update(schema.tasks)
-      .set({
-        status: options.to,
-        updatedAt: now,
-        completedAt:
-          options.to === "completed"
-            ? now
-            : task.status === "completed"
-              ? null
-              : task.completedAt,
-      })
-      .where(
-        and(eq(schema.tasks.id, task.id), eq(schema.tasks.orgId, ctx.orgId)),
-      );
-
-    const [event] = await tx
-      .insert(schema.taskEvents)
-      .values({
-        orgId: ctx.orgId,
-        taskId: task.id,
-        actorId: ctx.userId,
-        fromStatus: task.status,
-        toStatus: options.to,
-        note: options.note ?? null,
-      })
-      .returning({ id: schema.taskEvents.id });
-
-    if (options.sideEffect) {
-      await options.sideEffect(tx, task, event.id);
-    }
-    await syncClosingFromTask(tx, {
-      task,
-      fromStatus: task.status,
-      toStatus: options.to,
-      changedAt: now,
-    });
-    await syncCommitmentPeriodFromTask(tx, {
-      task,
-      fromStatus: task.status,
-      toStatus: options.to,
-      changedAt: now,
-    });
-    if (options.to === "completed") {
-      await deactivateClosureClientWhenTasksFinish(tx, {
-        orgId: ctx.orgId,
-        informativeId: task.informativeId,
-      });
-    }
-
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;
-    if (options.to === "awaiting_approval") {
-      // O retorno escrito vai junto: quem pediu decide pelo Telegram sem
-      // precisar abrir a missão para saber o que foi feito.
-      await enqueueTelegramNotificationIfEnabled(tx, {
-        orgId: ctx.orgId,
-        userId: task.creatorId,
-        eventType: "task_awaiting_approval",
-        dedupeKey: `task-event:${event.id}:awaiting`,
-        payload: notificationPayload(
-          "approvals",
-          `🛡️ Entrega para sua aprovação\n\n${task.title}\nRecompensa: ${task.xpValue} XP${
-            options.note ? `\n\nRetorno: ${options.note}` : ""
-          }`,
-          [[
-            { text: "Aprovar", callbackData: encodeTaskCallback("approve", task.id) },
-            { text: "Abrir", url: taskUrl(task.id, baseUrl) },
-          ]],
-        ),
-      });
-    } else if (options.to === "completed" && task.assigneeId) {
-      const approved = task.status === "awaiting_approval";
-      await enqueueTelegramNotificationIfEnabled(tx, {
-        orgId: ctx.orgId,
-        userId: task.assigneeId,
-        eventType: approved ? "task_approved" : "task_completed",
-        dedupeKey: `task-event:${event.id}:completed`,
-        payload: notificationPayload(
-          "xp",
-          approved
-            ? `🏆 Entrega aprovada\n\n${task.title}\n+${task.xpValue} XP${
-                options.note ? `\n\nComentário: ${options.note}` : ""
-              }`
-            : `🏆 Missão concluída\n\n${task.title}\n+${task.xpValue} XP`,
-          [[{ text: "Ver missão", url: taskUrl(task.id, baseUrl) }]],
-        ),
-      });
-    } else if (
-      options.to === "in_progress" &&
-      (task.status === "pending" || task.status === "rejected") &&
-      task.creatorId !== ctx.userId
-    ) {
-      // Quem pediu fica sabendo que o trabalho começou (ou recomeçou) sem
-      // ter que abrir a lista para conferir — é o primeiro retorno da missão.
-      const [actor] = await tx
-        .select({ name: schema.user.name })
-        .from(schema.user)
-        .where(eq(schema.user.id, ctx.userId))
-        .limit(1);
-      const verb = task.status === "rejected" ? "retomou" : "iniciou";
-      await enqueueTelegramNotificationIfEnabled(tx, {
-        orgId: ctx.orgId,
-        userId: task.creatorId,
-        eventType: "task_started",
-        dedupeKey: `task-event:${event.id}:started`,
-        payload: notificationPayload(
-          "tasks",
-          `▶️ ${actor?.name ?? "A pessoa responsável"} ${verb} a missão\n\n${task.title}`,
-          [[{ text: "Ver missão", url: taskUrl(task.id, baseUrl) }]],
-        ),
-      });
-    } else if (options.to === "rejected" && task.assigneeId) {
-      await enqueueTelegramNotificationIfEnabled(tx, {
-        orgId: ctx.orgId,
-        userId: task.assigneeId,
-        eventType: "task_rejected",
-        dedupeKey: `task-event:${event.id}:rejected`,
-        payload: notificationPayload(
-          "approvals",
-          `↩️ Missão devolvida para ajustes\n\n${task.title}\nMotivo: ${options.note ?? "Consulte a missão."}`,
-          [[
-            { text: "Retomar", callbackData: encodeTaskCallback("start", task.id) },
-            { text: "Abrir", url: taskUrl(task.id, baseUrl) },
-          ]],
-        ),
-      });
-    }
-
-    return { ok: true };
+  const result = await transitionTaskForActor({
+    actor: { orgId: ctx.orgId, userId: ctx.userId, role: ctx.role },
+    taskId: idParse.data,
+    to: options.to,
+    allowedFrom: options.allowedFrom,
+    note: options.note,
+    sideEffect: options.sideEffect,
   });
 
   if (result.ok) {
@@ -604,6 +355,7 @@ async function transitionTask(options: {
     revalidatePath("/leaderboard");
     revalidatePath("/mural");
     revalidatePath("/clients");
+    return { ok: true };
   }
   return result;
 }

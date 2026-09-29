@@ -47,6 +47,7 @@ export function buildStructuredInformativePayload(input: {
   kind?: InformativeDraftPayload["kind"];
   summary?: string;
   observations?: readonly string[];
+  freeNotice?: { title: string; body: string };
 }): InformativeDraftPayload {
   const clansById = new Map(input.clans.map((clan) => [clan.id, clan]));
   const tasks = input.missions.map((mission) => {
@@ -78,7 +79,8 @@ export function buildStructuredInformativePayload(input: {
 
   return informativeDraftPayloadSchema.parse({
     kind,
-    sourceFormat: kind === "general_task" ? "business_mission" : "informative",
+    sourceFormat: kind === "general_task" && !input.freeNotice ? "business_mission" : "informative",
+    freeNotice: input.freeNotice ?? null,
     company: {
       systemCode: null,
       legalName: company?.legalName ?? null,

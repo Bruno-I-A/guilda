@@ -1,4 +1,5 @@
 import type { TaskStatus } from "@/domain/task-state";
+import { APP_TIME_ZONE } from "@/lib/date-time";
 
 /** Rótulos e estilos de apresentação das missões (pt-BR). */
 
@@ -92,6 +93,7 @@ export function formatDateTime(date: Date): string {
     year: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: APP_TIME_ZONE,
   }).format(date);
 }
 
@@ -113,7 +115,7 @@ export function formatRelativeTime(date: Date, now = new Date()): string {
   return `em ${new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
     month: "short",
-    timeZone: "America/Sao_Paulo",
+    timeZone: APP_TIME_ZONE,
   }).format(date)}`;
 }
 

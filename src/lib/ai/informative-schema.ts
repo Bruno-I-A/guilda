@@ -136,6 +136,11 @@ export const informativeDraftPayloadSchema = informativeExtractionSchema
   .extend({
     kind: z.enum(["new_client", "client_change", "client_closure", "general_task"]),
     sourceFormat: z.enum(["informative", "business_mission"]),
+    /** Aviso livre, independente de missões. Ausente nas prévias antigas. */
+    freeNotice: z.object({
+      title: z.string().trim().min(3).max(200),
+      body: z.string().trim().min(3).max(5_000),
+    }).nullable().default(null),
     company: informativeExtractionSchema.shape.company.extend({
       normalizedCnpj: z.string().regex(/^\d{14}$/).nullable(),
       clientId: z.string().uuid().nullable(),

@@ -379,4 +379,12 @@ describe("preparar o Informativo — atribuição nominal", () => {
       }),
     ).toBe(false);
   });
+
+  test("member que recebeu a missão transferida prepara seu Fluxo", () => {
+    expect(canPrepareCompanyFlowInformative({
+      role: "member",
+      holdsInformativeDuty: false,
+      isInformativeTaskAssignee: true,
+    })).toBe(true);
+  });
 });

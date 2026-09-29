@@ -33,9 +33,21 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { ClosingStatus } from "@/lib/closings-ui";
 import { formatBRLCurrency } from "@/lib/currency";
+import { APP_TIME_ZONE, formatAppDate } from "@/lib/date-time";
+import {
+  ACCOUNTING_PERIOD_MONTHS,
+  completedAccountingMonths,
+} from "@/domain/accounting-period";
 import { CLOSING_YEAR_XP } from "@/domain/xp";
 import {
   TAX_REGIME_BADGE_CLASSES,
@@ -73,6 +85,7 @@ export interface ClosingView {
   id: string;
   clientId: string;
   title: string;
+  periodMonth: number | null;
   dueDate: string;
   status: ClosingStatus;
   notes: string | null;
@@ -115,7 +128,7 @@ export interface CompanyClosingView {
 interface ClosingFields {
   clientId: string;
   year: number;
-  title: string;
+  periodMonth: number | null;
   notes: string;
   cashBalance: string;
   periodResult: string;
@@ -129,6 +142,7 @@ function ClosingFormDialog({
   company,
   year,
   initial,
+  suggestedMonth,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -136,6 +150,7 @@ function ClosingFormDialog({
   company: Pick<CompanyClosingView, "id" | "name">;
   year: number;
   initial?: ClosingView;
+  suggestedMonth?: number | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -149,7 +164,9 @@ function ClosingFormDialog({
         toast.error(result.error);
         return;
       }
-      toast.success(initial ? "Fechamento atualizado." : "Período adicionado.");
+      toast.success(
+        initial ? "Fechamento atualizado." : "Mês fechado registrado.",
+      );
       onOpenChange(false);
       router.refresh();
     });
@@ -175,10 +192,13 @@ function ClosingFormDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            {initial ? "Editar período" : "Adicionar período fechado"}
+            {initial ? "Editar fechamento mensal" : "Registrar mês fechado"}
           </DialogTitle>
           <DialogDescription>
-            {company.name} · registre somente um período que já foi fechado.
+            {company.name} · {year}.{" "}
+            {initial?.periodMonth === null
+              ? `Este registro antigo (“${initial.title}”) ainda não tem mês associado. Selecione o mês abaixo para habilitar o filtro mensal.`
+              : "Cada mês fechado fica em um registro separado."}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -189,7 +209,10 @@ function ClosingFormDialog({
             submit({
               clientId: company.id,
               year,
-              title: String(form.get("title") ?? ""),
+              periodMonth:
+                form.get("periodMonth") === "legacy"
+                  ? null
+                  : Number(form.get("periodMonth")) || null,
               notes: String(form.get("notes") ?? ""),
               cashBalance: String(form.get("cashBalance") ?? ""),
               periodResult: String(form.get("periodResult") ?? ""),
@@ -198,15 +221,39 @@ function ClosingFormDialog({
           }}
         >
           <div className="grid gap-2">
-            <Label htmlFor="closing-title">Período ou identificação</Label>
-            <Input
-              id="closing-title"
-              name="title"
-              defaultValue={initial?.title ?? ""}
-              placeholder="Ex.: Janeiro a abril ou Fechamento solicitado em maio"
-              maxLength={160}
-              required
-            />
+            <Label htmlFor="closing-period-month">Mês fechado</Label>
+            <Select
+              name="periodMonth"
+              required={!initial}
+              defaultValue={
+                initial
+                  ? initial.periodMonth === null
+                    ? "legacy"
+                    : String(initial.periodMonth)
+                  : suggestedMonth === null || suggestedMonth === undefined
+                    ? undefined
+                    : String(suggestedMonth)
+              }
+            >
+              <SelectTrigger id="closing-period-month" className="w-full">
+                <SelectValue placeholder="Selecione o mês fechado" />
+              </SelectTrigger>
+              <SelectContent>
+                {initial?.periodMonth === null ? (
+                  <SelectItem value="legacy">
+                    Sem mês informado (registro antigo)
+                  </SelectItem>
+                ) : null}
+                {ACCOUNTING_PERIOD_MONTHS.map((month, index) => (
+                  <SelectItem key={month} value={String(index + 1)}>
+                    {month} de {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Registre um mês por vez; para novembro e dezembro, crie dois fechamentos.
+            </p>
           </div>
 
           <div className="grid gap-2">
@@ -291,6 +338,7 @@ function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: APP_TIME_ZONE,
   }).format(new Date(value));
 }
 
@@ -308,14 +356,32 @@ function ClosingRow({
   const [editOpen, setEditOpen] = useState(false);
 
   return (
-    <li className="grid gap-3 rounded-lg border border-l-2 border-l-emerald-400/60 bg-background/45 p-3">
+    <li
+      className={cn(
+        "grid gap-3 rounded-lg border border-l-2 bg-background/45 p-3",
+        closing.status === "completed"
+          ? "border-l-success/60"
+          : "border-l-warning/60",
+      )}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-medium">{closing.title}</p>
-            <Badge className="h-5 border-success/25 bg-success/10 px-1.5 text-success">
-              <Check aria-hidden />
-              fechado
+            <Badge
+              className={cn(
+                "h-5 px-1.5",
+                closing.status === "completed"
+                  ? "border-success/25 bg-success/10 text-success"
+                  : "border-warning/25 bg-warning/10 text-warning",
+              )}
+            >
+              {closing.status === "completed" ? <Check aria-hidden /> : null}
+              {closing.status === "completed"
+                ? "fechado"
+                : closing.status === "blocked"
+                  ? "bloqueado"
+                  : "pendente"}
             </Badge>
           </div>
         </div>
@@ -732,14 +798,14 @@ function ObservationRow({
         <span>{observation.authorName ?? "autor não registrado"}</span>
         <span aria-hidden>·</span>
         <span className="font-mono tabular-nums">
-          {new Date(observation.createdAt).toLocaleDateString("pt-BR")}
+          {formatAppDate(observation.createdAt)}
         </span>
         {observation.resolvedAt ? (
           <>
             <span aria-hidden>·</span>
             <span className={estilo.text}>
               resolvida em{" "}
-              {new Date(observation.resolvedAt).toLocaleDateString("pt-BR")}
+              {formatAppDate(observation.resolvedAt)}
             </span>
           </>
         ) : null}
@@ -951,12 +1017,14 @@ function CompanyCard({
   clanId,
   company,
   year,
+  focusMonth,
   members,
   viewerCanManage,
 }: {
   clanId: string;
   company: CompanyClosingView;
   year: number;
+  focusMonth: number | null;
   members: readonly ClosingMemberOption[];
   viewerCanManage: boolean;
 }) {
@@ -967,6 +1035,15 @@ function CompanyCard({
   const yearClosed = Boolean(company.yearClosedAt);
   const defisCompleted = Boolean(company.defisCompletedAt);
   const hasClosings = company.closings.length > 0;
+  const completedMonths = completedAccountingMonths(company.closings);
+  const completedCount = completedMonths.length;
+  const hasCompletedClosings = completedCount > 0;
+  const focusedMonthName =
+    focusMonth === null ? null : ACCOUNTING_PERIOD_MONTHS[focusMonth - 1];
+  const focusedMonthClosed =
+    focusMonth !== null && completedMonths.includes(focusMonth);
+  const highlightedAsClosed =
+    focusMonth === null ? hasCompletedClosings : focusedMonthClosed;
   // O selo dizia "observação" tanto para recado resolvido quanto para pedido
   // parado ha um mes. Agora diz quantos esperam alguem.
   const observationSummary = summarizeObservations(
@@ -1029,7 +1106,7 @@ function CompanyCard({
     <article
       className={cn(
         "panel-cut panel-cut-sm overflow-hidden transition-colors",
-        hasClosings &&
+        highlightedAsClosed &&
           "border-success/30 bg-success/[0.04] shadow-[inset_3px_0_0_color-mix(in oklab, var(--success) 0.8%, transparent)]",
       )}
     >
@@ -1043,7 +1120,7 @@ function CompanyCard({
           <ChevronDown
             className={cn(
               "size-4 shrink-0 text-muted-foreground transition-transform",
-              hasClosings && "text-success",
+              highlightedAsClosed && "text-success",
               expanded && "rotate-180",
             )}
             aria-hidden
@@ -1053,7 +1130,7 @@ function CompanyCard({
               <h2
                 className={cn(
                   "truncate font-semibold",
-                  hasClosings && "text-success",
+                  highlightedAsClosed && "text-success",
                 )}
               >
                 {company.name}
@@ -1066,7 +1143,19 @@ function CompanyCard({
               >
                 {TAX_REGIME_LABELS[company.taxRegime]}
               </Badge>
-              {hasClosings ? (
+              {focusMonth !== null ? (
+                <Badge
+                  className={cn(
+                    "h-5 px-1.5",
+                    focusedMonthClosed
+                      ? "border-success/35 bg-success/15 text-success"
+                      : "border-warning/35 bg-warning/10 text-warning",
+                  )}
+                >
+                  {focusedMonthClosed ? <ClipboardCheck aria-hidden /> : null}
+                  {focusedMonthName} {focusedMonthClosed ? "fechado" : "pendente"}
+                </Badge>
+              ) : hasCompletedClosings ? (
                 <Badge className="h-5 border-success/35 bg-success/15 px-1.5 text-success">
                   <ClipboardCheck aria-hidden />
                   com fechamento
@@ -1120,15 +1209,17 @@ function CompanyCard({
             <p
               className={cn(
                 "mt-1 flex items-center gap-1.5 font-mono text-xs text-muted-foreground",
-                hasClosings && "font-semibold text-success",
+                highlightedAsClosed && "font-semibold text-success",
               )}
             >
-              {hasClosings ? (
+              {highlightedAsClosed ? (
                 <ClipboardCheck className="size-3.5" aria-hidden />
               ) : null}
-              {hasClosings
-                ? `${company.closings.length} período${company.closings.length === 1 ? "" : "s"} fechado${company.closings.length === 1 ? "" : "s"}`
-                : "Nenhum período lançado"}
+              {completedCount > 0
+                ? `${completedCount} período${completedCount === 1 ? "" : "s"} fechado${completedCount === 1 ? "" : "s"} no ano`
+                : hasClosings
+                  ? "Nenhum período fechado no ano; há registros pendentes"
+                  : "Nenhum período lançado"}
             </p>
           </div>
         </button>
@@ -1265,6 +1356,7 @@ function CompanyCard({
           clanId={clanId}
           company={company}
           year={year}
+          suggestedMonth={focusMonth}
         />
       ) : null}
     </article>
@@ -1275,12 +1367,14 @@ export function CompanyClosingBoard({
   clanId,
   companies,
   year,
+  focusMonth,
   members,
   viewerCanManage,
 }: {
   clanId: string;
   companies: CompanyClosingView[];
   year: number;
+  focusMonth: number | null;
   members: readonly ClosingMemberOption[];
   viewerCanManage: boolean;
 }) {
@@ -1292,6 +1386,7 @@ export function CompanyClosingBoard({
           clanId={clanId}
           company={company}
           year={year}
+          focusMonth={focusMonth}
           members={members}
           viewerCanManage={viewerCanManage}
         />
