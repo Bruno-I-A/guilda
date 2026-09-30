@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { withOrgTx } from "@/db/org-tx";
@@ -108,7 +109,11 @@ export default async function TaskDetailPage({
 
       // O vínculo mora no Fluxo (processing_task_id / informative_task_id), então
       // a busca é reversa. Os dois índices únicos parciais tornam isso barato.
-      const [fluxoVinculado] = await tx
+      // `.at(0)` e não `const [x] =`: a desestruturação tipa o elemento como
+      // sempre presente, e aqui ele NÃO existe na maioria das missões. O tipo
+      // mentiroso fazia o compilador concluir que toda missão com dados tem
+      // Fluxo — e qualquer ramificação por "não é do Fluxo" virava `never`.
+      const fluxoRows = await tx
         .select({
           id: schema.companyFlows.id,
           clanId: schema.companyFlows.societarioClanId,
@@ -133,6 +138,7 @@ export default async function TaskDetailPage({
           ),
         )
         .limit(1);
+      const fluxoVinculado = fluxoRows.at(0) ?? null;
       const canOpenInformative = fluxoVinculado?.informativeTaskId === taskRow.id
         ? await canAccessCompanyFlowInformative(tx, {
             orgId: session.orgId,
@@ -211,6 +217,9 @@ export default async function TaskDetailPage({
       assigneeId: task.assigneeId,
       status: task.status,
       fromInformative: task.informativeId !== null,
+      // A página já fez a busca reversa pelo Fluxo; o fato é o mesmo que o
+      // servidor usa, então os botões batem com o que a action aceita.
+      managedByCompanyFlow: Boolean(fluxoVinculado),
       // Os MESMOS fatos da action: sem eles o botão "Reverter conclusão"
       // sumia para quem podia desfazer dentro da janela, e quem perdesse o
       // aviso ficava sem caminho de volta mesmo estando autorizado.
@@ -373,6 +382,15 @@ export default async function TaskDetailPage({
       })
     : null;
   const figurasDoRetorno = parseClosingFigures(delivery?.note ?? null);
+  // "Gerar fechamento" só onde o trabalho É fechamento: missão do clã da
+  // Contabilidade. Antes aparecia em toda missão com empresa — inclusive nas
+  // do Fluxo Societário, onde não faz sentido nenhum. Missão já vinculada a
+  // um período continua mostrando o vínculo, seja de que clã for.
+  const podeGerarFechamento = Boolean(
+    contabilidade &&
+      !fluxoVinculado &&
+      (task.clanId === contabilidade.clanId || task.closingId),
+  );
 
   const overdue = isOverdue(task.dueDate, task.status);
   const timeline = [
@@ -414,7 +432,22 @@ export default async function TaskDetailPage({
           <p className="whitespace-pre-wrap">
             {delivery?.note ?? "Entregue sem retorno escrito."}
           </p>
-          {can.approve ? (
+          {fluxoVinculado ? (
+            // Entrega feita pela tela da missão antes da regra existir: não há
+            // aprovação a dar. Quem destrava é a confirmação no Fluxo, que
+            // conclui esta missão sozinha.
+            <p className="text-xs text-muted-foreground">
+              Esta missão é do Fluxo Societário e não passa por aprovação. Ela se
+              conclui sozinha quando o processo for confirmado{" "}
+              <Link
+                href={clanTabHref(fluxoVinculado.clanId, "flow")}
+                className="font-medium text-primary hover:underline"
+              >
+                no Fluxo
+              </Link>
+              .
+            </p>
+          ) : can.approve ? (
             <p className="text-xs text-muted-foreground">
               Aprove para creditar {task.xpValue} XP a{" "}
               {task.assignee?.name ?? "quem entregou"}, ou devolva dizendo o que falta.
@@ -471,7 +504,27 @@ export default async function TaskDetailPage({
         </div>
       ) : null}
 
-      {contabilidade && task.client?.name ? (
+      {/* Missão governada pelo Fluxo: o servidor já recusa entregar,
+          aprovar e concluir por aqui. Sem esta faixa a tela só perderia os
+          botões, e a pessoa ficaria sem saber para onde ir. */}
+      {fluxoVinculado &&
+      !isFlowInformativeTask &&
+      ["pending", "in_progress", "rejected"].includes(task.status) ? (
+        <div className="panel-cut flex flex-wrap items-center justify-between gap-3 border border-primary/30 bg-primary/5 px-4 py-3">
+          <p className="min-w-0 text-sm">
+            Esta missão é do <strong>Fluxo Societário</strong>. Confirme o
+            processo no Fluxo e ela se conclui sozinha — sem entrega nem
+            aprovação por aqui.
+          </p>
+          <Button asChild variant="outline">
+            <Link href={clanTabHref(fluxoVinculado.clanId, "flow")}>
+              Abrir o Fluxo
+            </Link>
+          </Button>
+        </div>
+      ) : null}
+
+      {podeGerarFechamento && contabilidade && task.client?.name ? (
         <ClosingFromTaskCard
           taskId={task.id}
           clientName={task.client.name}

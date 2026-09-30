@@ -5,6 +5,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { withOrgTx, type OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { authorizeTransition, type OrgRole, type TaskStatus } from "@/domain/task-state";
+import { isTaskManagedByCompanyFlow } from "@/lib/company-flows/managed-task";
 import type { ActionResult } from "@/lib/action-context";
 import { syncClosingFromTask } from "@/lib/closings/task-sync";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
@@ -133,6 +134,11 @@ export async function transitionTaskForActor(input: {
       completedBy = completion?.actorId ?? null;
     }
 
+    const managedByCompanyFlow = await isTaskManagedByCompanyFlow(
+      tx,
+      actor.orgId,
+      task.id,
+    );
     const decision = authorizeTransition(input.to, {
       actor: { id: actor.userId, role: actor.role },
       task: {
@@ -142,6 +148,7 @@ export async function transitionTaskForActor(input: {
         completedAt: task.completedAt,
         completedBy,
         fromInformative: task.informativeId !== null,
+        managedByCompanyFlow,
       },
     });
     if (!decision.allowed) return { ok: false, error: decision.reason };

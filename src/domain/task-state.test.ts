@@ -20,6 +20,7 @@ function ctx(overrides: {
   completedAt?: Date | null;
   completedBy?: string | null;
   fromInformative?: boolean;
+  managedByCompanyFlow?: boolean;
   now?: Date;
 }): TransitionContext {
   return {
@@ -32,6 +33,7 @@ function ctx(overrides: {
       completedAt: overrides.completedAt ?? null,
       completedBy: overrides.completedBy ?? null,
       fromInformative: overrides.fromInformative ?? false,
+      managedByCompanyFlow: overrides.managedByCompanyFlow ?? false,
     },
     now: overrides.now,
   };
@@ -476,6 +478,71 @@ describe("missão de Informativo conclui direto (não vai para aprovação)", ()
   test("entregar com retorno segue disponível como opção", () => {
     const decision = authorizeTransition("awaiting_approval", ctx(informativo));
     expect(decision.allowed).toBe(true);
+  });
+});
+
+describe("missão governada pelo Fluxo Societário", () => {
+  const doFluxo = {
+    actorId: "assignee-1",
+    creatorId: "quem-abriu-o-fluxo",
+    managedByCompanyFlow: true,
+  };
+
+  test("não é entregue pela tela da missão", () => {
+    // O caso real: a pessoa entregou pela missão, o Fluxo ficou parado em
+    // "Em processamento" e a missão foi esperar uma aprovação sem sentido.
+    const decision = authorizeTransition(
+      "awaiting_approval",
+      ctx({ ...doFluxo, status: "in_progress" }),
+    );
+    expect(decision.allowed).toBe(false);
+    expect(decision.allowed === false && decision.reason).toContain("Fluxo");
+  });
+
+  test("não é concluída na mão", () => {
+    expect(
+      authorizeTransition("completed", ctx({ ...doFluxo, status: "in_progress" })).allowed,
+    ).toBe(false);
+  });
+
+  test("a que já ficou presa aguardando aprovação não é aprovada nem devolvida", () => {
+    // Quem destrava é a confirmação no Fluxo, via completeTaskFromSystem.
+    const presa = { ...doFluxo, status: "awaiting_approval" as TaskStatus };
+    expect(authorizeTransition("completed", ctx({ ...presa, actorId: "quem-abriu-o-fluxo" })).allowed).toBe(false);
+    expect(authorizeTransition("rejected", ctx({ ...presa, actorId: "quem-abriu-o-fluxo" })).allowed).toBe(false);
+  });
+
+  test("admin também não contorna — é questão de onde o trabalho mora", () => {
+    expect(
+      authorizeTransition(
+        "completed",
+        ctx({ ...doFluxo, actorId: "admin-1", actorRole: "admin", status: "awaiting_approval" }),
+      ).allowed,
+    ).toBe(false);
+  });
+
+  test("iniciar continua liberado: é o que leva a pessoa até o Fluxo", () => {
+    expect(
+      authorizeTransition("in_progress", ctx({ ...doFluxo, status: "pending" })).allowed,
+    ).toBe(true);
+  });
+
+  test("cancelar continua com quem criou", () => {
+    expect(
+      authorizeTransition(
+        "cancelled",
+        ctx({ ...doFluxo, actorId: "quem-abriu-o-fluxo", status: "in_progress" }),
+      ).allowed,
+    ).toBe(true);
+  });
+
+  test("missão avulsa comum segue igual", () => {
+    expect(
+      authorizeTransition(
+        "awaiting_approval",
+        ctx({ ...doFluxo, managedByCompanyFlow: false, status: "in_progress" }),
+      ).allowed,
+    ).toBe(true);
   });
 });
 

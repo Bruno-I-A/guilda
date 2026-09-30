@@ -10,6 +10,7 @@ import {
   type OrgRole,
   type TaskStatus,
 } from "@/domain/task-state";
+import { isTaskManagedByCompanyFlow } from "@/lib/company-flows/managed-task";
 import { syncClosingFromTask } from "@/lib/closings/task-sync";
 import { syncCommitmentPeriodFromTask } from "@/lib/commitments/task-sync";
 
@@ -111,6 +112,13 @@ export async function runTelegramTaskAction(input: {
         // no seu mapa de ações, então a janela de arrependimento não se aplica.
         completedAt: null,
         completedBy: null,
+        // O botão "Concluir" chega pelo Telegram também: sem este fato, a
+        // missão do Fluxo seria concluída por fora do Fluxo pelo celular.
+        managedByCompanyFlow: await isTaskManagedByCompanyFlow(
+          tx,
+          input.orgId,
+          task.id,
+        ),
       },
     });
     if (!decision.allowed) return { ok: false, error: decision.reason };

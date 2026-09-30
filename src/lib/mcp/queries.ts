@@ -7,6 +7,7 @@ import * as schema from "@/db/schema";
 import { isAdminRole } from "@/domain/guild-permissions";
 import { authorizeTransition, type TaskStatus } from "@/domain/task-state";
 import { mcpMissionTransitionTargets } from "@/domain/mcp-access";
+import { isTaskManagedByCompanyFlow } from "@/lib/company-flows/managed-task";
 
 import type { McpActor } from "./access";
 
@@ -235,6 +236,13 @@ export async function missionDetails(actor: McpActor, taskId: string) {
         completedAt: task.completedAt,
         completedBy: lastCompletion?.actorId ?? null,
         fromInformative: task.informativeId !== null,
+        // `allowed_transitions` é contrato com o agente: anunciar "concluir"
+        // numa missão do Fluxo seria mandá-lo contornar o Fluxo.
+        managedByCompanyFlow: await isTaskManagedByCompanyFlow(
+          tx,
+          actor.orgId,
+          task.id,
+        ),
       },
     };
     const possible = mcpMissionTransitionTargets(task.status);

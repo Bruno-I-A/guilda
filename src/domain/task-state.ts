@@ -43,6 +43,14 @@ export interface TransitionContext {
      * é rotina do clã, e por isso termina em conclusão, não em aprovação.
      */
     fromInformative: boolean;
+    /**
+     * Missão governada por um Fluxo Societário (a de processamento ou a do
+     * Informativo). O Fluxo é dono do ciclo dela: ela se conclui sozinha
+     * quando o Fluxo avança, por `completeTaskFromSystem`. Entregar, aprovar
+     * ou concluir pela tela da missão desviava do Fluxo — ele ficava parado em
+     * "Em processamento" enquanto a missão esperava uma aprovação sem sentido.
+     */
+    managedByCompanyFlow: boolean;
   };
   /** Injetável para o teste não depender do relógio da máquina. */
   now?: Date;
@@ -128,6 +136,20 @@ export function authorizeTransition(
   const isAssignee = actor.id === task.assigneeId;
   const isCreator = actor.id === task.creatorId;
   const isAdmin = isApproverRole(actor.role);
+
+  // Missão do Fluxo: entregar, aprovar, devolver ou concluir na mão são o
+  // mesmo desvio — o trabalho acontece e é confirmado NO FLUXO, e a missão só
+  // reflete isso. Vale para admin também: não é questão de permissão, é de
+  // onde o trabalho mora. A conclusão legítima vem de `completeTaskFromSystem`,
+  // que não passa por aqui.
+  if (
+    task.managedByCompanyFlow &&
+    (to === "awaiting_approval" || to === "completed" || to === "rejected")
+  ) {
+    return deny(
+      "Esta missão é do Fluxo Societário: ela se conclui sozinha quando o processo é confirmado no Fluxo.",
+    );
+  }
 
   // pending → in_progress (iniciar) e rejected → in_progress (retomar)
   if (to === "in_progress" && (from === "pending" || from === "rejected")) {
