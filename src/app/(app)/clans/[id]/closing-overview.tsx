@@ -49,13 +49,13 @@ function StageColumn({
   return (
     <div
       className={cn(
-        "panel-cut grid min-w-0 content-start gap-2 border border-t-2 border-border/70 bg-card/40 p-3",
+        "panel-cut grid min-w-0 grid-cols-1 content-start gap-2 border border-t-2 border-border/70 bg-card/40 p-3",
         estilo.borda,
       )}
     >
       <div className="flex items-baseline justify-between gap-2">
         <p className="hud-label min-w-0">{CLOSING_STAGE_LABELS[stage]}</p>
-        <p className={cn("font-mono text-2xl font-semibold tabular-nums", estilo.numero)}>
+        <p className={cn("shrink-0 font-mono text-2xl font-semibold tabular-nums", estilo.numero)}>
           {count}
         </p>
       </div>
@@ -63,7 +63,7 @@ function StageColumn({
       {count === 0 ? (
         <p className="py-2 text-xs text-muted-foreground">Nenhuma empresa aqui.</p>
       ) : (
-        <ul className="grid gap-1">{children}</ul>
+        <ul className="grid min-w-0 grid-cols-1 divide-y divide-border/40">{children}</ul>
       )}
       {count > 0 ? (
         <Link
@@ -88,10 +88,10 @@ function CompanyCard({
   trailing?: React.ReactNode;
 }) {
   return (
-    <li>
+    <li className="min-w-0">
       <Link
         href={href}
-        className="flex min-w-0 items-center justify-between gap-2 border border-border/50 bg-background/40 px-2 py-1.5 text-sm transition-colors hover:border-primary/40 hover:bg-accent/30"
+        className="flex min-w-0 items-center justify-between gap-2 py-1.5 text-sm transition-colors hover:text-primary"
       >
         <span className="min-w-0 truncate">{company.name}</span>
         {trailing}
@@ -126,7 +126,7 @@ function HealthBlock({
   }[tone];
 
   const linha = (entry: HealthEntry) => (
-    <li key={entry.company.id}>
+    <li key={entry.company.id} className="min-w-0">
       <Link
         href={companyHref(entry.company.name)}
         className="flex min-w-0 items-baseline justify-between gap-2 py-1 text-sm hover:underline"
@@ -150,30 +150,30 @@ function HealthBlock({
   );
 
   return (
-    <div className="panel-cut grid min-w-0 content-start gap-2 border border-border/70 bg-card/40 p-3">
-      <div className="flex items-start justify-between gap-2">
+    <div className="panel-cut grid min-w-0 grid-cols-1 content-start gap-2 border border-border/70 bg-card/40 p-3">
+      <div className="flex min-w-0 items-start justify-between gap-2">
         <div className="min-w-0">
           <p className={cn("flex items-center gap-1.5 text-sm font-semibold", corTitulo)}>
             <Icon className="size-4 shrink-0" aria-hidden /> {title}
           </p>
           <p className="text-xs text-muted-foreground">{hint}</p>
         </div>
-        <p className={cn("font-mono text-2xl font-semibold tabular-nums", corTitulo)}>
+        <p className={cn("shrink-0 font-mono text-2xl font-semibold tabular-nums", corTitulo)}>
           {entries.length}
         </p>
       </div>
       {entries.length === 0 ? (
         <p className="py-1 text-xs text-muted-foreground">{empty}</p>
       ) : (
-        <ul className="divide-y divide-border/40">{visiveis.map(linha)}</ul>
+        <ul className="grid min-w-0 grid-cols-1 divide-y divide-border/40">{visiveis.map(linha)}</ul>
       )}
       {resto.length > 0 ? (
         // `details` nativo: o componente é Server Component e abre sem JS.
-        <details className="group">
+        <details className="group min-w-0">
           <summary className="hud-label cursor-pointer list-none py-1 hover:text-foreground [&::-webkit-details-marker]:hidden">
             + {resto.length} {resto.length === 1 ? "empresa" : "empresas"}
           </summary>
-          <ul className="divide-y divide-border/40">{resto.map(linha)}</ul>
+          <ul className="grid min-w-0 grid-cols-1 divide-y divide-border/40">{resto.map(linha)}</ul>
         </details>
       ) : null}
     </div>
@@ -207,15 +207,15 @@ export function ClosingOverview({
   const soPendentes = board.none.filter((company) => company.closings.length > 0).length;
 
   return (
-    <div className="grid gap-5">
-      <section className="grid gap-2">
+    <div className="grid min-w-0 grid-cols-1 gap-5">
+      <section className="grid min-w-0 grid-cols-1 gap-2">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2>Andamento de {year}</h2>
           <p className="text-xs text-muted-foreground">
             Em andamento, da mais atrasada para a mais adiantada.
           </p>
         </div>
-        <div className="grid gap-2 md:grid-cols-3">
+        <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-3">
           <StageColumn
             stage="none"
             count={board.none.length}
@@ -260,7 +260,7 @@ export function ClosingOverview({
         </div>
       </section>
 
-      <section className="grid gap-2">
+      <section className="grid min-w-0 grid-cols-1 gap-2">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2>Leitura dos números</h2>
           <p className="text-xs text-muted-foreground">
@@ -272,7 +272,7 @@ export function ClosingOverview({
           </p>
         </div>
         {health.analyzed > 0 ? (
-          <div className="grid gap-2 md:grid-cols-3">
+          <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-3">
             <HealthBlock
               title="Prejuízo"
               hint="Resultado negativo no último período"
