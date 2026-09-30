@@ -47,6 +47,7 @@ import {
   type ClosingObservationView,
   type CompanyClosingView,
 } from "./closing-board";
+import { ClosingOverview } from "./closing-overview";
 import { ClanEmptyState, ClanSectionHeading } from "./clan-ui";
 
 function todayInSaoPaulo(): string {
@@ -595,6 +596,46 @@ export async function ClosingsTab({
           </div>
         </div>
       </section>
+
+      {/* Quadro do ano e analista: leem TODAS as empresas do regime, não a
+          lista filtrada abaixo — é o retrato do grupo. Cada coluna e cada
+          empresa abrem o filtro que já existe, em vez de outra lista. */}
+      <ClosingOverview
+        year={year}
+        companies={allCompanies}
+        stageHref={{
+          none: href({
+            q: "",
+            yearStatus: "open",
+            periodStatus: "none",
+            periodMonth: "all",
+            observationStatus: "all",
+          }),
+          partial: href({
+            q: "",
+            yearStatus: "open",
+            periodStatus: "some",
+            periodMonth: "all",
+            observationStatus: "all",
+          }),
+          closed: href({
+            q: "",
+            yearStatus: "completed",
+            periodStatus: "all",
+            periodMonth: "all",
+            observationStatus: "all",
+          }),
+        }}
+        companyHref={(name) =>
+          href({
+            q: name,
+            yearStatus: "all",
+            periodStatus: "all",
+            periodMonth: "all",
+            observationStatus: "all",
+          })
+        }
+      />
 
       <form
         action={`/clans/${clanId}`}
