@@ -205,6 +205,11 @@ O dado da aba Fechamentos virou jogo (desenho em
   default privileges (`docker/*/init/01-roles`) — **restringir exige REVOKE**,
   GRANT sozinho não restringe nada. `closing_challenges` não tem DELETE e só
   atualiza as colunas do desfecho.
+- MCP: `rolar_dado_fechamento`, `desistir_desafio_fechamento` e
+  `consultar_desafio_fechamento` (com o saldo do desafio no ledger), na régua
+  das demais ferramentas de fechamento (admin/owner + escopo). A regra de
+  rolar/desistir mora em `src/lib/closings/challenge-commands.ts`, usada pela
+  aba e pelo MCP — não duplicar nas Server Actions.
 
 ## Estrutura por clã (decisões de 2026-08-18)
 

@@ -1,10 +1,12 @@
 import "server-only";
 
-import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { challengeResult } from "@/domain/closing-challenge";
 import { informativeDraftPayloadSchema } from "@/lib/ai/informative-schema";
+import { loadChallengeBoard } from "@/lib/closings/challenge-board";
 import { informativeTasksRevision } from "@/lib/informatives/revision";
 
 import type { McpActor } from "./access";
@@ -356,5 +358,82 @@ export async function listMuralNotices(
         updated_at: notice.updatedAt.toISOString(),
       };
     });
+  });
+}
+
+/**
+ * O Desafio do dado visto pelo agente: as regras, o desafio da pessoa
+ * representada (em andamento, ou o último que terminou hoje), quem está
+ * jogando agora e o placar do dia. `xp_in_ledger` é o saldo do desafio no
+ * ledger — é por ele que se confere crédito, estorno e recrédito, porque o
+ * `awarded_xp` é o prêmio congelado na conclusão, não o que está valendo.
+ */
+export async function challengeStatus(actor: McpActor) {
+  return withOrgTx(actor.orgId, async (tx) => {
+    const board = await loadChallengeBoard(tx, { orgId: actor.orgId, viewerId: actor.userId });
+    const mine = board.mine;
+    let xpInLedger = 0;
+    if (mine) {
+      const [ledger] = await tx
+        .select({ net: sql<number>`coalesce(sum(${schema.xpLedger.amount}), 0)::int` })
+        .from(schema.xpLedger)
+        .where(
+          and(
+            eq(schema.xpLedger.orgId, actor.orgId),
+            eq(schema.xpLedger.closingChallengeId, mine.id),
+          ),
+        );
+      xpInLedger = ledger.net;
+    }
+    const result =
+      mine && mine.status !== "active"
+        ? challengeResult({
+            status: mine.status,
+            inTime: mine.inTime,
+            awardedXp: mine.awardedXp,
+            capped: mine.capped,
+            startedAt: mine.startedAt,
+            endedAt: mine.endedAt,
+            releasedByOther: Boolean(mine.endedBy && mine.endedBy !== actor.userId),
+          })
+        : null;
+
+    return {
+      rules: {
+        time_limit_minutes: board.rules.timeLimitMinutes,
+        base_xp: board.rules.baseXp,
+        bonus_xp: board.rules.bonusXp,
+        daily_paid_cap: board.rules.dailyPaidCap,
+      },
+      paid_today: board.paidToday,
+      mine: mine
+        ? {
+            id: mine.id,
+            client: { id: mine.clientId, name: mine.clientName },
+            year: mine.year,
+            status: mine.status,
+            started_at: mine.startedAt.toISOString(),
+            deadline_at: mine.deadlineAt.toISOString(),
+            ended_at: mine.endedAt?.toISOString() ?? null,
+            in_time: mine.inTime,
+            awarded_xp: mine.awardedXp,
+            capped: mine.capped,
+            xp_in_ledger: xpInLedger,
+            result: result ? (result.xp ? `+${result.xp} XP · ${result.text}` : result.text) : null,
+          }
+        : null,
+      playing: board.playing.map((item) => ({
+        id: item.id,
+        user: { id: item.userId, name: item.userName },
+        client: { id: item.clientId, name: item.clientName },
+        year: item.year,
+        deadline_at: item.deadlineAt.toISOString(),
+      })),
+      scoreboard_today: board.scoreboard.map((row) => ({
+        user: { id: row.userId, name: row.userName },
+        closed: row.closed,
+        xp: row.xp,
+      })),
+    };
   });
 }

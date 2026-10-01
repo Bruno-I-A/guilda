@@ -7,7 +7,9 @@ import * as schema from "@/db/schema";
 import { accountingPeriodTitle } from "@/domain/accounting-period";
 import { isAdminRole } from "@/domain/guild-permissions";
 import { CLOSING_YEAR_XP } from "@/domain/xp";
+import { abandonChallenge, rollChallenge } from "@/lib/closings/challenge-commands";
 import { reconcileClosingYearLedger } from "@/lib/closings/closing-year-xp";
+import type { ClosingGroup } from "@/lib/closings-ui";
 import {
   createClosingObservation,
   createClosingPeriod,
@@ -462,6 +464,85 @@ export async function resolveClosingObservationCommand(input: {
         updatedAt: now,
       }).where(and(eq(schema.closingObservations.orgId, input.actor.orgId), eq(schema.closingObservations.id, observation.id)));
       return { result: { ok: true, resource_id: observation.id, resolved: input.resolved, updated_at: now.toISOString() }, resourceId: observation.id, summary: input.resolved ? "Observação resolvida" : "Observação reaberta" };
+    },
+  });
+}
+
+/**
+ * Desafio do dado pelo MCP: mesma regra da aba (`challenge-commands`), com o
+ * recibo de idempotência do MCP — repetir a chamada com a mesma chave devolve
+ * o mesmo sorteio em vez de rolar de novo.
+ */
+export async function rollChallengeCommand(input: {
+  actor: McpActor;
+  idempotencyKey: string;
+  year: number;
+  group: ClosingGroup;
+}) {
+  return runTransactionalCommand(input.actor, {
+    tool: "rolar_dado_fechamento",
+    idempotencyKey: input.idempotencyKey,
+    resourceType: "closing_challenge",
+    mutate: async (tx) => {
+      const rolled = await rollChallenge(tx, {
+        orgId: input.actor.orgId,
+        userId: input.actor.userId,
+        year: input.year,
+        group: input.group,
+      });
+      if (!rolled.ok) {
+        return { result: { ok: false, error: rolled.error }, summary: "Sorteio sem empresa livre" };
+      }
+      const challenge = rolled.challenge;
+      return {
+        result: {
+          ok: true,
+          resource_id: challenge.id,
+          reused: rolled.reused,
+          client: { id: challenge.clientId, name: challenge.clientName },
+          year: challenge.year,
+          started_at: challenge.startedAt.toISOString(),
+          deadline_at: challenge.deadlineAt.toISOString(),
+          time_limit_minutes: challenge.timeLimitMinutes,
+          base_xp: challenge.baseXp,
+          bonus_xp: challenge.bonusXp,
+        },
+        resourceId: challenge.id,
+        summary: rolled.reused
+          ? "Desafio em andamento devolvido"
+          : `Dado rolado: ${challenge.clientName}`,
+      };
+    },
+  });
+}
+
+export async function abandonChallengeCommand(input: {
+  actor: McpActor;
+  idempotencyKey: string;
+  challengeId: string;
+}) {
+  return runTransactionalCommand(input.actor, {
+    tool: "desistir_desafio_fechamento",
+    idempotencyKey: input.idempotencyKey,
+    resourceType: "closing_challenge",
+    mutate: async (tx) => {
+      const ended = await abandonChallenge(tx, {
+        orgId: input.actor.orgId,
+        challengeId: input.challengeId,
+        userId: input.actor.userId,
+      });
+      if (!ended) {
+        return {
+          result: { ok: false, error: "Este desafio não está mais em andamento." },
+          resourceId: input.challengeId,
+          summary: "Desafio já encerrado",
+        };
+      }
+      return {
+        result: { ok: true, resource_id: input.challengeId, status: "abandoned" },
+        resourceId: input.challengeId,
+        summary: "Desistência do desafio",
+      };
     },
   });
 }

@@ -188,6 +188,13 @@ regime aberto.
 ## Fora deste desenho
 
 Aviso no Telegram, sequência de dias, XP por regime, espera depois de
-desistir, desafio pelo MCP. Somar depois se o uso pedir.
+desistir. Somar depois se o uso pedir.
+
+> **Adendo (mesmo dia, pedido do Bruno):** o desafio ganhou ferramentas no
+> MCP — `rolar_dado_fechamento`, `desistir_desafio_fechamento` e
+> `consultar_desafio_fechamento` (esta com o saldo do desafio no ledger). A
+> regra de rolar e desistir saiu das Server Actions para
+> `src/lib/closings/challenge-commands.ts`, usada pelos dois lados; o MCP
+> segue a régua das demais ferramentas de fechamento (admin/owner + escopo).
 
 — claude, 01/10/2026

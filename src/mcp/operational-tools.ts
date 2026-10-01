@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { hasMcpScope, type McpActor, type McpScope } from "@/lib/mcp/access";
 import {
+  abandonChallengeCommand,
   acknowledgeNoticeCommand,
   addClosingObservationCommand,
   createClosingCommand,
@@ -11,6 +12,7 @@ import {
   deleteClosingCommand,
   publishNoticeCommand,
   resolveClosingObservationCommand,
+  rollChallengeCommand,
   setClosingStatusCommand,
   setClosingYearCommand,
   setDefisCommand,
@@ -19,6 +21,7 @@ import {
   updateClosingCommand,
 } from "@/lib/mcp/operational-commands";
 import {
+  challengeStatus,
   closingDetails,
   informativeDetails,
   listClosings,
@@ -242,6 +245,59 @@ export function registerOperationalTools(server: McpServer, actor: McpActor) {
       if (denied) return denied;
       const result = await resolveClosingObservationCommand({ actor, idempotencyKey: idempotency_key, observationId: observation_id, resolved });
       return result.ok ? text(result) : failure(result.error);
+    },
+  );
+
+  server.registerTool(
+    "rolar_dado_fechamento",
+    {
+      title: "Rolar o dado dos fechamentos",
+      description:
+        "Desafio do dado: sorteia a próxima empresa a fechar entre as que ninguém tocou no ano (ano em aberto, sem período e sem observação) e a reserva para a pessoa representada, abrindo o prazo. Com desafio em andamento, devolve o que já existe. Registrar o período da sorteada como fechado (criar_fechamento) conclui o desafio e credita o XP; observação na empresa o trava.",
+      inputSchema: z.object({
+        idempotency_key: idempotency,
+        year: z.number().int().min(2000).max(2100),
+        regime: z.enum(["mei", "simples", "presumido_association", "real"]).default("simples"),
+      }),
+      annotations: { idempotentHint: true },
+    },
+    async ({ idempotency_key, year, regime }) => {
+      const denied = requireOperationalAccess(actor, "closings:write");
+      if (denied) return denied;
+      const result = await rollChallengeCommand({ actor, idempotencyKey: idempotency_key, year, group: regime });
+      return result.ok ? text(result) : failure(result.error);
+    },
+  );
+
+  server.registerTool(
+    "desistir_desafio_fechamento",
+    {
+      title: "Desistir do desafio do dado",
+      description: "Encerra sem XP o desafio em andamento da pessoa representada; a empresa volta para o sorteio.",
+      inputSchema: z.object({ idempotency_key: idempotency, challenge_id: z.uuid() }),
+      annotations: { idempotentHint: true, destructiveHint: true },
+    },
+    async ({ idempotency_key, challenge_id }) => {
+      const denied = requireOperationalAccess(actor, "closings:write");
+      if (denied) return denied;
+      const result = await abandonChallengeCommand({ actor, idempotencyKey: idempotency_key, challengeId: challenge_id });
+      return result.ok ? text(result) : failure(result.error);
+    },
+  );
+
+  server.registerTool(
+    "consultar_desafio_fechamento",
+    {
+      title: "Consultar o desafio do dado",
+      description:
+        "Mostra as regras, o desafio da pessoa representada (em andamento ou o último de hoje, com o saldo de XP no ledger), quem está jogando agora e o placar do dia.",
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      const denied = requireOperationalAccess(actor, "closings:read");
+      if (denied) return denied;
+      return text(await challengeStatus(actor));
     },
   );
 
