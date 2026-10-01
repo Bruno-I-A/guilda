@@ -37,8 +37,10 @@ import {
 } from "@/components/ui/select";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { loadChallengeBoard } from "@/lib/closings/challenge-board";
 import {
   CLOSING_GROUPS,
+  closingGroupForRegime,
   type ClosingGroup,
 } from "@/lib/closings-ui";
 import { cn } from "@/lib/utils";
@@ -48,7 +50,7 @@ import {
   type ClosingObservationView,
   type CompanyClosingView,
 } from "./closing-board";
-import { ClosingDraw } from "./closing-draw";
+import { ClosingChallenge } from "./closing-challenge";
 import { ClosingOverview } from "./closing-overview";
 import { ClanEmptyState, ClanSectionHeading } from "./clan-ui";
 
@@ -99,14 +101,19 @@ export interface ClosingsTabParams {
 export async function ClosingsTab({
   orgId,
   clanId,
+  viewerId,
   params,
   canManage,
+  canConfigureChallenge,
 }: {
   orgId: string;
   clanId: string;
+  viewerId: string;
   params: ClosingsTabParams;
   /** Só decide quais botões aparecem; as actions checam de novo no servidor. */
   canManage: boolean;
+  /** Liderança/admin: liberar desafio alheio e mudar as regras do jogo. */
+  canConfigureChallenge: boolean;
 }) {
   const year = parseYear(params.year);
   const group = parseGroup(params.group);
@@ -159,7 +166,15 @@ export async function ClosingsTab({
     clientConditions.push(eq(schema.clients.taxRegime, group));
   }
 
-  const { clients, closings, annualControls, observations, memberRows } = await withOrgTx(
+  const {
+    clients,
+    closings,
+    annualControls,
+    observations,
+    memberRows,
+    board,
+    serverNow,
+  } = await withOrgTx(
     orgId,
     async (tx) => {
       const clients = await tx.query.clients.findMany({
@@ -227,7 +242,20 @@ export async function ClosingsTab({
         .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
         .where(eq(schema.member.organizationId, orgId))
         .orderBy(asc(schema.user.name));
-      return { clients, closings, annualControls, observations, memberRows };
+      const board = await loadChallengeBoard(tx, { orgId, viewerId });
+      // O relógio do servidor vai junto: o cronômetro do desafio corrige o do
+      // navegador por ele. Aqui dentro, e não no corpo do componente, porque
+      // o lint reprova relógio no render de Server Component.
+      const serverNow = new Date().toISOString();
+      return {
+        clients,
+        closings,
+        annualControls,
+        observations,
+        memberRows,
+        board,
+        serverNow,
+      };
     },
   );
 
@@ -414,24 +442,49 @@ export async function ClosingsTab({
     return `/clans/${clanId}?${query}`;
   }
 
-  // A sorteada abre como as empresas do quadro: busca na lista com os outros
-  // filtros zerados — senão um filtro esquecido a esconderia.
-  const searchHref = href({
-    q: "",
-    yearStatus: "all",
-    periodStatus: "all",
-    periodMonth: "all",
-    observationStatus: "all",
-  });
-  const drawCandidates = allCompanies
-    .filter((company) =>
-      isClosingDrawEligible({
-        yearClosed: Boolean(company.yearClosedAt),
-        periodCount: company.closings.length,
-        observationCount: company.observations.length,
-      }),
+  // O giro do dado só mostra empresas que o servidor poderia sortear: as
+  // elegíveis deste regime que ninguém reservou neste ano.
+  const reservedThisYear = new Set(
+    board.playing.filter((item) => item.year === year).map((item) => item.clientId),
+  );
+  const challengeCandidates = allCompanies
+    .filter(
+      (company) =>
+        !reservedThisYear.has(company.id) &&
+        isClosingDrawEligible({
+          yearClosed: Boolean(company.yearClosedAt),
+          periodCount: company.closings.length,
+          observationCount: company.observations.length,
+        }),
     )
     .map((company) => ({ id: company.id, name: company.name }));
+  const myChallenge = board.mine
+    ? {
+        id: board.mine.id,
+        clientName: board.mine.clientName,
+        // A sorteada abre como as empresas do quadro: busca na lista com os
+        // outros filtros zerados. O desafio pode ser de outro regime ou ano
+        // que o aberto na aba, então o endereço usa os dele.
+        href: href({
+          year: board.mine.year,
+          group: closingGroupForRegime(board.mine.taxRegime),
+          q: board.mine.clientName,
+          yearStatus: "all",
+          periodStatus: "all",
+          periodMonth: "all",
+          observationStatus: "all",
+        }),
+        status: board.mine.status,
+        startedAt: board.mine.startedAt.toISOString(),
+        deadlineAt: board.mine.deadlineAt.toISOString(),
+        endedAt: board.mine.endedAt?.toISOString() ?? null,
+        inTime: board.mine.inTime,
+        awardedXp: board.mine.awardedXp,
+        heldXp: board.mine.heldXp,
+        capped: board.mine.capped,
+        releasedByOther: Boolean(board.mine.endedBy && board.mine.endedBy !== viewerId),
+      }
+    : null;
 
   return (
     <div className="grid gap-5">
@@ -657,13 +710,28 @@ export async function ClosingsTab({
           })
         }
         draw={
-          // A chave zera o sorteio ao trocar de regime ou de ano: a sorteada
-          // de um grupo não vale no outro.
-          <ClosingDraw
+          // A chave zera o giro ao trocar de regime ou de ano; o desafio em
+          // andamento continua, porque vem do servidor.
+          <ClosingChallenge
             key={`${group}-${year}`}
+            clanId={clanId}
             year={year}
-            candidates={drawCandidates}
-            searchHref={searchHref}
+            group={group}
+            candidates={challengeCandidates}
+            rules={board.rules}
+            paidToday={board.paidToday}
+            serverNow={serverNow}
+            mine={myChallenge}
+            playing={board.playing.map((item) => ({
+              id: item.id,
+              userName: item.userName,
+              clientName: item.clientName,
+              deadlineAt: item.deadlineAt.toISOString(),
+              isMine: item.userId === viewerId,
+            }))}
+            scoreboard={board.scoreboard}
+            canPlay={canManage}
+            canConfigure={canConfigureChallenge}
           />
         }
       />

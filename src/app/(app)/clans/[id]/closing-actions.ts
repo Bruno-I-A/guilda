@@ -6,11 +6,7 @@ import { z } from "zod";
 
 import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
-import {
-  canDeleteClanClosing,
-  canManageClanClosings,
-  type ClosingActorFacts,
-} from "@/domain/guild-permissions";
+import { canDeleteClanClosing } from "@/domain/guild-permissions";
 import { accountingPeriodTitle } from "@/domain/accounting-period";
 import { CLOSING_YEAR_XP } from "@/domain/xp";
 import {
@@ -18,10 +14,19 @@ import {
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
-import { isActiveClanMember, loadClanScopedFacts } from "@/lib/clans/facts";
-import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 import { CONTABILIDADE_CLAN_SLUG } from "@/lib/clans/rules";
 import { reconcileClosingYearLedger } from "@/lib/closings/closing-year-xp";
+import {
+  requireClosingActor,
+  requireClosingManager,
+  type ClosingMemberContext,
+} from "@/lib/closings/gate";
+import {
+  createClosingObservation,
+  createClosingPeriod,
+  deleteClosingPeriod,
+  updateClosingPeriod,
+} from "@/lib/closings/period-writes";
 import { taskClosesPeriod } from "@/domain/closing-from-task";
 import { createTaskRecord } from "@/lib/tasks/create";
 import {
@@ -33,66 +38,12 @@ import {
 /**
  * Server Actions dos Fechamentos da Contabilidade.
  *
- * Toda decisão de permissão sai de `canManageClanClosings` /
- * `canDeleteClanClosing`, com os fatos (papel na organização, liderança e
- * vínculo ativo com ESTE clã) carregados aqui do banco. A interface nunca
- * informa quem é da Contabilidade — a aba só existir no clã certo é
- * navegação, não autorização.
+ * As permissões saem dos gates de `@/lib/closings/gate` (compartilhados com o
+ * Desafio do dado), que carregam do banco os fatos de papel, liderança e
+ * vínculo com ESTE clã. A interface nunca informa quem é da Contabilidade.
  */
 
 const yearSchema = z.number().int().min(2000).max(2100);
-
-type MemberContext = {
-  orgId: string;
-  userId: string;
-  role: Parameters<typeof loadClanScopedFacts>[4];
-};
-
-/**
- * Prova que o clã informado é a Contabilidade e devolve os fatos de
- * autorização. O mutex de leitura de vínculo é o mesmo das demais mesas:
- * fecha a janela entre validar a participação e gravar.
- */
-async function requireClosingActor(
-  tx: OrgTx,
-  ctx: MemberContext,
-  clanId: string,
-): Promise<{ ok: true; facts: ClosingActorFacts } | { ok: false; error: string }> {
-  await lockActiveClansForMembershipRead(tx, ctx.orgId);
-  const { clan, facts } = await loadClanScopedFacts(
-    tx,
-    ctx.orgId,
-    clanId,
-    ctx.userId,
-    ctx.role,
-  );
-  if (!clan) return err("Clã não encontrado.");
-  if (clan.slug !== CONTABILIDADE_CLAN_SLUG) {
-    return err("Os fechamentos pertencem ao clã Contabilidade.");
-  }
-  const activeMember = await isActiveClanMember(
-    tx,
-    ctx.orgId,
-    clan.id,
-    ctx.userId,
-  );
-  return { ok: true, facts: { ...facts, isActiveClanMember: activeMember } };
-}
-
-const NAO_AUTORIZADO =
-  "Apenas quem integra a Contabilidade, sua liderança ou um admin pode alterar fechamentos.";
-
-/** Gate da rotina diária — usado por tudo, menos a exclusão. */
-async function requireClosingManager(
-  tx: OrgTx,
-  ctx: MemberContext,
-  clanId: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const gate = await requireClosingActor(tx, ctx, clanId);
-  if (!gate.ok) return gate;
-  if (!canManageClanClosings(gate.facts)) return err(NAO_AUTORIZADO);
-  return { ok: true };
-}
 
 function optionalMoneySchema(
   label: string,
@@ -205,25 +156,22 @@ export async function createClosing(
     if (!client) return err("Empresa não encontrada.");
 
     const now = new Date();
-    const [created] = await tx
-      .insert(schema.accountingClosings)
-      .values({
-        orgId: ctx.orgId,
-        clientId: client.id,
-        title: accountingPeriodTitle(data.year, data.periodMonth!),
-        periodMonth: data.periodMonth,
-        dueDate: `${data.year}-12-31`,
-        status: "completed",
-        notes: data.notes || null,
-        cashBalance: data.cashBalance,
-        periodResult: data.periodResult,
-        shareholderLoan: data.shareholderLoan,
-        createdBy: ctx.userId,
-        completedBy: ctx.userId,
-        completedAt: now,
-        updatedAt: now,
-      })
-      .returning({ id: schema.accountingClosings.id });
+    const created = await createClosingPeriod(tx, {
+      orgId: ctx.orgId,
+      clientId: client.id,
+      title: accountingPeriodTitle(data.year, data.periodMonth!),
+      periodMonth: data.periodMonth,
+      dueDate: `${data.year}-12-31`,
+      status: "completed",
+      notes: data.notes || null,
+      cashBalance: data.cashBalance,
+      periodResult: data.periodResult,
+      shareholderLoan: data.shareholderLoan,
+      createdBy: ctx.userId,
+      completedBy: ctx.userId,
+      completedAt: now,
+      updatedAt: now,
+    });
 
     return { ok: true, data: { id: created.id } } as const;
   });
@@ -285,9 +233,10 @@ export async function updateClosing(
     if (!client) return err("Empresa não encontrada.");
 
     const now = new Date();
-    await tx
-      .update(schema.accountingClosings)
-      .set({
+    await updateClosingPeriod(tx, {
+      orgId: ctx.orgId,
+      closingId: closing.id,
+      set: {
         clientId: client.id,
         title:
           data.periodMonth === null
@@ -304,13 +253,8 @@ export async function updateClosing(
         completedAt: closing.completedAt ?? now,
         completedByTaskId: null,
         updatedAt: now,
-      })
-      .where(
-        and(
-          eq(schema.accountingClosings.id, closing.id),
-          eq(schema.accountingClosings.orgId, ctx.orgId),
-        ),
-      );
+      },
+    });
 
     return { ok: true } as const;
   });
@@ -340,26 +284,17 @@ export async function setClosingStatus(
     const gate = await requireClosingManager(tx, ctx, parsed.data.clanId);
     if (!gate.ok) return gate;
 
-    const [row] = await tx
-      .update(schema.accountingClosings)
-      .set({
+    const row = await updateClosingPeriod(tx, {
+      orgId: ctx.orgId,
+      closingId: parsed.data.closingId,
+      set: {
         status: parsed.data.status,
         completedBy: completed ? ctx.userId : null,
         completedAt: completed ? new Date() : null,
         completedByTaskId: null,
         updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(schema.accountingClosings.id, parsed.data.closingId),
-          eq(schema.accountingClosings.orgId, ctx.orgId),
-        ),
-      )
-      .returning({
-        id: schema.accountingClosings.id,
-        title: schema.accountingClosings.title,
-        clientId: schema.accountingClosings.clientId,
-      });
+      },
+    });
     if (!row) return err("Fechamento não encontrado.");
     const client = await tx.query.clients.findFirst({
       where: and(
@@ -416,17 +351,12 @@ export async function deleteClosing(
       );
     }
 
-    const deleted = await tx
-      .delete(schema.accountingClosings)
-      .where(
-        and(
-          eq(schema.accountingClosings.id, parsed.data.closingId),
-          eq(schema.accountingClosings.orgId, ctx.orgId),
-        ),
-      )
-      .returning({ id: schema.accountingClosings.id });
+    const deleted = await deleteClosingPeriod(tx, {
+      orgId: ctx.orgId,
+      closingId: parsed.data.closingId,
+    });
 
-    if (deleted.length === 0) return err("Fechamento não encontrado.");
+    if (!deleted) return err("Fechamento não encontrado.");
     return { ok: true };
   });
 
@@ -774,18 +704,15 @@ export async function addClosingObservation(
         if (!closing) return err("Período não encontrado nesta empresa.");
       }
 
-      const [created] = await tx
-        .insert(schema.closingObservations)
-        .values({
-          orgId: ctx.orgId,
-          clientId: data.clientId,
-          year: data.year,
-          scope: data.scope,
-          closingId: data.scope === "closing" ? data.closingId ?? null : null,
-          body: data.body,
-          authorId: ctx.userId,
-        })
-        .returning({ id: schema.closingObservations.id });
+      const created = await createClosingObservation(tx, {
+        orgId: ctx.orgId,
+        clientId: data.clientId,
+        year: data.year,
+        scope: data.scope,
+        closingId: data.scope === "closing" ? data.closingId ?? null : null,
+        body: data.body,
+        authorId: ctx.userId,
+      });
 
       return { ok: true, data: { id: created.id } };
     },
@@ -1005,7 +932,7 @@ const closingFromTaskSchema = z.object({
  */
 async function requireClosingManagerByOrg(
   tx: OrgTx,
-  ctx: MemberContext,
+  ctx: ClosingMemberContext,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const [contabilidade] = await tx
     .select({ id: schema.clans.id })
@@ -1103,26 +1030,23 @@ export async function createClosingFromTask(
       const trabalhoFeito = taskClosesPeriod(task.status);
       const agora = new Date();
 
-      const [created] = await tx
-        .insert(schema.accountingClosings)
-        .values({
-          orgId: ctx.orgId,
-          clientId: client.id,
-          title: data.title,
-          dueDate: data.dueDate,
-          status: trabalhoFeito ? "completed" : "pending",
-          cashBalance: data.cashBalance ?? null,
-          periodResult: data.periodResult ?? null,
-          shareholderLoan: data.shareholderLoan ?? null,
-          createdBy: ctx.userId,
-          // Crédito para quem FEZ o balanço, não para quem clicou em gerar —
-          // é o mesmo que `syncClosingFromTask` faz, então os dois caminhos
-          // contam a mesma história na linha "Registrado por".
-          completedBy: trabalhoFeito ? task.assigneeId : null,
-          completedAt: trabalhoFeito ? task.completedAt ?? agora : null,
-          completedByTaskId: trabalhoFeito ? task.id : null,
-        })
-        .returning({ id: schema.accountingClosings.id });
+      const created = await createClosingPeriod(tx, {
+        orgId: ctx.orgId,
+        clientId: client.id,
+        title: data.title,
+        dueDate: data.dueDate,
+        status: trabalhoFeito ? "completed" : "pending",
+        cashBalance: data.cashBalance ?? null,
+        periodResult: data.periodResult ?? null,
+        shareholderLoan: data.shareholderLoan ?? null,
+        createdBy: ctx.userId,
+        // Crédito para quem FEZ o balanço, não para quem clicou em gerar —
+        // é o mesmo que `syncClosingFromTask` faz, então os dois caminhos
+        // contam a mesma história na linha "Registrado por".
+        completedBy: trabalhoFeito ? task.assigneeId : null,
+        completedAt: trabalhoFeito ? task.completedAt ?? agora : null,
+        completedByTaskId: trabalhoFeito ? task.id : null,
+      });
 
       await tx
         .update(schema.tasks)

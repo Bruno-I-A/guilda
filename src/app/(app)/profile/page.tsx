@@ -40,6 +40,8 @@ const REASON_LABELS: Record<string, string> = {
   task_completed: "Missão concluída",
   closing_year_closed: "Fechamento anual",
   closing_year_reversal: "Fechamento anual revertido",
+  closing_challenge: "Desafio do dado",
+  closing_challenge_reversal: "Desafio do dado revertido",
   reversal: "Conclusão revertida",
   bonus: "Bônus",
 };

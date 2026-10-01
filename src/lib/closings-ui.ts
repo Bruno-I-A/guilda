@@ -1,4 +1,4 @@
-import type { AccountingClosing } from "@/db/schema";
+import type { AccountingClosing, Client } from "@/db/schema";
 
 export type ClosingStatus = AccountingClosing["status"];
 export type ClosingGroup = "mei" | "simples" | "presumido_association" | "real";
@@ -31,6 +31,24 @@ export const CLOSING_GROUPS: {
   },
   { key: "real", label: "Lucro Real", shortLabel: "Real" },
 ];
+
+type TaxRegime = Client["taxRegime"];
+
+/** Regimes cadastrais que cada grupo da aba Fechamentos reúne. */
+export const CLOSING_GROUP_REGIMES: Record<ClosingGroup, readonly TaxRegime[]> = {
+  mei: ["mei"],
+  simples: ["simples"],
+  presumido_association: ["presumido", "association"],
+  real: ["real"],
+};
+
+/** O grupo da aba onde uma empresa deste regime aparece. */
+export function closingGroupForRegime(taxRegime: TaxRegime): ClosingGroup {
+  const entry = (
+    Object.entries(CLOSING_GROUP_REGIMES) as [ClosingGroup, readonly TaxRegime[]][]
+  ).find(([, regimes]) => regimes.includes(taxRegime));
+  return entry?.[0] ?? "simples";
+}
 
 export function isClosingOverdue(
   dueDate: string,

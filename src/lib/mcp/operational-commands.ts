@@ -7,7 +7,15 @@ import * as schema from "@/db/schema";
 import { accountingPeriodTitle } from "@/domain/accounting-period";
 import { isAdminRole } from "@/domain/guild-permissions";
 import { CLOSING_YEAR_XP } from "@/domain/xp";
+import { abandonChallenge, rollChallenge } from "@/lib/closings/challenge-commands";
 import { reconcileClosingYearLedger } from "@/lib/closings/closing-year-xp";
+import type { ClosingGroup } from "@/lib/closings-ui";
+import {
+  createClosingObservation,
+  createClosingPeriod,
+  deleteClosingPeriod,
+  updateClosingPeriod,
+} from "@/lib/closings/period-writes";
 import { cancelInformative, confirmInformative, type InformativeTaskDecision } from "@/lib/informatives/confirm";
 import { saveInformativeDraft } from "@/lib/informatives/draft";
 import { informativeTasksRevision } from "@/lib/informatives/revision";
@@ -174,7 +182,7 @@ export async function createClosingCommand(input: {
       const client = await activeClient(tx, input.actor, input.clientId);
       if (!client) return { result: { ok: false, error: "Empresa não encontrada." }, summary: "Empresa inválida" };
       const now = new Date();
-      const [created] = await tx.insert(schema.accountingClosings).values({
+      const created = await createClosingPeriod(tx, {
         orgId: input.actor.orgId,
         clientId: client.id,
         title: accountingPeriodTitle(input.year, input.periodMonth),
@@ -189,7 +197,7 @@ export async function createClosingCommand(input: {
         completedBy: input.actor.userId,
         completedAt: now,
         updatedAt: now,
-      }).returning({ id: schema.accountingClosings.id, updatedAt: schema.accountingClosings.updatedAt });
+      });
       return {
         result: { ok: true, resource_id: created.id, status: "completed", updated_at: created.updatedAt.toISOString() },
         resourceId: created.id,
@@ -225,16 +233,20 @@ export async function updateClosingCommand(input: {
         return { result: { ok: false, error: "O fechamento mudou desde a leitura. Consulte-o novamente." }, resourceId: closing.id, summary: "Conflito de versão" };
       }
       const now = new Date();
-      await tx.update(schema.accountingClosings).set({
-        title: accountingPeriodTitle(input.year, input.periodMonth),
-        periodMonth: input.periodMonth,
-        dueDate: `${input.year}-12-31`,
-        ...(input.notes !== undefined ? { notes: input.notes || null } : {}),
-        ...(input.cashBalance !== undefined ? { cashBalance: input.cashBalance } : {}),
-        ...(input.periodResult !== undefined ? { periodResult: input.periodResult } : {}),
-        ...(input.shareholderLoan !== undefined ? { shareholderLoan: input.shareholderLoan } : {}),
-        updatedAt: now,
-      }).where(and(eq(schema.accountingClosings.orgId, input.actor.orgId), eq(schema.accountingClosings.id, closing.id)));
+      await updateClosingPeriod(tx, {
+        orgId: input.actor.orgId,
+        closingId: closing.id,
+        set: {
+          title: accountingPeriodTitle(input.year, input.periodMonth),
+          periodMonth: input.periodMonth,
+          dueDate: `${input.year}-12-31`,
+          ...(input.notes !== undefined ? { notes: input.notes || null } : {}),
+          ...(input.cashBalance !== undefined ? { cashBalance: input.cashBalance } : {}),
+          ...(input.periodResult !== undefined ? { periodResult: input.periodResult } : {}),
+          ...(input.shareholderLoan !== undefined ? { shareholderLoan: input.shareholderLoan } : {}),
+          updatedAt: now,
+        },
+      });
       return { result: { ok: true, resource_id: closing.id, updated_at: now.toISOString() }, resourceId: closing.id, summary: "Fechamento editado" };
     },
   });
@@ -262,13 +274,17 @@ export async function setClosingStatusCommand(input: {
       }
       const now = new Date();
       const completed = input.status === "completed";
-      await tx.update(schema.accountingClosings).set({
-        status: input.status,
-        completedBy: completed ? input.actor.userId : null,
-        completedAt: completed ? now : null,
-        completedByTaskId: null,
-        updatedAt: now,
-      }).where(and(eq(schema.accountingClosings.orgId, input.actor.orgId), eq(schema.accountingClosings.id, closing.id)));
+      await updateClosingPeriod(tx, {
+        orgId: input.actor.orgId,
+        closingId: closing.id,
+        set: {
+          status: input.status,
+          completedBy: completed ? input.actor.userId : null,
+          completedAt: completed ? now : null,
+          completedByTaskId: null,
+          updatedAt: now,
+        },
+      });
       return { result: { ok: true, resource_id: closing.id, status: input.status, updated_at: now.toISOString() }, resourceId: closing.id, summary: `Status alterado para ${input.status}` };
     },
   });
@@ -293,10 +309,7 @@ export async function deleteClosingCommand(input: {
       if (changedSince(closing.updatedAt, input.expectedUpdatedAt)) {
         return { result: { ok: false, error: "O fechamento mudou desde a leitura. Consulte-o novamente." }, resourceId: closing.id, summary: "Conflito de versão" };
       }
-      await tx.delete(schema.accountingClosings).where(and(
-        eq(schema.accountingClosings.orgId, input.actor.orgId),
-        eq(schema.accountingClosings.id, closing.id),
-      ));
+      await deleteClosingPeriod(tx, { orgId: input.actor.orgId, closingId: closing.id });
       return { result: { ok: true, resource_id: closing.id, deleted: true }, resourceId: closing.id, summary: "Fechamento excluído" };
     },
   });
@@ -414,7 +427,7 @@ export async function addClosingObservationCommand(input: {
           : null;
         if (!closing) return { result: { ok: false, error: "Fechamento não encontrado para a observação." }, summary: "Fechamento inválido" };
       }
-      const [created] = await tx.insert(schema.closingObservations).values({
+      const created = await createClosingObservation(tx, {
         orgId: input.actor.orgId,
         clientId: input.clientId,
         year: input.year,
@@ -422,7 +435,7 @@ export async function addClosingObservationCommand(input: {
         closingId: input.scope === "closing" ? input.closingId : null,
         body: input.body,
         authorId: input.actor.userId,
-      }).returning({ id: schema.closingObservations.id, updatedAt: schema.closingObservations.updatedAt });
+      });
       return { result: { ok: true, resource_id: created.id, updated_at: created.updatedAt.toISOString() }, resourceId: created.id, summary: `Observação ${input.scope} criada` };
     },
   });
@@ -451,6 +464,85 @@ export async function resolveClosingObservationCommand(input: {
         updatedAt: now,
       }).where(and(eq(schema.closingObservations.orgId, input.actor.orgId), eq(schema.closingObservations.id, observation.id)));
       return { result: { ok: true, resource_id: observation.id, resolved: input.resolved, updated_at: now.toISOString() }, resourceId: observation.id, summary: input.resolved ? "Observação resolvida" : "Observação reaberta" };
+    },
+  });
+}
+
+/**
+ * Desafio do dado pelo MCP: mesma regra da aba (`challenge-commands`), com o
+ * recibo de idempotência do MCP — repetir a chamada com a mesma chave devolve
+ * o mesmo sorteio em vez de rolar de novo.
+ */
+export async function rollChallengeCommand(input: {
+  actor: McpActor;
+  idempotencyKey: string;
+  year: number;
+  group: ClosingGroup;
+}) {
+  return runTransactionalCommand(input.actor, {
+    tool: "rolar_dado_fechamento",
+    idempotencyKey: input.idempotencyKey,
+    resourceType: "closing_challenge",
+    mutate: async (tx) => {
+      const rolled = await rollChallenge(tx, {
+        orgId: input.actor.orgId,
+        userId: input.actor.userId,
+        year: input.year,
+        group: input.group,
+      });
+      if (!rolled.ok) {
+        return { result: { ok: false, error: rolled.error }, summary: "Sorteio sem empresa livre" };
+      }
+      const challenge = rolled.challenge;
+      return {
+        result: {
+          ok: true,
+          resource_id: challenge.id,
+          reused: rolled.reused,
+          client: { id: challenge.clientId, name: challenge.clientName },
+          year: challenge.year,
+          started_at: challenge.startedAt.toISOString(),
+          deadline_at: challenge.deadlineAt.toISOString(),
+          time_limit_minutes: challenge.timeLimitMinutes,
+          base_xp: challenge.baseXp,
+          bonus_xp: challenge.bonusXp,
+        },
+        resourceId: challenge.id,
+        summary: rolled.reused
+          ? "Desafio em andamento devolvido"
+          : `Dado rolado: ${challenge.clientName}`,
+      };
+    },
+  });
+}
+
+export async function abandonChallengeCommand(input: {
+  actor: McpActor;
+  idempotencyKey: string;
+  challengeId: string;
+}) {
+  return runTransactionalCommand(input.actor, {
+    tool: "desistir_desafio_fechamento",
+    idempotencyKey: input.idempotencyKey,
+    resourceType: "closing_challenge",
+    mutate: async (tx) => {
+      const ended = await abandonChallenge(tx, {
+        orgId: input.actor.orgId,
+        challengeId: input.challengeId,
+        userId: input.actor.userId,
+      });
+      if (!ended) {
+        return {
+          result: { ok: false, error: "Este desafio não está mais em andamento." },
+          resourceId: input.challengeId,
+          summary: "Desafio já encerrado",
+        };
+      }
+      return {
+        result: { ok: true, resource_id: input.challengeId, status: "abandoned" },
+        resourceId: input.challengeId,
+        summary: "Desistência do desafio",
+      };
     },
   });
 }

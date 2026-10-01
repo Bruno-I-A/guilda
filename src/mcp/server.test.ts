@@ -72,6 +72,7 @@ describe("Guilda MCP", () => {
       "confirmar_informativo",
       "confirmar_leitura_mural",
       "concluir_missao",
+      "consultar_desafio_fechamento",
       "contexto_da_guilda",
       "criar_fechamento",
       "criar_informativo",
@@ -79,6 +80,7 @@ describe("Guilda MCP", () => {
       "detalhar_fechamento",
       "detalhar_informativo",
       "detalhar_missao",
+      "desistir_desafio_fechamento",
       "editar_fechamento",
       "editar_missao",
       "entregar_missao",
@@ -94,6 +96,7 @@ describe("Guilda MCP", () => {
       "rejeitar_missao",
       "resolver_observacao_fechamento",
       "resumo_de_missoes",
+      "rolar_dado_fechamento",
       "transferir_missao",
     ].sort());
   });
@@ -119,5 +122,22 @@ describe("Guilda MCP", () => {
     }, member);
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("admin ou owner");
+  });
+
+  it("rolar o dado segue a mesma régua: escopo de escrita e admin ou owner", async () => {
+    const semEscopo = await rpc("tools/call", {
+      name: "rolar_dado_fechamento",
+      arguments: { idempotency_key: "teste-rolar-1", year: 2026 },
+    });
+    expect(semEscopo.isError).toBe(true);
+    expect(semEscopo.content[0].text).toContain("closings:write");
+
+    const member = { ...actor, role: "member" as const, scopes: ["closings:write" as const] };
+    const integrante = await rpc("tools/call", {
+      name: "rolar_dado_fechamento",
+      arguments: { idempotency_key: "teste-rolar-2", year: 2026 },
+    }, member);
+    expect(integrante.isError).toBe(true);
+    expect(integrante.content[0].text).toContain("admin ou owner");
   });
 });
