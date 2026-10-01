@@ -480,6 +480,7 @@ export async function ClosingsTab({
         endedAt: board.mine.endedAt?.toISOString() ?? null,
         inTime: board.mine.inTime,
         awardedXp: board.mine.awardedXp,
+        heldXp: board.mine.heldXp,
         capped: board.mine.capped,
         releasedByOther: Boolean(board.mine.endedBy && board.mine.endedBy !== viewerId),
       }

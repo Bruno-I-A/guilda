@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, or, type SQL } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -372,25 +372,13 @@ export async function challengeStatus(actor: McpActor) {
   return withOrgTx(actor.orgId, async (tx) => {
     const board = await loadChallengeBoard(tx, { orgId: actor.orgId, viewerId: actor.userId });
     const mine = board.mine;
-    let xpInLedger = 0;
-    if (mine) {
-      const [ledger] = await tx
-        .select({ net: sql<number>`coalesce(sum(${schema.xpLedger.amount}), 0)::int` })
-        .from(schema.xpLedger)
-        .where(
-          and(
-            eq(schema.xpLedger.orgId, actor.orgId),
-            eq(schema.xpLedger.closingChallengeId, mine.id),
-          ),
-        );
-      xpInLedger = ledger.net;
-    }
     const result =
       mine && mine.status !== "active"
         ? challengeResult({
             status: mine.status,
             inTime: mine.inTime,
             awardedXp: mine.awardedXp,
+            heldXp: mine.heldXp,
             capped: mine.capped,
             startedAt: mine.startedAt,
             endedAt: mine.endedAt,
@@ -418,7 +406,7 @@ export async function challengeStatus(actor: McpActor) {
             in_time: mine.inTime,
             awarded_xp: mine.awardedXp,
             capped: mine.capped,
-            xp_in_ledger: xpInLedger,
+            xp_in_ledger: mine.heldXp,
             result: result ? (result.xp ? `+${result.xp} XP · ${result.text}` : result.text) : null,
           }
         : null,

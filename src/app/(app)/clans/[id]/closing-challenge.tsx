@@ -51,6 +51,8 @@ export interface MyChallengeView {
   endedAt: string | null;
   inTime: boolean | null;
   awardedXp: number | null;
+  /** Saldo do desafio no ledger agora — zero se o período foi reaberto. */
+  heldXp: number;
   capped: boolean;
   releasedByOther: boolean;
 }
@@ -319,6 +321,7 @@ export function ClosingChallenge({
           status: finished.status,
           inTime: finished.inTime,
           awardedXp: finished.awardedXp,
+          heldXp: finished.heldXp,
           capped: finished.capped,
           startedAt: new Date(finished.startedAt),
           endedAt: finished.endedAt ? new Date(finished.endedAt) : null,

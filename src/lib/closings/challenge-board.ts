@@ -24,6 +24,8 @@ export interface ChallengeBoardData {
     endedBy: string | null;
     inTime: boolean | null;
     awardedXp: number | null;
+    /** Saldo do desafio no ledger agora — zero se o período foi reaberto. */
+    heldXp: number;
     capped: boolean;
   } | null;
   playing: {
@@ -51,7 +53,7 @@ export async function loadChallengeBoard(
   const rules = await loadChallengeRules(tx, input.orgId);
   const challenge = schema.closingChallenges;
 
-  const [mine] = await tx
+  const [mineRow] = await tx
     .select({
       id: challenge.id,
       clientId: challenge.clientId,
@@ -78,6 +80,20 @@ export async function loadChallengeBoard(
     )
     .orderBy(desc(challenge.startedAt))
     .limit(1);
+
+  let mine: ChallengeBoardData["mine"] = null;
+  if (mineRow) {
+    const [ledger] = await tx
+      .select({ net: sql<number>`coalesce(sum(${schema.xpLedger.amount}), 0)::int` })
+      .from(schema.xpLedger)
+      .where(
+        and(
+          eq(schema.xpLedger.orgId, input.orgId),
+          eq(schema.xpLedger.closingChallengeId, mineRow.id),
+        ),
+      );
+    mine = { ...mineRow, heldXp: ledger.net };
+  }
 
   const playing = await tx
     .select({
@@ -135,5 +151,5 @@ export async function loadChallengeBoard(
       ),
     );
 
-  return { rules, paidToday: paid.value, mine: mine ?? null, playing, scoreboard };
+  return { rules, paidToday: paid.value, mine, playing, scoreboard };
 }

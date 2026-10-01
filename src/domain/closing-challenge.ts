@@ -163,7 +163,13 @@ export function challengeClock(
 export interface ChallengeResultFacts {
   status: Exclude<ChallengeStatus, "active">;
   inTime: boolean | null;
+  /** O prêmio congelado na conclusão. */
   awardedXp: number | null;
+  /**
+   * O saldo do desafio no ledger agora. Difere do prêmio quando o período foi
+   * reaberto ou excluído depois — e aí a faixa não pode prometer o XP.
+   */
+  heldXp: number;
   capped: boolean;
   startedAt: Date;
   endedAt: Date | null;
@@ -185,6 +191,9 @@ export function challengeResult(facts: ChallengeResultFacts): {
       // Base e bônus em zero também caem aqui: concluiu, mas não pagou.
       if (facts.capped || !facts.awardedXp) {
         return { xp: null, text: `fechada${tempo} · teto do dia, sem XP` };
+      }
+      if (facts.heldXp <= 0) {
+        return { xp: null, text: "estornado · o período foi reaberto ou excluído" };
       }
       return {
         xp: facts.awardedXp,

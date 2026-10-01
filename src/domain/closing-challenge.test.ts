@@ -192,11 +192,19 @@ describe("resultado", () => {
   const fatos = {
     inTime: true,
     awardedXp: 30,
+    heldXp: 30,
     capped: false,
     startedAt: inicio,
     endedAt: depois(18),
     releasedByOther: false,
   };
+
+  test("período reaberto depois: o resultado não promete o XP estornado", () => {
+    expect(challengeResult({ ...fatos, status: "completed", heldXp: 0 })).toEqual({
+      xp: null,
+      text: "estornado · o período foi reaberto ou excluído",
+    });
+  });
 
   test("no prazo mostra o XP e o tempo", () => {
     expect(challengeResult({ ...fatos, status: "completed" })).toEqual({
@@ -212,6 +220,7 @@ describe("resultado", () => {
         status: "completed",
         inTime: false,
         awardedXp: 15,
+        heldXp: 15,
         endedAt: depois(42),
       }),
     ).toEqual({ xp: 15, text: "fora do prazo em 42 min" });
@@ -219,7 +228,7 @@ describe("resultado", () => {
 
   test("teto do dia: fechada, sem XP", () => {
     expect(
-      challengeResult({ ...fatos, status: "completed", awardedXp: 0, capped: true }),
+      challengeResult({ ...fatos, status: "completed", awardedXp: 0, heldXp: 0, capped: true }),
     ).toEqual({ xp: null, text: "fechada em 18 min · teto do dia, sem XP" });
   });
 
