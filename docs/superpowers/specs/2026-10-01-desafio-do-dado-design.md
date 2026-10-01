@@ -108,7 +108,7 @@ na homologação é a prova.
 
 ### Porta única de escrita (`src/lib/closings/period-writes.ts`)
 
-Hoje 12 lugares gravam período ou observação: a aba (`createClosing`,
+Hoje 13 lugares gravam período ou observação: a aba (`createClosing`,
 `updateClosing`, `setClosingStatus`, `deleteClosing`, `createClosingFromTask`,
 `addClosingObservation`), o MCP (`createClosingCommand`,
 `updateClosingCommand`, `setClosingStatusCommand`, `deleteClosingCommand`,
