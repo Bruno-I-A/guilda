@@ -12,6 +12,7 @@ import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { canViewClan } from "@/domain/clan-access";
 import {
+  canDeleteClanClosing,
   canDistributeClanTasks,
   canQuickCompleteUnassignedInformativeTask,
   canManageClanClosings,
@@ -378,8 +379,10 @@ export default async function ClanPage({
           <ClosingsTab
             orgId={session.orgId}
             clanId={clan.id}
+            viewerId={session.user.id}
             params={filters}
             canManage={canManageClanClosings(clanFacts)}
+            canConfigureChallenge={canDeleteClanClosing(clanFacts)}
           />
         ) : null}
 
