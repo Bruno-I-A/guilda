@@ -13,6 +13,7 @@ import {
   lockClosingYear,
   reconcileClosingYearLedger,
 } from "./closing-year-xp";
+import { updateClosingPeriod } from "./period-writes";
 import { completedTaskAssigneeId } from "./task-sync-guards";
 
 /** Mantém períodos e encerramentos anuais consistentes com a missão vinculada. */
@@ -46,22 +47,18 @@ export async function syncClosingFromTask(
         input.toStatus === "completed"
           ? completedTaskAssigneeId(task, "completed")
           : task.assigneeId;
-      await tx
-        .update(schema.accountingClosings)
-        .set({
+      await updateClosingPeriod(tx, {
+        orgId: task.orgId,
+        closingId: task.closingId,
+        where: ne(schema.accountingClosings.status, "completed"),
+        set: {
           status: "completed",
           completedBy,
           completedAt: input.changedAt,
           completedByTaskId: task.id,
           updatedAt: input.changedAt,
-        })
-        .where(
-          and(
-            eq(schema.accountingClosings.id, task.closingId),
-            eq(schema.accountingClosings.orgId, task.orgId),
-            ne(schema.accountingClosings.status, "completed"),
-          ),
-        );
+        },
+      });
     } else if (saiuDeTrabalhoFeito) {
       const otherCompleted = await tx.query.tasks.findFirst({
         where: and(
@@ -74,31 +71,25 @@ export async function syncClosingFromTask(
         columns: { id: true, assigneeId: true, completedAt: true },
       });
       const replacement = otherCompleted?.assigneeId ? otherCompleted : null;
-      await tx
-        .update(schema.accountingClosings)
-        .set(
-          replacement
-            ? {
-                completedBy: replacement.assigneeId,
-                completedAt: replacement.completedAt ?? input.changedAt,
-                completedByTaskId: replacement.id,
-                updatedAt: input.changedAt,
-              }
-            : {
-                status: "pending",
-                completedBy: null,
-                completedAt: null,
-                completedByTaskId: null,
-                updatedAt: input.changedAt,
-              },
-        )
-        .where(
-          and(
-            eq(schema.accountingClosings.id, task.closingId),
-            eq(schema.accountingClosings.orgId, task.orgId),
-            eq(schema.accountingClosings.completedByTaskId, task.id),
-          ),
-        );
+      await updateClosingPeriod(tx, {
+        orgId: task.orgId,
+        closingId: task.closingId,
+        where: eq(schema.accountingClosings.completedByTaskId, task.id),
+        set: replacement
+          ? {
+              completedBy: replacement.assigneeId,
+              completedAt: replacement.completedAt ?? input.changedAt,
+              completedByTaskId: replacement.id,
+              updatedAt: input.changedAt,
+            }
+          : {
+              status: "pending",
+              completedBy: null,
+              completedAt: null,
+              completedByTaskId: null,
+              updatedAt: input.changedAt,
+            },
+      });
     }
   }
 

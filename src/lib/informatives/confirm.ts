@@ -20,6 +20,7 @@ import {
   periodsForCadenceRange,
   periodsPerYear,
 } from "@/domain/commitments";
+import { createClosingPeriod } from "@/lib/closings/period-writes";
 import { createTaskRecord } from "@/lib/tasks/create";
 import { completeTaskFromSystem } from "@/lib/tasks/complete";
 import {
@@ -598,18 +599,15 @@ export async function confirmInformative(
         const closingKey = `${clientId}:${task.dueDate}:${task.title}`;
         closingId = periodClosingIds.get(closingKey) ?? null;
         if (!closingId) {
-          const [createdClosing] = await tx
-            .insert(schema.accountingClosings)
-            .values({
-              orgId: actor.orgId,
-              clientId,
-              title: closingPeriodTitle(task.dueDate),
-              dueDate: task.dueDate,
-              status: "pending",
-              notes: task.description,
-              createdBy: actor.userId,
-            })
-            .returning({ id: schema.accountingClosings.id });
+          const createdClosing = await createClosingPeriod(tx, {
+            orgId: actor.orgId,
+            clientId,
+            title: closingPeriodTitle(task.dueDate),
+            dueDate: task.dueDate,
+            status: "pending",
+            notes: task.description,
+            createdBy: actor.userId,
+          });
           closingId = createdClosing.id;
           periodClosingIds.set(closingKey, closingId);
         }

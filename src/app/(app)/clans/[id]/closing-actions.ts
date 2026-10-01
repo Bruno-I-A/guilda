@@ -21,6 +21,12 @@ import {
   requireClosingManager,
   type ClosingMemberContext,
 } from "@/lib/closings/gate";
+import {
+  createClosingObservation,
+  createClosingPeriod,
+  deleteClosingPeriod,
+  updateClosingPeriod,
+} from "@/lib/closings/period-writes";
 import { taskClosesPeriod } from "@/domain/closing-from-task";
 import { createTaskRecord } from "@/lib/tasks/create";
 import {
@@ -150,25 +156,22 @@ export async function createClosing(
     if (!client) return err("Empresa não encontrada.");
 
     const now = new Date();
-    const [created] = await tx
-      .insert(schema.accountingClosings)
-      .values({
-        orgId: ctx.orgId,
-        clientId: client.id,
-        title: accountingPeriodTitle(data.year, data.periodMonth!),
-        periodMonth: data.periodMonth,
-        dueDate: `${data.year}-12-31`,
-        status: "completed",
-        notes: data.notes || null,
-        cashBalance: data.cashBalance,
-        periodResult: data.periodResult,
-        shareholderLoan: data.shareholderLoan,
-        createdBy: ctx.userId,
-        completedBy: ctx.userId,
-        completedAt: now,
-        updatedAt: now,
-      })
-      .returning({ id: schema.accountingClosings.id });
+    const created = await createClosingPeriod(tx, {
+      orgId: ctx.orgId,
+      clientId: client.id,
+      title: accountingPeriodTitle(data.year, data.periodMonth!),
+      periodMonth: data.periodMonth,
+      dueDate: `${data.year}-12-31`,
+      status: "completed",
+      notes: data.notes || null,
+      cashBalance: data.cashBalance,
+      periodResult: data.periodResult,
+      shareholderLoan: data.shareholderLoan,
+      createdBy: ctx.userId,
+      completedBy: ctx.userId,
+      completedAt: now,
+      updatedAt: now,
+    });
 
     return { ok: true, data: { id: created.id } } as const;
   });
@@ -230,9 +233,10 @@ export async function updateClosing(
     if (!client) return err("Empresa não encontrada.");
 
     const now = new Date();
-    await tx
-      .update(schema.accountingClosings)
-      .set({
+    await updateClosingPeriod(tx, {
+      orgId: ctx.orgId,
+      closingId: closing.id,
+      set: {
         clientId: client.id,
         title:
           data.periodMonth === null
@@ -249,13 +253,8 @@ export async function updateClosing(
         completedAt: closing.completedAt ?? now,
         completedByTaskId: null,
         updatedAt: now,
-      })
-      .where(
-        and(
-          eq(schema.accountingClosings.id, closing.id),
-          eq(schema.accountingClosings.orgId, ctx.orgId),
-        ),
-      );
+      },
+    });
 
     return { ok: true } as const;
   });
@@ -285,26 +284,17 @@ export async function setClosingStatus(
     const gate = await requireClosingManager(tx, ctx, parsed.data.clanId);
     if (!gate.ok) return gate;
 
-    const [row] = await tx
-      .update(schema.accountingClosings)
-      .set({
+    const row = await updateClosingPeriod(tx, {
+      orgId: ctx.orgId,
+      closingId: parsed.data.closingId,
+      set: {
         status: parsed.data.status,
         completedBy: completed ? ctx.userId : null,
         completedAt: completed ? new Date() : null,
         completedByTaskId: null,
         updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(schema.accountingClosings.id, parsed.data.closingId),
-          eq(schema.accountingClosings.orgId, ctx.orgId),
-        ),
-      )
-      .returning({
-        id: schema.accountingClosings.id,
-        title: schema.accountingClosings.title,
-        clientId: schema.accountingClosings.clientId,
-      });
+      },
+    });
     if (!row) return err("Fechamento não encontrado.");
     const client = await tx.query.clients.findFirst({
       where: and(
@@ -361,17 +351,12 @@ export async function deleteClosing(
       );
     }
 
-    const deleted = await tx
-      .delete(schema.accountingClosings)
-      .where(
-        and(
-          eq(schema.accountingClosings.id, parsed.data.closingId),
-          eq(schema.accountingClosings.orgId, ctx.orgId),
-        ),
-      )
-      .returning({ id: schema.accountingClosings.id });
+    const deleted = await deleteClosingPeriod(tx, {
+      orgId: ctx.orgId,
+      closingId: parsed.data.closingId,
+    });
 
-    if (deleted.length === 0) return err("Fechamento não encontrado.");
+    if (!deleted) return err("Fechamento não encontrado.");
     return { ok: true };
   });
 
@@ -719,18 +704,15 @@ export async function addClosingObservation(
         if (!closing) return err("Período não encontrado nesta empresa.");
       }
 
-      const [created] = await tx
-        .insert(schema.closingObservations)
-        .values({
-          orgId: ctx.orgId,
-          clientId: data.clientId,
-          year: data.year,
-          scope: data.scope,
-          closingId: data.scope === "closing" ? data.closingId ?? null : null,
-          body: data.body,
-          authorId: ctx.userId,
-        })
-        .returning({ id: schema.closingObservations.id });
+      const created = await createClosingObservation(tx, {
+        orgId: ctx.orgId,
+        clientId: data.clientId,
+        year: data.year,
+        scope: data.scope,
+        closingId: data.scope === "closing" ? data.closingId ?? null : null,
+        body: data.body,
+        authorId: ctx.userId,
+      });
 
       return { ok: true, data: { id: created.id } };
     },
@@ -1048,26 +1030,23 @@ export async function createClosingFromTask(
       const trabalhoFeito = taskClosesPeriod(task.status);
       const agora = new Date();
 
-      const [created] = await tx
-        .insert(schema.accountingClosings)
-        .values({
-          orgId: ctx.orgId,
-          clientId: client.id,
-          title: data.title,
-          dueDate: data.dueDate,
-          status: trabalhoFeito ? "completed" : "pending",
-          cashBalance: data.cashBalance ?? null,
-          periodResult: data.periodResult ?? null,
-          shareholderLoan: data.shareholderLoan ?? null,
-          createdBy: ctx.userId,
-          // Crédito para quem FEZ o balanço, não para quem clicou em gerar —
-          // é o mesmo que `syncClosingFromTask` faz, então os dois caminhos
-          // contam a mesma história na linha "Registrado por".
-          completedBy: trabalhoFeito ? task.assigneeId : null,
-          completedAt: trabalhoFeito ? task.completedAt ?? agora : null,
-          completedByTaskId: trabalhoFeito ? task.id : null,
-        })
-        .returning({ id: schema.accountingClosings.id });
+      const created = await createClosingPeriod(tx, {
+        orgId: ctx.orgId,
+        clientId: client.id,
+        title: data.title,
+        dueDate: data.dueDate,
+        status: trabalhoFeito ? "completed" : "pending",
+        cashBalance: data.cashBalance ?? null,
+        periodResult: data.periodResult ?? null,
+        shareholderLoan: data.shareholderLoan ?? null,
+        createdBy: ctx.userId,
+        // Crédito para quem FEZ o balanço, não para quem clicou em gerar —
+        // é o mesmo que `syncClosingFromTask` faz, então os dois caminhos
+        // contam a mesma história na linha "Registrado por".
+        completedBy: trabalhoFeito ? task.assigneeId : null,
+        completedAt: trabalhoFeito ? task.completedAt ?? agora : null,
+        completedByTaskId: trabalhoFeito ? task.id : null,
+      });
 
       await tx
         .update(schema.tasks)
