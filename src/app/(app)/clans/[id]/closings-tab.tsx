@@ -9,6 +9,7 @@ import {
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
+import { isClosingDrawEligible } from "@/domain/closing-draw";
 import {
   observationState,
   parseObservationScope,
@@ -47,6 +48,7 @@ import {
   type ClosingObservationView,
   type CompanyClosingView,
 } from "./closing-board";
+import { ClosingDraw } from "./closing-draw";
 import { ClosingOverview } from "./closing-overview";
 import { ClanEmptyState, ClanSectionHeading } from "./clan-ui";
 
@@ -412,6 +414,25 @@ export async function ClosingsTab({
     return `/clans/${clanId}?${query}`;
   }
 
+  // A sorteada abre como as empresas do quadro: busca na lista com os outros
+  // filtros zerados — senão um filtro esquecido a esconderia.
+  const searchHref = href({
+    q: "",
+    yearStatus: "all",
+    periodStatus: "all",
+    periodMonth: "all",
+    observationStatus: "all",
+  });
+  const drawCandidates = allCompanies
+    .filter((company) =>
+      isClosingDrawEligible({
+        yearClosed: Boolean(company.yearClosedAt),
+        periodCount: company.closings.length,
+        observationCount: company.observations.length,
+      }),
+    )
+    .map((company) => ({ id: company.id, name: company.name }));
+
   return (
     <div className="grid gap-5">
       <div className="grid gap-2">
@@ -634,6 +655,16 @@ export async function ClosingsTab({
             periodMonth: "all",
             observationStatus: "all",
           })
+        }
+        draw={
+          // A chave zera o sorteio ao trocar de regime ou de ano: a sorteada
+          // de um grupo não vale no outro.
+          <ClosingDraw
+            key={`${group}-${year}`}
+            year={year}
+            candidates={drawCandidates}
+            searchHref={searchHref}
+          />
         }
       />
 

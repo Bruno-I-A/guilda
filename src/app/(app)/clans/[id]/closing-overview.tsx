@@ -193,11 +193,14 @@ export function ClosingOverview({
   companies,
   stageHref,
   companyHref,
+  draw,
 }: {
   year: number;
   companies: readonly OverviewCompany[];
   stageHref: Record<ClosingStage, string>;
   companyHref: (name: string) => string;
+  /** O sorteio da próxima empresa, entre o título do quadro e as colunas. */
+  draw: React.ReactNode;
 }) {
   const board = buildClosingBoard(companies);
   const health = analyzeClosingHealth(companies);
@@ -215,6 +218,7 @@ export function ClosingOverview({
             Em andamento, da mais atrasada para a mais adiantada.
           </p>
         </div>
+        {draw}
         <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-3">
           <StageColumn
             stage="none"
