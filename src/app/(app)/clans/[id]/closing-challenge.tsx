@@ -374,7 +374,9 @@ export function ClosingChallenge({
             <p className="text-sm text-muted-foreground">
               {total === 0
                 ? `Nenhuma empresa livre sem período nem observação em ${year}.`
-                : `${total} ${total === 1 ? "empresa" : "empresas"} no sorteio de ${year}. A sorteada fica reservada para você.`}
+                : `${total} ${total === 1 ? "empresa" : "empresas"} no sorteio de ${year}.${
+                    canPlay ? " A sorteada fica reservada para você." : ""
+                  }`}
             </p>
           )}
         </div>

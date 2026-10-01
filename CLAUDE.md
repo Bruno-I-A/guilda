@@ -177,6 +177,35 @@ DE FORA de propósito: só volta para `in_progress`, não para `awaiting_approva
 então "desfazer" deixaria a missão num estado diferente do anterior — e aprovar
 já exige diálogo com comentário, não é clique de engano.
 
+## Desafio do dado nos Fechamentos (decisão de 2026-10-01)
+
+O dado da aba Fechamentos virou jogo (desenho em
+`docs/superpowers/specs/2026-10-01-desafio-do-dado-design.md`):
+
+- **Rolar reserva a empresa** para quem rolou e abre um prazo. Um desafio em
+  andamento por pessoa e uma pessoa por empresa são índices únicos parciais
+  em `closing_challenges`. **O sorteio é do servidor** (`rollClosingChallenge`);
+  o navegador só anima — se escolhesse a empresa, daria para pegar a fácil.
+- **Fechar o período** da sorteada paga **base + bônus no prazo** (padrão
+  15 + 15; prazo de 30 min, o tempo real de um fechamento segundo o Bruno).
+  Fora do prazo paga só a base. Liderança/admin ajustam as regras, que ficam
+  **congeladas na rolada**.
+- **Teto diário de desafios pagos** (padrão 10) é a trava contra farm de XP,
+  escolhida pelo Bruno: o fechamento é registrado pela própria pessoa. Depois
+  do teto a pessoa joga e aparece no placar, sem XP.
+- Observação na empresa durante o desafio o **trava** (sem XP); outra pessoa
+  fechando a reservada o encerra; desistir libera a empresa; reabrir ou
+  excluir o período **estorna** pelo saldo do desafio no ledger
+  (`closing_challenge` / `closing_challenge_reversal`), como o fechamento de ano.
+- **Toda escrita de período e toda observação nova passam por
+  `src/lib/closings/period-writes.ts`**, que chama o sync do desafio na mesma
+  transação. Não gravar `accounting_closings` nem inserir
+  `closing_observations` direto: `period-writes.guard.test.ts` reprova.
+- Banco: o `guilda_app` ganha privilégio total em toda tabela nova pelos
+  default privileges (`docker/*/init/01-roles`) — **restringir exige REVOKE**,
+  GRANT sozinho não restringe nada. `closing_challenges` não tem DELETE e só
+  atualiza as colunas do desfecho.
+
 ## Estrutura por clã (decisões de 2026-08-18)
 
 O clã deixou de ser um diretório da Guilda e virou o **espaço de trabalho** da
