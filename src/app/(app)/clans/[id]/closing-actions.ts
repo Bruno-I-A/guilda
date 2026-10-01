@@ -6,11 +6,7 @@ import { z } from "zod";
 
 import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
-import {
-  canDeleteClanClosing,
-  canManageClanClosings,
-  type ClosingActorFacts,
-} from "@/domain/guild-permissions";
+import { canDeleteClanClosing } from "@/domain/guild-permissions";
 import { accountingPeriodTitle } from "@/domain/accounting-period";
 import { CLOSING_YEAR_XP } from "@/domain/xp";
 import {
@@ -18,10 +14,13 @@ import {
   requireMemberContext,
   type ActionResult,
 } from "@/lib/action-context";
-import { isActiveClanMember, loadClanScopedFacts } from "@/lib/clans/facts";
-import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 import { CONTABILIDADE_CLAN_SLUG } from "@/lib/clans/rules";
 import { reconcileClosingYearLedger } from "@/lib/closings/closing-year-xp";
+import {
+  requireClosingActor,
+  requireClosingManager,
+  type ClosingMemberContext,
+} from "@/lib/closings/gate";
 import { taskClosesPeriod } from "@/domain/closing-from-task";
 import { createTaskRecord } from "@/lib/tasks/create";
 import {
@@ -33,66 +32,12 @@ import {
 /**
  * Server Actions dos Fechamentos da Contabilidade.
  *
- * Toda decisão de permissão sai de `canManageClanClosings` /
- * `canDeleteClanClosing`, com os fatos (papel na organização, liderança e
- * vínculo ativo com ESTE clã) carregados aqui do banco. A interface nunca
- * informa quem é da Contabilidade — a aba só existir no clã certo é
- * navegação, não autorização.
+ * As permissões saem dos gates de `@/lib/closings/gate` (compartilhados com o
+ * Desafio do dado), que carregam do banco os fatos de papel, liderança e
+ * vínculo com ESTE clã. A interface nunca informa quem é da Contabilidade.
  */
 
 const yearSchema = z.number().int().min(2000).max(2100);
-
-type MemberContext = {
-  orgId: string;
-  userId: string;
-  role: Parameters<typeof loadClanScopedFacts>[4];
-};
-
-/**
- * Prova que o clã informado é a Contabilidade e devolve os fatos de
- * autorização. O mutex de leitura de vínculo é o mesmo das demais mesas:
- * fecha a janela entre validar a participação e gravar.
- */
-async function requireClosingActor(
-  tx: OrgTx,
-  ctx: MemberContext,
-  clanId: string,
-): Promise<{ ok: true; facts: ClosingActorFacts } | { ok: false; error: string }> {
-  await lockActiveClansForMembershipRead(tx, ctx.orgId);
-  const { clan, facts } = await loadClanScopedFacts(
-    tx,
-    ctx.orgId,
-    clanId,
-    ctx.userId,
-    ctx.role,
-  );
-  if (!clan) return err("Clã não encontrado.");
-  if (clan.slug !== CONTABILIDADE_CLAN_SLUG) {
-    return err("Os fechamentos pertencem ao clã Contabilidade.");
-  }
-  const activeMember = await isActiveClanMember(
-    tx,
-    ctx.orgId,
-    clan.id,
-    ctx.userId,
-  );
-  return { ok: true, facts: { ...facts, isActiveClanMember: activeMember } };
-}
-
-const NAO_AUTORIZADO =
-  "Apenas quem integra a Contabilidade, sua liderança ou um admin pode alterar fechamentos.";
-
-/** Gate da rotina diária — usado por tudo, menos a exclusão. */
-async function requireClosingManager(
-  tx: OrgTx,
-  ctx: MemberContext,
-  clanId: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const gate = await requireClosingActor(tx, ctx, clanId);
-  if (!gate.ok) return gate;
-  if (!canManageClanClosings(gate.facts)) return err(NAO_AUTORIZADO);
-  return { ok: true };
-}
 
 function optionalMoneySchema(
   label: string,
@@ -1005,7 +950,7 @@ const closingFromTaskSchema = z.object({
  */
 async function requireClosingManagerByOrg(
   tx: OrgTx,
-  ctx: MemberContext,
+  ctx: ClosingMemberContext,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const [contabilidade] = await tx
     .select({ id: schema.clans.id })
