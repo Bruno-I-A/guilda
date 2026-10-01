@@ -454,6 +454,9 @@ export const mcpCommandReceipts = pgTable(
  *   - reason 'closing_year_closed' / 'closing_year_reversal': crédito e
  *     estorno do fechamento de ano, ambos vindos da reconciliação em
  *     `src/domain/closing-year-xp.ts`;
+ *   - reason 'closing_challenge' / 'closing_challenge_reversal': prêmio e
+ *     estorno do Desafio do dado, acertados pelo saldo do desafio em
+ *     `src/lib/closings/challenge-sync.ts`;
  *   - reason 'bonus': reservado para usos futuros.
  */
 export const xpLedger = pgTable(
@@ -472,6 +475,10 @@ export const xpLedger = pgTable(
     }),
     closingYearId: uuid("closing_year_id").references(
       () => accountingClosingYears.id,
+      { onDelete: "set null" },
+    ),
+    closingChallengeId: uuid("closing_challenge_id").references(
+      () => closingChallenges.id,
       { onDelete: "set null" },
     ),
     amount: integer("amount").notNull(), // positivo = crédito, negativo = estorno
@@ -496,6 +503,9 @@ export const xpLedger = pgTable(
     // estado do ano) somada ao lock da linha do ano, que serializa duas
     // conclusões concorrentes.
     index("xp_ledger_closing_year_idx").on(t.orgId, t.closingYearId),
+    // Mesmo papel do índice do ano: o sync do desafio soma o ledger por
+    // desafio antes de decidir o que lançar.
+    index("xp_ledger_closing_challenge_idx").on(t.orgId, t.closingChallengeId),
   ],
 );
 
@@ -1005,6 +1015,94 @@ export const closingObservationsRelations = relations(
 );
 
 export type ClosingObservation = typeof closingObservations.$inferSelect;
+
+export const closingChallengeStatus = pgEnum("closing_challenge_status", [
+  "active",
+  "completed",
+  "abandoned",
+  "blocked",
+  "taken",
+]);
+
+/**
+ * Desafio do dado: quem rolou, qual empresa, o prazo e como terminou. As
+ * regras ficam congeladas na rolada (mudar o prazo não mexe em desafio em
+ * andamento). Os dois índices parciais são as travas do jogo no próprio
+ * banco: um desafio em andamento por pessoa e uma pessoa por empresa.
+ *
+ * Sem `relations` de propósito: tudo lê por join explícito, e duas FKs para
+ * `user` (quem rolou, quem encerrou) pediriam `relationName` em todo lado.
+ */
+export const closingChallenges = pgTable(
+  "closing_challenges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    year: smallint("year").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    deadlineAt: timestamp("deadline_at", { withTimezone: true }).notNull(),
+    timeLimitMinutes: smallint("time_limit_minutes").notNull(),
+    baseXp: smallint("base_xp").notNull(),
+    bonusXp: smallint("bonus_xp").notNull(),
+    status: closingChallengeStatus("status").notNull().default("active"),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    /** Quem encerrou à mão (desistência ou liberação pela liderança). */
+    endedBy: text("ended_by").references(() => user.id),
+    /** FK simples: composta com SET NULL zeraria o org_id. */
+    closingId: uuid("closing_id").references(() => accountingClosings.id, {
+      onDelete: "set null",
+    }),
+    inTime: boolean("in_time"),
+    awardedXp: smallint("awarded_xp"),
+    capped: boolean("capped").notNull().default(false),
+  },
+  (t) => [
+    uniqueIndex("closing_challenges_active_user_uidx")
+      .on(t.orgId, t.userId)
+      .where(sql`status = 'active'`),
+    uniqueIndex("closing_challenges_active_client_uidx")
+      .on(t.orgId, t.clientId, t.year)
+      .where(sql`status = 'active'`),
+    index("closing_challenges_org_client_idx").on(t.orgId, t.clientId),
+    index("closing_challenges_org_ended_idx").on(t.orgId, t.endedAt),
+  ],
+);
+
+export type ClosingChallenge = typeof closingChallenges.$inferSelect;
+
+/** Regras do desafio por organização; sem linha, valem os padrões do domínio. */
+export const closingChallengeSettings = pgTable(
+  "closing_challenge_settings",
+  {
+    orgId: text("org_id")
+      .primaryKey()
+      .references(() => organization.id),
+    timeLimitMinutes: smallint("time_limit_minutes").notNull(),
+    baseXp: smallint("base_xp").notNull(),
+    bonusXp: smallint("bonus_xp").notNull(),
+    dailyPaidCap: smallint("daily_paid_cap").notNull(),
+    updatedBy: text("updated_by")
+      .notNull()
+      .references(() => user.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Os mesmos limites de CHALLENGE_RULE_LIMITS: o Zod barra antes, isto é a
+    // defesa em profundidade.
+    check(
+      "closing_challenge_settings_limits",
+      sql`${t.timeLimitMinutes} between 5 and 240 and ${t.baseXp} between 0 and 100 and ${t.bonusXp} between 0 and 100 and ${t.dailyPaidCap} between 0 and 50`,
+    ),
+  ],
+);
 
 /**
  * Templates de campanha (Fase 5b): checklist reutilizável POR REGIME
