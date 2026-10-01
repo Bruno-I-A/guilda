@@ -56,7 +56,12 @@ CREATE POLICY "org_isolation" ON "closing_challenge_settings"
   FOR ALL
   USING ("org_id" = current_setting('app.org_id', true))
   WITH CHECK ("org_id" = current_setting('app.org_id', true));--> statement-breakpoint
--- Desafio nao se apaga, termina: sem DELETE, e UPDATE so no que o desfecho muda.
+-- O guilda_app ganha SELECT/INSERT/UPDATE/DELETE em toda tabela nova pelos
+-- default privileges (docker/*/init/01-roles): GRANT sozinho nao restringe
+-- nada. Desafio nao se apaga, termina: sai o DELETE, e o UPDATE fica so nas
+-- colunas do desfecho. Cascata e SET NULL das FKs rodam como dono da tabela.
 GRANT SELECT, INSERT ON "closing_challenges" TO guilda_app;--> statement-breakpoint
+REVOKE UPDATE, DELETE ON "closing_challenges" FROM guilda_app;--> statement-breakpoint
 GRANT UPDATE ("status", "ended_at", "ended_by", "closing_id", "in_time", "awarded_xp", "capped") ON "closing_challenges" TO guilda_app;--> statement-breakpoint
-GRANT SELECT, INSERT, UPDATE ON "closing_challenge_settings" TO guilda_app;
+GRANT SELECT, INSERT, UPDATE ON "closing_challenge_settings" TO guilda_app;--> statement-breakpoint
+REVOKE DELETE ON "closing_challenge_settings" FROM guilda_app;
