@@ -3,9 +3,13 @@
  *
  * Desenho aprovado em docs/superpowers/specs/2026-10-01-desafio-do-dado-design.md.
  * Rolou, a empresa fica reservada para quem rolou e corre um prazo; fechar o
- * período paga a base, e dentro do prazo paga também o bônus. O teto diário
- * é a trava contra XP fabricado: o fechamento é registrado pela própria
- * pessoa, e sem teto "rolar e marcar fechado" viraria fábrica de XP.
+ * período paga a base, e dentro do prazo paga também o bônus.
+ *
+ * SEM TETO DIÁRIO (decisão do Bruno, 02/10/2026): o teto de desafios pagos
+ * por dia era a trava contra XP fabricado — o fechamento é registrado pela
+ * própria pessoa — e foi retirado depois de travar o uso real no primeiro
+ * dia. O risco de farm foi aceito conscientemente, como na auto-missão;
+ * reavaliar se o ranking degradar.
  */
 
 import { isClosingDrawEligible, type ClosingDrawFacts } from "./closing-draw";
@@ -24,7 +28,6 @@ export interface ChallengeRules {
   timeLimitMinutes: number;
   baseXp: number;
   bonusXp: number;
-  dailyPaidCap: number;
 }
 
 /** Os 30 minutos são o tempo real de um fechamento, segundo o Bruno. */
@@ -32,14 +35,12 @@ export const DEFAULT_CHALLENGE_RULES: ChallengeRules = {
   timeLimitMinutes: 30,
   baseXp: 15,
   bonusXp: 15,
-  dailyPaidCap: 10,
 };
 
 export const CHALLENGE_RULE_LIMITS: Record<keyof ChallengeRules, { min: number; max: number }> = {
   timeLimitMinutes: { min: 5, max: 240 },
   baseXp: { min: 0, max: 100 },
   bonusXp: { min: 0, max: 100 },
-  dailyPaidCap: { min: 0, max: 50 },
 };
 
 export function challengeDeadline(startedAt: Date, timeLimitMinutes: number): Date {
@@ -101,19 +102,13 @@ export function settleActiveChallenge(facts: ChallengeFacts): ChallengeOutcome {
   return { status: "active" };
 }
 
-/** Quanto o desafio paga ao concluir. Passou do teto, termina sem XP. */
+/** Quanto o desafio paga ao concluir: a base sempre, o bônus só no prazo. */
 export function challengeAward(input: {
   inTime: boolean;
   baseXp: number;
   bonusXp: number;
-  paidToday: number;
-  dailyPaidCap: number;
-}): { awardedXp: number; capped: boolean } {
-  if (input.paidToday >= input.dailyPaidCap) return { awardedXp: 0, capped: true };
-  return {
-    awardedXp: input.baseXp + (input.inTime ? input.bonusXp : 0),
-    capped: false,
-  };
+}): number {
+  return input.baseXp + (input.inTime ? input.bonusXp : 0);
 }
 
 /**
@@ -170,7 +165,6 @@ export interface ChallengeResultFacts {
    * reaberto ou excluído depois — e aí a faixa não pode prometer o XP.
    */
   heldXp: number;
-  capped: boolean;
   startedAt: Date;
   endedAt: Date | null;
   /** Desistência registrada pela liderança, não por quem rolou. */
@@ -188,9 +182,9 @@ export function challengeResult(facts: ChallengeResultFacts): {
         ? Math.max(1, Math.round((facts.endedAt.getTime() - facts.startedAt.getTime()) / 60_000))
         : null;
       const tempo = minutos === null ? "" : ` em ${minutos} min`;
-      // Base e bônus em zero também caem aqui: concluiu, mas não pagou.
-      if (facts.capped || !facts.awardedXp) {
-        return { xp: null, text: `fechada${tempo} · teto do dia, sem XP` };
+      // Só acontece com base e bônus configurados em zero: concluiu sem prêmio.
+      if (!facts.awardedXp) {
+        return { xp: null, text: `fechada${tempo} · sem XP` };
       }
       if (facts.heldXp <= 0) {
         return { xp: null, text: "estornado · o período foi reaberto ou excluído" };

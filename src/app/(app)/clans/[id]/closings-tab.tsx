@@ -481,7 +481,6 @@ export async function ClosingsTab({
         inTime: board.mine.inTime,
         awardedXp: board.mine.awardedXp,
         heldXp: board.mine.heldXp,
-        capped: board.mine.capped,
         releasedByOther: Boolean(board.mine.endedBy && board.mine.endedBy !== viewerId),
       }
     : null;
@@ -719,7 +718,6 @@ export async function ClosingsTab({
             group={group}
             candidates={challengeCandidates}
             rules={board.rules}
-            paidToday={board.paidToday}
             serverNow={serverNow}
             mine={myChallenge}
             playing={board.playing.map((item) => ({

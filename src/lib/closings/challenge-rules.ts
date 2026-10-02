@@ -13,7 +13,6 @@ export async function loadChallengeRules(tx: OrgTx, orgId: string): Promise<Chal
       timeLimitMinutes: schema.closingChallengeSettings.timeLimitMinutes,
       baseXp: schema.closingChallengeSettings.baseXp,
       bonusXp: schema.closingChallengeSettings.bonusXp,
-      dailyPaidCap: schema.closingChallengeSettings.dailyPaidCap,
     })
     .from(schema.closingChallengeSettings)
     .where(eq(schema.closingChallengeSettings.orgId, orgId));
@@ -21,7 +20,8 @@ export async function loadChallengeRules(tx: OrgTx, orgId: string): Promise<Chal
 }
 
 /**
- * Meia-noite de hoje em São Paulo, como timestamptz: o "hoje" do teto e do
- * placar. Calculado no banco para não depender do fuso do servidor da app.
+ * Meia-noite de hoje em São Paulo, como timestamptz: o "hoje" do placar e do
+ * último desafio mostrado na faixa. Calculado no banco para não depender do
+ * fuso do servidor da app.
  */
 export const START_OF_TODAY_SP = sql`(date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')`;

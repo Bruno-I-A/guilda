@@ -190,9 +190,12 @@ O dado da aba Fechamentos virou jogo (desenho em
   15 + 15; prazo de 30 min, o tempo real de um fechamento segundo o Bruno).
   Fora do prazo paga só a base. Liderança/admin ajustam as regras, que ficam
   **congeladas na rolada**.
-- **Teto diário de desafios pagos** (padrão 10) é a trava contra farm de XP,
-  escolhida pelo Bruno: o fechamento é registrado pela própria pessoa. Depois
-  do teto a pessoa joga e aparece no placar, sem XP.
+- **Sem teto diário (decisão de 2026-10-02)**: o teto de 10 desafios pagos por
+  dia era a trava contra farm de XP (o fechamento é registrado pela própria
+  pessoa), mas travou o Bruno no primeiro dia de uso real e ele mandou tirar.
+  Coluna e regra saíram (migração `0079`, que pagou retroativamente quem
+  tinha batido no teto). O risco de farm foi aceito conscientemente, como na
+  auto-missão — **reavaliar se o ranking degradar**; não recolocar sem ele pedir.
 - Observação na empresa durante o desafio o **trava** (sem XP); outra pessoa
   fechando a reservada o encerra; desistir libera a empresa; reabrir ou
   excluir o período **estorna** pelo saldo do desafio no ledger
