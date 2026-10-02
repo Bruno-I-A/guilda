@@ -554,6 +554,13 @@
       "when": 1790881994055,
       "tag": "0078_closing-challenges",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1790962920338,
+      "tag": "0079_remove-challenge-cap",
+      "breakpoints": true
     }
   ]
 }

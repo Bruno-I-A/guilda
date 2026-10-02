@@ -1062,7 +1062,6 @@ export const closingChallenges = pgTable(
     }),
     inTime: boolean("in_time"),
     awardedXp: smallint("awarded_xp"),
-    capped: boolean("capped").notNull().default(false),
   },
   (t) => [
     uniqueIndex("closing_challenges_active_user_uidx")
@@ -1088,7 +1087,6 @@ export const closingChallengeSettings = pgTable(
     timeLimitMinutes: smallint("time_limit_minutes").notNull(),
     baseXp: smallint("base_xp").notNull(),
     bonusXp: smallint("bonus_xp").notNull(),
-    dailyPaidCap: smallint("daily_paid_cap").notNull(),
     updatedBy: text("updated_by")
       .notNull()
       .references(() => user.id),
@@ -1099,7 +1097,7 @@ export const closingChallengeSettings = pgTable(
     // defesa em profundidade.
     check(
       "closing_challenge_settings_limits",
-      sql`${t.timeLimitMinutes} between 5 and 240 and ${t.baseXp} between 0 and 100 and ${t.bonusXp} between 0 and 100 and ${t.dailyPaidCap} between 0 and 50`,
+      sql`${t.timeLimitMinutes} between 5 and 240 and ${t.baseXp} between 0 and 100 and ${t.bonusXp} between 0 and 100`,
     ),
   ],
 );

@@ -190,6 +190,14 @@ regime aberto.
 Aviso no Telegram, sequência de dias, XP por regime, espera depois de
 desistir. Somar depois se o uso pedir.
 
+> **Adendo 2 (2026-10-02) — o teto diário saiu.** No primeiro dia de uso em
+> produção o Bruno bateu os 10 desafios pagos e pediu para tirar o limite. A
+> regra, a coluna `daily_paid_cap` e a coluna `capped` saíram (migração
+> `0079`), e os desafios que tinham terminado sem XP só por causa do teto
+> foram pagos retroativamente, pelo mesmo critério do sync. Onde este
+> documento fala em "teto", vale como histórico: o risco de farm foi aceito
+> conscientemente, como na auto-missão.
+
 > **Adendo (mesmo dia, pedido do Bruno):** o desafio ganhou ferramentas no
 > MCP — `rolar_dado_fechamento`, `desistir_desafio_fechamento` e
 > `consultar_desafio_fechamento` (esta com o saldo do desafio no ledger). A

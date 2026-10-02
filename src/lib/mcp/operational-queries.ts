@@ -379,7 +379,6 @@ export async function challengeStatus(actor: McpActor) {
             inTime: mine.inTime,
             awardedXp: mine.awardedXp,
             heldXp: mine.heldXp,
-            capped: mine.capped,
             startedAt: mine.startedAt,
             endedAt: mine.endedAt,
             releasedByOther: Boolean(mine.endedBy && mine.endedBy !== actor.userId),
@@ -391,9 +390,7 @@ export async function challengeStatus(actor: McpActor) {
         time_limit_minutes: board.rules.timeLimitMinutes,
         base_xp: board.rules.baseXp,
         bonus_xp: board.rules.bonusXp,
-        daily_paid_cap: board.rules.dailyPaidCap,
       },
-      paid_today: board.paidToday,
       mine: mine
         ? {
             id: mine.id,
@@ -405,7 +402,6 @@ export async function challengeStatus(actor: McpActor) {
             ended_at: mine.endedAt?.toISOString() ?? null,
             in_time: mine.inTime,
             awarded_xp: mine.awardedXp,
-            capped: mine.capped,
             xp_in_ledger: mine.heldXp,
             result: result ? (result.xp ? `+${result.xp} XP · ${result.text}` : result.text) : null,
           }

@@ -53,7 +53,6 @@ export interface MyChallengeView {
   awardedXp: number | null;
   /** Saldo do desafio no ledger agora — zero se o período foi reaberto. */
   heldXp: number;
-  capped: boolean;
   releasedByOther: boolean;
 }
 
@@ -137,7 +136,6 @@ const RULE_FIELDS = [
   { key: "timeLimitMinutes", label: "Prazo (minutos)" },
   { key: "baseXp", label: "XP ao fechar" },
   { key: "bonusXp", label: "Bônus no prazo (XP)" },
-  { key: "dailyPaidCap", label: "Desafios pagos por dia" },
 ] as const;
 
 function RulesDialog({ clanId, rules }: { clanId: string; rules: ChallengeRules }) {
@@ -222,7 +220,6 @@ export function ClosingChallenge({
   group,
   candidates,
   rules,
-  paidToday,
   serverNow,
   mine,
   playing,
@@ -236,7 +233,6 @@ export function ClosingChallenge({
   /** Só alimentam o giro; a sorteada sai do servidor. */
   candidates: readonly ChallengeCandidate[];
   rules: ChallengeRules;
-  paidToday: number;
   serverNow: string;
   mine: MyChallengeView | null;
   playing: readonly PlayingView[];
@@ -314,7 +310,7 @@ export function ClosingChallenge({
   }
 
   const total = candidates.length;
-  const rulesLine = `${rules.timeLimitMinutes} min · +${rules.baseXp} XP ao fechar · +${rules.bonusXp} no prazo · ${paidToday} de ${rules.dailyPaidCap} pagos hoje`;
+  const rulesLine = `${rules.timeLimitMinutes} min · +${rules.baseXp} XP ao fechar · +${rules.bonusXp} no prazo`;
   const result =
     finished && finished.status !== "active"
       ? challengeResult({
@@ -322,7 +318,6 @@ export function ClosingChallenge({
           inTime: finished.inTime,
           awardedXp: finished.awardedXp,
           heldXp: finished.heldXp,
-          capped: finished.capped,
           startedAt: new Date(finished.startedAt),
           endedAt: finished.endedAt ? new Date(finished.endedAt) : null,
           releasedByOther: finished.releasedByOther,

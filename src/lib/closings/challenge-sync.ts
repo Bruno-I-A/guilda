@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, count, eq, gt, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -9,10 +9,7 @@ import {
   challengeHeldXp,
   challengeXpEntry,
   settleActiveChallenge,
-  type ChallengeRules,
 } from "@/domain/closing-challenge";
-
-import { loadChallengeRules, START_OF_TODAY_SP } from "./challenge-rules";
 
 /**
  * Acerta os desafios das empresas depois de uma escrita em período ou
@@ -49,7 +46,6 @@ export async function syncClosingChallenges(
     .for("update");
   if (challenges.length === 0) return;
 
-  let rules: ChallengeRules | null = null;
   for (const challenge of challenges) {
     const periods = await tx
       .select({
@@ -89,15 +85,7 @@ export async function syncClosingChallenges(
       });
 
       if (outcome.status === "completed") {
-        rules ??= await loadChallengeRules(tx, input.orgId);
         const inTime = outcome.completedAt.getTime() <= challenge.deadlineAt.getTime();
-        const award = challengeAward({
-          inTime,
-          baseXp: challenge.baseXp,
-          bonusXp: challenge.bonusXp,
-          paidToday: await countPaidToday(tx, input.orgId, challenge.userId),
-          dailyPaidCap: rules.dailyPaidCap,
-        });
         [current] = await tx
           .update(schema.closingChallenges)
           .set({
@@ -105,8 +93,11 @@ export async function syncClosingChallenges(
             endedAt: outcome.completedAt,
             closingId: outcome.closingId,
             inTime,
-            awardedXp: award.awardedXp,
-            capped: award.capped,
+            awardedXp: challengeAward({
+              inTime,
+              baseXp: challenge.baseXp,
+              bonusXp: challenge.bonusXp,
+            }),
           })
           .where(
             and(
@@ -160,19 +151,3 @@ export async function syncClosingChallenges(
   }
 }
 
-/** Desafios que já pagaram XP hoje (dia de São Paulo) para esta pessoa. */
-async function countPaidToday(tx: OrgTx, orgId: string, userId: string): Promise<number> {
-  const [row] = await tx
-    .select({ value: count() })
-    .from(schema.closingChallenges)
-    .where(
-      and(
-        eq(schema.closingChallenges.orgId, orgId),
-        eq(schema.closingChallenges.userId, userId),
-        eq(schema.closingChallenges.status, "completed"),
-        gt(schema.closingChallenges.awardedXp, 0),
-        gte(schema.closingChallenges.endedAt, START_OF_TODAY_SP),
-      ),
-    );
-  return row.value;
-}

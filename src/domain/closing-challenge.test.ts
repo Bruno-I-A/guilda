@@ -86,27 +86,20 @@ describe("desfecho do desafio em andamento", () => {
 });
 
 describe("prêmio", () => {
-  const regras = { baseXp: 15, bonusXp: 15, dailyPaidCap: 10 };
+  const regras = { baseXp: 15, bonusXp: 15 };
 
   test("no prazo paga base + bônus", () => {
-    expect(challengeAward({ ...regras, inTime: true, paidToday: 0 })).toEqual({
-      awardedXp: 30,
-      capped: false,
-    });
+    expect(challengeAward({ ...regras, inTime: true })).toBe(30);
   });
 
   test("fora do prazo paga só a base", () => {
-    expect(challengeAward({ ...regras, inTime: false, paidToday: 3 })).toEqual({
-      awardedXp: 15,
-      capped: false,
-    });
+    expect(challengeAward({ ...regras, inTime: false })).toBe(15);
   });
 
-  test("bateu o teto do dia: termina, mas não paga", () => {
-    expect(challengeAward({ ...regras, inTime: true, paidToday: 10 })).toEqual({
-      awardedXp: 0,
-      capped: true,
-    });
+  test("sem teto diário: a regra não olha quantos já pagaram hoje", () => {
+    // O teto de 10 por dia saiu em 02/10/2026; o prêmio não tem mais por
+    // onde depender do volume do dia.
+    expect(Object.keys(DEFAULT_CHALLENGE_RULES)).toEqual(["timeLimitMinutes", "baseXp", "bonusXp"]);
   });
 });
 
@@ -193,7 +186,6 @@ describe("resultado", () => {
     inTime: true,
     awardedXp: 30,
     heldXp: 30,
-    capped: false,
     startedAt: inicio,
     endedAt: depois(18),
     releasedByOther: false,
@@ -226,10 +218,10 @@ describe("resultado", () => {
     ).toEqual({ xp: 15, text: "fora do prazo em 42 min" });
   });
 
-  test("teto do dia: fechada, sem XP", () => {
+  test("regras com XP zerado: fechada, sem prêmio", () => {
     expect(
-      challengeResult({ ...fatos, status: "completed", awardedXp: 0, heldXp: 0, capped: true }),
-    ).toEqual({ xp: null, text: "fechada em 18 min · teto do dia, sem XP" });
+      challengeResult({ ...fatos, status: "completed", awardedXp: 0, heldXp: 0 }),
+    ).toEqual({ xp: null, text: "fechada em 18 min · sem XP" });
   });
 
   test("os finais sem XP dizem por quê", () => {

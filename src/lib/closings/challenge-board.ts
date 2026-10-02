@@ -10,7 +10,6 @@ import { loadChallengeRules, START_OF_TODAY_SP } from "./challenge-rules";
 
 export interface ChallengeBoardData {
   rules: ChallengeRules;
-  paidToday: number;
   mine: {
     id: string;
     clientId: string;
@@ -26,7 +25,6 @@ export interface ChallengeBoardData {
     awardedXp: number | null;
     /** Saldo do desafio no ledger agora — zero se o período foi reaberto. */
     heldXp: number;
-    capped: boolean;
   } | null;
   playing: {
     id: string;
@@ -67,7 +65,6 @@ export async function loadChallengeBoard(
       endedBy: challenge.endedBy,
       inTime: challenge.inTime,
       awardedXp: challenge.awardedXp,
-      capped: challenge.capped,
     })
     .from(challenge)
     .innerJoin(schema.clients, eq(schema.clients.id, challenge.clientId))
@@ -136,20 +133,5 @@ export async function loadChallengeBoard(
     .orderBy(desc(closed), desc(xp))
     .limit(5);
 
-  // Conta como o teto conta: desafio concluído que pagou, mesmo que o
-  // período tenha sido reaberto depois (quem reabre não ganha vaga no teto).
-  const [paid] = await tx
-    .select({ value: sql<number>`count(*)::int` })
-    .from(challenge)
-    .where(
-      and(
-        eq(challenge.orgId, input.orgId),
-        eq(challenge.userId, input.viewerId),
-        eq(challenge.status, "completed"),
-        sql`${challenge.awardedXp} > 0`,
-        gte(challenge.endedAt, START_OF_TODAY_SP),
-      ),
-    );
-
-  return { rules, paidToday: paid.value, mine, playing, scoreboard };
+  return { rules, mine, playing, scoreboard };
 }

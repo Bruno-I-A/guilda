@@ -127,7 +127,6 @@ const settingsSchema = z.object({
   timeLimitMinutes: ruleField("timeLimitMinutes", "Prazo"),
   baseXp: ruleField("baseXp", "XP ao fechar"),
   bonusXp: ruleField("bonusXp", "Bônus no prazo"),
-  dailyPaidCap: ruleField("dailyPaidCap", "Desafios pagos por dia"),
 });
 
 export async function updateClosingChallengeSettings(
