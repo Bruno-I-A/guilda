@@ -7,6 +7,7 @@ import { summarizePortfolio } from "@/domain/fiscal-portfolio";
 
 import type { ClanMemberView } from "./page";
 import { FiscalControlTab } from "./fiscal-control-tab";
+import { FiscalHealthTab } from "./fiscal-health-tab";
 import { FiscalWorkspaceNav } from "./fiscal-workspace-nav";
 import {
   PortfolioBoard,
@@ -40,7 +41,16 @@ export async function PortfolioTab({
   requestedYear?: string;
   requestedMonth?: string;
 }) {
-  const view = requestedView === "control" ? "control" : "portfolio";
+  const view =
+    requestedView === "control" || requestedView === "health" ? requestedView : "portfolio";
+  if (view === "health") {
+    return (
+      <div className="grid gap-4">
+        <FiscalWorkspaceNav clanId={clanId} active="health" />
+        <FiscalHealthTab orgId={orgId} clanId={clanId} requestedYear={requestedYear} />
+      </div>
+    );
+  }
   if (view === "control") {
     return (
       <div className="grid gap-4">

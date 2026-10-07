@@ -23,6 +23,7 @@ import {
 } from "@/lib/ai/informative-schema";
 import { resolveMemberName } from "@/lib/ai/member-resolution";
 import { type TaxRegime } from "@/lib/clients-ui";
+import { currentAppYear } from "@/lib/date-time";
 import {
   listActiveClans,
   listInformativeRoutingRules,
@@ -85,15 +86,6 @@ export interface CompanyFlowDraftContext {
 export type BuildInformativeDraftResult =
   | { ok: true; payload: InformativeDraftPayload; model: string }
   | { ok: false; message: string };
-
-function currentYearInSaoPaulo(): number {
-  return Number(
-    new Intl.DateTimeFormat("en", {
-      timeZone: "America/Sao_Paulo",
-      year: "numeric",
-    }).format(new Date()),
-  );
-}
 
 function normalizeObservationText(value: string): string {
   return value
@@ -329,7 +321,7 @@ export async function buildInformativeDraft(
       category: task.category,
       closingYear:
         task.category === "annual_closing"
-          ? task.closingYear ?? currentYearInSaoPaulo()
+          ? task.closingYear ?? currentAppYear()
           : null,
       sourceSection: task.sourceSection,
       sector: task.sector,
