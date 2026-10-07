@@ -40,3 +40,16 @@ export function parseBRLCurrencyInput(
   const decimals = decimalPart.replace(/\D/g, "").slice(0, 2).padEnd(2, "0");
   return `${negative ? "-" : ""}${integer}.${decimals}`;
 }
+
+const BRL_COMPACT = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  notation: "compact",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 1,
+});
+
+/** Reais curtos para marca de eixo de gráfico: "R$ 880 mil", "-R$ 1,2 mi". */
+export function formatBRLCompact(value: number): string {
+  return BRL_COMPACT.format(value);
+}

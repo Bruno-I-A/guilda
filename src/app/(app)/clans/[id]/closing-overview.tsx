@@ -1,23 +1,19 @@
-import { ArrowRight, Banknote, HandCoins, TrendingDown } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 
 import {
-  analyzeClosingHealth,
   buildClosingBoard,
   CLOSING_STAGE_LABELS,
-  LOW_CASH_THRESHOLD,
   monthShortLabel,
   type ClosingStage,
-  type HealthEntry,
   type OverviewCompany,
 } from "@/domain/closing-overview";
-import { formatBRLCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
+
+import { ClosingHealthReading } from "./closing-health";
 
 /** Cartões visíveis por coluna; o resto vai para o filtro da coluna. */
 const CARDS_POR_COLUNA = 6;
-/** Linhas visíveis por alerta do analista; o resto fica dobrado. */
-const LINHAS_POR_ALERTA = 5;
 
 /**
  * Situação é estado, não categoria: warning para o que ainda não começou,
@@ -100,86 +96,6 @@ function CompanyCard({
   );
 }
 
-function HealthBlock({
-  title,
-  hint,
-  Icon,
-  tone,
-  entries,
-  empty,
-  companyHref,
-}: {
-  title: string;
-  hint: string;
-  Icon: typeof Banknote;
-  tone: "destructive" | "warning" | "silver";
-  entries: readonly HealthEntry[];
-  empty: string;
-  companyHref: (name: string) => string;
-}) {
-  const visiveis = entries.slice(0, LINHAS_POR_ALERTA);
-  const resto = entries.slice(LINHAS_POR_ALERTA);
-  const corTitulo = {
-    destructive: "text-destructive",
-    warning: "text-warning",
-    silver: "text-silver",
-  }[tone];
-
-  const linha = (entry: HealthEntry) => (
-    <li key={entry.company.id} className="min-w-0">
-      <Link
-        href={companyHref(entry.company.name)}
-        className="flex min-w-0 items-baseline justify-between gap-2 py-1 text-sm hover:underline"
-      >
-        <span className="min-w-0 truncate">{entry.company.name}</span>
-        <span className="flex shrink-0 items-baseline gap-1.5">
-          <span
-            className={cn(
-              "font-mono tabular-nums",
-              entry.value < 0 ? "text-destructive" : "text-foreground",
-            )}
-          >
-            {formatBRLCurrency(entry.value)}
-          </span>
-          <span className="font-mono text-[0.6875rem] text-muted-foreground">
-            {monthShortLabel(entry.month)}
-          </span>
-        </span>
-      </Link>
-    </li>
-  );
-
-  return (
-    <div className="panel-cut grid min-w-0 grid-cols-1 content-start gap-2 border border-border/70 bg-card/40 p-3">
-      <div className="flex min-w-0 items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className={cn("flex items-center gap-1.5 text-sm font-semibold", corTitulo)}>
-            <Icon className="size-4 shrink-0" aria-hidden /> {title}
-          </p>
-          <p className="text-xs text-muted-foreground">{hint}</p>
-        </div>
-        <p className={cn("shrink-0 font-mono text-2xl font-semibold tabular-nums", corTitulo)}>
-          {entries.length}
-        </p>
-      </div>
-      {entries.length === 0 ? (
-        <p className="py-1 text-xs text-muted-foreground">{empty}</p>
-      ) : (
-        <ul className="grid min-w-0 grid-cols-1 divide-y divide-border/40">{visiveis.map(linha)}</ul>
-      )}
-      {resto.length > 0 ? (
-        // `details` nativo: o componente é Server Component e abre sem JS.
-        <details className="group min-w-0">
-          <summary className="hud-label cursor-pointer list-none py-1 hover:text-foreground [&::-webkit-details-marker]:hidden">
-            + {resto.length} {resto.length === 1 ? "empresa" : "empresas"}
-          </summary>
-          <ul className="grid min-w-0 grid-cols-1 divide-y divide-border/40">{resto.map(linha)}</ul>
-        </details>
-      ) : null}
-    </div>
-  );
-}
-
 /**
  * Quadro do ano e leitura dos números, acima da lista de empresas.
  *
@@ -203,7 +119,6 @@ export function ClosingOverview({
   draw: React.ReactNode;
 }) {
   const board = buildClosingBoard(companies);
-  const health = analyzeClosingHealth(companies);
   // A faixa de cima conta "sem períodos" (qualquer período, até pendente); esta
   // coluna conta "nenhum FECHADO". Empresa só com período lançado e pendente
   // entra aqui e não lá — sem esta nota, 190 ao lado de 189 parece defeito.
@@ -264,49 +179,7 @@ export function ClosingOverview({
         </div>
       </section>
 
-      <section className="grid min-w-0 grid-cols-1 gap-2">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2>Leitura dos números</h2>
-          <p className="text-xs text-muted-foreground">
-            {health.analyzed === 0
-              ? `Nenhum período fechado com valores em ${year}.`
-              : `Pelo período fechado mais recente de cada empresa · ${health.analyzed} ${
-                  health.analyzed === 1 ? "empresa lida" : "empresas lidas"
-                }`}
-          </p>
-        </div>
-        {health.analyzed > 0 ? (
-          <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-3">
-            <HealthBlock
-              title="Prejuízo"
-              hint="Resultado negativo no último período"
-              Icon={TrendingDown}
-              tone="destructive"
-              entries={health.loss}
-              empty="Nenhuma empresa com prejuízo."
-              companyHref={companyHref}
-            />
-            <HealthBlock
-              title="Caixa negativo ou baixo"
-              hint={`Negativo primeiro; baixo é abaixo de ${formatBRLCurrency(LOW_CASH_THRESHOLD)}`}
-              Icon={Banknote}
-              tone="warning"
-              entries={health.cash}
-              empty="Nenhuma empresa com caixa no vermelho."
-              companyHref={companyHref}
-            />
-            <HealthBlock
-              title="Empréstimo de sócio"
-              hint="Saldo em aberto no último período"
-              Icon={HandCoins}
-              tone="silver"
-              entries={health.loan}
-              empty="Nenhuma empresa com empréstimo de sócio."
-              companyHref={companyHref}
-            />
-          </div>
-        ) : null}
-      </section>
+      <ClosingHealthReading year={year} companies={companies} companyHref={companyHref} />
     </div>
   );
 }

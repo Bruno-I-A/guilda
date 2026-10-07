@@ -158,6 +158,36 @@ function valor(raw: string | null): number | null {
   return Number.isFinite(numero) ? numero : null;
 }
 
+export interface SeriesPoint {
+  month: number;
+  cash: number | null;
+  result: number | null;
+  loan: number | null;
+}
+
+/**
+ * A evolução de uma empresa no ano: um ponto por mês com período FECHADO.
+ * Período sem mês fica de fora (não tem lugar no eixo), e dois períodos no
+ * mesmo mês valem pelo de vencimento mais tarde — a última palavra do mês.
+ * Campo vazio continua vazio: zero no gráfico seria um valor que ninguém lançou.
+ */
+export function closingSeries(closings: readonly OverviewClosing[]): SeriesPoint[] {
+  const porMes = new Map<number, OverviewClosing>();
+  for (const closing of closings) {
+    if (closing.status !== "completed" || closing.periodMonth === null) continue;
+    const atual = porMes.get(closing.periodMonth);
+    if (!atual || closing.dueDate > atual.dueDate) porMes.set(closing.periodMonth, closing);
+  }
+  return [...porMes.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([month, closing]) => ({
+      month,
+      cash: valor(closing.cashBalance),
+      result: valor(closing.periodResult),
+      loan: valor(closing.shareholderLoan),
+    }));
+}
+
 /**
  * Lê a saúde de cada empresa no período fechado MAIS RECENTE. Prejuízo antigo
  * que já virou lucro não é alerta; o que importa é a foto de agora.

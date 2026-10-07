@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   analyzeClosingHealth,
   buildClosingBoard,
+  closingSeries,
   closingStage,
   latestCompletedClosing,
   monthShortLabel,
@@ -183,6 +184,35 @@ describe("analista: saúde pelo período mais recente", () => {
     ]);
     expect(health.loss.map((e) => e.company.name)).toEqual(["Muito", "Pouco"]);
     expect(health.loan.map((e) => e.company.name)).toEqual(["Muito", "Pouco"]);
+  });
+});
+
+describe("série da evolução", () => {
+  test("só períodos fechados com mês, em ordem de mês, com os valores lidos", () => {
+    const serie = closingSeries([
+      periodo({ periodMonth: 8, cashBalance: "-1200.50", periodResult: "-300.00" }),
+      periodo({ periodMonth: 3, cashBalance: "5000.00", periodResult: "800.00", shareholderLoan: "2000.00" }),
+      periodo({ periodMonth: 5, status: "pending", cashBalance: "1.00" }),
+      periodo({ periodMonth: null, cashBalance: "9.00" }),
+    ]);
+    expect(serie).toEqual([
+      { month: 3, cash: 5000, result: 800, loan: 2000 },
+      { month: 8, cash: -1200.5, result: -300, loan: null },
+    ]);
+  });
+
+  test("campo vazio continua vazio — não vira zero no gráfico", () => {
+    expect(closingSeries([periodo({ periodMonth: 4 })])).toEqual([
+      { month: 4, cash: null, result: null, loan: null },
+    ]);
+  });
+
+  test("dois períodos no mesmo mês: vale o de vencimento mais tarde", () => {
+    const serie = closingSeries([
+      periodo({ periodMonth: 6, dueDate: "2026-06-30", cashBalance: "200.00" }),
+      periodo({ periodMonth: 6, dueDate: "2026-06-10", cashBalance: "100.00" }),
+    ]);
+    expect(serie).toEqual([{ month: 6, cash: 200, result: null, loan: null }]);
   });
 });
 
