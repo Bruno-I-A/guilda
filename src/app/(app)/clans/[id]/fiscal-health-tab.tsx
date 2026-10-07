@@ -5,21 +5,13 @@ import Link from "next/link";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import type { OverviewClosing, OverviewCompany } from "@/domain/closing-overview";
-import { APP_TIME_ZONE } from "@/lib/date-time";
+import { currentAppYear } from "@/lib/date-time";
 
 import { ClosingHealthReading } from "./closing-health";
 
-function currentYear(): number {
-  return Number(
-    new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIME_ZONE, year: "numeric" }).format(
-      new Date(),
-    ),
-  );
-}
-
 function parseYear(value: string | undefined): number {
   const year = Number(value);
-  return Number.isInteger(year) && year >= 2000 && year <= 2100 ? year : currentYear();
+  return Number.isInteger(year) && year >= 2000 && year <= 2100 ? year : currentAppYear();
 }
 
 /**

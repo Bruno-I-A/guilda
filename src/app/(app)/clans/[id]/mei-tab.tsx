@@ -3,17 +3,9 @@ import { and, asc, eq } from "drizzle-orm";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { parseMeiDeclarationYear } from "@/domain/mei-declaration";
+import { currentAppYear } from "@/lib/date-time";
 
 import { MeiAnnualBoard } from "./mei-annual-board";
-
-function calendarYearInSaoPaulo(): number {
-  return Number(
-    new Intl.DateTimeFormat("en", {
-      timeZone: "America/Sao_Paulo",
-      year: "numeric",
-    }).format(new Date()),
-  );
-}
 
 export async function MeiTab({
   orgId,
@@ -30,7 +22,7 @@ export async function MeiTab({
   // anterior. A navegação permite consultar e corrigir qualquer outro ano.
   const year = parseMeiDeclarationYear(
     requestedYear,
-    calendarYearInSaoPaulo() - 1,
+    currentAppYear() - 1,
   );
 
   const rows = await withOrgTx(orgId, (tx) =>
