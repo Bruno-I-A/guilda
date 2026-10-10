@@ -113,3 +113,29 @@ Todas exclusivas. Nenhuma pode repetir valor da produção.
    workflow**, selecionar `main`, marcar `deploy_production` e acompanhar o
    deploy no Easypanel.
 7. Fazer uma verificação rápida no domínio de produção.
+
+## Serviço fiscal (notas de honorário)
+
+Segundo serviço por ambiente, **mesma imagem** do app, com
+`GUILDA_SERVICE=fiscal`: o `start-production.mjs` sobe só
+`scripts/fiscal-service.ts` (sem migrations, sem Next, sem Telegram). É o
+único processo com o certificado A1 do escritório.
+
+- **Sem domínio público.** O app fala com ele pela rede interna do Easypanel
+  (`http://<projeto>_<serviço>:4100`). Ele só responde `GET /health` e
+  `POST /danfse.zip` com o token.
+- Homologação usa `NFSE_AMBIENTE` vazio (produção restrita). Só o serviço da
+  produção recebe `NFSE_AMBIENTE=producao`.
+
+| Variável | Serviço | Observação |
+| --- | --- | --- |
+| `GUILDA_SERVICE` | fiscal | `fiscal` |
+| `DATABASE_URL` | fiscal | `guilda_app`, o mesmo banco do app do ambiente |
+| `NFSE_CERT_PFX_BASE64` | fiscal | o `.pfx` A1 em base64 (`base64 -w0 certificado.pfx`) |
+| `NFSE_CERT_PASSWORD` | fiscal | senha do `.pfx` |
+| `NFSE_AMBIENTE` | fiscal | vazio = produção restrita; `producao` só na produção |
+| `FISCAL_SERVICE_TOKEN` | fiscal **e** app | 32+ caracteres aleatórios, iguais nos dois |
+| `FISCAL_SERVICE_URL` | app | endereço interno do serviço fiscal |
+
+O certificado nunca vai para o serviço do app, para o repositório nem para o
+Cerebro.

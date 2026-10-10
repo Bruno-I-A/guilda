@@ -214,6 +214,25 @@ O dado da aba Fechamentos virou jogo (desenho em
   rolar/desistir mora em `src/lib/closings/challenge-commands.ts`, usada pela
   aba e pelo MCP — não duplicar nas Server Actions.
 
+## Notas de honorário pela API nacional (decisão de 2026-10-10)
+
+Desenho em `docs/superpowers/specs/2026-10-10-notas-de-honorario-design.md`.
+
+- A aba Honorários emite, cancela e baixa os PDFs das NFS-e de honorário pela
+  API do Sistema Nacional. **O certificado A1 mora só no serviço fiscal**
+  (outro serviço do Easypanel, `GUILDA_SERVICE=fiscal`); o app nunca o vê. Não
+  levar o certificado para o app "para simplificar".
+- App e serviço conversam pela fila no banco (`nfse_invoices`) e, para PDFs,
+  pela rede interna com `FISCAL_SERVICE_TOKEN`. **PDF e XML não são
+  guardados**, a pedido do Bruno: só chave e número.
+- Série de DPS própria (1–49999); o Emissor Web usa 70000–79999. O número da
+  DPS é reservado na fila e nunca muda; antes de emitir, o serviço consulta a
+  DPS — é isso que impede nota duplicada.
+- Emitida marca a etapa "Nota" do controle (PA marca "Parcela adicional") pela
+  `applyOfficeFeeStepChange`; cancelada reabre. Emitir/cancelar: Fiscal e
+  admins; modelo da nota: só admin.
+- Homologação só fala com a produção restrita (`NFSE_AMBIENTE` vazio).
+
 ## Estrutura por clã (decisões de 2026-08-18)
 
 O clã deixou de ser um diretório da Guilda e virou o **espaço de trabalho** da
