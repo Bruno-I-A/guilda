@@ -4,51 +4,29 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { withOrgTx, type OrgTx } from "@/db/org-tx";
+import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import {
-  deriveOfficeFeeStatus,
   OFFICE_FEE_STAGES,
   officeFeeProfileVersionMatches,
-  type OfficeFeeStage,
 } from "@/domain/office-fee-control";
-import type { FiscalStepStatus } from "@/domain/fiscal-control";
 import {
   canManageFiscalOperations,
   canUpdateFiscalControl,
 } from "@/domain/guild-permissions";
 import { err, requireMemberContext, type ActionResult } from "@/lib/action-context";
-import { loadClanScopedFacts } from "@/lib/clans/facts";
-import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
-import { FISCAL_CLAN_SLUG } from "@/lib/clans/rules";
+import { requireFiscalClan } from "@/lib/office-fees/fiscal-clan";
 import {
   materializeOfficeFeeControl,
   officeFeeProfileSnapshot,
 } from "@/lib/office-fees/materialize";
+import {
+  applyOfficeFeeStepChange,
+  OFFICE_FEE_STAGE_COLUMNS,
+} from "@/lib/office-fees/step-change";
 
 const BILLING_METHODS = ["asaas", "recibo", "pix", "other"] as const;
 const STEP_STATUSES = ["not_applicable", "pending", "completed", "blocked"] as const;
-
-async function requireFiscalClan(
-  tx: OrgTx,
-  input: {
-    orgId: string;
-    clanId: string;
-    userId: string;
-    role: Parameters<typeof loadClanScopedFacts>[4];
-  },
-) {
-  await lockActiveClansForMembershipRead(tx, input.orgId);
-  const loaded = await loadClanScopedFacts(
-    tx,
-    input.orgId,
-    input.clanId,
-    input.userId,
-    input.role,
-  );
-  if (!loaded.clan || loaded.clan.slug !== FISCAL_CLAN_SLUG) return null;
-  return loaded;
-}
 
 const profileSchema = z.object({
   clanId: z.uuid("Clã inválido."),
@@ -221,12 +199,6 @@ const updateControlSchema = z
     "Nenhuma alteração informada.",
   );
 
-const STAGE_COLUMNS = {
-  invoice: "invoiceStatus",
-  additional_installment: "additionalInstallmentStatus",
-  collection: "collectionStatus",
-} as const;
-
 export async function updateOfficeFeeControl(
   input: z.input<typeof updateControlSchema>,
 ): Promise<ActionResult<{ status: schema.OfficeFeeControlPeriod["status"] }>> {
@@ -253,11 +225,6 @@ export async function updateOfficeFeeControl(
       return err("Apenas integrantes do Fiscal ou um admin podem atualizar honorários.");
     }
 
-    const nextSteps: Record<OfficeFeeStage, FiscalStepStatus> = {
-      invoice: control.invoiceStatus,
-      additional_installment: control.additionalInstallmentStatus,
-      collection: control.collectionStatus,
-    };
     if (data.stage && data.stepStatus) {
       const applies = data.stage !== "additional_installment" || control.profileSnapshot.chargesAdditionalInstallment;
       if (applies && data.stepStatus === "not_applicable") {
@@ -268,45 +235,27 @@ export async function updateOfficeFeeControl(
       }
     }
     const stageChanged = Boolean(
-      data.stage && data.stepStatus && control[STAGE_COLUMNS[data.stage]] !== data.stepStatus,
+      data.stage && data.stepStatus && control[OFFICE_FEE_STAGE_COLUMNS[data.stage]] !== data.stepStatus,
     );
     const noteChanged = data.monthlyNotes !== undefined && data.monthlyNotes !== (control.monthlyNotes ?? "");
     if (!stageChanged && !noteChanged) return { ok: true, data: { status: control.status } };
 
-    const updates: Partial<typeof schema.officeFeeControlPeriods.$inferInsert> = {
-      updatedBy: ctx.userId,
-      updatedAt: new Date(),
-    };
+    let status = control.status;
     if (stageChanged && data.stage && data.stepStatus) {
-      nextSteps[data.stage] = data.stepStatus;
-      updates[STAGE_COLUMNS[data.stage]] = data.stepStatus;
-    }
-    if (data.monthlyNotes !== undefined) updates.monthlyNotes = data.monthlyNotes || null;
-    const nextStatus = deriveOfficeFeeStatus(nextSteps);
-    updates.status = nextStatus;
-    if (nextStatus === "completed") {
-      updates.completedBy = control.status === "completed" ? control.completedBy : ctx.userId;
-      updates.completedAt = control.status === "completed" ? control.completedAt : new Date();
-    } else {
-      updates.completedBy = null;
-      updates.completedAt = null;
-    }
-    await tx.update(schema.officeFeeControlPeriods).set(updates).where(
-      and(eq(schema.officeFeeControlPeriods.orgId, ctx.orgId), eq(schema.officeFeeControlPeriods.id, control.id)),
-    );
-    if (stageChanged && data.stage && data.stepStatus) {
-      await tx.insert(schema.officeFeeControlEvents).values({
-        orgId: ctx.orgId,
-        controlPeriodId: control.id,
-        clientId: control.clientId,
-        eventType: "step_updated",
-        stage: data.stage,
-        previousValue: { status: control[STAGE_COLUMNS[data.stage]] },
-        newValue: { status: data.stepStatus },
-        actorId: ctx.userId,
-      });
+      status =
+        (await applyOfficeFeeStepChange(tx, {
+          orgId: ctx.orgId,
+          controlPeriodId: control.id,
+          stage: data.stage,
+          stepStatus: data.stepStatus,
+          actorId: ctx.userId,
+        })) ?? status;
     }
     if (noteChanged && data.monthlyNotes !== undefined) {
+      await tx
+        .update(schema.officeFeeControlPeriods)
+        .set({ monthlyNotes: data.monthlyNotes || null, updatedBy: ctx.userId, updatedAt: new Date() })
+        .where(and(eq(schema.officeFeeControlPeriods.orgId, ctx.orgId), eq(schema.officeFeeControlPeriods.id, control.id)));
       await tx.insert(schema.officeFeeControlEvents).values({
         orgId: ctx.orgId,
         controlPeriodId: control.id,
@@ -317,18 +266,7 @@ export async function updateOfficeFeeControl(
         actorId: ctx.userId,
       });
     }
-    if (nextStatus !== control.status) {
-      await tx.insert(schema.officeFeeControlEvents).values({
-        orgId: ctx.orgId,
-        controlPeriodId: control.id,
-        clientId: control.clientId,
-        eventType: nextStatus === "completed" ? "completed" : control.status === "completed" ? "reopened" : "status_updated",
-        previousValue: { status: control.status },
-        newValue: { status: nextStatus },
-        actorId: ctx.userId,
-      });
-    }
-    return { ok: true, data: { status: nextStatus } };
+    return { ok: true, data: { status } };
   });
   if (result.ok) revalidatePath(`/clans/${data.clanId}`);
   return result;
