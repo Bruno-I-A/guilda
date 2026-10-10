@@ -783,11 +783,17 @@ const SHARED = [
  * Os arquivos oficiais trazem BOM e o xmldsig traz um DOCTYPE com DTD
  * externa; o validador em WebAssembly não busca nada na rede. Nenhum dos
  * dois usa entidades, então retirar o DOCTYPE não muda o esquema.
+ *
+ * O padrão da série da DPS vem escrito como "^0{0,4}\d{1,5}$". Em expressão
+ * regular de XSD o padrão já é ancorado e ^/$ são caracteres literais; o
+ * libxml2 segue a especificação e recusaria toda série. Tiramos as âncoras
+ * ao carregar, sem mexer no arquivo oficial.
  */
 function readXsd(fileName: string): string {
   return readFileSync(path.join(XSD_DIR, fileName), "utf8")
     .replace(/^﻿/, "")
-    .replace(/<!DOCTYPE[\s\S]*?\]>/, "");
+    .replace(/<!DOCTYPE[\s\S]*?\]>/, "")
+    .replace(/(<xs:pattern value=")\^([^"]*)\$(")/g, "$1$2$3");
 }
 
 export async function nfseXsdErrors(
