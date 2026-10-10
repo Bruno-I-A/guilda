@@ -1225,14 +1225,13 @@ describe("assinatura XMLDSIG", () => {
 
   test("qualquer alteração depois de assinar invalida", () => {
     const tampered = signNfseXml(xml, "infDPS", key).replace("<vServ>100.00</vServ>", "<vServ>1.00</vServ>");
-    expect(() => verify(tampered, cert.certificatePem)).toThrow();
+    expect(tampered).not.toBe(signNfseXml(xml, "infDPS", key));
+    expect(verify(tampered, cert.certificatePem)).toBe(false);
   });
 });
 ```
 
-`checkSignature` do xml-crypto 6 lança em digest inválido; o teste de
-adulteração espera exceção. Se a versão instalada devolver `false` em vez de
-lançar, trocar para `expect(verify(...)).toBe(false)`.
+`checkSignature` do xml-crypto 6 devolve `false` (não lança) quando o digest não confere.
 
 - [ ] **Passo 3: rodar e ver falhar**
 
