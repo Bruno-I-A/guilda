@@ -10,7 +10,7 @@ import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
-import { beforeAll, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
 import * as schema from "@/db/schema";
 
@@ -45,6 +45,9 @@ beforeAll(async () => {
   `);
   await client.exec("SET ROLE guilda_app;");
 }, 120_000);
+
+// Fechar libera a memória do Postgres em WASM (máquina com pouca RAM derruba o processo).
+afterAll(() => client.close());
 
 test("ciclo completo: enfileirar, emitir, marcar etapa, cancelar, reabrir", async () => {
   const { withOrgTx } = await import("@/db/org-tx");
