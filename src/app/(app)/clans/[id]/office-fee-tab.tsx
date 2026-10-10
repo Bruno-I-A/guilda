@@ -2,7 +2,9 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { loadNfseMonth, loadNfseSettings } from "@/lib/nfse/requests";
 
+import { NfsePanel } from "./nfse-panel";
 import { OfficeFeeControlBoard, type OfficeFeeControlRowView } from "./office-fee-control-board";
 import { OfficeFeeProfileBoard, type OfficeFeeProfileRowView } from "./office-fee-profile-board";
 
@@ -35,6 +37,7 @@ export async function OfficeFeeTab({
   clanId,
   viewerId,
   canManage,
+  isAdmin,
   memberships,
   requestedView,
   requestedYear,
@@ -44,6 +47,7 @@ export async function OfficeFeeTab({
   clanId: string;
   viewerId: string;
   canManage: boolean;
+  isAdmin: boolean;
   memberships: readonly { userId: string; name: string }[];
   requestedView?: string;
   requestedYear?: string;
@@ -135,7 +139,7 @@ export async function OfficeFeeTab({
   }
 
   const period = parsePeriod(requestedYear, requestedMonth);
-  const { rows, events } = await withOrgTx(orgId, async (tx) => {
+  const { rows, events, nfseSettings, nfseInvoices } = await withOrgTx(orgId, async (tx) => {
     const rows = await tx
       .select({
         id: schema.officeFeeControlPeriods.id,
@@ -177,7 +181,9 @@ export async function OfficeFeeTab({
           .orderBy(desc(schema.officeFeeControlEvents.createdAt))
           .limit(2000)
       : [];
-    return { rows, events };
+    const nfseSettings = await loadNfseSettings(tx, orgId);
+    const nfseInvoices = await loadNfseMonth(tx, { orgId, year: period.year, month: period.month });
+    return { rows, events, nfseSettings, nfseInvoices };
   });
   const historyByControl = new Map<string, typeof events>();
   for (const event of events) {
@@ -191,5 +197,30 @@ export async function OfficeFeeTab({
     canEdit: canManage || row.responsibleUserId === viewerId,
     history: (historyByControl.get(row.id) ?? []).map((event) => ({ ...event, createdAt: event.createdAt.toISOString() })),
   }));
-  return <OfficeFeeControlBoard clanId={clanId} year={period.year} month={period.month} canManage={canManage} members={memberships} rows={views} />;
+  return (
+    <div className="grid min-w-0 grid-cols-1 gap-4">
+      <NfsePanel
+        clanId={clanId}
+        year={period.year}
+        month={period.month}
+        canManage={canManage}
+        isAdmin={isAdmin}
+        settings={
+          nfseSettings
+            ? {
+                providerCnpj: nfseSettings.providerCnpj,
+                dpsSeries: nfseSettings.dpsSeries,
+                template: nfseSettings.template,
+                serviceSeenAt: nfseSettings.serviceSeenAt?.toISOString() ?? null,
+                serviceEnvironment: nfseSettings.serviceEnvironment,
+                certificateValidUntil: nfseSettings.certificateValidUntil?.toISOString() ?? null,
+                serviceError: nfseSettings.serviceError,
+              }
+            : null
+        }
+        invoices={nfseInvoices.map((invoice) => ({ ...invoice, issuedAt: invoice.issuedAt?.toISOString() ?? null }))}
+      />
+      <OfficeFeeControlBoard clanId={clanId} year={period.year} month={period.month} canManage={canManage} members={memberships} rows={views} />
+    </div>
+  );
 }

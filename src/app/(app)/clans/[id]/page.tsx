@@ -368,6 +368,7 @@ export default async function ClanPage({
             clanId={clan.id}
             viewerId={session.user.id}
             canManage={canManageFiscalPortfolio(clanFacts)}
+            isAdmin={isAdminRole(role)}
             memberships={memberships}
             requestedView={feeView}
             requestedYear={fiscalYear}
