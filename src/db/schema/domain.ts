@@ -3201,3 +3201,165 @@ export const clientCommitmentPeriodsRelations = relations(
 
 export type ClientCommitment = typeof clientCommitments.$inferSelect;
 export type ClientCommitmentPeriod = typeof clientCommitmentPeriods.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Notas de honorário pela API nacional (decisão de 2026-10-10)
+// ---------------------------------------------------------------------------
+
+export const nfseInvoiceKind = pgEnum("nfse_invoice_kind", ["monthly", "additional_installment"]);
+
+export const nfseInvoiceStatus = pgEnum("nfse_invoice_status", [
+  "queued",
+  "issued",
+  "failed",
+  "cancel_requested",
+  "cancelled",
+]);
+
+export const nfseInvoiceEventType = pgEnum("nfse_invoice_event_type", [
+  "requested",
+  "issued",
+  "failed",
+  "retried",
+  "cancel_requested",
+  "cancelled",
+  "cancel_failed",
+]);
+
+/**
+ * Configuração da emissão por organização: CNPJ do prestador, modelo da nota
+ * (jsonb validado em src/lib/nfse/template.ts), série de DPS só da Guilda e o
+ * batimento do serviço fiscal. O certificado NUNCA entra aqui: ele mora só nas
+ * variáveis do serviço fiscal no Easypanel.
+ */
+export const nfseSettings = pgTable(
+  "nfse_settings",
+  {
+    orgId: text("org_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    providerCnpj: varchar("provider_cnpj", { length: 14 }).notNull(),
+    template: jsonb("template"),
+    dpsSeries: varchar("dps_series", { length: 5 }).notNull(),
+    nextDpsNumber: bigint("next_dps_number", { mode: "number" }).notNull().default(1),
+    updatedBy: text("updated_by").references(() => user.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    serviceSeenAt: timestamp("service_seen_at", { withTimezone: true }),
+    serviceEnvironment: smallint("service_environment"),
+    certificateValidUntil: timestamp("certificate_valid_until", { withTimezone: true }),
+    serviceError: text("service_error"),
+  },
+  (t) => [
+    uniqueIndex("nfse_settings_provider_cnpj_uidx").on(t.providerCnpj),
+    check("nfse_settings_provider_cnpj_check", sql`${t.providerCnpj} ~ '^[0-9]{14}$'`),
+    check("nfse_settings_dps_series_check", sql`${t.dpsSeries} ~ '^[0-9]{1,5}$'`),
+    check("nfse_settings_next_dps_number_check", sql`${t.nextDpsNumber} >= 1`),
+  ],
+);
+
+/**
+ * Uma linha por nota pedida. A situação diz o que foi pedido (emitir ou
+ * cancelar); o lease (locked_at, lock_token) marca que o serviço está nela.
+ * Guarda só ponteiros (chave, número): PDF e XML ficam no Sistema Nacional.
+ */
+export const nfseInvoices = pgTable(
+  "nfse_invoices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    controlPeriodId: uuid("control_period_id").notNull(),
+    kind: nfseInvoiceKind("kind").notNull(),
+    periodYear: smallint("period_year").notNull(),
+    periodMonth: smallint("period_month").notNull(),
+    amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
+    takerCnpj: varchar("taker_cnpj", { length: 14 }).notNull(),
+    takerName: varchar("taker_name", { length: 300 }).notNull(),
+    description: varchar("description", { length: 2000 }).notNull(),
+    dpsSeries: varchar("dps_series", { length: 5 }).notNull(),
+    dpsNumber: bigint("dps_number", { mode: "number" }).notNull(),
+    dpsId: varchar("dps_id", { length: 45 }).notNull(),
+    status: nfseInvoiceStatus("status").notNull().default("queued"),
+    environment: smallint("environment"),
+    accessKey: varchar("access_key", { length: 50 }),
+    nfseNumber: varchar("nfse_number", { length: 20 }),
+    issuedAt: timestamp("issued_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    attemptCount: smallint("attempt_count").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lockToken: uuid("lock_token"),
+    requestedBy: text("requested_by")
+      .notNull()
+      .references(() => user.id),
+    cancelRequestedBy: text("cancel_requested_by").references(() => user.id),
+    cancelReasonCode: smallint("cancel_reason_code"),
+    cancelReasonText: varchar("cancel_reason_text", { length: 255 }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "nfse_invoices_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "nfse_invoices_org_control_fk",
+      columns: [t.orgId, t.controlPeriodId],
+      foreignColumns: [officeFeeControlPeriods.orgId, officeFeeControlPeriods.id],
+    }).onDelete("cascade"),
+    uniqueIndex("nfse_invoices_org_id_uidx").on(t.orgId, t.id),
+    uniqueIndex("nfse_invoices_org_dps_uidx").on(t.orgId, t.dpsSeries, t.dpsNumber),
+    uniqueIndex("nfse_invoices_active_monthly_uidx")
+      .on(t.orgId, t.clientId, t.periodYear, t.periodMonth)
+      .where(sql`kind = 'monthly' AND status <> 'cancelled'`),
+    uniqueIndex("nfse_invoices_active_additional_uidx")
+      .on(t.orgId, t.clientId, t.periodYear)
+      .where(sql`kind = 'additional_installment' AND status <> 'cancelled'`),
+    index("nfse_invoices_org_period_idx").on(t.orgId, t.periodYear, t.periodMonth),
+    index("nfse_invoices_pending_idx")
+      .on(t.orgId, t.nextAttemptAt)
+      .where(sql`status IN ('queued', 'cancel_requested')`),
+    check("nfse_invoices_amount_check", sql`${t.amount} > 0`),
+    check("nfse_invoices_month_check", sql`${t.periodMonth} BETWEEN 1 AND 12`),
+    check(
+      "nfse_invoices_cancel_reason_check",
+      sql`${t.cancelReasonCode} IS NULL OR ${t.cancelReasonCode} IN (1, 2, 9)`,
+    ),
+    check("nfse_invoices_environment_check", sql`${t.environment} IS NULL OR ${t.environment} IN (1, 2)`),
+    check(
+      "nfse_invoices_access_key_check",
+      sql`${t.status} NOT IN ('issued', 'cancel_requested', 'cancelled') OR ${t.accessKey} IS NOT NULL`,
+    ),
+  ],
+);
+
+/** Histórico das notas — só acréscimo. actor_id nulo = serviço fiscal. */
+export const nfseInvoiceEvents = pgTable(
+  "nfse_invoice_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id").notNull(),
+    eventType: nfseInvoiceEventType("event_type").notNull(),
+    actorId: text("actor_id").references(() => user.id),
+    detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "nfse_invoice_events_org_invoice_fk",
+      columns: [t.orgId, t.invoiceId],
+      foreignColumns: [nfseInvoices.orgId, nfseInvoices.id],
+    }).onDelete("cascade"),
+    index("nfse_invoice_events_org_invoice_idx").on(t.orgId, t.invoiceId, t.createdAt),
+  ],
+);
+
+export type NfseInvoice = typeof nfseInvoices.$inferSelect;

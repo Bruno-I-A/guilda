@@ -41,6 +41,7 @@ const APPEND_ONLY_TABLES = [
   "office_fee_profile_events",
   "office_fee_control_events",
   "company_flow_events",
+  "nfse_invoice_events",
 ];
 
 const SPLIT_POLICY_TABLES = new Set([
@@ -50,6 +51,7 @@ const SPLIT_POLICY_TABLES = new Set([
   "office_fee_profile_events",
   "office_fee_control_events",
   "company_flow_events",
+  "nfse_invoice_events",
 ]);
 
 let failures = 0;
