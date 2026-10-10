@@ -581,7 +581,7 @@ describe("modelo da nota", () => {
   test("aceita o modelo completo e recusa campo fora do formato", () => {
     expect(parseNfseTemplate(TEST_TEMPLATE)?.cityCode).toBe("4314902");
     expect(parseNfseTemplate({ ...TEST_TEMPLATE, cityCode: "431490" })).toBeNull();
-    expect(parseNfseTemplate({ ...TEST_TEMPLATE, totalTaxes: { kind: "simples", percent: "6" } })).toBeNull();
+    expect(parseNfseTemplate({ ...TEST_TEMPLATE, totalTaxes: { kind: "simples", percent: "6.5" } })).toBeNull();
     expect(parseNfseTemplate(null)).toBeNull();
   });
 });
