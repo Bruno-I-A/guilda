@@ -31,11 +31,13 @@ export async function registerFiscalService(input: {
   certificateValidUntil: Date | null;
   error: string | null;
 }): Promise<string | null> {
+  // Data em ISO: o driver pg recebe o Date como texto do JavaScript
+  // ("Fri Mar 19 2027 ... (Coordinated Universal Time)"), que o Postgres recusa.
   const result = await db.execute<{ org_id: string | null }>(
     sql`SELECT public.nfse_register_service(
           ${input.cnpj}::text,
           ${input.environment}::smallint,
-          ${input.certificateValidUntil}::timestamptz,
+          ${input.certificateValidUntil?.toISOString() ?? null}::timestamptz,
           ${input.error}::text
         ) AS org_id`,
   );
