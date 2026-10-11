@@ -1,7 +1,6 @@
 "use client";
 
-import { FilePlus2, Search, WalletCards } from "lucide-react";
-import Link from "next/link";
+import { FilePlus2, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -39,10 +38,6 @@ function normalize(value: string): string {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
 }
 
-function feeHref(clanId: string, view: "base" | "control"): string {
-  return `/clans/${clanId}?tab=fees${view === "control" ? "&feeView=control" : ""}`;
-}
-
 export function OfficeFeeProfileBoard({
   clanId,
   canManage,
@@ -75,7 +70,6 @@ export function OfficeFeeProfileBoard({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canManage ? <OfficeFeeImportDialog clanId={clanId} /> : null}
-          <Button asChild type="button" size="sm"><Link href={feeHref(clanId, "control")}><WalletCards aria-hidden /> Controle mensal</Link></Button>
         </div>
       </div>
       <div className="grid gap-2 sm:grid-cols-3">

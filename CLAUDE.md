@@ -232,6 +232,13 @@ Desenho em `docs/superpowers/specs/2026-10-10-notas-de-honorario-design.md`.
   `applyOfficeFeeStepChange`; cancelada reabre. Emitir/cancelar: Fiscal e
   admins; modelo da nota: só admin.
 - Homologação só fala com a produção restrita (`NFSE_AMBIENTE` vazio).
+- **Tela (2026-10-11, a pedido do Bruno, que achou a primeira versão confusa)**:
+  a aba Honorários tem duas visões no topo, **Mês a mês** (padrão) e **Cadastro
+  de honorários**. O mês é uma sequência — Cadastro → Abrir o mês → Emitir
+  notas → Cobrança — e o botão principal é sempre o próximo passo. A nota
+  aparece na própria coluna "Nota" do controle (`NfseInvoiceCell`), sem tabela
+  separada; o "Modelo da nota" mora no Cadastro. Não voltar a empilhar um
+  painel de emissão em cima do controle.
 
 ## Estrutura por clã (decisões de 2026-08-18)
 

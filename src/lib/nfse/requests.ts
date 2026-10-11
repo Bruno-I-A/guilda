@@ -276,6 +276,7 @@ export async function upsertNfseSettings(
 
 export interface NfseInvoiceRow {
   id: string;
+  controlPeriodId: string;
   clientName: string;
   kind: "monthly" | "additional_installment";
   amount: string;
@@ -294,6 +295,7 @@ export async function loadNfseMonth(
   return tx
     .select({
       id: t.id,
+      controlPeriodId: t.controlPeriodId,
       clientName: t.takerName,
       kind: t.kind,
       amount: t.amount,

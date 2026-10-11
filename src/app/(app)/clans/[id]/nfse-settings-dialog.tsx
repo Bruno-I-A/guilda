@@ -23,7 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { NfseTemplate } from "@/lib/nfse/template";
 
 import { saveNfseSettings } from "./nfse-actions";
-import type { NfseSettingsPanelView } from "./nfse-panel";
+import type { NfseSettingsPanelView } from "./nfse-parts";
 
 const NONE = "none";
 

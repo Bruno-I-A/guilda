@@ -1,11 +1,15 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import type { ReactNode } from "react";
+
+import { SegmentedNav } from "@/components/segmented-nav";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { loadNfseMonth, loadNfseSettings } from "@/lib/nfse/requests";
 
-import { NfsePanel } from "./nfse-panel";
-import { OfficeFeeControlBoard, type OfficeFeeControlRowView } from "./office-fee-control-board";
+import { NfseSetupCard, type NfseSettingsPanelView } from "./nfse-parts";
+import type { OfficeFeeControlRowView } from "./office-fee-control-board";
+import { OfficeFeeMonth } from "./office-fee-month";
 import { OfficeFeeProfileBoard, type OfficeFeeProfileRowView } from "./office-fee-profile-board";
 
 function currentPeriodInSaoPaulo(): { year: number; month: number } {
@@ -32,6 +36,40 @@ function parsePeriod(year?: string, month?: string): { year: number; month: numb
   };
 }
 
+function settingsView(settings: Awaited<ReturnType<typeof loadNfseSettings>>): NfseSettingsPanelView | null {
+  if (!settings) return null;
+  return {
+    providerCnpj: settings.providerCnpj,
+    dpsSeries: settings.dpsSeries,
+    template: settings.template,
+    serviceSeenAt: settings.serviceSeenAt?.toISOString() ?? null,
+    serviceEnvironment: settings.serviceEnvironment,
+    certificateValidUntil: settings.certificateValidUntil?.toISOString() ?? null,
+    serviceError: settings.serviceError,
+  };
+}
+
+/**
+ * Duas visões, com a navegação no topo: "Mês a mês" (padrão — é onde o
+ * trabalho acontece) e "Cadastro de honorários" (a base permanente e a
+ * configuração da emissão de notas).
+ */
+function FeeViews({ clanId, active, children }: { clanId: string; active: "month" | "base"; children: ReactNode }) {
+  return (
+    <div className="grid min-w-0 grid-cols-1 gap-4">
+      <SegmentedNav
+        label="Visões de honorários"
+        active={active}
+        items={[
+          { key: "month", label: "Mês a mês", href: `/clans/${clanId}?tab=fees` },
+          { key: "base", label: "Cadastro de honorários", shortLabel: "Cadastro", href: `/clans/${clanId}?tab=fees&feeView=base` },
+        ]}
+      />
+      {children}
+    </div>
+  );
+}
+
 export async function OfficeFeeTab({
   orgId,
   clanId,
@@ -53,9 +91,9 @@ export async function OfficeFeeTab({
   requestedYear?: string;
   requestedMonth?: string;
 }) {
-  const view = requestedView === "control" ? "control" : "base";
+  const view = requestedView === "base" ? "base" : "month";
   if (view === "base") {
-    const { rows, events, availableClients } = await withOrgTx(orgId, async (tx) => {
+    const { rows, events, availableClients, nfseSettings } = await withOrgTx(orgId, async (tx) => {
       const rows = await tx
         .select({
           clientId: schema.clients.id,
@@ -108,7 +146,8 @@ export async function OfficeFeeTab({
         )
         .where(and(eq(schema.clients.orgId, orgId), eq(schema.clients.active, true)))
         .orderBy(asc(schema.clients.name));
-      return { rows, events, availableClients: availableClients.filter((client) => !rows.some((row) => row.clientId === client.id)) };
+      const nfseSettings = await loadNfseSettings(tx, orgId);
+      return { rows, events, nfseSettings, availableClients: availableClients.filter((client) => !rows.some((row) => row.clientId === client.id)) };
     });
     const historyByProfile = new Map<string, typeof events>();
     for (const event of events) {
@@ -135,11 +174,16 @@ export async function OfficeFeeTab({
         })),
       },
     }));
-    return <OfficeFeeProfileBoard clanId={clanId} canManage={canManage} rows={views} availableClients={availableClients} />;
+    return (
+      <FeeViews clanId={clanId} active="base">
+        {canManage ? <NfseSetupCard clanId={clanId} settings={settingsView(nfseSettings)} isAdmin={isAdmin} /> : null}
+        <OfficeFeeProfileBoard clanId={clanId} canManage={canManage} rows={views} availableClients={availableClients} />
+      </FeeViews>
+    );
   }
 
   const period = parsePeriod(requestedYear, requestedMonth);
-  const { rows, events, nfseSettings, nfseInvoices } = await withOrgTx(orgId, async (tx) => {
+  const { rows, events, nfseSettings, nfseInvoices, profilesCount } = await withOrgTx(orgId, async (tx) => {
     const rows = await tx
       .select({
         id: schema.officeFeeControlPeriods.id,
@@ -183,7 +227,11 @@ export async function OfficeFeeTab({
       : [];
     const nfseSettings = await loadNfseSettings(tx, orgId);
     const nfseInvoices = await loadNfseMonth(tx, { orgId, year: period.year, month: period.month });
-    return { rows, events, nfseSettings, nfseInvoices };
+    const [profiles] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.officeFeeProfiles)
+      .where(eq(schema.officeFeeProfiles.orgId, orgId));
+    return { rows, events, nfseSettings, nfseInvoices, profilesCount: profiles?.count ?? 0 };
   });
   const historyByControl = new Map<string, typeof events>();
   for (const event of events) {
@@ -198,29 +246,19 @@ export async function OfficeFeeTab({
     history: (historyByControl.get(row.id) ?? []).map((event) => ({ ...event, createdAt: event.createdAt.toISOString() })),
   }));
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-4">
-      <NfsePanel
+    <FeeViews clanId={clanId} active="month">
+      <OfficeFeeMonth
         clanId={clanId}
         year={period.year}
         month={period.month}
         canManage={canManage}
         isAdmin={isAdmin}
-        settings={
-          nfseSettings
-            ? {
-                providerCnpj: nfseSettings.providerCnpj,
-                dpsSeries: nfseSettings.dpsSeries,
-                template: nfseSettings.template,
-                serviceSeenAt: nfseSettings.serviceSeenAt?.toISOString() ?? null,
-                serviceEnvironment: nfseSettings.serviceEnvironment,
-                certificateValidUntil: nfseSettings.certificateValidUntil?.toISOString() ?? null,
-                serviceError: nfseSettings.serviceError,
-              }
-            : null
-        }
+        profilesCount={profilesCount}
+        members={memberships}
+        rows={views}
+        settings={settingsView(nfseSettings)}
         invoices={nfseInvoices.map((invoice) => ({ ...invoice, issuedAt: invoice.issuedAt?.toISOString() ?? null }))}
       />
-      <OfficeFeeControlBoard clanId={clanId} year={period.year} month={period.month} canManage={canManage} members={memberships} rows={views} />
-    </div>
+    </FeeViews>
   );
 }
