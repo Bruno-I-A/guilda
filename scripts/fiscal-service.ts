@@ -100,6 +100,13 @@ function startHttp(client: SefinClient | null) {
   }).listen(port, "0.0.0.0", () => console.log(`Serviço fiscal ouvindo na porta ${port} (${environment}).`));
 }
 
+/** O Drizzle embrulha o erro do Postgres ("Failed query"); a causa real fica em error.cause. */
+function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const cause = error.cause instanceof Error ? error.cause.message : null;
+  return cause ? `${cause} (em: ${error.message.split("\n")[0]})` : error.message;
+}
+
 async function main() {
   const { certificate, error: certificateError } = openCertificate();
   if (!certificate) console.error(`Serviço fiscal sem certificado: ${certificateError}`);
@@ -140,7 +147,7 @@ async function main() {
         }
       }
     } catch (error) {
-      console.error("Falha no ciclo do serviço fiscal:", error instanceof Error ? error.message : error);
+      console.error("Falha no ciclo do serviço fiscal:", describeError(error));
     }
     await delay(Math.max(1_000, POLL_MS - (Date.now() - started)));
   }
