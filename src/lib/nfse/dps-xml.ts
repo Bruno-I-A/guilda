@@ -1,4 +1,4 @@
-import { buildDpsId, centsToNfseAmount, normalizeDpsSeries } from "@/domain/nfse";
+import { buildDpsId, centsToNfseAmount, normalizeDpsSeries, type NfseTakerAddress } from "@/domain/nfse";
 
 import type { NfseTemplate } from "./template";
 import {
@@ -17,7 +17,7 @@ export interface DpsInput {
   number: number;
   providerCnpj: string;
   template: NfseTemplate;
-  taker: { cnpj: string; name: string };
+  taker: { cnpj: string; name: string; address?: NfseTakerAddress | null };
   amountCents: number;
   description: string;
 }
@@ -44,7 +44,15 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
     `${element("regApTribSN", t.taxRegime.regApTribSN)}` +
     `${element("regEspTrib", t.taxRegime.regEspTrib)}</regTrib>`;
   const prest = `<prest>${element("CNPJ", input.providerCnpj)}${element("IM", t.municipalRegistration)}${regTrib}</prest>`;
-  const toma = `<toma>${element("CNPJ", input.taker.cnpj)}${element("xNome", normalizeName(input.taker.name))}</toma>`;
+  // TCInfoPessoa: CNPJ, xNome, end (endNac com município e CEP, depois rua,
+  // número, complemento e bairro). Obrigatório quando a nota leva IBS/CBS.
+  const address = input.taker.address;
+  const end = address
+    ? `<end><endNac>${element("cMun", address.cityCode)}${element("CEP", address.zipCode)}</endNac>` +
+      `${element("xLgr", address.street)}${element("nro", address.number)}` +
+      `${element("xCpl", address.complement)}${element("xBairro", address.district)}</end>`
+    : "";
+  const toma = `<toma>${element("CNPJ", input.taker.cnpj)}${element("xNome", normalizeName(input.taker.name))}${end}</toma>`;
   const cServ =
     `<cServ>${element("cTribNac", t.service.nationalTaxCode)}` +
     `${element("cTribMun", t.service.municipalTaxCode)}` +

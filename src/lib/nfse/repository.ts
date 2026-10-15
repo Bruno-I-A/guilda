@@ -96,6 +96,7 @@ export async function claimNfseJob(orgId: string): Promise<NfseClaim | null> {
       amountCents: amountToCents(row.amount),
       takerCnpj: row.takerCnpj,
       takerName: row.takerName,
+      takerAddress: row.takerAddress ?? null,
       description: row.description,
       accessKey: row.accessKey,
       issuedEnvironment: row.environment === 1 || row.environment === 2 ? row.environment : null,

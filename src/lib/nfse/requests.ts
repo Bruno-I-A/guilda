@@ -6,6 +6,7 @@ import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import {
   buildDpsId,
+  buildNfseTakerAddress,
   centsToNfseAmount,
   danfseFileName,
   isFutureNfsePeriod,
@@ -15,9 +16,11 @@ import {
   renderNfseDescription,
   selectNfseBatch,
   type NfseCancelReasonCode,
+  type NfseClientAddress,
   type NfseEmissionPreviewView,
 } from "@/domain/nfse";
 
+import { ibgeCityCode } from "./municipios";
 import { parseNfseTemplate, type NfseTemplate } from "./template";
 
 export type NfseCommandResult<T = undefined> = { ok: true; data: T } | { ok: false; error: string };
@@ -89,8 +92,10 @@ export async function loadNfseEmissionPreview(
       clientName: control.clientNameSnapshot,
       cnpj: control.clientCnpjSnapshot,
       snapshot: control.profileSnapshot,
+      address: schema.clients.address,
     })
     .from(control)
+    .innerJoin(schema.clients, and(eq(schema.clients.orgId, control.orgId), eq(schema.clients.id, control.clientId)))
     .where(and(eq(control.orgId, input.orgId), eq(control.periodYear, input.year), eq(control.periodMonth, input.month)))
     .orderBy(asc(control.clientNameSnapshot));
   const invoices = schema.nfseInvoices;
@@ -106,6 +111,7 @@ export async function loadNfseEmissionPreview(
       and(eq(schema.officeFeeProfiles.orgId, schema.clients.orgId), eq(schema.officeFeeProfiles.clientId, schema.clients.id)),
     )
     .where(and(eq(schema.clients.orgId, input.orgId), eq(schema.clients.active, true), isNull(schema.officeFeeProfiles.id)));
+  const template = (await loadNfseSettings(tx, input.orgId))?.template ?? null;
   const batch = selectNfseBatch({
     candidates: rows.map((row) => ({
       controlPeriodId: row.id,
@@ -114,6 +120,7 @@ export async function loadNfseEmissionPreview(
       cnpj: row.cnpj,
       monthlyFee: row.snapshot.monthlyFee,
       chargesAdditionalInstallment: row.snapshot.chargesAdditionalInstallment,
+      address: buildNfseTakerAddress(row.address as NfseClientAddress | null, ibgeCityCode),
     })),
     activeMonthlyClientIds: new Set(
       active.filter((row) => row.kind === "monthly" && row.periodMonth === input.month).map((row) => row.clientId),
@@ -122,8 +129,8 @@ export async function loadNfseEmissionPreview(
       active.filter((row) => row.kind === "additional_installment").map((row) => row.clientId),
     ),
     includeAdditional: input.includeAdditional,
+    requireAddress: Boolean(template?.ibsCbs),
   });
-  const template = (await loadNfseSettings(tx, input.orgId))?.template ?? null;
   return {
     ...batch,
     companiesWithoutFee: withoutFee?.count ?? 0,
@@ -187,6 +194,7 @@ export async function enqueueNfseBatch(
             amount: centsToNfseAmount(item.amountCents),
             takerCnpj: item.cnpj,
             takerName: item.clientName,
+            takerAddress: item.address,
             description: describeNfse(template, item.kind, input),
             dpsSeries: settings.dpsSeries,
             dpsNumber,
@@ -248,15 +256,26 @@ export async function requeueNfseInvoice(
 ): Promise<NfseCommandResult> {
   const t = schema.nfseInvoices;
   const [invoice] = await tx
-    .select({ id: t.id, status: t.status })
+    .select({ id: t.id, status: t.status, clientId: t.clientId })
     .from(t)
     .where(and(eq(t.orgId, input.orgId), eq(t.id, input.invoiceId)))
     .for("update");
   if (!invoice) return fail("Nota não encontrada.");
   if (invoice.status !== "failed") return fail("Só uma nota com erro volta para a fila.");
+  // Relê o endereço do cadastro: a recusa mais comum (E0234) se resolve
+  // completando o endereço da empresa e tentando de novo.
+  const [client] = await tx
+    .select({ address: schema.clients.address })
+    .from(schema.clients)
+    .where(and(eq(schema.clients.orgId, input.orgId), eq(schema.clients.id, invoice.clientId)));
+  const takerAddress = buildNfseTakerAddress((client?.address ?? null) as NfseClientAddress | null, ibgeCityCode);
+  const template = (await loadNfseSettings(tx, input.orgId))?.template;
+  if (template?.ibsCbs && !takerAddress) {
+    return fail("O endereço da empresa está incompleto no cadastro (rua, bairro, CEP e cidade). Complete e tente de novo.");
+  }
   await tx
     .update(t)
-    .set({ status: "queued", attemptCount: 0, nextAttemptAt: new Date(), lastError: null, updatedAt: new Date() })
+    .set({ status: "queued", attemptCount: 0, nextAttemptAt: new Date(), lastError: null, takerAddress, updatedAt: new Date() })
     .where(and(eq(t.orgId, input.orgId), eq(t.id, invoice.id)));
   await tx.insert(schema.nfseInvoiceEvents).values({
     orgId: input.orgId,

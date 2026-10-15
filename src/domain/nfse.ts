@@ -119,6 +119,62 @@ export function isFutureNfsePeriod(
   return `${period.year}-${twoDigits(period.month)}-01` > today;
 }
 
+/** Endereço do tomador no formato do leiaute (TCEndereco com endNac). */
+export interface NfseTakerAddress {
+  cityCode: string;
+  zipCode: string;
+  street: string;
+  number: string;
+  complement: string | null;
+  district: string;
+}
+
+/** Endereço como a Guilda guarda em `clients.address` (vem da consulta de CNPJ). */
+export interface NfseClientAddress {
+  street: string | null;
+  number: string | null;
+  complement: string | null;
+  district: string | null;
+  city: string | null;
+  state: string | null;
+  zipCode: string | null;
+}
+
+/** Chave de busca de município: sem acento, só letras e números, minúsculas. */
+export function normalizeCityKey(name: string): string {
+  return name.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function cleanText(value: string | null, max: number): string | null {
+  const text = value?.replace(/\s+/g, " ").trim() ?? "";
+  return text ? text.slice(0, max) : null;
+}
+
+/**
+ * Converte o endereço do cadastro no endereço do tomador. O Sistema Nacional
+ * exige o endereço quando a nota leva o grupo IBS/CBS (E0234). Sem número vira
+ * "S/N", como na Receita; sem rua, bairro, CEP ou município conhecido, null.
+ */
+export function buildNfseTakerAddress(
+  address: NfseClientAddress | null,
+  resolveCityCode: (state: string, city: string) => string | null,
+): NfseTakerAddress | null {
+  if (!address) return null;
+  const street = cleanText(address.street, 255);
+  const district = cleanText(address.district, 60);
+  const zipCode = (address.zipCode ?? "").replace(/\D/g, "");
+  const cityCode = address.state && address.city ? resolveCityCode(address.state, address.city) : null;
+  if (!street || !district || zipCode.length !== 8 || !cityCode) return null;
+  return {
+    cityCode,
+    zipCode,
+    street,
+    number: cleanText(address.number, 60) ?? "S/N",
+    complement: cleanText(address.complement, 156),
+    district,
+  };
+}
+
 export interface NfseCandidate {
   controlPeriodId: string;
   clientId: string;
@@ -126,18 +182,21 @@ export interface NfseCandidate {
   cnpj: string | null;
   monthlyFee: string;
   chargesAdditionalInstallment: boolean;
+  address: NfseTakerAddress | null;
 }
 
 export type NfseExclusionReason =
   | "missing_cnpj"
   | "invalid_cnpj"
   | "zero_amount"
+  | "missing_address"
   | "already_active";
 
 export const NFSE_EXCLUSION_LABELS: Record<NfseExclusionReason, string> = {
   missing_cnpj: "Sem CNPJ cadastrado",
   invalid_cnpj: "CNPJ inválido",
   zero_amount: "Honorário zerado",
+  missing_address: "Endereço incompleto no cadastro (rua, bairro, CEP e cidade)",
   already_active: "Nota já emitida ou na fila",
 };
 
@@ -148,6 +207,7 @@ export interface NfseBatchItem {
   cnpj: string;
   kind: NfseInvoiceKind;
   amountCents: number;
+  address: NfseTakerAddress | null;
 }
 
 /** Chave estável de um item do lote (a mesma empresa pode ter mensal e PA). */
@@ -184,6 +244,8 @@ export function selectNfseBatch(input: {
   activeMonthlyClientIds: ReadonlySet<string>;
   activeAdditionalClientIds: ReadonlySet<string>;
   includeAdditional: boolean;
+  /** Nota com IBS/CBS exige o endereço do tomador (E0234). */
+  requireAddress?: boolean;
 }): NfseBatch {
   const items: NfseBatchItem[] = [];
   const excluded: NfseBatchExclusion[] = [];
@@ -195,13 +257,15 @@ export function selectNfseBatch(input: {
         ? "invalid_cnpj"
         : amountToCents(candidate.monthlyFee) === 0
           ? "zero_amount"
-          : null;
+          : input.requireAddress && !candidate.address
+            ? "missing_address"
+            : null;
     if (problem || !candidate.cnpj) {
       excluded.push({ ...base, kind: "monthly", reason: problem ?? "missing_cnpj" });
       continue;
     }
     const amountCents = amountToCents(candidate.monthlyFee);
-    const item = { ...base, clientId: candidate.clientId, cnpj: candidate.cnpj, amountCents };
+    const item = { ...base, clientId: candidate.clientId, cnpj: candidate.cnpj, amountCents, address: candidate.address };
     if (input.activeMonthlyClientIds.has(candidate.clientId)) {
       excluded.push({ ...base, kind: "monthly", reason: "already_active" });
     } else {

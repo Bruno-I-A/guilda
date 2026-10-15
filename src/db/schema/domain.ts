@@ -3277,6 +3277,16 @@ export const nfseInvoices = pgTable(
     amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
     takerCnpj: varchar("taker_cnpj", { length: 14 }).notNull(),
     takerName: varchar("taker_name", { length: 300 }).notNull(),
+    // Endereço do tomador congelado no pedido (o Sistema Nacional exige com
+    // IBS/CBS — E0234). "Tentar de novo" relê do cadastro da empresa.
+    takerAddress: jsonb("taker_address").$type<{
+      cityCode: string;
+      zipCode: string;
+      street: string;
+      number: string;
+      complement: string | null;
+      district: string;
+    }>(),
     description: varchar("description", { length: 2000 }).notNull(),
     dpsSeries: varchar("dps_series", { length: 5 }).notNull(),
     dpsNumber: bigint("dps_number", { mode: "number" }).notNull(),

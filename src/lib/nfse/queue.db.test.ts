@@ -43,6 +43,8 @@ beforeAll(async () => {
     INSERT INTO clients (id, org_id, name, tax_regime, cnpj) VALUES
       ('00000000-0000-4000-8000-000000000001', '${ORG}', 'Padaria Pão Quente', 'simples', '33000167000101'),
       ('00000000-0000-4000-8000-000000000002', '${ORG}', 'Sem CNPJ', 'simples', NULL);
+    UPDATE clients SET address = '{"street":"RUA EDITH KURTZ","number":"871","complement":null,"district":"SANTO ANDRE","city":"GETULIO VARGAS","state":"RS","zipCode":"99900-000"}'::jsonb
+     WHERE id = '00000000-0000-4000-8000-000000000001';
   `);
   await client.exec("SET ROLE guilda_app;");
 }, 120_000);
@@ -94,7 +96,10 @@ test("ciclo completo: enfileirar, emitir, marcar etapa, cancelar, reabrir", asyn
   const first = await repo.claimNfseJob(ORG);
   expect(first?.attemptCount).toBe(1);
   expect(first?.dpsNumber).toBe(1);
-  expect(await repo.claimNfseJob(ORG).then((claim) => claim?.dpsNumber)).toBe(2); // a segunda, porque a primeira está com lease
+  const second = await repo.claimNfseJob(ORG); // a segunda, porque a primeira está com lease
+  expect(second?.dpsNumber).toBe(2);
+  // O pedido congelou o endereço do cadastro, com o código IBGE da tabela oficial.
+  expect(first?.takerAddress).toEqual({ cityCode: "4308904", zipCode: "99900000", street: "RUA EDITH KURTZ", number: "871", complement: null, district: "SANTO ANDRE" });
   expect(await repo.finishNfseJob(ORG, first!, { kind: "issued", accessKey: "4".repeat(50), nfseNumber: "77", environment: 2 })).toBe(true);
   // lease errado não grava
   expect(await repo.finishNfseJob(ORG, { ...first!, lockToken: "00000000-0000-4000-8000-00000000dead" }, { kind: "failed", message: "x", errors: [] })).toBe(false);
@@ -130,6 +135,13 @@ test("ciclo completo: enfileirar, emitir, marcar etapa, cancelar, reabrir", asyn
   );
   expect(denied).toMatch(/permission denied/);
 
+  // "Tentar de novo" relê o endereço do cadastro (precisa do GRANT da 0081).
+  expect(await repo.finishNfseJob(ORG, second!, { kind: "failed", message: "E0234: endereço", errors: [] })).toBe(true);
+  await withOrgTx(ORG, (tx) => tx.update(schema.clients).set({ address: { street: "RUA NOVA", number: "", complement: null, district: "CENTRO", city: "Getúlio Vargas", state: "rs", zipCode: "99900000" } }).where(sql`id = '00000000-0000-4000-8000-000000000001'`));
+  expect((await withOrgTx(ORG, (tx) => requests.requeueNfseInvoice(tx, { orgId: ORG, actorId: "u1", invoiceId: second!.id }))).ok).toBe(true);
+  const [requeued] = await withOrgTx(ORG, (tx) => tx.select({ status: schema.nfseInvoices.status, address: schema.nfseInvoices.takerAddress }).from(schema.nfseInvoices).where(sql`id = ${second!.id}`));
+  expect(requeued).toEqual({ status: "queued", address: { cityCode: "4308904", zipCode: "99900000", street: "RUA NOVA", number: "S/N", complement: null, district: "CENTRO" } });
+
   const events = await withOrgTx(ORG, (tx) => tx.select({ type: schema.nfseInvoiceEvents.eventType }).from(schema.nfseInvoiceEvents));
-  expect(events.map((event) => event.type).sort()).toEqual(["cancel_requested", "cancelled", "issued", "requested", "requested"]);
+  expect(events.map((event) => event.type).sort()).toEqual(["cancel_requested", "cancelled", "failed", "issued", "requested", "requested", "retried"]);
 }, 120_000);

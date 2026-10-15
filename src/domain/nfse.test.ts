@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   amountToCents,
+  buildNfseTakerAddress,
   buildCancelRequestId,
   buildDpsId,
   centsToNfseAmount,
@@ -25,6 +26,7 @@ function candidate(overrides: Partial<NfseCandidate> = {}): NfseCandidate {
     cnpj: CNPJ_OK,
     monthlyFee: "850.00",
     chargesAdditionalInstallment: false,
+    address: null,
     ...overrides,
   };
 }
@@ -123,6 +125,42 @@ describe("seleção do lote", () => {
       { controlPeriodId: "c2", clientName: "Já teve PA", kind: "additional_installment", reason: "already_active" },
     ]);
     expect(withPa.totalCents).toBe(85000 * 4);
+  });
+});
+
+describe("endereço do tomador", () => {
+  const resolve = (state: string, city: string) => (state === "RS" && city.toUpperCase() === "GETULIO VARGAS" ? "4308904" : null);
+  const base = { street: "RUA EDITH KURTZ", number: "871", complement: null, district: "SANTO ANDRE", city: "GETULIO VARGAS", state: "RS", zipCode: "99.900-000" };
+
+  test("monta o endereço do leiaute a partir do cadastro", () => {
+    expect(buildNfseTakerAddress(base, resolve)).toEqual({
+      cityCode: "4308904",
+      zipCode: "99900000",
+      street: "RUA EDITH KURTZ",
+      number: "871",
+      complement: null,
+      district: "SANTO ANDRE",
+    });
+  });
+
+  test("sem número vira S/N; sem rua, bairro, CEP ou cidade conhecida não serve", () => {
+    expect(buildNfseTakerAddress({ ...base, number: " " }, resolve)?.number).toBe("S/N");
+    expect(buildNfseTakerAddress({ ...base, district: null }, resolve)).toBeNull();
+    expect(buildNfseTakerAddress({ ...base, zipCode: "9990" }, resolve)).toBeNull();
+    expect(buildNfseTakerAddress({ ...base, city: "CIDADE INVENTADA" }, resolve)).toBeNull();
+    expect(buildNfseTakerAddress(null, resolve)).toBeNull();
+  });
+
+  test("com IBS/CBS, empresa sem endereço fica fora do lote com o motivo", () => {
+    const batch = selectNfseBatch({
+      candidates: [candidate()],
+      activeMonthlyClientIds: new Set(),
+      activeAdditionalClientIds: new Set(),
+      includeAdditional: false,
+      requireAddress: true,
+    });
+    expect(batch.items).toHaveLength(0);
+    expect(batch.excluded.map((item) => item.reason)).toEqual(["missing_address"]);
   });
 });
 
