@@ -20,8 +20,9 @@ function text(status: number, message: string): Response {
 }
 
 /**
- * Pede ao serviço fiscal, pela rede interna, o .zip com os PDFs das notas
- * emitidas do mês (ou de uma nota) e repassa em streaming. Nada é gravado.
+ * Pede ao serviço fiscal, pela rede interna, os PDFs das notas emitidas do mês
+ * (ou de uma nota) e repassa em streaming: uma nota vem como o próprio PDF,
+ * mais de uma num .zip. Nada é gravado.
  */
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -42,9 +43,11 @@ export async function GET(request: Request): Promise<Response> {
   const serviceUrl = process.env.FISCAL_SERVICE_URL;
   const token = process.env.FISCAL_SERVICE_TOKEN;
   if (!serviceUrl || !token) return text(503, "Serviço fiscal não configurado.");
+  // Uma nota só (a da linha, ou o mês com uma nota) baixa o PDF direto; mais de uma, o .zip.
+  const single = items.length === 1;
   let upstream: Response;
   try {
-    upstream = await fetch(`${serviceUrl.replace(/\/$/, "")}/danfse.zip`, {
+    upstream = await fetch(`${serviceUrl.replace(/\/$/, "")}/${single ? "danfse.pdf" : "danfse.zip"}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ items }),
@@ -53,7 +56,17 @@ export async function GET(request: Request): Promise<Response> {
   } catch {
     return text(502, "O serviço fiscal não respondeu.");
   }
+  if (single && upstream.status === 502) return text(502, await upstream.text());
   if (!upstream.ok || !upstream.body) return text(502, `O serviço fiscal recusou o pedido (${upstream.status}).`);
+  if (single) {
+    return new Response(upstream.body, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${items[0].fileName}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
   const month = String(query.month).padStart(2, "0");
   return new Response(upstream.body, {
     headers: {

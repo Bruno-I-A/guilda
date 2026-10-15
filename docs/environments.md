@@ -130,8 +130,8 @@ com `GUILDA_SERVICE=fiscal`: o `start-production.mjs` sobe só
   indisponível. Uma cópia só do certificado no Easypanel.
 - **Sem domínio público.** O app fala com ele pela rede interna do Easypanel
   (`http://appcontabil_guilda-fiscal:4100`). Ele só responde `GET /health` e
-  `POST /danfse.zip` com o token; os PDFs são montados ali, do XML de cada
-  nota.
+  `POST /danfse.pdf` (uma nota) e `POST /danfse.zip` (várias) com o token; os
+  PDFs são montados ali, do XML de cada nota.
 - Se um dia a prefeitura aderir à produção restrita, um segundo serviço para
   a homologação usa `NFSE_AMBIENTE` vazio e branch `develop`.
 
