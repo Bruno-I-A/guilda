@@ -171,7 +171,7 @@ export function OfficeFeeMonth({
             </Button>
           ) : null}
           {canManage && issuedCount > 0 ? (
-            <Button asChild variant="outline"><a href={nfsePdfHref(clanId, year, month)}><Download aria-hidden /> Baixar PDFs ({issuedCount})</a></Button>
+            <Button asChild variant="outline"><a href={nfsePdfHref(clanId, year, month)}><Download aria-hidden /> {issuedCount === 1 ? "Baixar PDF" : `Baixar PDFs (${issuedCount})`}</a></Button>
           ) : null}
           {current === "register" && canManage ? (
             <Button asChild><Link href={`/clans/${clanId}?tab=fees&feeView=base`}><FilePlus2 aria-hidden /> Cadastrar honorários</Link></Button>

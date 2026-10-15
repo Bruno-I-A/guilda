@@ -1,12 +1,13 @@
 import "./load-env";
 
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { loadNfseCertificate, type NfseCertificate } from "../src/lib/nfse/certificate";
 import { readDanfse } from "../src/lib/nfse/danfse-data";
 import { renderDanfsePdf } from "../src/lib/nfse/danfse-pdf";
-import { buildDanfseZip, MIN_SERVICE_TOKEN_LENGTH, parseDanfseRequest, tokenMatches } from "../src/lib/nfse/danfse-zip";
+import { MIN_SERVICE_TOKEN_LENGTH } from "../src/lib/nfse/danfse-zip";
+import { createFiscalHttpHandler } from "../src/lib/nfse/fiscal-http";
 import { runNfseJob } from "../src/lib/nfse/processor";
 import {
   claimNfseJob,
@@ -24,14 +25,13 @@ import {
 
 /**
  * Serviço fiscal: o ÚNICO processo com o certificado do escritório. Consome a
- * fila de notas (emitir/cancelar) e serve, só na rede interna, o .zip de
- * PDFs. O governo suspendeu a API do DANFSe em 03/08/2026: o PDF é montado
- * aqui, do XML da nota (NT 008/2026). Sobe com GUILDA_SERVICE=fiscal
- * (scripts/start-production.mjs).
+ * fila de notas (emitir/cancelar) e serve, só na rede interna, os PDFs
+ * (src/lib/nfse/fiscal-http.ts). O governo suspendeu a API do DANFSe em
+ * 03/08/2026: o PDF é montado aqui, do XML da nota (NT 008/2026). Sobe com
+ * GUILDA_SERVICE=fiscal (scripts/start-production.mjs).
  */
 
 const POLL_MS = 10_000;
-const MAX_BODY_BYTES = 64 * 1024;
 
 // Ausente ou inválido vale produção restrita: nota de verdade exige a variável explícita.
 const environment: NfseEnvironmentName = process.env.NFSE_AMBIENTE === "producao" ? "producao" : "restrita";
@@ -51,60 +51,16 @@ function openCertificate(): { certificate: NfseCertificate | null; error: string
   }
 }
 
-async function readBody(req: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += (chunk as Buffer).length;
-    if (size > MAX_BODY_BYTES) throw new Error("Pedido grande demais.");
-    chunks.push(chunk as Buffer);
-  }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
-}
-
-function reply(res: ServerResponse, status: number, message: string) {
-  res.writeHead(status, { "Content-Type": "text/plain; charset=utf-8" });
-  res.end(message);
-}
-
 function startHttp(client: SefinClient | null) {
   if (token.length < MIN_SERVICE_TOKEN_LENGTH) {
     console.warn("FISCAL_SERVICE_TOKEN ausente ou curto: o download de PDFs fica desligado.");
   }
-  createServer(async (req, res) => {
-    try {
-      if (req.method === "GET" && req.url === "/health") {
-        reply(res, 200, `ok ${environment}`);
-        return;
-      }
-      if (req.method !== "POST" || req.url !== "/danfse.zip") {
-        reply(res, 404, "Não encontrado.");
-        return;
-      }
-      if (!tokenMatches(token, req.headers.authorization)) {
-        reply(res, 401, "Não autorizado.");
-        return;
-      }
-      if (!client) {
-        reply(res, 503, "Serviço fiscal sem certificado válido.");
-        return;
-      }
-      const items = parseDanfseRequest(await readBody(req));
-      if (!items) {
-        reply(res, 400, "Pedido de PDFs inválido.");
-        return;
-      }
-      const { zip, failures } = await buildDanfseZip(items, async (accessKey) =>
-        renderDanfsePdf(readDanfse(await client.getNfseXml(accessKey))),
-      );
-      for (const failure of failures) console.warn(`PDF não montado (${failure.fileName}): ${failure.message}`);
-      res.writeHead(200, { "Content-Type": "application/zip", "Content-Length": zip.length });
-      res.end(Buffer.from(zip));
-    } catch (error) {
-      console.error("Falha no download de PDFs:", error instanceof Error ? error.message : error);
-      if (!res.headersSent) reply(res, 500, "Falha ao montar os PDFs.");
-    }
-  }).listen(port, "0.0.0.0", () => console.log(`Serviço fiscal ouvindo na porta ${port} (${environment}).`));
+  const handler = createFiscalHttpHandler({
+    environment,
+    token,
+    buildPdf: client ? async (accessKey) => renderDanfsePdf(readDanfse(await client.getNfseXml(accessKey))) : null,
+  });
+  createServer(handler).listen(port, "0.0.0.0", () => console.log(`Serviço fiscal ouvindo na porta ${port} (${environment}).`));
 }
 
 /** O Drizzle embrulha o erro do Postgres ("Failed query"); a causa real fica em error.cause. */

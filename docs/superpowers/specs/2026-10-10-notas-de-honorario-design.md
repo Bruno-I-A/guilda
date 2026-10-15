@@ -89,7 +89,8 @@ Novo serviço `guilda-fiscal`, mesma imagem da Guilda, comando próprio
 - **PDFs: chamada direta pela rede interna**, com `FISCAL_SERVICE_TOKEN`. O app
   confere sessão, permissão e organização, monta a lista de chaves das notas
   emitidas do mês e pede o `.zip` ao serviço, que monta cada DANFSe, compacta e
-  devolve em streaming. Nada é gravado em disco nem no banco.
+  devolve em streaming. Uma nota só (a da linha, ou o mês com uma nota) vem
+  como o próprio PDF, sem `.zip` (pedido do Bruno, 15/10/2026). Nada é gravado em disco nem no banco.
 
 ### Dados
 
