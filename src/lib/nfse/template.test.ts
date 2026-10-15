@@ -40,3 +40,17 @@ describe("horário da emissão", () => {
     expect(nfseIssueDate(new Date("2026-10-08T13:08:47Z"))).toBe("2026-10-08");
   });
 });
+
+describe("regras do modelo que o Sistema Nacional cobra", () => {
+  test("ME/EPP precisa do percentual do Simples, não de 'não informar' (E0712)", async () => {
+    const { nfseTemplateRulesSchema } = await import("./template");
+    expect(nfseTemplateRulesSchema.safeParse({ ...TEST_TEMPLATE, totalTaxes: { kind: "none" } }).success).toBe(false);
+    expect(nfseTemplateRulesSchema.safeParse(TEST_TEMPLATE).success).toBe(true);
+  });
+
+  test("MEI não usa o percentual do Simples e não optante ainda não é suportado", async () => {
+    const { nfseTemplateRulesSchema } = await import("./template");
+    expect(nfseTemplateRulesSchema.safeParse({ ...TEST_TEMPLATE, taxRegime: { opSimpNac: "2", regEspTrib: "0" } }).success).toBe(false);
+    expect(nfseTemplateRulesSchema.safeParse({ ...TEST_TEMPLATE, taxRegime: { opSimpNac: "1", regEspTrib: "0" }, totalTaxes: { kind: "none" } }).success).toBe(false);
+  });
+});

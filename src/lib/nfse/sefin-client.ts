@@ -4,15 +4,13 @@ import { firstElementText, gunzipBase64, gzipBase64 } from "./xml";
 
 export type NfseEnvironmentName = "restrita" | "producao";
 
-export const NFSE_ENDPOINTS: Record<NfseEnvironmentName, { sefin: string; adn: string; tpAmb: 1 | 2 }> = {
+export const NFSE_ENDPOINTS: Record<NfseEnvironmentName, { sefin: string; tpAmb: 1 | 2 }> = {
   restrita: {
     sefin: "https://sefin.producaorestrita.nfse.gov.br/API/SefinNacional",
-    adn: "https://adn.producaorestrita.nfse.gov.br",
     tpAmb: 2,
   },
   producao: {
     sefin: "https://sefin.nfse.gov.br/SefinNacional",
-    adn: "https://adn.nfse.gov.br",
     tpAmb: 1,
   },
 };
@@ -21,7 +19,6 @@ export interface HttpRequest {
   method: "GET" | "POST";
   url: string;
   json?: unknown;
-  accept?: string;
 }
 export interface HttpResponse {
   status: number;
@@ -47,7 +44,8 @@ export interface SefinClient {
   findAccessKeyByDps(dpsId: string): Promise<string | null>;
   getNfseNumber(accessKey: string): Promise<string | null>;
   cancel(accessKey: string, signedEventXml: string): Promise<CancelResult>;
-  getDanfse(accessKey: string): Promise<Buffer>;
+  /** O XML da NFS-e como o Sistema Nacional guarda; é dele que sai o PDF. */
+  getNfseXml(accessKey: string): Promise<string>;
 }
 
 /** Transporte real: HTTPS com o certificado do escritório na conexão (mTLS). */
@@ -68,7 +66,7 @@ export function createMtlsTransport(input: {
           agent,
           timeout: timeoutMs,
           headers: {
-            Accept: req.accept ?? "application/json",
+            Accept: "application/json",
             ...(payload ? { "Content-Type": "application/json", "Content-Length": payload.length } : {}),
           },
         },
@@ -197,10 +195,12 @@ export function createSefinClient(environment: NfseEnvironmentName, transport: H
       return rejection(res, parseBody(res));
     },
 
-    async getDanfse(accessKey) {
-      const res = await transport({ method: "GET", url: `${base.adn}/danfse/${accessKey}`, accept: "application/pdf" });
-      if (res.status >= 200 && res.status < 300 && res.contentType?.includes("pdf")) return res.body;
-      throw new Error(`DANFSe indisponível para a nota ${accessKey} (HTTP ${res.status}).`);
+    async getNfseXml(accessKey) {
+      const res = await transport({ method: "GET", url: `${base.sefin}/nfse/${accessKey}` });
+      if (res.status < 200 || res.status >= 300) throw unexpected(res, "Consulta da nota falhou");
+      const xml = stringField(parseBody(res), "nfseXmlGZipB64");
+      if (!xml) throw new NfseTransientError("A consulta da nota veio sem o XML.");
+      return gunzipBase64(xml);
     },
   };
 }

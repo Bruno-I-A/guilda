@@ -29,7 +29,7 @@ function readXsd(fileName: string): string {
 
 export async function nfseXsdErrors(
   xml: string,
-  rootXsd: "DPS_v1.01.xsd" | "pedRegEvento_v1.01.xsd",
+  rootXsd: "DPS_v1.01.xsd" | "NFSe_v1.01.xsd" | "pedRegEvento_v1.01.xsd",
 ): Promise<string[]> {
   const result = await validateXML({
     xml: [{ fileName: "documento.xml", contents: xml }],

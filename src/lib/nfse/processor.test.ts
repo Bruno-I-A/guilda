@@ -41,7 +41,7 @@ function client(overrides: Partial<SefinClient> = {}): SefinClient {
     findAccessKeyByDps: async () => null,
     getNfseNumber: async () => "77",
     cancel: async () => ({ kind: "cancelled" }),
-    getDanfse: async () => Buffer.from(""),
+    getNfseXml: async () => "<NFSe/>",
     ...overrides,
   };
 }

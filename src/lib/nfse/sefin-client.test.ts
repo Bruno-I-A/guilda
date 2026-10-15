@@ -66,14 +66,16 @@ describe("cliente do Sistema Nacional", () => {
     });
   });
 
-  test("DANFSe só vale se vier PDF", async () => {
-    const pdf = Buffer.from("%PDF-1.7");
+  test("busca o XML da nota para montar o PDF", async () => {
+    const xml = "<NFSe><infNFSe><nNFSe>7</nNFSe></infNFSe></NFSe>";
     const { calls, client } = fake([
-      { status: 200, body: pdf, contentType: "application/pdf" },
-      json(404, {}),
+      json(200, { chaveAcesso: KEY, nfseXmlGZipB64: gzipBase64(xml) }),
+      json(200, { chaveAcesso: KEY }),
+      json(404, { erros: [{ codigo: "E404", descricao: "Não encontrada" }] }),
     ]);
-    await expect(client.getDanfse(KEY)).resolves.toEqual(pdf);
-    expect(calls[0].url).toBe(`${NFSE_ENDPOINTS.restrita.adn}/danfse/${KEY}`);
-    await expect(client.getDanfse(KEY)).rejects.toThrow(/DANFSe/);
+    await expect(client.getNfseXml(KEY)).resolves.toBe(xml);
+    expect(calls[0]).toMatchObject({ method: "GET", url: `${NFSE_ENDPOINTS.restrita.sefin}/nfse/${KEY}` });
+    await expect(client.getNfseXml(KEY)).rejects.toThrow(NfseTransientError);
+    await expect(client.getNfseXml(KEY)).rejects.toThrow(/Não encontrada/);
   });
 });

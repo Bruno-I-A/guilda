@@ -40,7 +40,7 @@ Manual dos Contribuintes v1.2 (out/2025), esquemas XSD v1.01 (09/02/2026).
 | Recuperar a chave pela DPS | `GET /dps/{id}` (só para ator da nota) · `HEAD /dps/{id}` |
 | Consultar a nota | `GET /nfse/{chaveAcesso}` |
 | Cancelar | `POST /nfse/{chaveAcesso}/eventos`, evento `e101101` (`cMotivo`, `xMotivo`) |
-| PDF (DANFSe) | API própria no ADN (`adn[.producaorestrita].nfse.gov.br/danfse`) |
+| PDF (DANFSe) | ~~API própria no ADN~~ suspensa em 03/08/2026; montado do XML da nota (ver adendo de 15/10) |
 
 - Base Sefin: produção restrita `https://sefin.producaorestrita.nfse.gov.br/API/SefinNacional`,
   produção `https://sefin.nfse.gov.br/SefinNacional`.
@@ -88,7 +88,7 @@ Novo serviço `guilda-fiscal`, mesma imagem da Guilda, comando próprio
   o lease que ainda é seu. Reinício no meio continua de onde parou.
 - **PDFs: chamada direta pela rede interna**, com `FISCAL_SERVICE_TOKEN`. O app
   confere sessão, permissão e organização, monta a lista de chaves das notas
-  emitidas do mês e pede o `.zip` ao serviço, que busca cada DANFSe, compacta e
+  emitidas do mês e pede o `.zip` ao serviço, que monta cada DANFSe, compacta e
   devolve em streaming. Nada é gravado em disco nem no banco.
 
 ### Dados
@@ -230,5 +230,31 @@ O Bruno mandou o DANFSe de uma nota de honorário emitida no Portal (nº 104,
   o Sistema Nacional calcula.
 - Descrição no formato do escritório: "HONORÁRIOS CONTÁBEIS REFERENTE A
   COMPETÊNCIA {competencia}". A série do Emissor Web é 70000; a da Guilda, 1.
+
+— claude, 15/10/2026
+
+## Adendo — o PDF é montado pela Guilda (15/10/2026)
+
+A primeira nota real (nº 107) saiu, mas o PDF voltou só com o LEIA-ME: o ADN
+respondeu 503. Não é instabilidade: a NT 008/2026 (v1.02, 14/07/2026)
+suspendeu a API de geração do DANFSe em **03/08/2026** e passou a quem emite
+a obrigação de gerar o próprio, no leiaute **DANFSe v2.0**.
+
+- O serviço fiscal busca o XML da nota (`GET /nfse/{chave}`, a mesma consulta
+  da emissão) e desenha o PDF no mesmo clique. Nada é guardado, como antes.
+- `danfse-data.ts` lê e formata (só o que está no XML; o que falta vira
+  traço) e `danfse-pdf.ts` desenha. As medidas, formatos e rótulos copiam o
+  DANFSe que o Portal gerou para a nota 104 — onde o Portal e a NT divergem
+  em detalhe (código do ambiente em vez da descrição, "Município - UF" no
+  cabeçalho), vale o Portal, que é o que o Fiscal já conhece. O código IBGE
+  segue a NT (sete dígitos corridos).
+- Fontes: a NT pede Arial e Microsoft Sans Serif, que não podem ir no
+  repositório. Vai a Helvetica das fontes-padrão do PDF, de métrica igual à
+  Arial, sem fonte embutida.
+- A tabela de municípios passou a guardar código → nome (o DANFSe mostra o
+  município do tomador, e o XML só traz o código); a busca por nome do
+  cadastro é derivada dela.
+- Só notas emitidas são baixadas, então a marca d'água "CANCELADA" da NT
+  não foi feita.
 
 — claude, 15/10/2026

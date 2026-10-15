@@ -29,10 +29,10 @@ export function parseDanfseRequest(body: unknown): DanfseRequestItem[] | null {
   return parsed;
 }
 
-/** Busca os PDFs (4 por vez) e devolve o .zip; nada é gravado. */
+/** Monta os PDFs (4 por vez) e devolve o .zip; nada é gravado. */
 export async function buildDanfseZip(
   items: readonly DanfseRequestItem[],
-  fetchPdf: (accessKey: string) => Promise<Buffer>,
+  fetchPdf: (accessKey: string) => Promise<Uint8Array>,
   concurrency = 4,
 ): Promise<{ zip: Uint8Array; failures: { fileName: string; message: string }[] }> {
   const files: Record<string, Uint8Array> = {};
@@ -42,7 +42,7 @@ export async function buildDanfseZip(
     while (next < items.length) {
       const item = items[next++];
       try {
-        files[item.fileName] = new Uint8Array(await fetchPdf(item.accessKey));
+        files[item.fileName] = await fetchPdf(item.accessKey);
       } catch (error) {
         failures.push({ fileName: item.fileName, message: error instanceof Error ? error.message : "Falha desconhecida." });
       }
@@ -52,7 +52,7 @@ export async function buildDanfseZip(
   if (failures.length > 0) {
     const lines = failures.map((failure) => `${failure.fileName}: ${failure.message}`);
     files["LEIA-ME.txt"] = strToU8(
-      `Estes PDFs não vieram do Sistema Nacional. Consulte as notas no Portal Nacional:\n\n${lines.join("\n")}\n`,
+      `Não foi possível montar estes PDFs. Consulte as notas no Portal Nacional:\n\n${lines.join("\n")}\n`,
     );
   }
   return { zip: zipSync(files, { level: 0 }), failures };

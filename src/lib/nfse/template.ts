@@ -52,6 +52,33 @@ export const nfseTemplateSchema = z.object({
   }),
 });
 
+/**
+ * Regras do leiaute que o tipo sozinho não pega e que o Sistema Nacional
+ * recusa (Anexo I): ME/EPP não pode usar "não informar tributos" (E0712) e
+ * MEI não pode usar o percentual do Simples (E0710). Não optante exigiria
+ * valores por esfera (vTotTrib/pTotTrib), que o modelo ainda não tem (E0713).
+ */
+export const nfseTemplateRulesSchema = nfseTemplateSchema.superRefine((template, ctx) => {
+  const kind = template.totalTaxes.kind;
+  if (template.taxRegime.opSimpNac === "3" && kind !== "simples") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["totalTaxes"],
+      message: "Para ME/EPP do Simples, informe o percentual aproximado do Simples Nacional em \"Total de tributos\".",
+    });
+  }
+  if (template.taxRegime.opSimpNac === "2" && kind === "simples") {
+    ctx.addIssue({ code: "custom", path: ["totalTaxes"], message: "MEI não pode informar o percentual do Simples Nacional." });
+  }
+  if (template.taxRegime.opSimpNac === "1") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["taxRegime"],
+      message: "Escritório não optante do Simples ainda não é suportado: a nota exigiria os tributos por esfera.",
+    });
+  }
+});
+
 export type NfseTemplate = z.infer<typeof nfseTemplateSchema>;
 
 export function parseNfseTemplate(value: unknown): NfseTemplate | null {
