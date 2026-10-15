@@ -64,6 +64,7 @@ export async function previewNfseEmission(
 }
 
 const emitSchema = periodSchema.extend({
+  selected: z.array(z.string().max(80)).min(1, "Marque ao menos uma nota para emitir.").max(1000),
   expectedCount: z.number().int().min(1).max(1000),
   expectedTotalCents: z.number().int().min(1),
 });

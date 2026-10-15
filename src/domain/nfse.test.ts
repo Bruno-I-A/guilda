@@ -7,6 +7,7 @@ import {
   centsToNfseAmount,
   danfseFileName,
   isFutureNfsePeriod,
+  nfseReferencePeriod,
   nfseServiceHealth,
   normalizeDpsSeries,
   renderNfseDescription,
@@ -64,6 +65,11 @@ describe("texto e datas", () => {
   test("descrição troca competência e ano", () => {
     expect(renderNfseDescription("Honorários {competencia} ({ano})", { year: 2026, month: 9 }))
       .toBe("Honorários 09/2026 (2026)");
+  });
+
+  test("a nota mensal se refere ao mês anterior ao do controle", () => {
+    expect(nfseReferencePeriod({ year: 2026, month: 11 })).toEqual({ year: 2026, month: 10 });
+    expect(nfseReferencePeriod({ year: 2027, month: 1 })).toEqual({ year: 2026, month: 12 });
   });
 
   test("mês que ainda não começou não emite", () => {

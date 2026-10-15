@@ -103,6 +103,15 @@ export function renderNfseDescription(
     .trim();
 }
 
+/**
+ * Mês a que a nota mensal se refere: o anterior ao do controle. O Fiscal
+ * emite no mês M a nota dos serviços de M-1 (em outubro, "referente a
+ * competência 09/2026"), e o controle do mês é o do trabalho de emitir.
+ */
+export function nfseReferencePeriod(period: { year: number; month: number }): { year: number; month: number } {
+  return period.month === 1 ? { year: period.year - 1, month: 12 } : { year: period.year, month: period.month - 1 };
+}
+
 export function isFutureNfsePeriod(
   period: { year: number; month: number },
   today: string,
@@ -141,6 +150,11 @@ export interface NfseBatchItem {
   amountCents: number;
 }
 
+/** Chave estável de um item do lote (a mesma empresa pode ter mensal e PA). */
+export function nfseBatchItemKey(item: { controlPeriodId: string; kind: NfseInvoiceKind }): string {
+  return `${item.controlPeriodId}:${item.kind}`;
+}
+
 export interface NfseBatchExclusion {
   controlPeriodId: string;
   clientName: string;
@@ -154,7 +168,11 @@ export interface NfseBatch {
   totalCents: number;
 }
 
-export type NfseEmissionPreviewView = NfseBatch & { companiesWithoutFee: number };
+export type NfseEmissionPreviewView = NfseBatch & {
+  companiesWithoutFee: number;
+  /** Como a descrição vai sair, para conferir antes de emitir (null sem modelo). */
+  descriptions: { monthly: string; additionalInstallment: string } | null;
+};
 
 /**
  * Quem entra no lote do mês. A mensal vale para toda empresa com honorário

@@ -13,6 +13,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
 import * as schema from "@/db/schema";
+import { nfseBatchItemKey } from "@/domain/nfse";
 
 vi.mock("server-only", () => ({}));
 
@@ -68,11 +69,19 @@ test("ciclo completo: enfileirar, emitir, marcar etapa, cancelar, reabrir", asyn
   const preview = await withOrgTx(ORG, (tx) => requests.loadNfseEmissionPreview(tx, { orgId: ORG, year: 2026, month: 9, includeAdditional: true }));
   expect(preview.items.map((item) => item.kind)).toEqual(["monthly", "additional_installment"]);
   expect(preview.excluded.map((item) => item.reason)).toEqual(["missing_cnpj"]);
+  // Controle de setembro emite a nota dos serviços de agosto.
+  expect(preview.descriptions?.monthly).toBe("Honorários contábeis referentes à competência 08/2026.");
 
-  const stale = await withOrgTx(ORG, (tx) => requests.enqueueNfseBatch(tx, { orgId: ORG, actorId: "u1", year: 2026, month: 9, includeAdditional: true, expectedCount: 1, expectedTotalCents: 85000, today: "2026-10-05" }));
+  const stale = await withOrgTx(ORG, (tx) => requests.enqueueNfseBatch(tx, { orgId: ORG, actorId: "u1", year: 2026, month: 9, includeAdditional: true, selected: preview.items.map(nfseBatchItemKey), expectedCount: 1, expectedTotalCents: 85000, today: "2026-10-05" }));
   expect(stale.ok).toBe(false);
-  const queued = await withOrgTx(ORG, (tx) => requests.enqueueNfseBatch(tx, { orgId: ORG, actorId: "u1", year: 2026, month: 9, includeAdditional: true, expectedCount: 2, expectedTotalCents: 170000, today: "2026-10-05" }));
-  expect(queued).toEqual({ ok: true, data: { queued: 2 } });
+  // Só a mensal marcada: a PA fica para depois, e volta na próxima prévia.
+  const [monthlyItem, additionalItem] = preview.items;
+  const onlyMonthly = await withOrgTx(ORG, (tx) => requests.enqueueNfseBatch(tx, { orgId: ORG, actorId: "u1", year: 2026, month: 9, includeAdditional: true, selected: [nfseBatchItemKey(monthlyItem)], expectedCount: 1, expectedTotalCents: 85000, today: "2026-10-05" }));
+  expect(onlyMonthly).toEqual({ ok: true, data: { queued: 1 } });
+  const remaining = await withOrgTx(ORG, (tx) => requests.loadNfseEmissionPreview(tx, { orgId: ORG, year: 2026, month: 9, includeAdditional: true }));
+  expect(remaining.items.map(nfseBatchItemKey)).toEqual([nfseBatchItemKey(additionalItem)]);
+  const queued = await withOrgTx(ORG, (tx) => requests.enqueueNfseBatch(tx, { orgId: ORG, actorId: "u1", year: 2026, month: 9, includeAdditional: true, selected: remaining.items.map(nfseBatchItemKey), expectedCount: 1, expectedTotalCents: 85000, today: "2026-10-05" }));
+  expect(queued).toEqual({ ok: true, data: { queued: 1 } });
 
   // Repetir não duplica: a prévia já não tem nada.
   const again = await withOrgTx(ORG, (tx) => requests.loadNfseEmissionPreview(tx, { orgId: ORG, year: 2026, month: 9, includeAdditional: true }));

@@ -25,6 +25,7 @@ import {
   NFSE_CANCEL_TEXT_MIN,
   NFSE_CERTIFICATE_WARNING_DAYS,
   NFSE_EXCLUSION_LABELS,
+  nfseBatchItemKey,
   nfseServiceHealth,
   type NfseCancelReasonCode,
   type NfseEmissionPreviewView,
@@ -152,6 +153,8 @@ export function NfseEmitDialog({ clanId, year, month, monthLabel, disabledReason
   const [open, setOpen] = useState(false);
   const [includeAdditional, setIncludeAdditional] = useState(false);
   const [preview, setPreview] = useState<NfseEmissionPreviewView | null>(null);
+  // Todas marcadas ao abrir a prévia; desmarcar deixa a nota para depois.
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [loading, startLoading] = useTransition();
   const [sending, startSending] = useTransition();
 
@@ -163,25 +166,38 @@ export function NfseEmitDialog({ clanId, year, month, monthLabel, disabledReason
         return;
       }
       setPreview(result.data ?? null);
+      setSelected(new Set((result.data?.items ?? []).map(nfseBatchItemKey)));
     });
   }
+
+  function toggle(key: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  const chosen = preview?.items.filter((item) => selected.has(nfseBatchItemKey(item))) ?? [];
+  const chosenTotal = chosen.reduce((sum, item) => sum + item.amountCents, 0);
 
   function emit() {
     if (!preview) return;
     startSending(async () => {
-      const result = await emitNfseBatch({ clanId, year, month, includeAdditional, expectedCount: preview.items.length, expectedTotalCents: preview.totalCents });
+      const result = await emitNfseBatch({ clanId, year, month, includeAdditional, selected: chosen.map(nfseBatchItemKey), expectedCount: chosen.length, expectedTotalCents: chosenTotal });
       if (!result.ok) {
         toast.error(result.error);
         load(includeAdditional);
         return;
       }
-      toast.success(`${result.data?.queued ?? preview.items.length} notas na fila. Elas saem em instantes.`);
+      toast.success(`${result.data?.queued ?? chosen.length} notas na fila. Elas saem em instantes.`);
       setOpen(false);
       router.refresh();
     });
   }
 
-  const count = preview?.items.length ?? 0;
+  const count = chosen.length;
   return (
     <>
       <Button type="button" disabled={disabledReason !== null} title={disabledReason ?? undefined} onClick={() => { setOpen(true); load(includeAdditional); }}>
@@ -201,14 +217,27 @@ export function NfseEmitDialog({ clanId, year, month, monthLabel, disabledReason
             <p className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" aria-hidden /> Montando a prévia…</p>
           ) : preview ? (
             <div className="grid min-w-0 grid-cols-1 gap-3">
+              {preview.descriptions ? (
+                <div className="grid gap-1 rounded-md border bg-muted/30 p-3">
+                  <p className="hud-label">Descrição na nota</p>
+                  <p className="text-sm">{preview.descriptions.monthly}</p>
+                  {includeAdditional ? <p className="text-sm text-muted-foreground">PA: {preview.descriptions.additionalInstallment}</p> : null}
+                </div>
+              ) : null}
               <div className="max-h-72 overflow-auto rounded-md border">
                 <ul className="divide-y">
-                  {preview.items.map((item) => (
-                    <li key={`${item.controlPeriodId}-${item.kind}`} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                      <span className="min-w-0 truncate">{item.clientName}{item.kind === "additional_installment" ? <span className="ml-2 text-xs text-muted-foreground">PA</span> : null}</span>
-                      <span className="font-mono tabular-nums">{cents(item.amountCents)}</span>
-                    </li>
-                  ))}
+                  {preview.items.map((item) => {
+                    const key = nfseBatchItemKey(item);
+                    return (
+                      <li key={key}>
+                        <label className={cn("flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-muted/30", !selected.has(key) && "text-muted-foreground")}>
+                          <input type="checkbox" className="size-4 shrink-0 accent-primary" checked={selected.has(key)} disabled={sending} onChange={() => toggle(key)} />
+                          <span className="min-w-0 flex-1 truncate">{item.clientName}{item.kind === "additional_installment" ? <span className="ml-2 text-xs text-muted-foreground">PA</span> : null}</span>
+                          <span className="font-mono tabular-nums">{cents(item.amountCents)}</span>
+                        </label>
+                      </li>
+                    );
+                  })}
                   {preview.items.length === 0 ? <li className="px-3 py-2 text-sm text-muted-foreground">Nenhuma nota a emitir: todas já saíram ou estão na fila.</li> : null}
                 </ul>
               </div>
@@ -231,7 +260,7 @@ export function NfseEmitDialog({ clanId, year, month, monthLabel, disabledReason
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Voltar</Button>
             <Button type="button" disabled={!preview || count === 0 || loading || sending} onClick={emit}>
               {sending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Send aria-hidden />}
-              Emitir {count} {count === 1 ? "nota" : "notas"} · <span className="font-mono tabular-nums">{cents(preview?.totalCents ?? 0)}</span>
+              Emitir {count} {count === 1 ? "nota" : "notas"} · <span className="font-mono tabular-nums">{cents(chosenTotal)}</span>
             </Button>
           </DialogFooter>
         </DialogContent>

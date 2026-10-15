@@ -9,7 +9,9 @@ import {
   centsToNfseAmount,
   danfseFileName,
   isFutureNfsePeriod,
+  nfseBatchItemKey,
   normalizeDpsSeries,
+  nfseReferencePeriod,
   renderNfseDescription,
   selectNfseBatch,
   type NfseCancelReasonCode,
@@ -59,6 +61,21 @@ export async function loadNfseSettings(
   };
 }
 
+/**
+ * Descrição de cada nota. A mensal se refere ao mês ANTERIOR ao do controle
+ * (o Fiscal emite em novembro a nota dos serviços de outubro); a PA usa o ano
+ * do próprio controle.
+ */
+function describeNfse(
+  template: NfseTemplate,
+  kind: "monthly" | "additional_installment",
+  period: { year: number; month: number },
+): string {
+  return kind === "monthly"
+    ? renderNfseDescription(template.descriptions.monthly, nfseReferencePeriod(period))
+    : renderNfseDescription(template.descriptions.additionalInstallment, period);
+}
+
 /** Prévia do lote do mês, recalculada no servidor a cada pedido. */
 export async function loadNfseEmissionPreview(
   tx: OrgTx,
@@ -106,7 +123,14 @@ export async function loadNfseEmissionPreview(
     ),
     includeAdditional: input.includeAdditional,
   });
-  return { ...batch, companiesWithoutFee: withoutFee?.count ?? 0 };
+  const template = (await loadNfseSettings(tx, input.orgId))?.template ?? null;
+  return {
+    ...batch,
+    companiesWithoutFee: withoutFee?.count ?? 0,
+    descriptions: template
+      ? { monthly: describeNfse(template, "monthly", input), additionalInstallment: describeNfse(template, "additional_installment", input) }
+      : null,
+  };
 }
 
 /**
@@ -122,6 +146,8 @@ export async function enqueueNfseBatch(
     year: number;
     month: number;
     includeAdditional: boolean;
+    /** Itens marcados na prévia (`nfseBatchItemKey`); o resto fica para depois. */
+    selected: readonly string[];
     expectedCount: number;
     expectedTotalCents: number;
     today: string;
@@ -133,19 +159,23 @@ export async function enqueueNfseBatch(
   if (isFutureNfsePeriod(input, input.today)) return fail("Não dá para emitir nota de um mês que ainda não começou.");
   const preview = await loadNfseEmissionPreview(tx, input);
   if (preview.items.length === 0) return fail("Nenhuma nota para emitir neste mês.");
-  if (preview.items.length !== input.expectedCount || preview.totalCents !== input.expectedTotalCents) {
+  const wanted = new Set(input.selected);
+  const items = preview.items.filter((item) => wanted.has(nfseBatchItemKey(item)));
+  if (items.length === 0) return fail("Marque ao menos uma nota para emitir.");
+  const totalCents = items.reduce((sum, item) => sum + item.amountCents, 0);
+  if (items.length !== wanted.size || items.length !== input.expectedCount || totalCents !== input.expectedTotalCents) {
     return fail("A lista mudou desde a prévia. Abra a prévia de novo antes de emitir.");
   }
   const first = settings.nextDpsNumber;
   await tx
     .update(schema.nfseSettings)
-    .set({ nextDpsNumber: first + preview.items.length })
+    .set({ nextDpsNumber: first + items.length })
     .where(eq(schema.nfseSettings.orgId, input.orgId));
   try {
     const inserted = await tx
       .insert(schema.nfseInvoices)
       .values(
-        preview.items.map((item, index) => {
+        items.map((item, index) => {
           const dpsNumber = first + index;
           return {
             orgId: input.orgId,
@@ -157,10 +187,7 @@ export async function enqueueNfseBatch(
             amount: centsToNfseAmount(item.amountCents),
             takerCnpj: item.cnpj,
             takerName: item.clientName,
-            description: renderNfseDescription(
-              item.kind === "monthly" ? template.descriptions.monthly : template.descriptions.additionalInstallment,
-              input,
-            ),
+            description: describeNfse(template, item.kind, input),
             dpsSeries: settings.dpsSeries,
             dpsNumber,
             dpsId: buildDpsId({ cityCode: template.cityCode, cnpj: settings.providerCnpj, series: settings.dpsSeries, number: dpsNumber }),
