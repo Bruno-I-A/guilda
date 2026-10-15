@@ -232,6 +232,11 @@ Desenho em `docs/superpowers/specs/2026-10-10-notas-de-honorario-design.md`.
   `applyOfficeFeeStepChange`; cancelada reabre. Emitir/cancelar: Fiscal e
   admins; modelo da nota: só admin.
 - Homologação só fala com a produção restrita (`NFSE_AMBIENTE` vazio).
+- **Modelo real (2026-10-15)**: competência da nota = **data da emissão**; a
+  nota mensal se refere ao **mês anterior ao do controle** (no controle de
+  novembro sai "referente a competência 10/2026", `nfseReferencePeriod`) —
+  é como o Fiscal emite no Portal. A prévia mostra a descrição e deixa marcar
+  quais notas emitir.
 - **Tela (2026-10-11, a pedido do Bruno, que achou a primeira versão confusa)**:
   a aba Honorários tem duas visões no topo, **Mês a mês** (padrão) e **Cadastro
   de honorários**. O mês é uma sequência — Cadastro → Abrir o mês → Emitir
