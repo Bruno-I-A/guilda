@@ -7,7 +7,6 @@ import {
   centsToNfseAmount,
   danfseFileName,
   isFutureNfsePeriod,
-  nfseCompetenceDate,
   nfseServiceHealth,
   normalizeDpsSeries,
   renderNfseDescription,
@@ -65,12 +64,6 @@ describe("texto e datas", () => {
   test("descrição troca competência e ano", () => {
     expect(renderNfseDescription("Honorários {competencia} ({ano})", { year: 2026, month: 9 }))
       .toBe("Honorários 09/2026 (2026)");
-  });
-
-  test("competência é o último dia do mês, ou hoje se o mês não terminou", () => {
-    expect(nfseCompetenceDate({ year: 2026, month: 9 }, "2026-10-05")).toBe("2026-09-30");
-    expect(nfseCompetenceDate({ year: 2026, month: 10 }, "2026-10-05")).toBe("2026-10-05");
-    expect(nfseCompetenceDate({ year: 2028, month: 2 }, "2028-03-01")).toBe("2028-02-29");
   });
 
   test("mês que ainda não começou não emite", () => {

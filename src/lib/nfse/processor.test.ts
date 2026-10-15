@@ -62,7 +62,7 @@ describe("emissão", () => {
     const outcome = await runNfseJob(job(), deps(client({ emit: async (xml) => { emitted = xml; return { kind: "issued", accessKey: KEY, nfseNumber: "77" }; } })));
     expect(outcome).toEqual({ kind: "issued", accessKey: KEY, nfseNumber: "77", environment: 2 });
     expect(emitted).toContain("<Signature");
-    expect(emitted).toContain("<dCompet>2026-09-30</dCompet>");
+    expect(emitted).toContain("<dCompet>2026-10-05</dCompet>");
   });
 
   test("DPS que já virou nota é só recuperada, sem reenviar", async () => {

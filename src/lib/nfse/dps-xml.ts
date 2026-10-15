@@ -61,6 +61,12 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
   const valores =
     `<valores><vServPrest>${element("vServ", centsToNfseAmount(input.amountCents))}</vServPrest>` +
     `<trib>${tribMun}${totTrib}</trib></valores>`;
+  // Ordem do TCRTCInfoIBSCBS: finNFSe, (indFinal), cIndOp, ..., indDest, ..., valores.
+  // finNFSe 0 = NFS-e regular; indDest 0 = o tomador é o próprio destinatário.
+  const ibsCbs = t.ibsCbs
+    ? `<IBSCBS>${element("finNFSe", "0")}${element("cIndOp", t.ibsCbs.operationIndicator)}${element("indDest", "0")}` +
+      `<valores><trib><gIBSCBS>${element("CST", t.ibsCbs.cst)}${element("cClassTrib", t.ibsCbs.classification)}</gIBSCBS></trib></valores></IBSCBS>`
+    : "";
   const infDps =
     `<infDPS Id="${id}">` +
     `${element("tpAmb", String(input.environment))}` +
@@ -71,7 +77,7 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
     `${element("dCompet", input.competenceDate)}` +
     `${element("tpEmit", "1")}` +
     `${element("cLocEmi", t.cityCode)}` +
-    `${prest}${toma}${serv}${valores}</infDPS>`;
+    `${prest}${toma}${serv}${valores}${ibsCbs}</infDPS>`;
   return {
     id,
     xml: `${XML_DECLARATION}<DPS xmlns="${NFSE_NAMESPACE}" versao="${NFSE_LAYOUT_VERSION}">${infDps}</DPS>`,

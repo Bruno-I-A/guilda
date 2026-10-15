@@ -44,6 +44,24 @@ describe("XML da DPS", () => {
     expect(await nfseXsdErrors(xml, "DPS_v1.01.xsd")).toEqual([]);
   });
 
+  test("é válido com os códigos da nota real do escritório (municipal, NBS e IBS/CBS)", async () => {
+    // Códigos da nota 104 de 08/10/2026, emitida no Portal: 17.19.01 / 001,
+    // NBS 1.1302.21.00, IBS/CBS com indicador 100301, CST 200 e cClassTrib 200052.
+    const officeModel: NfseTemplate = {
+      ...TEST_TEMPLATE,
+      service: { nationalTaxCode: "171901", municipalTaxCode: "001", nbsCode: "113022100" },
+      totalTaxes: { kind: "none" },
+      ibsCbs: { operationIndicator: "100301", cst: "200", classification: "200052" },
+    };
+    const { xml } = buildDpsXml(input({ template: officeModel }));
+    expect(xml).toContain("<cTribMun>001</cTribMun>");
+    expect(xml).toContain("<cNBS>113022100</cNBS>");
+    expect(xml).toContain(
+      "<IBSCBS><finNFSe>0</finNFSe><cIndOp>100301</cIndOp><indDest>0</indDest><valores><trib><gIBSCBS><CST>200</CST><cClassTrib>200052</cClassTrib></gIBSCBS></trib></valores></IBSCBS></infDPS>",
+    );
+    expect(await nfseXsdErrors(xml, "DPS_v1.01.xsd")).toEqual([]);
+  });
+
   test("normaliza o nome do tomador e escapa o texto", () => {
     const { xml } = buildDpsXml(input());
     expect(xml).toContain("<xNome>Padaria Pão &amp; Cia</xNome>");

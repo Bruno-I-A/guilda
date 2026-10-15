@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import { parseNfseTemplate } from "./template";
 import { TEST_TEMPLATE } from "./testing/fixtures";
-import { nfseIssueTimestamp, nfseToday } from "./time";
+import { nfseIssueDate, nfseIssueTimestamp, nfseToday } from "./time";
 import { escapeXml, firstElementText, gunzipBase64, gzipBase64 } from "./xml";
 
 describe("modelo da nota", () => {
@@ -33,5 +33,10 @@ describe("horário da emissão", () => {
   });
   test("hoje no fuso da Guilda", () => {
     expect(nfseToday(new Date("2026-10-01T02:30:00Z"))).toBe("2026-09-30");
+  });
+  test("competência é o dia do dhEmi, mesmo na virada da meia-noite", () => {
+    // 00:00:30 em Brasília: o dhEmi cai às 23:59:30 do dia anterior, e a competência acompanha.
+    expect(nfseIssueDate(new Date("2026-10-08T03:00:30Z"))).toBe("2026-10-07");
+    expect(nfseIssueDate(new Date("2026-10-08T13:08:47Z"))).toBe("2026-10-08");
   });
 });

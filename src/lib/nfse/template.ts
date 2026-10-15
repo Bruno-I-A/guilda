@@ -33,6 +33,19 @@ export const nfseTemplateSchema = z.object({
       percent: z.string().regex(/^(0|0\.[0-9]{2}|[1-9][0-9]?(\.[0-9]{2})?)$/, "Percentual no formato 6.00."),
     }),
   ]),
+  /**
+   * Reforma tributária (IBS/CBS): o Emissor Nacional já preenche este grupo
+   * nas notas do escritório (nota 104 de 08/10/2026: indicador 100301, CST 200,
+   * cClassTrib 200052 — redução de 30% de profissão regulamentada). As
+   * alíquotas o próprio Sistema Nacional calcula; aqui vão só os códigos.
+   */
+  ibsCbs: z
+    .object({
+      operationIndicator: digits(6, "O indicador de operação"),
+      cst: digits(3, "O CST do IBS/CBS"),
+      classification: digits(6, "A classificação tributária"),
+    })
+    .optional(),
   descriptions: z.object({
     monthly: z.string().trim().min(1).max(2000),
     additionalInstallment: z.string().trim().min(1).max(2000),

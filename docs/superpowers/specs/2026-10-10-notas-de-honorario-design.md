@@ -211,3 +211,24 @@ a baixa de impostos dos Fechamentos (desenho próprio, parte 1 aprovada em
 09/10/2026, retomado depois desta entrega).
 
 — claude, 10/10/2026
+
+## Adendo — o modelo real (15/10/2026)
+
+O Bruno mandou o DANFSe de uma nota de honorário emitida no Portal (nº 104,
+08/10/2026). O que ela definiu:
+
+- **Competência = data da emissão**, não o fim do mês de referência: a nota
+  de 08/10 tem competência 08/10 e descreve "referente a competência 09/2026".
+  Usar o fim do mês jogaria o faturamento do escritório para o mês anterior.
+  `nfseIssueDate` (o dia do `dhEmi`) substituiu a regra anterior.
+- Serviço 17.19.01 / municipal 001, NBS 1.1302.21.00, Simples ME/EPP com
+  apuração pelo SN, ISS tributável não retido sem alíquota informada, total
+  de tributos não informado.
+- **IBS/CBS**: o Emissor Nacional já preenche o grupo `IBSCBS` (indicador de
+  operação 100301, CST 200, cClassTrib 200052 — redução de 30% de profissão
+  regulamentada). O modelo ganhou esses três códigos, opcionais; as alíquotas
+  o Sistema Nacional calcula.
+- Descrição no formato do escritório: "HONORÁRIOS CONTÁBEIS REFERENTE A
+  COMPETÊNCIA {competencia}". A série do Emissor Web é 70000; a da Guilda, 1.
+
+— claude, 15/10/2026

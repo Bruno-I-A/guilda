@@ -103,20 +103,6 @@ export function renderNfseDescription(
     .trim();
 }
 
-/**
- * Data de competência: último dia do mês de referência, ou hoje se o mês
- * ainda corre — o leiaute recusa competência posterior à emissão.
- * `today` é a data de emissão no fuso da Guilda (AAAA-MM-DD).
- */
-export function nfseCompetenceDate(
-  period: { year: number; month: number },
-  today: string,
-): string {
-  const lastDay = new Date(Date.UTC(period.year, period.month, 0)).getUTCDate();
-  const endOfMonth = `${period.year}-${twoDigits(period.month)}-${twoDigits(lastDay)}`;
-  return endOfMonth < today ? endOfMonth : today;
-}
-
 export function isFutureNfsePeriod(
   period: { year: number; month: number },
   today: string,

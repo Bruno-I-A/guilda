@@ -34,11 +34,21 @@ const OPTIONS = {
   taxation: [["1", "Operação tributável"], ["2", "Imunidade"], ["3", "Exportação de serviço"], ["4", "Não incidência"]],
   withholding: [["1", "Não retido"], ["2", "Retido pelo tomador"], ["3", "Retido pelo intermediário"]],
   totalTaxes: [["none", "Não informar valor de tributos"], ["simples", "Percentual do Simples Nacional"]],
+  ibsCbs: [["yes", "Informar"], ["no", "Não informar"]],
 } as const;
 
+// Padrões tirados da nota de honorário real do escritório (nota 104, 08/10/2026):
+// valem para qualquer escritório contábil — serviço 17.19.01, NBS 1.1302.21.00
+// e IBS/CBS com a redução de profissão regulamentada. Município, inscrição e
+// código municipal são de cada escritório e ficam em branco.
 const DEFAULTS = {
-  monthly: "Honorários contábeis referentes à competência {competencia}.",
-  additionalInstallment: "Parcela adicional de honorários contábeis de {ano}.",
+  nationalTaxCode: "171901",
+  nbsCode: "113022100",
+  operationIndicator: "100301",
+  cst: "200",
+  classification: "200052",
+  monthly: "HONORÁRIOS CONTÁBEIS REFERENTE A COMPETÊNCIA {competencia}",
+  additionalInstallment: "PARCELA ADICIONAL DE HONORÁRIOS CONTÁBEIS {ano}",
 };
 
 function Field({ id, label, hint, children }: { id: string; label: string; hint?: string; children: ReactNode }) {
@@ -75,14 +85,18 @@ export function NfseSettingsDialog({ clanId, settings }: { clanId: string; setti
     opSimpNac: t.taxRegime?.opSimpNac ?? "3",
     regApTribSN: t.taxRegime?.regApTribSN ?? NONE,
     regEspTrib: t.taxRegime?.regEspTrib ?? "0",
-    nationalTaxCode: t.service?.nationalTaxCode ?? "171901",
+    nationalTaxCode: t.service?.nationalTaxCode ?? DEFAULTS.nationalTaxCode,
     municipalTaxCode: t.service?.municipalTaxCode ?? "",
-    nbsCode: t.service?.nbsCode ?? "",
+    nbsCode: t.service?.nbsCode ?? (settings?.template ? "" : DEFAULTS.nbsCode),
     taxation: t.issqn?.taxation ?? "1",
     withholding: t.issqn?.withholding ?? "1",
     rate: t.issqn?.rate ?? "",
     totalTaxesKind: t.totalTaxes?.kind ?? "none",
     totalTaxesPercent: t.totalTaxes?.kind === "simples" ? t.totalTaxes.percent : "",
+    ibsCbsEnabled: t.ibsCbs || !settings?.template ? "yes" : "no",
+    operationIndicator: t.ibsCbs?.operationIndicator ?? DEFAULTS.operationIndicator,
+    cst: t.ibsCbs?.cst ?? DEFAULTS.cst,
+    classification: t.ibsCbs?.classification ?? DEFAULTS.classification,
     monthly: t.descriptions?.monthly ?? DEFAULTS.monthly,
     additionalInstallment: t.descriptions?.additionalInstallment ?? DEFAULTS.additionalInstallment,
   });
@@ -101,6 +115,10 @@ export function NfseSettingsDialog({ clanId, settings }: { clanId: string; setti
       service: { nationalTaxCode: form.nationalTaxCode.trim(), municipalTaxCode: optional(form.municipalTaxCode), nbsCode: optional(form.nbsCode) },
       issqn: { taxation: form.taxation, withholding: form.withholding, rate: optional(form.rate) },
       totalTaxes: form.totalTaxesKind === "simples" ? { kind: "simples", percent: form.totalTaxesPercent.trim() } : { kind: "none" },
+      ibsCbs:
+        form.ibsCbsEnabled === "yes"
+          ? { operationIndicator: form.operationIndicator.trim(), cst: form.cst.trim(), classification: form.classification.trim() }
+          : undefined,
       descriptions: { monthly: form.monthly, additionalInstallment: form.additionalInstallment },
     } as NfseTemplate;
     startTransition(async () => {
@@ -142,6 +160,14 @@ export function NfseSettingsDialog({ clanId, settings }: { clanId: string; setti
           <Field id="nfse-tot" label="Total de tributos"><Choice id="nfse-tot" value={form.totalTaxesKind} options={OPTIONS.totalTaxes} onChange={set("totalTaxesKind")} /></Field>
           {form.totalTaxesKind === "simples" ? (
             <Field id="nfse-totpct" label="Percentual do Simples" hint="Formato 6.00."><Input id="nfse-totpct" inputMode="decimal" value={form.totalTaxesPercent} onChange={(event) => set("totalTaxesPercent")(event.target.value)} /></Field>
+          ) : null}
+          <Field id="nfse-ibscbs" label="IBS/CBS (Reforma tributária)" hint="O Emissor Nacional já inclui nas notas do escritório."><Choice id="nfse-ibscbs" value={form.ibsCbsEnabled} options={OPTIONS.ibsCbs} onChange={set("ibsCbsEnabled")} /></Field>
+          {form.ibsCbsEnabled === "yes" ? (
+            <>
+              <Field id="nfse-indop" label="Indicador de operação" hint="6 dígitos."><Input id="nfse-indop" inputMode="numeric" value={form.operationIndicator} onChange={(event) => set("operationIndicator")(event.target.value)} /></Field>
+              <Field id="nfse-cst" label="CST do IBS/CBS" hint="3 dígitos."><Input id="nfse-cst" inputMode="numeric" value={form.cst} onChange={(event) => set("cst")(event.target.value)} /></Field>
+              <Field id="nfse-cclass" label="Classificação tributária" hint="6 dígitos."><Input id="nfse-cclass" inputMode="numeric" value={form.classification} onChange={(event) => set("classification")(event.target.value)} /></Field>
+            </>
           ) : null}
           <div className="sm:col-span-2"><Field id="nfse-desc" label="Descrição da nota mensal" hint="{competencia} vira MM/AAAA."><Textarea id="nfse-desc" rows={2} value={form.monthly} onChange={(event) => set("monthly")(event.target.value)} /></Field></div>
           <div className="sm:col-span-2"><Field id="nfse-desc-pa" label="Descrição da PA" hint="{ano} vira AAAA."><Textarea id="nfse-desc-pa" rows={2} value={form.additionalInstallment} onChange={(event) => set("additionalInstallment")(event.target.value)} /></Field></div>

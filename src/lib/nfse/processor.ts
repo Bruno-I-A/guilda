@@ -1,11 +1,11 @@
-import { nfseCompetenceDate, type NfseCancelReasonCode } from "@/domain/nfse";
+import type { NfseCancelReasonCode } from "@/domain/nfse";
 
 import { buildCancelRequestXml } from "./cancel-xml";
 import { buildDpsXml } from "./dps-xml";
 import { NfseTransientError, type NfseApiError, type SefinClient } from "./sefin-client";
 import { signNfseXml, type NfseSigningKey } from "./sign";
 import type { NfseTemplate } from "./template";
-import { nfseIssueTimestamp, nfseToday } from "./time";
+import { nfseIssueDate, nfseIssueTimestamp } from "./time";
 
 /** Uma nota reivindicada da fila, no formato que a orquestração precisa. */
 export interface NfseJob {
@@ -65,7 +65,7 @@ async function issue(job: NfseJob, deps: NfseJobDeps): Promise<NfseJobOutcome> {
   const { id, xml } = buildDpsXml({
     environment: deps.environment,
     issuedAt: nfseIssueTimestamp(deps.now),
-    competenceDate: nfseCompetenceDate({ year: job.periodYear, month: job.periodMonth }, nfseToday(deps.now)),
+    competenceDate: nfseIssueDate(deps.now),
     series: job.dpsSeries,
     number: job.dpsNumber,
     providerCnpj: deps.providerCnpj,

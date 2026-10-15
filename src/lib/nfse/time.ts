@@ -25,6 +25,16 @@ export function nfseIssueTimestamp(now: Date): string {
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}-03:00`;
 }
 
+/**
+ * Data de competência da nota: o dia da emissão, como nas notas que o Fiscal
+ * emite no Portal (nota 104: emitida e com competência em 08/10/2026, descrição
+ * "referente a competência 09/2026"). É a data do dhEmi, para nunca ficar
+ * depois dele — o leiaute recusa competência posterior à emissão.
+ */
+export function nfseIssueDate(now: Date): string {
+  return nfseToday(new Date(now.getTime() - 60_000));
+}
+
 /** Hoje (AAAA-MM-DD) no fuso da Guilda. */
 export function nfseToday(now: Date): string {
   const p = parts(now);
