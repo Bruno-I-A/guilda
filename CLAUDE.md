@@ -225,6 +225,10 @@ Desenho em `docs/superpowers/specs/2026-10-10-notas-de-honorario-design.md`.
 - App e serviço conversam pela fila no banco (`nfse_invoices`) e, para PDFs,
   pela rede interna com `FISCAL_SERVICE_TOKEN`. **PDF e XML não são
   guardados**, a pedido do Bruno: só chave e número.
+- **O PDF é montado pela Guilda (2026-10-15)**: o governo suspendeu a API do
+  DANFSe em 03/08/2026 (NT 008/2026). O serviço fiscal busca o XML da nota
+  e desenha o DANFSe v2.0 (`danfse-data.ts` lê, `danfse-pdf.ts` desenha),
+  copiando o PDF que o Portal gera. Não voltar a chamar o ADN.
 - Série de DPS própria (1–49999); o Emissor Web usa 70000–79999. O número da
   DPS é reservado na fila e nunca muda; antes de emitir, o serviço consulta a
   DPS — é isso que impede nota duplicada.

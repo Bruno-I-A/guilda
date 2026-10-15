@@ -4,6 +4,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { setTimeout as delay } from "node:timers/promises";
 
 import { loadNfseCertificate, type NfseCertificate } from "../src/lib/nfse/certificate";
+import { readDanfse } from "../src/lib/nfse/danfse-data";
+import { renderDanfsePdf } from "../src/lib/nfse/danfse-pdf";
 import { buildDanfseZip, MIN_SERVICE_TOKEN_LENGTH, parseDanfseRequest, tokenMatches } from "../src/lib/nfse/danfse-zip";
 import { runNfseJob } from "../src/lib/nfse/processor";
 import {
@@ -23,7 +25,9 @@ import {
 /**
  * Serviço fiscal: o ÚNICO processo com o certificado do escritório. Consome a
  * fila de notas (emitir/cancelar) e serve, só na rede interna, o .zip de
- * PDFs. Sobe com GUILDA_SERVICE=fiscal (scripts/start-production.mjs).
+ * PDFs. O governo suspendeu a API do DANFSe em 03/08/2026: o PDF é montado
+ * aqui, do XML da nota (NT 008/2026). Sobe com GUILDA_SERVICE=fiscal
+ * (scripts/start-production.mjs).
  */
 
 const POLL_MS = 10_000;
@@ -90,7 +94,10 @@ function startHttp(client: SefinClient | null) {
         reply(res, 400, "Pedido de PDFs inválido.");
         return;
       }
-      const { zip } = await buildDanfseZip(items, (accessKey) => client.getDanfse(accessKey));
+      const { zip, failures } = await buildDanfseZip(items, async (accessKey) =>
+        renderDanfsePdf(readDanfse(await client.getNfseXml(accessKey))),
+      );
+      for (const failure of failures) console.warn(`PDF não montado (${failure.fileName}): ${failure.message}`);
       res.writeHead(200, { "Content-Type": "application/zip", "Content-Length": zip.length });
       res.end(Buffer.from(zip));
     } catch (error) {
