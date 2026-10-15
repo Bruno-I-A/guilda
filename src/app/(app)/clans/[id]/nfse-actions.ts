@@ -19,7 +19,7 @@ import {
   requestNfseCancel,
   upsertNfseSettings,
 } from "@/lib/nfse/requests";
-import { nfseTemplateSchema } from "@/lib/nfse/template";
+import { nfseTemplateRulesSchema } from "@/lib/nfse/template";
 import { nfseToday } from "@/lib/nfse/time";
 import { requireFiscalClan } from "@/lib/office-fees/fiscal-clan";
 
@@ -121,7 +121,7 @@ const settingsSchema = z.object({
   clanId: z.uuid("Clã inválido."),
   providerCnpj: z.string().transform(normalizeCnpj).refine(validateCnpj, "CNPJ do escritório inválido."),
   dpsSeries: z.string().regex(/^\d{1,5}$/, "Série inválida.").refine((value) => Number(value) >= 1 && Number(value) <= 49_999, "A série deve estar entre 1 e 49999."),
-  template: nfseTemplateSchema,
+  template: nfseTemplateRulesSchema,
 });
 
 export async function saveNfseSettings(input: z.input<typeof settingsSchema>): Promise<ActionResult> {

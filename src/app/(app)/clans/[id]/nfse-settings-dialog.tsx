@@ -83,7 +83,8 @@ export function NfseSettingsDialog({ clanId, settings }: { clanId: string; setti
     cityCode: t.cityCode ?? "",
     municipalRegistration: t.municipalRegistration ?? "",
     opSimpNac: t.taxRegime?.opSimpNac ?? "3",
-    regApTribSN: t.taxRegime?.regApTribSN ?? NONE,
+    // Escritório do Simples apura pelo SN (nota 104); o padrão já vem assim.
+    regApTribSN: t.taxRegime?.regApTribSN ?? (settings?.template ? NONE : "1"),
     regEspTrib: t.taxRegime?.regEspTrib ?? "0",
     nationalTaxCode: t.service?.nationalTaxCode ?? DEFAULTS.nationalTaxCode,
     municipalTaxCode: t.service?.municipalTaxCode ?? "",
@@ -91,7 +92,8 @@ export function NfseSettingsDialog({ clanId, settings }: { clanId: string; setti
     taxation: t.issqn?.taxation ?? "1",
     withholding: t.issqn?.withholding ?? "1",
     rate: t.issqn?.rate ?? "",
-    totalTaxesKind: t.totalTaxes?.kind ?? "none",
+    // ME/EPP não pode "não informar" tributos (E0712): o padrão é o percentual do Simples.
+    totalTaxesKind: t.totalTaxes?.kind ?? "simples",
     totalTaxesPercent: t.totalTaxes?.kind === "simples" ? t.totalTaxes.percent : "",
     ibsCbsEnabled: t.ibsCbs || !settings?.template ? "yes" : "no",
     operationIndicator: t.ibsCbs?.operationIndicator ?? DEFAULTS.operationIndicator,
@@ -152,14 +154,14 @@ export function NfseSettingsDialog({ clanId, settings }: { clanId: string; setti
           <Field id="nfse-apuracao" label="Regime de apuração do Simples"><Choice id="nfse-apuracao" value={form.regApTribSN} options={OPTIONS.regApTribSN} onChange={set("regApTribSN")} /></Field>
           <Field id="nfse-especial" label="Regime especial"><Choice id="nfse-especial" value={form.regEspTrib} options={OPTIONS.regEspTrib} onChange={set("regEspTrib")} /></Field>
           <Field id="nfse-ctrib" label="Código de tributação nacional" hint="6 dígitos (item, subitem, desdobro)."><Input id="nfse-ctrib" inputMode="numeric" value={form.nationalTaxCode} onChange={(event) => set("nationalTaxCode")(event.target.value)} /></Field>
-          <Field id="nfse-cmun" label="Código municipal (opcional)"><Input id="nfse-cmun" inputMode="numeric" value={form.municipalTaxCode} onChange={(event) => set("municipalTaxCode")(event.target.value)} /></Field>
+          <Field id="nfse-cmun" label="Código municipal" hint="O da nota emitida no Portal, depois da barra em 17.19.01 / 001."><Input id="nfse-cmun" inputMode="numeric" value={form.municipalTaxCode} onChange={(event) => set("municipalTaxCode")(event.target.value)} /></Field>
           <Field id="nfse-nbs" label="Código NBS (opcional)"><Input id="nfse-nbs" inputMode="numeric" value={form.nbsCode} onChange={(event) => set("nbsCode")(event.target.value)} /></Field>
           <Field id="nfse-iss" label="Tributação do ISS"><Choice id="nfse-iss" value={form.taxation} options={OPTIONS.taxation} onChange={set("taxation")} /></Field>
           <Field id="nfse-ret" label="Retenção do ISS"><Choice id="nfse-ret" value={form.withholding} options={OPTIONS.withholding} onChange={set("withholding")} /></Field>
           <Field id="nfse-aliq" label="Alíquota do ISS (opcional)" hint="Formato 2.00."><Input id="nfse-aliq" inputMode="decimal" value={form.rate} onChange={(event) => set("rate")(event.target.value)} /></Field>
           <Field id="nfse-tot" label="Total de tributos"><Choice id="nfse-tot" value={form.totalTaxesKind} options={OPTIONS.totalTaxes} onChange={set("totalTaxesKind")} /></Field>
           {form.totalTaxesKind === "simples" ? (
-            <Field id="nfse-totpct" label="Percentual do Simples" hint="Formato 6.00."><Input id="nfse-totpct" inputMode="decimal" value={form.totalTaxesPercent} onChange={(event) => set("totalTaxesPercent")(event.target.value)} /></Field>
+            <Field id="nfse-totpct" label="Percentual do Simples" hint="Alíquota efetiva do DAS do escritório, no formato 6.00."><Input id="nfse-totpct" inputMode="decimal" value={form.totalTaxesPercent} onChange={(event) => set("totalTaxesPercent")(event.target.value)} /></Field>
           ) : null}
           <Field id="nfse-ibscbs" label="IBS/CBS (Reforma tributária)" hint="O Emissor Nacional já inclui nas notas do escritório."><Choice id="nfse-ibscbs" value={form.ibsCbsEnabled} options={OPTIONS.ibsCbs} onChange={set("ibsCbsEnabled")} /></Field>
           {form.ibsCbsEnabled === "yes" ? (
