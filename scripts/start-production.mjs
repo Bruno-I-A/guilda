@@ -90,16 +90,26 @@ function shutdown(exitCode, signal = "SIGTERM") {
 process.once("SIGTERM", () => shutdown(0, "SIGTERM"));
 process.once("SIGINT", () => shutdown(0, "SIGINT"));
 
-try {
-  await runMigrations();
-} catch (error) {
-  console.error("Falha ao aplicar as migrations:", error.message);
-  process.exit(1);
-}
+if (process.env.GUILDA_SERVICE === "fiscal") {
+  // Servico fiscal: so o processo que guarda o certificado. As migrations
+  // ficam com o servico do app; este conecta como guilda_app e nao migra.
+  start("serviço fiscal", [
+    "--conditions=react-server",
+    "--import=tsx",
+    "scripts/fiscal-service.ts",
+  ]);
+} else {
+  try {
+    await runMigrations();
+  } catch (error) {
+    console.error("Falha ao aplicar as migrations:", error.message);
+    process.exit(1);
+  }
 
-start("aplicação", ["server.js"]);
-start("telegram-worker", [
-  "--conditions=react-server",
-  "--import=tsx",
-  "scripts/telegram-worker.ts",
-]);
+  start("aplicação", ["server.js"]);
+  start("telegram-worker", [
+    "--conditions=react-server",
+    "--import=tsx",
+    "scripts/telegram-worker.ts",
+  ]);
+}

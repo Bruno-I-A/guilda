@@ -61,10 +61,13 @@ export function SegmentedNav({
             href={item.href}
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              // O trilho é `after`, e não `border-b`, para poder cobrir a
-              // borda do <nav> sem deslocar o texto em 1px ao ativar.
+              // O trilho é `after`, e não `border-b`, para não deslocar o
+              // texto em 1px ao ativar. Ele fica DENTRO do <nav> (bottom-0):
+              // com -bottom-px, o pixel que passava da borda criava rolagem
+              // vertical no <nav> (overflow-x-auto força overflow-y) e o
+              // Windows mostrava setas de barra de rolagem ao lado das abas.
               "relative shrink-0 whitespace-nowrap px-3 py-2.5 font-mono text-hud font-medium uppercase tracking-hud transition-colors",
-              "after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:transition-colors",
+              "after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:transition-colors",
               isActive
                 ? "text-foreground after:bg-primary"
                 : "text-muted-foreground after:bg-transparent hover:text-foreground hover:after:bg-border",
