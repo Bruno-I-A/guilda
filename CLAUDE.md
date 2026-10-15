@@ -231,7 +231,10 @@ Desenho em `docs/superpowers/specs/2026-10-10-notas-de-honorario-design.md`.
 - Emitida marca a etapa "Nota" do controle (PA marca "Parcela adicional") pela
   `applyOfficeFeeStepChange`; cancelada reabre. Emitir/cancelar: Fiscal e
   admins; modelo da nota: só admin.
-- Homologação só fala com a produção restrita (`NFSE_AMBIENTE` vazio).
+- **Serviço fiscal só na produção (2026-10-15)**: a produção restrita do governo
+  não tem Getúlio Vargas conveniado (E0037), então o `guilda-fiscal` serve só a
+  produção (`main`, `NFSE_AMBIENTE=producao`) e a homologação fica sem emissão.
+  Teste de emissão é uma nota real, com uma empresa só marcada na prévia.
 - **Modelo real (2026-10-15)**: competência da nota = **data da emissão**; a
   nota mensal se refere ao **mês anterior ao do controle** (no controle de
   novembro sai "referente a competência 10/2026", `nfseReferencePeriod`) —

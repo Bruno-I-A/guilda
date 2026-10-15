@@ -116,16 +116,23 @@ Todas exclusivas. Nenhuma pode repetir valor da produção.
 
 ## Serviço fiscal (notas de honorário)
 
-Segundo serviço por ambiente, **mesma imagem** do app, com
-`GUILDA_SERVICE=fiscal`: o `start-production.mjs` sobe só
+Serviço `guilda-fiscal` no projeto `appcontabil`, **mesma imagem** do app,
+com `GUILDA_SERVICE=fiscal`: o `start-production.mjs` sobe só
 `scripts/fiscal-service.ts` (sem migrations, sem Next, sem Telegram). É o
 único processo com o certificado A1 do escritório.
 
+- **Um serviço só, o da produção** (decisão de 2026-10-15): branch `main`,
+  `DATABASE_URL` da produção e `NFSE_AMBIENTE=producao`. O ambiente de teste
+  do governo (produção restrita) **não tem Getúlio Vargas no cadastro de
+  convênios** — a nota de teste voltou com E0037 —, então um serviço fiscal
+  da homologação não emitiria nada. A homologação fica sem
+  `FISCAL_SERVICE_URL`/`FISCAL_SERVICE_TOKEN` e mostra a emissão como
+  indisponível. Uma cópia só do certificado no Easypanel.
 - **Sem domínio público.** O app fala com ele pela rede interna do Easypanel
-  (`http://<projeto>_<serviço>:4100`). Ele só responde `GET /health` e
+  (`http://appcontabil_guilda-fiscal:4100`). Ele só responde `GET /health` e
   `POST /danfse.zip` com o token.
-- Homologação usa `NFSE_AMBIENTE` vazio (produção restrita). Só o serviço da
-  produção recebe `NFSE_AMBIENTE=producao`.
+- Se um dia a prefeitura aderir à produção restrita, um segundo serviço para
+  a homologação usa `NFSE_AMBIENTE` vazio e branch `develop`.
 
 | Variável | Serviço | Observação |
 | --- | --- | --- |

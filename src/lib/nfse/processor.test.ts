@@ -25,6 +25,7 @@ function job(overrides: Partial<NfseJob> = {}): NfseJob {
     amountCents: 85000,
     takerCnpj: "33000167000101",
     takerName: "Padaria",
+    takerAddress: null,
     description: "Honorários 09/2026.",
     accessKey: null,
     issuedEnvironment: null,

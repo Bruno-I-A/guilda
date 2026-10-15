@@ -53,7 +53,19 @@ describe("XML da DPS", () => {
       totalTaxes: { kind: "none" },
       ibsCbs: { operationIndicator: "100301", cst: "200", classification: "200052" },
     };
-    const { xml } = buildDpsXml(input({ template: officeModel }));
+    const { xml } = buildDpsXml(
+      input({
+        template: officeModel,
+        taker: {
+          cnpj: "33000167000101",
+          name: "Padaria",
+          address: { cityCode: "4308904", zipCode: "99900000", street: "RUA EDITH KURTZ", number: "871", complement: null, district: "SANTO ANDRE" },
+        },
+      }),
+    );
+    expect(xml).toContain(
+      "<toma><CNPJ>33000167000101</CNPJ><xNome>Padaria</xNome><end><endNac><cMun>4308904</cMun><CEP>99900000</CEP></endNac><xLgr>RUA EDITH KURTZ</xLgr><nro>871</nro><xBairro>SANTO ANDRE</xBairro></end></toma>",
+    );
     expect(xml).toContain("<cTribMun>001</cTribMun>");
     expect(xml).toContain("<cNBS>113022100</cNBS>");
     expect(xml).toContain(

@@ -1,4 +1,4 @@
-import type { NfseCancelReasonCode } from "@/domain/nfse";
+import type { NfseCancelReasonCode, NfseTakerAddress } from "@/domain/nfse";
 
 import { buildCancelRequestXml } from "./cancel-xml";
 import { buildDpsXml } from "./dps-xml";
@@ -21,6 +21,7 @@ export interface NfseJob {
   amountCents: number;
   takerCnpj: string;
   takerName: string;
+  takerAddress: NfseTakerAddress | null;
   description: string;
   accessKey: string | null;
   issuedEnvironment: 1 | 2 | null;
@@ -70,7 +71,7 @@ async function issue(job: NfseJob, deps: NfseJobDeps): Promise<NfseJobOutcome> {
     number: job.dpsNumber,
     providerCnpj: deps.providerCnpj,
     template: deps.template,
-    taker: { cnpj: job.takerCnpj, name: job.takerName },
+    taker: { cnpj: job.takerCnpj, name: job.takerName, address: job.takerAddress },
     amountCents: job.amountCents,
     description: job.description,
   });
