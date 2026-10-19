@@ -195,6 +195,31 @@ test("rotina: estado padrão, início e fim da rodada", async () => {
   expect(await repo.loadXmlRoutineState(ORG)).toMatchObject({ lastRunStartedAt: nextStart, lastRunFinishedAt: finishedAt, keepSince: null, runRequestedAt: null });
 });
 
+test("download da empresa sem controle: corte de emissao em Brasilia e isolamento", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const repo = await import("./xml-repository");
+  const { loadXmlArchiveInput, loadClientXmlMonths, countIssuedNotes } = await import("./xml-requests");
+  const now = new Date("2026-10-19T12:00:00Z");
+  await repo.saveAdnProgress(ORG, {
+    clientId: CLIENT3, lastNsu: 102, finished: true, cancellations: [],
+    issued: [
+      { accessKey: "7".repeat(50), nsu: 101, nfseNumber: "42", issuedAt: new Date("2026-10-01T02:59:59Z"), competence: "2026-08-01", xml: "<NFSe>setembro</NFSe>" },
+      { accessKey: "8".repeat(50), nsu: 102, nfseNumber: "42", issuedAt: new Date("2026-10-01T03:00:00Z"), competence: "2026-09-01", xml: "<NFSe>outubro</NFSe>" },
+      { accessKey: "9".repeat(50), nsu: 100, nfseNumber: "42", issuedAt: new Date("2026-09-15T12:00:00Z"), competence: "2026-09-01", xml: "<NFSe>outra-serie</NFSe>" },
+    ],
+  }, now);
+  const archive = await withOrgTx(ORG, (tx) => loadXmlArchiveInput(tx, { orgId: ORG, clientId: CLIENT3, year: 2026, month: 9, now }));
+  expect(archive.companies).toHaveLength(1);
+  expect(archive.companies[0].notes.map((n) => n.fileName).sort()).toEqual(["000042-nsu-100.xml", "000042-nsu-101.xml"]);
+  expect(archive.companies[0].notes.map((n) => n.xml)).not.toContain("<NFSe>outubro</NFSe>");
+  const months = await withOrgTx(ORG, (tx) => loadClientXmlMonths(tx, { orgId: ORG, clientId: CLIENT3 }));
+  expect(months).toEqual([{ year: 2026, month: 10, total: 1, cancelled: 0 }, { year: 2026, month: 9, total: 2, cancelled: 0 }]);
+  const counts = await withOrgTx(ORG, (tx) => countIssuedNotes(tx, { orgId: ORG, clientIds: [CLIENT3], year: 2026, month: 9 }));
+  expect(counts.get(CLIENT3)).toEqual({ total: 2, cancelled: 0 });
+  const denied = await withOrgTx(OTHER, (tx) => loadXmlArchiveInput(tx, { orgId: OTHER, clientId: CLIENT3, year: 2026, month: 9, now }));
+  expect(denied.companies).toEqual([]);
+});
+
 test("guilda_app: configuração e cursor não se apagam; RLS em pé nas tabelas novas", async () => {
   const { withOrgTx } = await import("@/db/org-tx");
   // O Drizzle embrulha o erro do banco; a causa diz que foi o privilégio.

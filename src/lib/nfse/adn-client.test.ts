@@ -44,15 +44,15 @@ describe("distribuição do ADN para contribuintes", () => {
   });
 
   test("nenhum documento encerra a leitura", async () => {
-    const { transport } = fake([json(200, testAdnBatchBody([])), json(404, "{}")]);
+    const { transport } = fake([json(200, testAdnBatchBody([])), json(404, testAdnBatchBody([]))]);
     expect(await fetchAdnBatch(transport, "producao", { fromNsu: 9, cnpj: CNPJ })).toEqual({ documents: [], done: true });
     expect(await fetchAdnBatch(transport, "producao", { fromNsu: 9, cnpj: CNPJ })).toEqual({ documents: [], done: true });
   });
 
-  test("200 com lote ausente ou nulo, sem rejeição, também encerra a leitura", async () => {
+  test("200 com contrato desconhecido nao marca leitura completa", async () => {
     const { transport } = fake([json(200, "{}"), json(200, JSON.stringify({ StatusProcessamento: "OK", LoteDFe: null }))]);
-    expect(await fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).toEqual({ documents: [], done: true });
-    expect(await fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).toEqual({ documents: [], done: true });
+    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow(AdnRejectionError);
+    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow(AdnRejectionError);
   });
 
   test("instabilidade é transitória; recusa vem com o motivo", async () => {

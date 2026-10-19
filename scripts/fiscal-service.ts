@@ -8,6 +8,8 @@ import { readDanfse } from "../src/lib/nfse/danfse-data";
 import { renderDanfsePdf } from "../src/lib/nfse/danfse-pdf";
 import { MIN_SERVICE_TOKEN_LENGTH } from "../src/lib/nfse/danfse-zip";
 import { createFiscalHttpHandler } from "../src/lib/nfse/fiscal-http";
+import { loadVaultKey, type VaultKey } from "../src/lib/nfse/vault";
+import { isXmlRoutineDueNow, runXmlRoutineCycle, serviceVaultTick } from "../src/lib/nfse/xml-cycle";
 import { runNfseJob } from "../src/lib/nfse/processor";
 import {
   claimNfseJob,
@@ -28,7 +30,8 @@ import {
  * fila de notas (emitir/cancelar) e serve, só na rede interna, os PDFs
  * (src/lib/nfse/fiscal-http.ts). O governo suspendeu a API do DANFSe em
  * 03/08/2026: o PDF é montado aqui, do XML da nota (NT 008/2026). Sobe com
- * GUILDA_SERVICE=fiscal (scripts/start-production.mjs).
+ * GUILDA_SERVICE=fiscal (scripts/start-production.mjs). Tambem confere os
+ * certificados das empresas e coleta os XML com o A1 de cada empresa.
  */
 
 const POLL_MS = 10_000;
@@ -48,6 +51,19 @@ function openCertificate(): { certificate: NfseCertificate | null; error: string
     return { certificate, error: null };
   } catch (error) {
     return { certificate: null, error: error instanceof Error ? error.message : "Certificado inválido." };
+  }
+}
+
+function openVault(): VaultKey | null {
+  if (!process.env.NFSE_VAULT_PRIVATE_KEY) {
+    console.warn("NFSE_VAULT_PRIVATE_KEY ausente: cofre e rotina de XML desligados.");
+    return null;
+  }
+  try {
+    return loadVaultKey(process.env.NFSE_VAULT_PRIVATE_KEY);
+  } catch {
+    console.error("NFSE_VAULT_PRIVATE_KEY inválida: cofre e rotina de XML desligados.");
+    return null;
   }
 }
 
@@ -77,6 +93,8 @@ async function main() {
     ? createSefinClient(environment, createMtlsTransport({ privateKeyPem: certificate.privateKeyPem, chainPem: certificate.chainPem }))
     : null;
   startHttp(certificateError ? null : client);
+  const vault = openVault();
+  let xmlRoutineRunning = false;
 
   while (true) {
     const started = Date.now();
@@ -92,6 +110,19 @@ async function main() {
           console.warn(`Nenhuma organização configurada com o CNPJ ${certificate.cnpj}.`);
         } else if (client && !certificateError) {
           const settings = await loadServiceSettings(orgId);
+          if (vault) {
+            try {
+              await serviceVaultTick(orgId, vault);
+              if (!xmlRoutineRunning && (await isXmlRoutineDueNow(orgId, new Date()))) {
+                xmlRoutineRunning = true;
+                void runXmlRoutineCycle(orgId, vault, environment)
+                  .catch(() => console.error("Falha na rotina de XML; a leitura será retomada."))
+                  .finally(() => { xmlRoutineRunning = false; });
+              }
+            } catch {
+              console.error("Falha no ciclo do cofre; nova tentativa no próximo ciclo.");
+            }
+          }
           if (settings?.template && settings.providerCnpj === certificate.cnpj) {
             const signingKey = { privateKeyPem: certificate.privateKeyPem, certificatePem: certificate.certificatePem };
             for (let claim = await claimNfseJob(orgId); claim; claim = await claimNfseJob(orgId)) {

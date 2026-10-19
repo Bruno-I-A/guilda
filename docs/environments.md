@@ -144,6 +144,12 @@ com `GUILDA_SERVICE=fiscal`: o `start-production.mjs` sobe só
 | `NFSE_AMBIENTE` | fiscal | vazio = produção restrita; `producao` só na produção |
 | `FISCAL_SERVICE_TOKEN` | fiscal **e** app | 32+ caracteres aleatórios, iguais nos dois |
 | `FISCAL_SERVICE_URL` | app | endereço interno do serviço fiscal |
+| `NFSE_VAULT_PRIVATE_KEY` | fiscal | chave privada do cofre dos A1 das empresas, gerada pelo Bruno com `node scripts/nfse-vault-key.mjs`; nunca no app |
 
 O certificado nunca vai para o serviço do app, para o repositório nem para o
 Cerebro.
+
+Sem `NFSE_VAULT_PRIVATE_KEY`, o cofre e a coleta dos XML ficam desligados; a
+emissão de honorários continua. Trocar ou perder essa chave obriga a reenviar os
+certificados das empresas. Depois da release dos XML, reimplantar também o
+`guilda-fiscal`: a pipeline do app não reimplanta esse serviço.

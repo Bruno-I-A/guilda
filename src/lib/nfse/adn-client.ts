@@ -147,15 +147,18 @@ export async function fetchAdnBatch(
   const items = field(body, "LoteDFe");
   const declaredRejection = status === "REJEICAO";
   if (
-    status === "NENHUM_DOCUMENTO_LOCALIZADO" ||
-    // 404 só encerra se for resposta JSON do próprio serviço; um 404 de HTML
-    // (endereço errado, proxy) cairia aqui como "sem documentos" para sempre.
-    (res.status === 404 && body !== null && !declaredRejection && !Array.isArray(items))
+    status === "NENHUM_DOCUMENTO_LOCALIZADO" && (ok || res.status === 404)
   ) {
     return { documents: [], done: true };
   }
   if (!ok || declaredRejection) {
     throw new AdnRejectionError(rejectionMessage(body, res.status));
+  }
+
+  // Contrato desconhecido nao prova ausencia de notas. Nao avance o cursor
+  // nem marque a primeira leitura como completa sem um lote reconhecivel.
+  if (!Array.isArray(items)) {
+    throw new AdnRejectionError("O Sistema Nacional devolveu o lote de documentos em formato inesperado.");
   }
 
   const documents = readDocuments(items);

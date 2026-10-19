@@ -29,6 +29,8 @@ import {
   type TaxRegime,
 } from "@/lib/clients-ui";
 import { cn } from "@/lib/utils";
+import type { ClientCertificateView } from "@/lib/nfse/xml-requests";
+import { CertificateBadge, ClientCertificateDialog } from "./client-certificate-dialog";
 
 import { assignPortfolioClients, confirmNewClientPortfolio } from "./portfolio-actions";
 import {
@@ -38,6 +40,7 @@ import {
 import { FiscalImportDialog } from "./fiscal-import-dialog";
 
 export interface PortfolioClientView {
+  certificate: ClientCertificateView | null;
   id: string;
   name: string;
   taxRegime: TaxRegime;
@@ -76,6 +79,7 @@ function normalize(value: string): string {
 }
 
 function ClientRow({
+  vaultKey,
   clanId,
   client,
   selected,
@@ -91,6 +95,7 @@ function ClientRow({
   selectable: boolean;
   canManage: boolean;
   contextNote?: string;
+  vaultKey: { keyId: string; publicKeySpki: string } | null;
 }) {
   return (
     <li
@@ -99,7 +104,7 @@ function ClientRow({
         selected && "bg-primary/15",
       )}
     >
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         {selectable ? (
           <input
             type="checkbox"
@@ -109,7 +114,9 @@ function ClientRow({
             onChange={() => onToggle(client.id)}
           />
         ) : null}
-        <span className="min-w-0 flex-1 truncate">{client.name}</span>
+        <span className="min-w-0 basis-36 flex-1 break-words">{client.name}</span>
+        <CertificateBadge certificate={client.certificate} />
+        {canManage ? <ClientCertificateDialog clanId={clanId} clientId={client.id} clientName={client.name} certificate={client.certificate} vaultKey={vaultKey} canManage={canManage} /> : null}
         {!client.active ? (
           <Badge variant="outline" className="shrink-0 text-[10px]">inativa</Badge>
         ) : null}
@@ -147,6 +154,7 @@ function ClientRow({
  * carteira: também credita XP a quem assume (ver confirmNewClientPortfolio).
  */
 function AwaitingRow({
+  vaultKey,
   clanId,
   row,
   members,
@@ -156,6 +164,7 @@ function AwaitingRow({
   row: AwaitingPortfolioView;
   members: readonly MemberOption[];
   canManage: boolean;
+  vaultKey: { keyId: string; publicKeySpki: string } | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -181,7 +190,9 @@ function AwaitingRow({
   return (
     <li className="grid gap-2 rounded-md border border-primary/30 bg-card/60 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="min-w-0 flex-1 truncate font-medium">{row.client.name}</span>
+        <span className="min-w-0 basis-36 flex-1 break-words font-medium">{row.client.name}</span>
+        <CertificateBadge certificate={row.client.certificate} />
+        {canManage ? <ClientCertificateDialog clanId={clanId} clientId={row.client.id} clientName={row.client.name} certificate={row.client.certificate} vaultKey={vaultKey} canManage={canManage} /> : null}
         <span
           className={cn(
             "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
@@ -223,6 +234,7 @@ function AwaitingRow({
 }
 
 export function PortfolioBoard({
+  vaultKey,
   clanId,
   canManage,
   members,
@@ -242,6 +254,7 @@ export function PortfolioBoard({
   stranded: readonly { client: PortfolioClientView; holderName: string }[];
   totalClients: number;
   averagePerMember: number;
+  vaultKey: { keyId: string; publicKeySpki: string } | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -365,7 +378,7 @@ export function PortfolioBoard({
           </h3>
           <ul className="grid gap-2">
             {awaiting.map((row) => (
-              <AwaitingRow key={row.client.id} clanId={clanId} row={row} members={members} canManage={canManage} />
+              <AwaitingRow key={row.client.id} vaultKey={vaultKey} clanId={clanId} row={row} members={members} canManage={canManage} />
             ))}
           </ul>
         </section>
@@ -428,6 +441,7 @@ export function PortfolioBoard({
           <ul className="grid gap-1">
             {visibleStranded.map(({ client, holderName }) => (
               <ClientRow
+                vaultKey={vaultKey}
                 key={client.id}
                 clanId={clanId}
                 client={client}
@@ -472,6 +486,7 @@ export function PortfolioBoard({
           <ul className="grid gap-1">
             {visibleOrphans.map((client) => (
               <ClientRow
+                vaultKey={vaultKey}
                 key={client.id}
                 clanId={clanId}
                 client={client}
@@ -526,6 +541,7 @@ export function PortfolioBoard({
               <ul className="grid gap-1">
                 {bucket.visible.map((client) => (
                   <ClientRow
+                    vaultKey={vaultKey}
                     key={client.id}
                     clanId={clanId}
                     client={client}
