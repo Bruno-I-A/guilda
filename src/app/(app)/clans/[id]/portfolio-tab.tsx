@@ -4,6 +4,7 @@ import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { fiscalProfileMissingFields } from "@/domain/fiscal-control";
 import { summarizePortfolio } from "@/domain/fiscal-portfolio";
+import { loadClientCertificates, loadVaultPublicKey } from "@/lib/nfse/xml-requests";
 
 import type { ClanMemberView } from "./page";
 import { FiscalControlTab } from "./fiscal-control-tab";
@@ -68,7 +69,7 @@ export async function PortfolioTab({
     );
   }
 
-  const { rows, historyRows } = await withOrgTx(orgId, async (tx) => {
+  const { rows, historyRows, certificates, vaultKey } = await withOrgTx(orgId, async (tx) => {
     const rows = await tx
       .select({
         id: schema.clients.id,
@@ -136,7 +137,7 @@ export async function PortfolioTab({
       .where(eq(schema.fiscalClientProfileEvents.orgId, orgId))
       .orderBy(desc(schema.fiscalClientProfileEvents.createdAt))
       .limit(1000);
-    return { rows, historyRows };
+    return { rows, historyRows, certificates: await loadClientCertificates(tx, orgId), vaultKey: await loadVaultPublicKey(tx, orgId) };
   });
 
   const relevant = rows.filter((row) => row.active || row.holderId);
@@ -175,6 +176,7 @@ export async function PortfolioTab({
     const deliveryChannel = detail?.deliveryChannel ?? null;
     return {
       id: clientId,
+      certificate: certificates.get(clientId) ?? null,
       name: clientName,
       taxRegime: detail?.taxRegime ?? "simples",
       active: detail?.active ?? true,
@@ -274,6 +276,7 @@ export async function PortfolioTab({
     <div className="grid gap-4">
       <FiscalWorkspaceNav clanId={clanId} active="portfolio" />
       <PortfolioBoard
+        vaultKey={vaultKey}
         clanId={clanId}
         canManage={canManage}
         members={memberships.map((membership) => ({

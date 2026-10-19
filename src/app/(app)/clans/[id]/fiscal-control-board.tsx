@@ -65,7 +65,11 @@ import {
   updateFiscalControl,
 } from "./fiscal-actions";
 
+import type { XmlRoutineView } from "@/lib/nfse/xml-requests";
+import { XmlRoutinePanel } from "./xml-routine-panel";
+
 export interface FiscalControlRowView {
+  xmlNotes: { total: number; cancelled: number };
   id: string;
   clientId: string;
   clientName: string;
@@ -350,6 +354,7 @@ function ControlDetailsDialog({
 }
 
 export function FiscalControlBoard({
+  xmlRoutine,
   clanId,
   year,
   month,
@@ -363,6 +368,7 @@ export function FiscalControlBoard({
   canManage: boolean;
   members: readonly { userId: string; name: string }[];
   rows: readonly FiscalControlRowView[];
+  xmlRoutine: XmlRoutineView;
 }) {
   const router = useRouter();
   const [opening, startOpening] = useTransition();
@@ -447,6 +453,7 @@ export function FiscalControlBoard({
             <div className="clan-status-cell"><span className="text-xs text-muted-foreground">Bloqueadas</span><strong className={cn("block font-mono text-lg", blocked > 0 && "text-destructive")}>{blocked}</strong></div>
             <div className="clan-status-cell"><span className="text-xs text-muted-foreground">Sem responsável</span><strong className="block font-mono text-lg">{rows.filter((row) => !row.responsibleUserId).length}</strong></div>
           </div>
+          {canManage ? <XmlRoutinePanel clanId={clanId} year={year} month={month} routine={xmlRoutine} totalNotes={rows.reduce((sum, row) => sum + row.xmlNotes.total, 0)} canManage={canManage} /> : null}
 
           {byResponsible.length > 0 ? (
             <div className="flex gap-2 overflow-x-auto pb-1">
@@ -475,6 +482,7 @@ export function FiscalControlBoard({
                   <TableCell>{row.responsibleName ?? <span className="text-destructive">Sem responsável</span>}</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-2">
+                      {canManage && row.xmlNotes.total > 0 ? <Button asChild size="sm" variant="ghost"><a href={`/api/nfse/xml?clanId=${clanId}&year=${year}&month=${month}&clientId=${row.clientId}`}>XML ({row.xmlNotes.total})</a></Button> : null}
                       {STAGES.filter((stage) => row[stage.field] !== "not_applicable").map((stage) => (
                         <div key={stage.key} className="inline-flex items-center gap-1.5 rounded-md border bg-card/50 px-1.5 py-1">
                           <span className="text-xs text-muted-foreground">{activityLabel(stage, row)}</span>

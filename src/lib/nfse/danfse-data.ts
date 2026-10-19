@@ -1,9 +1,10 @@
-import { DOMParser, type Element } from "@xmldom/xmldom";
+import type { Element } from "@xmldom/xmldom";
 
 import { formatCnpj } from "@/domain/cnpj";
 import { amountToCents } from "@/domain/nfse";
 
 import { ibgeCity } from "./municipios";
+import { at, child, parseXmlRoot, read } from "./xml-dom";
 
 /**
  * O DANFSe (o PDF da nota) a partir do XML da NFS-e, no leiaute v2.0 da
@@ -113,24 +114,6 @@ const PIS_COFINS_WITHHOLDING: Record<string, string> = {
   "8": "PIS/COFINS Não Retidos, CSLL Retido",
   "9": "COFINS Não Retido, PIS/CSLL Retidos",
 };
-
-// ---------------------------------------------------------------- leitura
-
-function child(parent: Element | null, name: string): Element | null {
-  for (let node = parent?.firstChild ?? null; node; node = node.nextSibling) {
-    if (node.nodeType === 1 && (node as Element).localName === name) return node as Element;
-  }
-  return null;
-}
-
-function at(root: Element | null, path: string): Element | null {
-  return path.split("/").reduce<Element | null>((element, name) => child(element, name), root);
-}
-
-function read(root: Element | null, path: string): string | null {
-  const text = at(root, path)?.textContent?.replace(/\s+/g, " ").trim();
-  return text ? text : null;
-}
 
 // ---------------------------------------------------------------- formatos
 
@@ -352,12 +335,7 @@ function approximateTaxes(totals: Element | null): string {
 // ---------------------------------------------------------------- DANFSe
 
 export function readDanfse(nfseXml: string): Danfse {
-  let root: Element | null;
-  try {
-    root = new DOMParser().parseFromString(nfseXml, "text/xml").documentElement as Element | null;
-  } catch {
-    throw new Error("O XML da nota é inválido.");
-  }
+  const root = parseXmlRoot(nfseXml);
   const inf = root?.localName === "NFSe" ? child(root, "infNFSe") : null;
   const dps = at(inf, "DPS/infDPS");
   if (!inf || !dps) throw new Error("O XML recebido não é de uma NFS-e.");

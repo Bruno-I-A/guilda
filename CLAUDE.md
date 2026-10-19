@@ -1,5 +1,20 @@
 # Guilda — Gestão de Tarefas Gamificada (nome provisório, fácil de trocar)
 
+## XML das NFS-e prestadas das empresas
+
+Os A1 das empresas chegam apenas como envelope cifrado no navegador
+(`vault-browser.ts`); só o `guilda-fiscal` abre (`vault.ts`). A chave privada
+fica exclusivamente nesse serviço. A rotina configurável (`nfse_xml_routines`)
+lê o ADN por NSU com o certificado de cada empresa e guarda os XML compactados
+em `nfse_issued_notes`, inclusive os cancelamentos. Esta é uma exceção consciente
+à regra das notas de honorário, cujos XML continuam sem armazenamento.
+
+O mês é o da emissão em Brasília. O controle de 09/2026 baixa as emitidas de
+01/09 a 30/09. O download `/api/nfse/xml` lê o banco com sessão e permissão do
+Fiscal; não passa pelo serviço fiscal. Certificados e senhas nunca chegam em
+claro ao app. Plano e teste real em
+`docs/superpowers/plans/2026-10-19-xml-nfse-prestadas.md`.
+
 Plataforma multi-tenant de gestão de tarefas com sistema de recompensa (XP e níveis).
 Cada empresa (organização/tenant) tem seus usuários, tarefas e leaderboard isolados.
 Projeto de portfólio: qualidade de código e segurança são requisitos, não opcionais.

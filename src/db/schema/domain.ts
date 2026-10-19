@@ -3,6 +3,7 @@ import {
   boolean,
   bigint,
   check,
+  customType,
   date,
   foreignKey,
   index,
@@ -11,6 +12,7 @@ import {
   numeric,
   pgEnum,
   pgTable,
+  primaryKey,
   smallint,
   text,
   time,
@@ -3248,6 +3250,9 @@ export const nfseSettings = pgTable(
     serviceEnvironment: smallint("service_environment"),
     certificateValidUntil: timestamp("certificate_valid_until", { withTimezone: true }),
     serviceError: text("service_error"),
+    // Chave pública do cofre de certificados das empresas, publicada pelo serviço fiscal.
+    vaultKeyId: varchar("vault_key_id", { length: 16 }),
+    vaultPublicKey: text("vault_public_key"),
   },
   (t) => [
     uniqueIndex("nfse_settings_provider_cnpj_uidx").on(t.providerCnpj),
@@ -3373,3 +3378,150 @@ export const nfseInvoiceEvents = pgTable(
 );
 
 export type NfseInvoice = typeof nfseInvoices.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// XML das NFS-e prestadas das empresas (decisão de 2026-10-19)
+// ---------------------------------------------------------------------------
+
+/** bytea do Postgres: o XML compactado (gzip) vai e volta como bytes crus. */
+const bytea = customType<{ data: Uint8Array; driverData: Uint8Array }>({
+  dataType: () => "bytea",
+});
+
+export const nfseCertificateStatus = pgEnum("nfse_certificate_status", ["pending", "valid", "invalid"]);
+export const nfseXmlRoutineFrequency = pgEnum("nfse_xml_routine_frequency", ["daily", "monthly"]);
+
+/**
+ * Certificado A1 de uma empresa-cliente, só como envelope cifrado no
+ * navegador (src/lib/nfse/vault.ts). Quem abre é o serviço fiscal, que grava
+ * a conferência (situação, CNPJ e validade). Decisão de 2026-10-19.
+ */
+export const nfseClientCertificates = pgTable(
+  "nfse_client_certificates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    envelope: jsonb("envelope")
+      .$type<{ v: 1; keyId: string; wrappedKey: string; iv: string; ciphertext: string }>()
+      .notNull(),
+    status: nfseCertificateStatus("status").notNull().default("pending"),
+    statusMessage: text("status_message"),
+    certificateCnpj: varchar("certificate_cnpj", { length: 14 }),
+    validUntil: timestamp("valid_until", { withTimezone: true }),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    uploadedBy: text("uploaded_by")
+      .notNull()
+      .references(() => user.id),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "nfse_client_certificates_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+    uniqueIndex("nfse_client_certificates_org_client_uidx").on(t.orgId, t.clientId),
+    check(
+      "nfse_client_certificates_valid_check",
+      sql`${t.status} <> 'valid' OR (${t.validUntil} IS NOT NULL AND ${t.certificateCnpj} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/** Configuração da rotina de XML: uma linha por organização. */
+export const nfseXmlRoutines = pgTable(
+  "nfse_xml_routines",
+  {
+    orgId: text("org_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").notNull().default(true),
+    frequency: nfseXmlRoutineFrequency("frequency").notNull().default("daily"),
+    dayOfMonth: smallint("day_of_month"),
+    runTime: varchar("run_time", { length: 5 }).notNull().default("06:00"),
+    keepSince: date("keep_since", { mode: "string" }),
+    runRequestedAt: timestamp("run_requested_at", { withTimezone: true }),
+    lastRunStartedAt: timestamp("last_run_started_at", { withTimezone: true }),
+    lastRunFinishedAt: timestamp("last_run_finished_at", { withTimezone: true }),
+    updatedBy: text("updated_by").references(() => user.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // IS NOT NULL explícito: BETWEEN com NULL dá NULL, e CHECK com NULL passa.
+    check(
+      "nfse_xml_routines_day_check",
+      sql`(${t.frequency} = 'daily' AND ${t.dayOfMonth} IS NULL) OR (${t.frequency} = 'monthly' AND ${t.dayOfMonth} IS NOT NULL AND ${t.dayOfMonth} BETWEEN 1 AND 28)`,
+    ),
+    check("nfse_xml_routines_time_check", sql`${t.runTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
+  ],
+);
+
+/** Até onde a rotina leu a distribuição do ADN de cada empresa. */
+export const nfseDfeCursors = pgTable(
+  "nfse_dfe_cursors",
+  {
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    lastNsu: bigint("last_nsu", { mode: "number" }).notNull().default(0),
+    initialSyncAt: timestamp("initial_sync_at", { withTimezone: true }),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.clientId] }),
+    foreignKey({
+      name: "nfse_dfe_cursors_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+    check("nfse_dfe_cursors_nsu_check", sql`${t.lastNsu} >= 0`),
+  ],
+);
+
+/**
+ * A pasta de XML de cada empresa: as NFS-e que ela emitiu, com o XML
+ * compactado (gzip). Aqui o XML fica guardado, ao contrário das notas de
+ * honorário (decisão do Bruno de 2026-10-19).
+ */
+export const nfseIssuedNotes = pgTable(
+  "nfse_issued_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    accessKey: varchar("access_key", { length: 50 }).notNull(),
+    nsu: bigint("nsu", { mode: "number" }).notNull(),
+    nfseNumber: varchar("nfse_number", { length: 20 }),
+    issuedAt: timestamp("issued_at", { withTimezone: true }).notNull(),
+    competence: date("competence", { mode: "string" }),
+    xmlGz: bytea("xml_gz").notNull(),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelNsu: bigint("cancel_nsu", { mode: "number" }),
+    cancelXmlGz: bytea("cancel_xml_gz"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "nfse_issued_notes_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+    uniqueIndex("nfse_issued_notes_org_key_uidx").on(t.orgId, t.accessKey),
+    index("nfse_issued_notes_org_client_issued_idx").on(t.orgId, t.clientId, t.issuedAt),
+    check("nfse_issued_notes_key_check", sql`${t.accessKey} ~ '^[0-9]{50}$'`),
+    check("nfse_issued_notes_nsu_check", sql`${t.nsu} > 0`),
+    // O cancelamento vem completo (data, NSU e XML do evento) ou não vem.
+    check(
+      "nfse_issued_notes_cancel_check",
+      sql`(${t.cancelledAt} IS NULL AND ${t.cancelNsu} IS NULL AND ${t.cancelXmlGz} IS NULL) OR (${t.cancelledAt} IS NOT NULL AND ${t.cancelNsu} IS NOT NULL AND ${t.cancelXmlGz} IS NOT NULL)`,
+    ),
+  ],
+);

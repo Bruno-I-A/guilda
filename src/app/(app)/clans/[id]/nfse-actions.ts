@@ -3,15 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { withOrgTx, type OrgTx } from "@/db/org-tx";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
-import { canManageFiscalOperations, isAdminRole } from "@/domain/guild-permissions";
 import {
   NFSE_CANCEL_TEXT_MAX,
   NFSE_CANCEL_TEXT_MIN,
   type NfseEmissionPreviewView,
 } from "@/domain/nfse";
-import { err, requireMemberContext, type ActionResult } from "@/lib/action-context";
+import { err, type ActionResult } from "@/lib/action-context";
 import {
   enqueueNfseBatch,
   loadNfseEmissionPreview,
@@ -21,28 +19,7 @@ import {
 } from "@/lib/nfse/requests";
 import { nfseTemplateRulesSchema } from "@/lib/nfse/template";
 import { nfseToday } from "@/lib/nfse/time";
-import { requireFiscalClan } from "@/lib/office-fees/fiscal-clan";
-
-type MemberContext = Extract<Awaited<ReturnType<typeof requireMemberContext>>, { ok: true }>;
-
-/** Sessão + clã Fiscal + permissão de quem opera honorários (Fiscal e admins). */
-async function asFiscalOperator<T>(
-  clanId: string,
-  run: (tx: OrgTx, ctx: MemberContext) => Promise<ActionResult<T>>,
-  options: { adminOnly?: boolean } = {},
-): Promise<ActionResult<T>> {
-  const ctx = await requireMemberContext();
-  if (!ctx.ok) return ctx;
-  if (options.adminOnly && !isAdminRole(ctx.role)) return err("Só admins configuram o modelo da nota.");
-  return withOrgTx(ctx.orgId, async (tx) => {
-    const fiscal = await requireFiscalClan(tx, { orgId: ctx.orgId, clanId, userId: ctx.userId, role: ctx.role });
-    if (!fiscal) return err("Clã Fiscal não encontrado.");
-    if (!canManageFiscalOperations(fiscal.facts)) {
-      return err("Apenas integrantes do Fiscal ou um admin podem operar as notas.");
-    }
-    return run(tx, ctx);
-  });
-}
+import { asFiscalOperator } from "@/lib/office-fees/fiscal-operator";
 
 const periodSchema = z.object({
   clanId: z.uuid("Clã inválido."),

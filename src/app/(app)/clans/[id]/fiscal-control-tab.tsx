@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { countIssuedNotes, loadXmlRoutineView } from "@/lib/nfse/xml-requests";
 
 import {
   FiscalControlBoard,
@@ -56,7 +57,7 @@ export async function FiscalControlTab({
   requestedMonth?: string;
 }) {
   const period = parsePeriod(requestedYear, requestedMonth);
-  const { rows, events } = await withOrgTx(orgId, async (tx) => {
+  const { rows, events, xmlRoutine, xmlCounts } = await withOrgTx(orgId, async (tx) => {
     const rows = await tx
       .select({
         id: schema.fiscalControlPeriods.id,
@@ -121,7 +122,7 @@ export async function FiscalControlTab({
             .orderBy(desc(schema.fiscalControlEvents.createdAt))
             .limit(2000)
         : [];
-    return { rows, events };
+    return { rows, events, xmlRoutine: await loadXmlRoutineView(tx, orgId, new Date()), xmlCounts: await countIssuedNotes(tx, { orgId, clientIds: rows.map((row) => row.clientId), ...period }) };
   });
 
   const historyByControl = new Map<string, typeof events>();
@@ -133,6 +134,7 @@ export async function FiscalControlTab({
 
   const views: FiscalControlRowView[] = rows.map((row) => ({
     ...row,
+    xmlNotes: xmlCounts.get(row.clientId) ?? { total: 0, cancelled: 0 },
     updatedAt: row.updatedAt.toISOString(),
     canEdit: canManage || row.responsibleUserId === viewerId,
     history: (historyByControl.get(row.id) ?? []).map((event) => ({
@@ -143,6 +145,7 @@ export async function FiscalControlTab({
 
   return (
     <FiscalControlBoard
+      xmlRoutine={xmlRoutine}
       clanId={clanId}
       year={period.year}
       month={period.month}
