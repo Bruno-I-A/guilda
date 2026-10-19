@@ -1,5 +1,5 @@
 {
-  "id": "b7dc43dc-391c-4e28-b189-af6a72af173b",
+  "id": "f5163440-ba54-4d25-a726-838d154986bd",
   "prevId": "ef0c53c5-6089-4d4e-88c7-75793da8d889",
   "version": "7",
   "dialect": "postgresql",
@@ -9481,6 +9481,14 @@
         "nfse_issued_notes_key_check": {
           "name": "nfse_issued_notes_key_check",
           "value": "\"nfse_issued_notes\".\"access_key\" ~ '^[0-9]{50}$'"
+        },
+        "nfse_issued_notes_nsu_check": {
+          "name": "nfse_issued_notes_nsu_check",
+          "value": "\"nfse_issued_notes\".\"nsu\" > 0"
+        },
+        "nfse_issued_notes_cancel_check": {
+          "name": "nfse_issued_notes_cancel_check",
+          "value": "(\"nfse_issued_notes\".\"cancelled_at\" IS NULL AND \"nfse_issued_notes\".\"cancel_nsu\" IS NULL AND \"nfse_issued_notes\".\"cancel_xml_gz\" IS NULL) OR (\"nfse_issued_notes\".\"cancelled_at\" IS NOT NULL AND \"nfse_issued_notes\".\"cancel_nsu\" IS NOT NULL AND \"nfse_issued_notes\".\"cancel_xml_gz\" IS NOT NULL)"
         }
       },
       "isRLSEnabled": false
@@ -9745,7 +9753,7 @@
       "checkConstraints": {
         "nfse_xml_routines_day_check": {
           "name": "nfse_xml_routines_day_check",
-          "value": "(\"nfse_xml_routines\".\"frequency\" = 'daily' AND \"nfse_xml_routines\".\"day_of_month\" IS NULL) OR (\"nfse_xml_routines\".\"frequency\" = 'monthly' AND \"nfse_xml_routines\".\"day_of_month\" BETWEEN 1 AND 28)"
+          "value": "(\"nfse_xml_routines\".\"frequency\" = 'daily' AND \"nfse_xml_routines\".\"day_of_month\" IS NULL) OR (\"nfse_xml_routines\".\"frequency\" = 'monthly' AND \"nfse_xml_routines\".\"day_of_month\" IS NOT NULL AND \"nfse_xml_routines\".\"day_of_month\" BETWEEN 1 AND 28)"
         },
         "nfse_xml_routines_time_check": {
           "name": "nfse_xml_routines_time_check",

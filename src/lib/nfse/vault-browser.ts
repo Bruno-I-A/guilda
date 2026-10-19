@@ -28,7 +28,11 @@ export async function sealCertificate(input: {
   pfx: Uint8Array;
   password: string;
 }): Promise<VaultEnvelope> {
-  const { subtle } = globalThis.crypto;
+  // O navegador só expõe o WebCrypto em contexto seguro (https ou localhost).
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new Error("Este navegador não consegue cifrar o certificado. Abra a Guilda pelo endereço https e tente de novo.");
+  }
   const rsa = await subtle.importKey("spki", fromBase64(input.publicKeySpki), { name: "RSA-OAEP", hash: "SHA-256" }, false, ["wrapKey"]);
   const aes = await subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"]);
   const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));

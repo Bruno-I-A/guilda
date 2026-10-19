@@ -32,21 +32,76 @@ describe("agenda da rotina de XML", () => {
   test("está na hora quando a última rodada é anterior ao último horário agendado", () => {
     const now = at("2026-10-19T06:01:00-03:00");
     const base = { schedule: XML_ROUTINE_DEFAULTS, runRequestedAt: null, now };
-    expect(isXmlRoutineDue({ ...base, lastRunStartedAt: null })).toBe(true);
-    expect(isXmlRoutineDue({ ...base, lastRunStartedAt: at("2026-10-18T06:00:05-03:00") })).toBe(true);
-    expect(isXmlRoutineDue({ ...base, lastRunStartedAt: at("2026-10-19T06:00:05-03:00") })).toBe(false);
+    expect(isXmlRoutineDue({ ...base, lastRunStartedAt: null, lastRunFinishedAt: null })).toBe(true);
+    expect(
+      isXmlRoutineDue({ ...base, lastRunStartedAt: at("2026-10-18T06:00:05-03:00"), lastRunFinishedAt: at("2026-10-18T06:00:20-03:00") }),
+    ).toBe(true);
+    expect(
+      isXmlRoutineDue({ ...base, lastRunStartedAt: at("2026-10-19T06:00:05-03:00"), lastRunFinishedAt: at("2026-10-19T06:00:20-03:00") }),
+    ).toBe(false);
   });
 
   test("desligada não roda sozinha, mas 'rodar agora' roda", () => {
     const schedule = { ...XML_ROUTINE_DEFAULTS, enabled: false };
     const now = at("2026-10-19T12:00:00-03:00");
     const lastRunStartedAt = at("2026-10-01T06:00:00-03:00");
-    expect(isXmlRoutineDue({ schedule, lastRunStartedAt, runRequestedAt: null, now })).toBe(false);
-    expect(isXmlRoutineDue({ schedule, lastRunStartedAt, runRequestedAt: at("2026-10-19T11:59:00-03:00"), now })).toBe(true);
+    const lastRunFinishedAt = at("2026-10-01T06:00:20-03:00");
+    expect(isXmlRoutineDue({ schedule, lastRunStartedAt, lastRunFinishedAt, runRequestedAt: null, now })).toBe(false);
+    expect(
+      isXmlRoutineDue({ schedule, lastRunStartedAt, lastRunFinishedAt, runRequestedAt: at("2026-10-19T11:59:00-03:00"), now }),
+    ).toBe(true);
     // Pedido já atendido (a rodada começou depois dele) não roda de novo.
     expect(
-      isXmlRoutineDue({ schedule, lastRunStartedAt: at("2026-10-19T11:59:30-03:00"), runRequestedAt: at("2026-10-19T11:59:00-03:00"), now }),
+      isXmlRoutineDue({
+        schedule,
+        lastRunStartedAt: at("2026-10-19T11:59:30-03:00"),
+        lastRunFinishedAt: at("2026-10-19T11:59:45-03:00"),
+        runRequestedAt: at("2026-10-19T11:59:00-03:00"),
+        now,
+      }),
     ).toBe(false);
+  });
+
+  describe("rodada interrompida (o serviço reiniciou no meio)", () => {
+    // Mensal: sem a regra de interrompida, só voltaria em 05/11.
+    const schedule = { enabled: true, frequency: "monthly" as const, dayOfMonth: 5, time: "08:30" };
+    const previousFinish = at("2026-09-05T08:40:00-03:00");
+
+    test("há 31 minutos: roda de novo", () => {
+      const lastRunStartedAt = at("2026-10-05T08:30:00-03:00");
+      const now = at("2026-10-05T09:01:00-03:00");
+      expect(isXmlRoutineDue({ schedule, lastRunStartedAt, lastRunFinishedAt: previousFinish, runRequestedAt: null, now })).toBe(true);
+      expect(isXmlRoutineDue({ schedule, lastRunStartedAt, lastRunFinishedAt: null, runRequestedAt: null, now })).toBe(true);
+    });
+
+    test("há 5 minutos: pode estar rodando, a agenda não dispara outra", () => {
+      const now = at("2026-10-05T09:01:00-03:00");
+      expect(
+        isXmlRoutineDue({ schedule, lastRunStartedAt: at("2026-10-05T08:56:00-03:00"), lastRunFinishedAt: previousFinish, runRequestedAt: null, now }),
+      ).toBe(false);
+      // Mesmo começada antes do último horário agendado.
+      expect(
+        isXmlRoutineDue({
+          schedule: XML_ROUTINE_DEFAULTS,
+          lastRunStartedAt: at("2026-10-19T05:58:00-03:00"),
+          lastRunFinishedAt: at("2026-10-18T06:00:20-03:00"),
+          runRequestedAt: null,
+          now: at("2026-10-19T06:03:00-03:00"),
+        }),
+      ).toBe(false);
+    });
+
+    test("com a rotina desligada não roda sozinha", () => {
+      expect(
+        isXmlRoutineDue({
+          schedule: { ...schedule, enabled: false },
+          lastRunStartedAt: at("2026-10-05T08:30:00-03:00"),
+          lastRunFinishedAt: previousFinish,
+          runRequestedAt: null,
+          now: at("2026-10-05T09:01:00-03:00"),
+        }),
+      ).toBe(false);
+    });
   });
 });
 
@@ -72,6 +127,13 @@ describe("nomes no arquivo", () => {
     expect(xmlCompanyFolder("  ", null)).toBe("empresa");
   });
 
+  test("filial ganha a ordem do CNPJ: não cai na pasta da matriz", () => {
+    expect(xmlCompanyFolder("Padaria", "33000167000101")).toBe("padaria-33000167");
+    expect(xmlCompanyFolder("Padaria", "33000167000282")).toBe("padaria-33000167-0002");
+    // CNPJ fora do formato não entra no nome.
+    expect(xmlCompanyFolder("Padaria", "330001")).toBe("padaria");
+  });
+
   test("nome longo cortado logo depois de um separador não deixa hífen duplo", () => {
     // 59 letras + separador + mais texto: o corte em 60 cai exatamente no hífen.
     const name = `${"a".repeat(59)} bbb`;
@@ -82,6 +144,11 @@ describe("nomes no arquivo", () => {
   test("arquivo da nota: número com seis dígitos, ou o NSU sem número", () => {
     expect(xmlNoteFileName("123", 9)).toBe("000123.xml");
     expect(xmlNoteFileName(null, 9)).toBe("nsu-9.xml");
+  });
+
+  test("número que não é só dígitos não vira caminho dentro do .zip", () => {
+    expect(xmlNoteFileName("12/3", 9)).toBe("nsu-9.xml");
+    expect(xmlNoteFileName("../x", 9)).toBe("nsu-9.xml");
   });
 });
 

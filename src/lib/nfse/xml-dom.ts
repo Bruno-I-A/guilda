@@ -19,10 +19,20 @@ export function read(root: Element | null, path: string): string | null {
   return text ? text : null;
 }
 
-/** Elemento raiz; XML inválido vira null (o xmldom lança ParseError em XML malformado). */
+/**
+ * Sem onError, o xmldom manda avisos e erros para o console.error, com
+ * pedaços do XML na mensagem (log com XML é proibido), e erro de nível
+ * "error" não interrompe: devolve a árvore pela metade. Aqui nada é logado,
+ * e "error" ou "fatalError" para a leitura (o xmldom lança ParseError).
+ */
+function stopOnError(level: "warning" | "error" | "fatalError"): void {
+  if (level !== "warning") throw new Error(level);
+}
+
+/** Elemento raiz; XML inválido vira null. */
 export function parseXmlRoot(xml: string): Element | null {
   try {
-    return new DOMParser().parseFromString(xml, "text/xml").documentElement as Element | null;
+    return new DOMParser({ onError: stopOnError }).parseFromString(xml, "text/xml").documentElement as Element | null;
   } catch {
     return null;
   }

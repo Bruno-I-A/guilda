@@ -51,20 +51,38 @@ export function lastScheduledRun(schedule: XmlRoutineSchedule, now: Date): Date 
 }
 
 /**
+ * Rodada começada e não terminada há esse tempo foi interrompida (o serviço
+ * fiscal reiniciou no meio). Menos que isso pode estar rodando: o serviço tem
+ * uma trava em memória, e o prazo evita repetir a cada ciclo quando a rodada
+ * quebra logo no começo.
+ */
+export const XML_ROUTINE_STALE_MS = 30 * 60 * 1000;
+
+/**
  * Está na hora de rodar? "Rodar agora" pedido depois da última rodada vale
- * mesmo com a rotina desligada; fora isso, roda quando a última rodada é
- * anterior ao último horário agendado.
+ * mesmo com a rotina desligada. Com a rotina ligada:
+ * - rodada sem fim registrado foi interrompida se começou há
+ *   XML_ROUTINE_STALE_MS ou mais, e roda de novo (a nova continua do NSU de
+ *   cada empresa; sem isso, no mensal, só voltaria no mês seguinte); se
+ *   começou há menos, pode estar rodando e a agenda não dispara outra;
+ * - fora isso, roda quando a última rodada é anterior ao último horário
+ *   agendado.
  */
 export function isXmlRoutineDue(input: {
   schedule: XmlRoutineSchedule;
   lastRunStartedAt: Date | null;
+  lastRunFinishedAt: Date | null;
   runRequestedAt: Date | null;
   now: Date;
 }): boolean {
-  const { schedule, lastRunStartedAt, runRequestedAt, now } = input;
+  const { schedule, lastRunStartedAt, lastRunFinishedAt, runRequestedAt, now } = input;
   if (runRequestedAt && (!lastRunStartedAt || runRequestedAt > lastRunStartedAt)) return true;
   if (!schedule.enabled) return false;
-  return !lastRunStartedAt || lastRunStartedAt < lastScheduledRun(schedule, now);
+  if (!lastRunStartedAt) return true;
+  if (!lastRunFinishedAt || lastRunFinishedAt < lastRunStartedAt) {
+    return now.getTime() - lastRunStartedAt.getTime() >= XML_ROUTINE_STALE_MS;
+  }
+  return lastRunStartedAt < lastScheduledRun(schedule, now);
 }
 
 /** Notas emitidas no mês, em Brasília: [start, end). */
@@ -91,14 +109,22 @@ function slug(value: string): string {
     .replace(/-+$/, "");
 }
 
-/** Pasta da empresa no .zip: nome sem acento + raiz do CNPJ (desempata nomes iguais). */
+/**
+ * Pasta da empresa no .zip: nome sem acento + raiz do CNPJ (desempata nomes
+ * iguais). Filial ganha também a ordem: matriz e filial têm a mesma raiz e
+ * muitas vezes o mesmo nome, e as notas de uma sobrescreveriam as da outra.
+ */
 export function xmlCompanyFolder(name: string, cnpj: string | null): string {
   const base = slug(name) || "empresa";
-  return cnpj ? `${base}-${cnpj.slice(0, 8)}` : base;
+  if (!cnpj || !/^\d{14}$/.test(cnpj)) return base;
+  const root = cnpj.slice(0, 8);
+  const branch = cnpj.slice(8, 12);
+  return branch === "0001" ? `${base}-${root}` : `${base}-${root}-${branch}`;
 }
 
+/** Só número de verdade vira nome: "/" ou ".." viraria caminho dentro do .zip. */
 export function xmlNoteFileName(nfseNumber: string | null, nsu: number): string {
-  return nfseNumber ? `${nfseNumber.padStart(6, "0")}.xml` : `nsu-${nsu}.xml`;
+  return nfseNumber && /^\d{1,20}$/.test(nfseNumber) ? `${nfseNumber.padStart(6, "0")}.xml` : `nsu-${nsu}.xml`;
 }
 
 export const CERTIFICATE_WARNING_DAYS = 30;

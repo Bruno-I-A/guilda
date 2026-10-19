@@ -41,7 +41,9 @@ CREATE TABLE "nfse_issued_notes" (
 	"cancel_nsu" bigint,
 	"cancel_xml_gz" "bytea",
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "nfse_issued_notes_key_check" CHECK ("nfse_issued_notes"."access_key" ~ '^[0-9]{50}$')
+	CONSTRAINT "nfse_issued_notes_key_check" CHECK ("nfse_issued_notes"."access_key" ~ '^[0-9]{50}$'),
+	CONSTRAINT "nfse_issued_notes_nsu_check" CHECK ("nfse_issued_notes"."nsu" > 0),
+	CONSTRAINT "nfse_issued_notes_cancel_check" CHECK (("nfse_issued_notes"."cancelled_at" IS NULL AND "nfse_issued_notes"."cancel_nsu" IS NULL AND "nfse_issued_notes"."cancel_xml_gz" IS NULL) OR ("nfse_issued_notes"."cancelled_at" IS NOT NULL AND "nfse_issued_notes"."cancel_nsu" IS NOT NULL AND "nfse_issued_notes"."cancel_xml_gz" IS NOT NULL))
 );
 --> statement-breakpoint
 CREATE TABLE "nfse_xml_routines" (
@@ -56,7 +58,7 @@ CREATE TABLE "nfse_xml_routines" (
 	"last_run_finished_at" timestamp with time zone,
 	"updated_by" text,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "nfse_xml_routines_day_check" CHECK (("nfse_xml_routines"."frequency" = 'daily' AND "nfse_xml_routines"."day_of_month" IS NULL) OR ("nfse_xml_routines"."frequency" = 'monthly' AND "nfse_xml_routines"."day_of_month" BETWEEN 1 AND 28)),
+	CONSTRAINT "nfse_xml_routines_day_check" CHECK (("nfse_xml_routines"."frequency" = 'daily' AND "nfse_xml_routines"."day_of_month" IS NULL) OR ("nfse_xml_routines"."frequency" = 'monthly' AND "nfse_xml_routines"."day_of_month" IS NOT NULL AND "nfse_xml_routines"."day_of_month" BETWEEN 1 AND 28)),
 	CONSTRAINT "nfse_xml_routines_time_check" CHECK ("nfse_xml_routines"."run_time" ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$')
 );
 --> statement-breakpoint

@@ -51,6 +51,21 @@ describe("cofre de certificados", () => {
     expect(message).not.toContain(password);
   });
 
+  test("loadVaultKey recusa chave que não é RSA", () => {
+    const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const ecKey = Buffer.from(privateKey.export({ type: "pkcs8", format: "pem" }) as string).toString("base64");
+    expect(() => loadVaultKey(ecKey)).toThrow("NFSE_VAULT_PRIVATE_KEY inválida.");
+  });
+
+  test("IV fora do tamanho do GCM e texto cifrado sem conteúdo além da tag são recusados", async () => {
+    const vault = loadVaultKey(testVaultKey());
+    // A chave embrulhada é válida: a recusa vem da conferência do formato.
+    const envelope = await sealCertificate({ publicKeySpki: vault.publicKeySpki, keyId: vault.keyId, pfx: new Uint8Array([7]), password: "x" });
+    expect(() => vault.open({ ...envelope, iv: Buffer.alloc(16, 1).toString("base64") })).toThrow(VaultError);
+    expect(() => vault.open({ ...envelope, ciphertext: Buffer.alloc(16, 1).toString("base64") })).toThrow(VaultError);
+    expect(() => vault.open({ ...envelope, ciphertext: Buffer.alloc(8, 1).toString("base64") })).toThrow(VaultError);
+  });
+
   test("loadVaultKey recusa valor que não é chave, sem repetir o valor na mensagem", () => {
     const junk = "bm9wZQ==";
     let message = "";

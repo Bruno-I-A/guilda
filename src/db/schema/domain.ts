@@ -3450,9 +3450,10 @@ export const nfseXmlRoutines = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    // IS NOT NULL explícito: BETWEEN com NULL dá NULL, e CHECK com NULL passa.
     check(
       "nfse_xml_routines_day_check",
-      sql`(${t.frequency} = 'daily' AND ${t.dayOfMonth} IS NULL) OR (${t.frequency} = 'monthly' AND ${t.dayOfMonth} BETWEEN 1 AND 28)`,
+      sql`(${t.frequency} = 'daily' AND ${t.dayOfMonth} IS NULL) OR (${t.frequency} = 'monthly' AND ${t.dayOfMonth} IS NOT NULL AND ${t.dayOfMonth} BETWEEN 1 AND 28)`,
     ),
     check("nfse_xml_routines_time_check", sql`${t.runTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
   ],
@@ -3516,5 +3517,11 @@ export const nfseIssuedNotes = pgTable(
     uniqueIndex("nfse_issued_notes_org_key_uidx").on(t.orgId, t.accessKey),
     index("nfse_issued_notes_org_client_issued_idx").on(t.orgId, t.clientId, t.issuedAt),
     check("nfse_issued_notes_key_check", sql`${t.accessKey} ~ '^[0-9]{50}$'`),
+    check("nfse_issued_notes_nsu_check", sql`${t.nsu} > 0`),
+    // O cancelamento vem completo (data, NSU e XML do evento) ou não vem.
+    check(
+      "nfse_issued_notes_cancel_check",
+      sql`(${t.cancelledAt} IS NULL AND ${t.cancelNsu} IS NULL AND ${t.cancelXmlGz} IS NULL) OR (${t.cancelledAt} IS NOT NULL AND ${t.cancelNsu} IS NOT NULL AND ${t.cancelXmlGz} IS NOT NULL)`,
+    ),
   ],
 );
