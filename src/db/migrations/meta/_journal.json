@@ -575,6 +575,13 @@
       "when": 1792074375519,
       "tag": "0081_nfse-taker-address",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1792429868837,
+      "tag": "0082_nfse-xml-routine",
+      "breakpoints": true
     }
   ]
 }

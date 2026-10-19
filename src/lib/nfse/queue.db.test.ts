@@ -4,9 +4,6 @@
  * (docker/dev/init/01-roles.sql). Pega o que teste puro não pega: RLS, UPDATE
  * só nas colunas do ciclo de vida e a transação da etapa do controle.
  */
-import { readFileSync } from "node:fs";
-import path from "node:path";
-
 import { PGlite } from "@electric-sql/pglite";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
@@ -14,6 +11,8 @@ import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
 import * as schema from "@/db/schema";
 import { nfseBatchItemKey } from "@/domain/nfse";
+
+import { applyMigrations } from "./testing/pglite";
 
 vi.mock("server-only", () => ({}));
 
@@ -24,19 +23,7 @@ vi.mock("@/db", () => ({ db: pgDb }));
 const ORG = "orgA";
 
 beforeAll(async () => {
-  const dir = path.resolve(process.cwd(), "src/db/migrations");
-  const journal = JSON.parse(readFileSync(path.join(dir, "meta/_journal.json"), "utf8"));
-  await client.exec(`
-    CREATE ROLE guilda_app NOLOGIN NOSUPERUSER;
-    GRANT USAGE ON SCHEMA public TO guilda_app;
-    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO guilda_app;
-    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO guilda_app;
-  `);
-  for (const entry of journal.entries) {
-    for (const statement of readFileSync(path.join(dir, `${entry.tag}.sql`), "utf8").split("--> statement-breakpoint")) {
-      if (statement.trim()) await client.exec(statement);
-    }
-  }
+  await applyMigrations(client);
   await client.exec(`
     INSERT INTO organization (id, name, slug, created_at) VALUES ('${ORG}', 'Escritório', 'esc', now());
     INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at) VALUES ('u1', 'Fiscal', 'f@x', true, now(), now());
