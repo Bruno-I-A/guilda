@@ -56,9 +56,11 @@ cancelamento por substituição (e105102).
 
 ### 1. O certificado de cada empresa
 
-**Tela.** A ficha fiscal da empresa (Carteira e fichas) ganha o bloco
-**"Certificado A1"**: situação e o botão **Enviar certificado** (arquivo
-.pfx/.p12 e senha), mais **Remover**. Não existe botão de baixar o
+**Tela.** Na linha da empresa (Carteira e fichas), ao lado da Ficha, o botão
+**XML** abre "Certificado e XML": o bloco **"Certificado A1"** (situação, o
+botão **Enviar certificado** com arquivo .pfx/.p12 e senha, e **Remover**) e a
+pasta de XML. Fica fora do formulário da Ficha para não misturar com a versão
+dela. Não existe botão de baixar o
 certificado de volta. Quem pode: Fiscal e admins
 (`canManageFiscalOperations`), a régua de emitir notas.
 
@@ -134,7 +136,7 @@ vencido (Padaria), Sistema Nacional não respondeu (Mercado)".
 
 ### 3. A pasta de cada empresa e o download
 
-- **Na ficha fiscal**, a lista de meses da empresa com a quantidade ("09/2026
+- **No botão XML da empresa**, a lista de meses com a quantidade ("09/2026
   — 12 notas, 1 cancelada") e o botão de baixar cada mês.
 - **No Controle mensal da competência 09/2026**, cada empresa mostra quantas
   notas emitiu de 01/09 a 30/09, e o botão do topo diz **"Baixar XML —
