@@ -1,0 +1,1 @@
+ALTER TABLE "fiscal_client_profiles" ADD COLUMN "nfse_issuer_applicability" "fiscal_applicability" DEFAULT 'unknown' NOT NULL;

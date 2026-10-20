@@ -25,12 +25,13 @@ export function fiscalProfileSnapshot(
     deliveryApplicability: profile.deliveryApplicability,
     deliveryChannel: profile.deliveryChannel,
     factorRApplicability: profile.factorRApplicability,
+    nfseIssuerApplicability: profile.nfseIssuerApplicability,
     revenueReference: profile.revenueReference,
     permanentNotes: profile.permanentNotes,
   };
 }
 
-async function ensureFiscalProfile(
+export async function ensureFiscalProfile(
   tx: OrgTx,
   input: { orgId: string; clientId: string; actorId: string },
 ): Promise<FiscalProfile> {

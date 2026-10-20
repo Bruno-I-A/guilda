@@ -2177,6 +2177,8 @@ export type FiscalClientProfileSnapshot = {
   deliveryApplicability?: (typeof fiscalApplicability.enumValues)[number];
   deliveryChannel: string | null;
   factorRApplicability: (typeof fiscalApplicability.enumValues)[number];
+  /** Ausente nas versões anteriores a 2026-10-20. */
+  nfseIssuerApplicability?: (typeof fiscalApplicability.enumValues)[number];
   revenueReference: string | null;
   permanentNotes: string | null;
 };
@@ -2235,6 +2237,11 @@ export const fiscalClientProfiles = pgTable(
       .default("unknown"),
     deliveryChannel: varchar("delivery_channel", { length: 120 }),
     factorRApplicability: fiscalApplicability("factor_r_applicability")
+      .notNull()
+      .default("unknown"),
+    // "Emite NFS-e (serviço)": quem aparece na aba XML das notas. "unknown"
+    // cai na sugestão do CNAE principal (src/domain/nfse-service.ts).
+    nfseIssuerApplicability: fiscalApplicability("nfse_issuer_applicability")
       .notNull()
       .default("unknown"),
     revenueReference: numeric("revenue_reference", { precision: 15, scale: 2 }),
