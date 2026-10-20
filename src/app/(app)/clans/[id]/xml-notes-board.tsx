@@ -339,6 +339,12 @@ export function XmlNotesBoard({
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input
               type="search"
+              name="xml-company-search"
+              // A senha do certificado no diálogo fazia o navegador achar que era
+              // um login e preencher o e-mail da pessoa aqui.
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
               placeholder="Buscar por nome ou CNPJ"
               aria-label="Buscar empresa"
               className="pl-8"

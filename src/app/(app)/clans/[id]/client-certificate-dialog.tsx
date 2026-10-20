@@ -174,7 +174,7 @@ export function ClientCertificateDialog({
                 <Label htmlFor={`${clientId}-pfx`}>1. Escolha o arquivo do certificado A1 (.pfx ou .p12)</Label>
                 <Input ref={fileInput} id={`${clientId}-pfx`} type="file" accept=".pfx,.p12" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
                 <Label htmlFor={`${clientId}-password`}>2. Digite a senha do certificado</Label>
-                <Input id={`${clientId}-password`} type="password" autoComplete="off" value={password} onChange={(event) => setPassword(event.target.value)} />
+                <Input id={`${clientId}-password`} type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" value={password} onChange={(event) => setPassword(event.target.value)} />
                 <p className="text-xs text-muted-foreground">O arquivo e a senha são cifrados neste navegador; só o serviço fiscal consegue abri-los.</p>
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" size="sm" disabled={!file || !password || pending} onClick={upload}>
