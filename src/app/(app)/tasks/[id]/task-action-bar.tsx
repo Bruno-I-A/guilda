@@ -259,7 +259,7 @@ export function TaskActionBar({
         <Button
           disabled={pending}
           onClick={() =>
-            run(() => claimTask({ taskId: task.id }), "Missão assumida por você!")
+            run(() => claimTask({ taskId: task.id }), "Missão assumida e iniciada!")
           }
         >
           <Hand aria-hidden /> Assumir

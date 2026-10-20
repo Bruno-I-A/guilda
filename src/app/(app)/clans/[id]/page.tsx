@@ -94,6 +94,8 @@ export default async function ClanPage({
       fiscalYear?: string;
       fiscalMonth?: string;
       meiYear?: string;
+      missionsView?: string;
+      missionsPage?: string;
     } & ClosingsTabParams
   >;
 }) {
@@ -106,6 +108,8 @@ export default async function ClanPage({
     fiscalYear,
     fiscalMonth,
     meiYear,
+    missionsView,
+    missionsPage,
     ...filters
   } = await searchParams;
   const session = await requireOrgSession();
@@ -300,6 +304,8 @@ export default async function ClanPage({
             clanId={clan.id}
             memberships={memberships}
             canDistribute={canDistributeClanTasks(clanFacts)}
+            requestedView={missionsView}
+            requestedPage={missionsPage}
             canQuickComplete={canQuickCompleteUnassignedInformativeTask({
               role,
               leadsThisClan,
