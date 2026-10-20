@@ -249,6 +249,7 @@ test("aba XML: empresas com certificado, notas do mês e leitura; download do m�
   const oficina = companies.find((company) => company.name === "Oficina")!;
   expect(oficina).toMatchObject({ cnpj: "55000167000103", certificate: null, notes: { total: 2, cancelled: 0 } });
   expect(oficina.sync).toMatchObject({ lastError: null });
+  expect(oficina.stored).toEqual({ total: 3, lastIssuedAt: "2026-10-01T03:00:00.000Z" });
   expect(oficina.sync?.initialSyncAt).toEqual(expect.any(String));
   expect(companies.find((company) => company.name === "Mercado")!.notes).toEqual({ total: 0, cancelled: 0 });
 
@@ -290,4 +291,23 @@ test("emite NFS-e: o CNAE sugere, a Ficha manda e guarda histórico; MEI fica fo
     tx.select({ id: schema.clients.id }).from(schema.clients).where(eq(schema.clients.name, "Zé MEI")),
   );
   expect(await mark(mei.id, true)).toBe("mei");
+});
+
+test("MEI nunca aparece na aba, nem com certificado, e a rotina não o lê", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const { loadXmlCompanies } = await import("./xml-requests");
+  const repo = await import("./xml-repository");
+  const [mei] = await withOrgTx(ORG, (tx) =>
+    tx.select({ id: schema.clients.id }).from(schema.clients).where(eq(schema.clients.name, "Zé MEI")),
+  );
+  await withOrgTx(ORG, (tx) =>
+    tx.insert(schema.nfseClientCertificates).values({
+      orgId: ORG, clientId: mei.id, envelope: ENVELOPE, uploadedBy: "u1",
+      status: "valid", certificateCnpj: "99000167000109", validUntil: new Date("2030-01-01T00:00:00Z"),
+    }),
+  );
+  const companies = await withOrgTx(ORG, (tx) => loadXmlCompanies(tx, { orgId: ORG, year: 2026, month: 9 }));
+  expect(companies.map((company) => company.name)).not.toContain("Zé MEI");
+  const routine = await repo.listRoutineClients(ORG, new Date("2026-10-20T12:00:00Z"));
+  expect(routine.map((client) => client.clientId)).not.toContain(mei.id);
 });

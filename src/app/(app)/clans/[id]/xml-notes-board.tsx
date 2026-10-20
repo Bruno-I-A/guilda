@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCnpj } from "@/domain/cnpj";
-import { certificateState, emissionRangeLabel, summarizeCertificates } from "@/domain/nfse-xml";
+import { certificateState, emissionRangeLabel, previousEmissionMonth, summarizeCertificates } from "@/domain/nfse-xml";
 import type { ClientCertificateView, XmlCompanyView, XmlRoutineView } from "@/lib/nfse/xml-requests";
 import { cn } from "@/lib/utils";
 
@@ -76,7 +76,59 @@ function SyncStatus({ company, now }: { company: XmlCompanyView; now: Date }) {
   if (company.sync?.lastError) return <span className="text-destructive">Erro na leitura: {company.sync.lastError}</span>;
   if (!company.sync) return <span className="text-muted-foreground">Aguardando a primeira leitura</span>;
   if (!company.sync.initialSyncAt) return <span className="text-muted-foreground">Lendo o histórico…</span>;
-  return <span className="text-muted-foreground">Lida em {xmlTimeLabel(company.sync.lastSyncedAt ?? company.sync.initialSyncAt)}</span>;
+  const read = `Lida em ${xmlTimeLabel(company.sync.lastSyncedAt ?? company.sync.initialSyncAt)}`;
+  // Diz se a leitura achou alguma coisa: "0 em setembro" sozinho não separa
+  // "não emitiu no mês" de "não tem nada no Sistema Nacional".
+  if (company.stored.total === 0) {
+    return <span className="text-warning">{read} · nenhuma nota emitida encontrada no Sistema Nacional</span>;
+  }
+  return (
+    <span className="text-muted-foreground">
+      {read} · {company.stored.total} nota(s) guardada(s), a última emitida em {dateLabel(company.stored.lastIssuedAt!)}
+    </span>
+  );
+}
+
+/**
+ * O período dos XML por escrito e escolhível: abre no mês anterior (o que se
+ * apura) e a pessoa confere as datas ou troca de mês aqui ou nas setas.
+ */
+function PeriodPicker({ clanId, year, month }: { clanId: string; year: number; month: number }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const value = `${year}-${String(month).padStart(2, "0")}`;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const mm = String(month).padStart(2, "0");
+  const isDefault = (() => {
+    const expected = previousEmissionMonth(new Date());
+    return expected.year === year && expected.month === month;
+  })();
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm" aria-busy={pending}>
+      <label htmlFor="xml-period" className="text-muted-foreground">Período</label>
+      <Input
+        id="xml-period"
+        type="month"
+        className="w-auto"
+        value={value}
+        onChange={(event) => {
+          const [nextYear, nextMonth] = event.target.value.split("-").map(Number);
+          if (!nextYear || !nextMonth) return;
+          startTransition(() => router.push(periodHref(clanId, nextYear, nextMonth)));
+        }}
+      />
+      <span className="font-mono text-xs tabular-nums">
+        emitidas de 01/{mm}/{year} a {lastDay}/{mm}/{year}
+      </span>
+      {isDefault ? (
+        <span className="text-xs text-muted-foreground">(mês anterior, o padrão)</span>
+      ) : (
+        <Link href={`/clans/${clanId}?tab=xml`} className="text-xs text-primary underline-offset-4 hover:underline">
+          Voltar ao mês anterior
+        </Link>
+      )}
+    </div>
+  );
 }
 
 /** "É de serviço? Sim · Não": a Ficha manda; sem marcação, o CNAE sugere. */
@@ -246,6 +298,7 @@ export function XmlNotesBoard({
             <Link href={periodHref(clanId, next.year, next.month)} aria-label="Próximo mês"><ChevronRight aria-hidden /></Link>
           </Button>
         </div>
+        <PeriodPicker clanId={clanId} year={year} month={month} />
       </div>
 
       <p className="max-w-prose text-sm text-muted-foreground">
@@ -339,6 +392,12 @@ export function XmlNotesBoard({
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input
               type="search"
+              name="xml-company-search"
+              // A senha do certificado no diálogo fazia o navegador achar que era
+              // um login e preencher o e-mail da pessoa aqui.
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
               placeholder="Buscar por nome ou CNPJ"
               aria-label="Buscar empresa"
               className="pl-8"

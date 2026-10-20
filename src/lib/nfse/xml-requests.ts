@@ -125,11 +125,13 @@ export interface XmlCompanyView {
   notes: { total: number; cancelled: number };
   /** Leitura da rotina; null = a rotina ainda não passou pela empresa. */
   sync: { initialSyncAt: string | null; lastSyncedAt: string | null; lastError: string | null } | null;
+  /** Tudo o que já está guardado da empresa, em qualquer mês: diz se a leitura achou alguma coisa. */
+  stored: { total: number; lastIssuedAt: string | null };
 }
 
 /**
- * A lista da aba XML das notas: as empresas ativas fora do MEI (controlado na
- * aba MEI), mais quem ainda tem certificado (para dar para remover), com a
+ * A lista da aba XML das notas: as empresas ativas, mais quem ainda tem
+ * certificado (para dar para remover), nunca MEI (decisão do Bruno), com a
  * classificação de serviço, o certificado, as notas do mês e a última leitura.
  */
 export async function loadXmlCompanies(
@@ -144,11 +146,21 @@ export async function loadXmlCompanies(
     .from(cl)
     .leftJoin(c, and(eq(c.orgId, cl.orgId), eq(c.clientId, cl.id)))
     .leftJoin(fp, and(eq(fp.orgId, cl.orgId), eq(fp.clientId, cl.id)))
-    .where(and(eq(cl.orgId, input.orgId), or(and(eq(cl.active, true), ne(cl.taxRegime, "mei")), isNotNull(c.id))))
+    .where(and(eq(cl.orgId, input.orgId), ne(cl.taxRegime, "mei"), or(eq(cl.active, true), isNotNull(c.id))))
     .orderBy(asc(cl.name));
   const clientIds = rows.map((row) => row.clientId);
   const certificates = await loadClientCertificates(tx, input.orgId);
   const counts = await countIssuedNotes(tx, { orgId: input.orgId, clientIds, year: input.year, month: input.month });
+  const n = schema.nfseIssuedNotes;
+  const stored = new Map(
+    (
+      await tx
+        .select({ clientId: n.clientId, total: sql<number>`count(*)::int`, lastIssuedAt: sql<Date>`max(${n.issuedAt})` })
+        .from(n)
+        .where(eq(n.orgId, input.orgId))
+        .groupBy(n.clientId)
+    ).map((row) => [row.clientId, row]),
+  );
   const cur = schema.nfseDfeCursors;
   const cursors = new Map(
     (
@@ -165,6 +177,10 @@ export async function loadXmlCompanies(
       service: nfseIssuer({ applicability: issuer, cnaeCode }),
       certificate: certificates.get(row.clientId) ?? null,
       notes: counts.get(row.clientId) ?? { total: 0, cancelled: 0 },
+      stored: (() => {
+        const found = stored.get(row.clientId);
+        return { total: found?.total ?? 0, lastIssuedAt: found?.lastIssuedAt ? new Date(found.lastIssuedAt).toISOString() : null };
+      })(),
       sync: cursor
         ? {
             initialSyncAt: cursor.initialSyncAt?.toISOString() ?? null,
@@ -231,7 +247,7 @@ export async function loadXmlArchiveInput(
       .selectDistinct({ clientId: cl.id, name: cl.name, cnpj: cl.cnpj })
       .from(n)
       .innerJoin(cl, and(eq(cl.orgId, n.orgId), eq(cl.id, n.clientId)))
-      .where(and(eq(n.orgId, input.orgId), gte(n.issuedAt, start), lt(n.issuedAt, end)));
+      .where(and(eq(n.orgId, input.orgId), ne(cl.taxRegime, "mei"), gte(n.issuedAt, start), lt(n.issuedAt, end)));
     for (const row of withNotes) if (!known.has(row.clientId)) controlRows.push({ ...row, nfsApplicability: null });
     controlRows.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }
