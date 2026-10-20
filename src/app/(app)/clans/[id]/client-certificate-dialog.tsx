@@ -1,6 +1,7 @@
 "use client";
 
 import { FileKey2, LoaderCircle, Trash2, Upload } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -23,17 +24,27 @@ function dateLabel(iso: string): string {
   return new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 }
 
-/** Selo da Carteira: só quando há o que fazer (vence em < 30 dias, venceu, problema). */
-export function CertificateBadge({ certificate }: { certificate: ClientCertificateView | null }) {
+/**
+ * Selo da Carteira: só quando há o que fazer (vence em < 30 dias, venceu,
+ * problema). Leva para a aba XML das notas, onde o certificado se troca.
+ */
+export function CertificateBadge({ certificate, href }: { certificate: ClientCertificateView | null; href: string }) {
   const { state, daysLeft } = certificateState({
     status: certificate?.status ?? null,
     validUntil: certificate?.validUntil ? new Date(certificate.validUntil) : null,
     now: new Date(),
   });
-  if (state === "expiring") return <Badge variant="outline" className="border-warning/40 text-xs text-warning">certificado vence em {daysLeft} d</Badge>;
-  if (state === "expired") return <Badge variant="outline" className="border-destructive/40 text-xs text-destructive">certificado vencido</Badge>;
-  if (state === "invalid") return <Badge variant="outline" className="border-destructive/40 text-xs text-destructive">certificado com problema</Badge>;
-  return null;
+  const label =
+    state === "expiring" ? `certificado vence em ${daysLeft} d`
+    : state === "expired" ? "certificado vencido"
+    : state === "invalid" ? "certificado com problema"
+    : null;
+  if (!label) return null;
+  return (
+    <Badge asChild variant="outline" className={state === "expiring" ? "border-warning/40 text-xs text-warning" : "border-destructive/40 text-xs text-destructive"}>
+      <Link href={href} title="Abrir XML das notas">{label}</Link>
+    </Badge>
+  );
 }
 
 export function ClientCertificateDialog({
@@ -104,7 +115,7 @@ export function ClientCertificateDialog({
       setFile(null);
       setPassword("");
       if (fileInput.current) fileInput.current.value = "";
-      toast.success("Certificado enviado. O serviço fiscal confere em instantes.");
+      toast.success("Certificado enviado. Em alguns segundos a lista mostra se ele foi aceito.");
       router.refresh();
       } catch {
         toast.error("Não foi possível enviar o certificado. Confira o arquivo e tente de novo por HTTPS.");
@@ -135,15 +146,22 @@ export function ClientCertificateDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button type="button" variant="ghost" size="sm">
-          <FileKey2 aria-hidden /> XML
-        </Button>
+        {/* Sem certificado, ou com um recusado ou vencido, o botão é a ação a fazer; com um bom, abre a situação e a pasta. */}
+        {canManage && (state === "missing" || state === "invalid" || state === "expired") ? (
+          <Button type="button" size="sm">
+            <Upload aria-hidden /> {state === "missing" ? "Enviar certificado" : "Trocar certificado"}
+          </Button>
+        ) : (
+          <Button type="button" variant="outline" size="sm">
+            <FileKey2 aria-hidden /> Certificado e pasta
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto break-words sm:max-w-lg" aria-busy={pending}>
         <DialogHeader className="pr-8">
-          <DialogTitle>Certificado e XML · {clientName}</DialogTitle>
+          <DialogTitle>Certificado e pasta de XML · {clientName}</DialogTitle>
           <DialogDescription>
-            Com o certificado A1 da empresa, a rotina guarda aqui os XML das NFS-e que ela emitiu.
+            Com o certificado A1 da empresa, a rotina busca no Sistema Nacional as NFS-e que ela emitiu e guarda os XML aqui.
           </DialogDescription>
         </DialogHeader>
 
@@ -153,15 +171,15 @@ export function ClientCertificateDialog({
           {canManage ? (
             vaultKey ? (
               <div className="grid gap-2">
-                <Label htmlFor={`${clientId}-pfx`}>Arquivo .pfx ou .p12</Label>
+                <Label htmlFor={`${clientId}-pfx`}>1. Escolha o arquivo do certificado A1 (.pfx ou .p12)</Label>
                 <Input ref={fileInput} id={`${clientId}-pfx`} type="file" accept=".pfx,.p12" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-                <Label htmlFor={`${clientId}-password`}>Senha do certificado</Label>
+                <Label htmlFor={`${clientId}-password`}>2. Digite a senha do certificado</Label>
                 <Input id={`${clientId}-password`} type="password" autoComplete="off" value={password} onChange={(event) => setPassword(event.target.value)} />
                 <p className="text-xs text-muted-foreground">O arquivo e a senha são cifrados neste navegador; só o serviço fiscal consegue abri-los.</p>
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" size="sm" disabled={!file || !password || pending} onClick={upload}>
                     {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Upload aria-hidden />}
-                    {certificate ? "Trocar certificado" : "Enviar certificado"}
+                    {certificate ? "3. Trocar certificado" : "3. Enviar certificado"}
                   </Button>
                   {certificate ? (
                     <Button type="button" size="sm" variant="ghost" className="touch-target" disabled={pending} onClick={remove}>

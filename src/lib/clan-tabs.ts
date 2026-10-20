@@ -21,6 +21,7 @@ export const CLAN_TABS = [
   { key: "mei", label: "MEI" },
   { key: "installments", label: "Parcelamentos" },
   { key: "fees", label: "Honorários" },
+  { key: "xml", label: "XML das notas" },
   { key: "closings", label: "Fechamentos" },
   { key: "flow", label: "Fluxo" },
 ] as const;
@@ -39,6 +40,7 @@ export const CLAN_TAB_DESCRIPTIONS: Record<ClanTab, string> = {
   mei: "Declarações anuais das empresas MEI.",
   installments: "Controle dos parcelamentos em andamento.",
   fees: "Controle mensal de honorários.",
+  xml: "Certificados A1 das empresas, a rotina que guarda os XML das NFS-e que elas emitem e o download por mês.",
   closings: "Fechamentos contábeis de cada empresa.",
   flow: "Aberturas, alterações e baixas: do pedido do cliente ao Informativo.",
 };
@@ -50,6 +52,7 @@ const TAB_OWNER_SLUG: Partial<Record<ClanTab, string>> = {
   mei: FISCAL_CLAN_SLUG,
   installments: FISCAL_CLAN_SLUG,
   fees: FISCAL_CLAN_SLUG,
+  xml: FISCAL_CLAN_SLUG,
   closings: CONTABILIDADE_CLAN_SLUG,
   flow: SOCIETARIO_CLAN_SLUG,
 };

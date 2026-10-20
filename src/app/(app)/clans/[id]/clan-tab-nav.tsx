@@ -4,6 +4,7 @@ import {
   BriefcaseBusiness,
   CalendarCheck,
   CalendarRange,
+  FolderArchive,
   HandCoins,
   ReceiptText,
   ShieldCheck,
@@ -31,6 +32,7 @@ const TAB_ICONS: Record<ClanTab, LucideIcon> = {
   mei: CalendarCheck,
   installments: ReceiptText,
   fees: WalletCards,
+  xml: FolderArchive,
   closings: CalendarRange,
   flow: Workflow,
 };

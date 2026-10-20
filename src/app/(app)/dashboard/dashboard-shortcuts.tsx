@@ -8,6 +8,7 @@ import {
   CalendarRange,
   CalendarCheck,
   ChevronRight,
+  FolderArchive,
   HandCoins,
   Inbox,
   ListTodo,
@@ -69,6 +70,7 @@ const SHORTCUT_ICONS: Record<DashboardShortcutIcon, LucideIcon> = {
   mei: CalendarCheck,
   installments: ReceiptText,
   fees: WalletCards,
+  xml: FolderArchive,
   closings: CalendarRange,
   flow: Workflow,
 };

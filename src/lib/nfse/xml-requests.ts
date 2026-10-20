@@ -2,7 +2,7 @@ import "server-only";
 
 import { gunzipSync } from "node:zlib";
 
-import { and, asc, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -113,6 +113,63 @@ export async function countIssuedNotes(
   return new Map(rows.map((row) => [row.clientId, { total: row.total, cancelled: row.cancelled }]));
 }
 
+export interface XmlCompanyView {
+  clientId: string;
+  name: string;
+  cnpj: string | null;
+  certificate: ClientCertificateView | null;
+  /** Notas emitidas no mês escolhido na aba. */
+  notes: { total: number; cancelled: number };
+  /** Leitura da rotina; null = a rotina ainda não passou pela empresa. */
+  sync: { initialSyncAt: string | null; lastSyncedAt: string | null; lastError: string | null } | null;
+}
+
+/**
+ * A lista da aba XML das notas: as empresas ativas, mais as inativas que
+ * ainda têm certificado (para dar para remover), com o certificado, as notas
+ * do mês e a última leitura.
+ */
+export async function loadXmlCompanies(
+  tx: OrgTx,
+  input: { orgId: string; year: number; month: number },
+): Promise<XmlCompanyView[]> {
+  const cl = schema.clients;
+  const c = schema.nfseClientCertificates;
+  const rows = await tx
+    .select({ clientId: cl.id, name: cl.name, cnpj: cl.cnpj })
+    .from(cl)
+    .leftJoin(c, and(eq(c.orgId, cl.orgId), eq(c.clientId, cl.id)))
+    .where(and(eq(cl.orgId, input.orgId), or(eq(cl.active, true), isNotNull(c.id))))
+    .orderBy(asc(cl.name));
+  const clientIds = rows.map((row) => row.clientId);
+  const certificates = await loadClientCertificates(tx, input.orgId);
+  const counts = await countIssuedNotes(tx, { orgId: input.orgId, clientIds, year: input.year, month: input.month });
+  const cur = schema.nfseDfeCursors;
+  const cursors = new Map(
+    (
+      await tx
+        .select({ clientId: cur.clientId, initialSyncAt: cur.initialSyncAt, lastSyncedAt: cur.lastSyncedAt, lastError: cur.lastError })
+        .from(cur)
+        .where(eq(cur.orgId, input.orgId))
+    ).map((row) => [row.clientId, row]),
+  );
+  return rows.map((row) => {
+    const cursor = cursors.get(row.clientId);
+    return {
+      ...row,
+      certificate: certificates.get(row.clientId) ?? null,
+      notes: counts.get(row.clientId) ?? { total: 0, cancelled: 0 },
+      sync: cursor
+        ? {
+            initialSyncAt: cursor.initialSyncAt?.toISOString() ?? null,
+            lastSyncedAt: cursor.lastSyncedAt?.toISOString() ?? null,
+            lastError: cursor.lastError,
+          }
+        : null,
+    };
+  });
+}
+
 /** Os meses da pasta de uma empresa, do mais recente ao mais antigo (mês de emissão em Brasília). */
 export async function loadClientXmlMonths(
   tx: OrgTx,
@@ -158,11 +215,23 @@ export async function loadXmlArchiveInput(
         .leftJoin(schema.fiscalClientProfiles, and(eq(schema.fiscalClientProfiles.orgId, fcp.orgId), eq(schema.fiscalClientProfiles.id, fcp.profileId)))
         .where(and(eq(fcp.orgId, input.orgId), eq(fcp.periodYear, input.year), eq(fcp.periodMonth, input.month)))
         .orderBy(asc(cl.name));
+  const n = schema.nfseIssuedNotes;
+  const { start, end } = emissionMonthRange(input.year, input.month);
+  if (!input.clientId) {
+    // Quem tem nota guardada no período entra mesmo sem a competência aberta
+    // no Controle mensal: a aba XML das notas baixa qualquer mês.
+    const known = new Set(controlRows.map((row) => row.clientId));
+    const withNotes = await tx
+      .selectDistinct({ clientId: cl.id, name: cl.name, cnpj: cl.cnpj })
+      .from(n)
+      .innerJoin(cl, and(eq(cl.orgId, n.orgId), eq(cl.id, n.clientId)))
+      .where(and(eq(n.orgId, input.orgId), gte(n.issuedAt, start), lt(n.issuedAt, end)));
+    for (const row of withNotes) if (!known.has(row.clientId)) controlRows.push({ ...row, nfsApplicability: null });
+    controlRows.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  }
   const clientIds = controlRows.map((row) => row.clientId);
   if (clientIds.length === 0) return { companies: [], missing: [] };
 
-  const n = schema.nfseIssuedNotes;
-  const { start, end } = emissionMonthRange(input.year, input.month);
   const notes = await tx
     .select({ clientId: n.clientId, nsu: n.nsu, nfseNumber: n.nfseNumber, xmlGz: n.xmlGz, cancelXmlGz: n.cancelXmlGz })
     .from(n)

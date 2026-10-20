@@ -40,6 +40,14 @@ describe("abas específicas de cada clã", () => {
     expect(keys("rh")).not.toContain("fees");
   });
 
+  test("XML das notas só existe no Fiscal, logo depois de Honorários", () => {
+    expect(keys("fiscal")).toContain("xml");
+    expect(keys("fiscal").indexOf("xml")).toBe(keys("fiscal").indexOf("fees") + 1);
+    expect(keys("contabilidade")).not.toContain("xml");
+    expect(parseClanTab("xml", "contabilidade")).toBe("missions");
+    expect(isSharedClanTab("xml")).toBe(false);
+  });
+
   test("Fechamentos só existe na Contabilidade", () => {
     expect(clanHasClosings("contabilidade")).toBe(true);
     expect(keys("contabilidade")).toContain("closings");
