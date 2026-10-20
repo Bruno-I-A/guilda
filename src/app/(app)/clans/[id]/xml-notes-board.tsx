@@ -76,7 +76,17 @@ function SyncStatus({ company, now }: { company: XmlCompanyView; now: Date }) {
   if (company.sync?.lastError) return <span className="text-destructive">Erro na leitura: {company.sync.lastError}</span>;
   if (!company.sync) return <span className="text-muted-foreground">Aguardando a primeira leitura</span>;
   if (!company.sync.initialSyncAt) return <span className="text-muted-foreground">Lendo o histórico…</span>;
-  return <span className="text-muted-foreground">Lida em {xmlTimeLabel(company.sync.lastSyncedAt ?? company.sync.initialSyncAt)}</span>;
+  const read = `Lida em ${xmlTimeLabel(company.sync.lastSyncedAt ?? company.sync.initialSyncAt)}`;
+  // Diz se a leitura achou alguma coisa: "0 em setembro" sozinho não separa
+  // "não emitiu no mês" de "não tem nada no Sistema Nacional".
+  if (company.stored.total === 0) {
+    return <span className="text-warning">{read} · nenhuma nota emitida encontrada no Sistema Nacional</span>;
+  }
+  return (
+    <span className="text-muted-foreground">
+      {read} · {company.stored.total} nota(s) guardada(s), a última emitida em {dateLabel(company.stored.lastIssuedAt!)}
+    </span>
+  );
 }
 
 /** "É de serviço? Sim · Não": a Ficha manda; sem marcação, o CNAE sugere. */

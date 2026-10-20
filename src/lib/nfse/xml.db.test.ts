@@ -249,6 +249,7 @@ test("aba XML: empresas com certificado, notas do mÃªs e leitura; download do mÃ
   const oficina = companies.find((company) => company.name === "Oficina")!;
   expect(oficina).toMatchObject({ cnpj: "55000167000103", certificate: null, notes: { total: 2, cancelled: 0 } });
   expect(oficina.sync).toMatchObject({ lastError: null });
+  expect(oficina.stored).toEqual({ total: 3, lastIssuedAt: "2026-10-01T03:00:00.000Z" });
   expect(oficina.sync?.initialSyncAt).toEqual(expect.any(String));
   expect(companies.find((company) => company.name === "Mercado")!.notes).toEqual({ total: 0, cancelled: 0 });
 
