@@ -2,7 +2,7 @@ import "server-only";
 
 import { gunzipSync } from "node:zlib";
 
-import { and, asc, eq, gte, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, lt, ne, or, sql } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -15,6 +15,7 @@ import {
   xmlNoteFileName,
   type XmlRoutineSchedule,
 } from "@/domain/nfse-xml";
+import { nfseIssuer, type NfseIssuerSource } from "@/domain/nfse-service";
 
 import type { ArchiveCompany, ArchiveMissing } from "./xml-archive";
 
@@ -117,6 +118,8 @@ export interface XmlCompanyView {
   clientId: string;
   name: string;
   cnpj: string | null;
+  /** Emite NFS-e: a Ficha Fiscal manda; sem marcação, o CNAE principal sugere. */
+  service: { issues: boolean | null; source: NfseIssuerSource };
   certificate: ClientCertificateView | null;
   /** Notas emitidas no mês escolhido na aba. */
   notes: { total: number; cancelled: number };
@@ -125,9 +128,9 @@ export interface XmlCompanyView {
 }
 
 /**
- * A lista da aba XML das notas: as empresas ativas, mais as inativas que
- * ainda têm certificado (para dar para remover), com o certificado, as notas
- * do mês e a última leitura.
+ * A lista da aba XML das notas: as empresas ativas fora do MEI (controlado na
+ * aba MEI), mais quem ainda tem certificado (para dar para remover), com a
+ * classificação de serviço, o certificado, as notas do mês e a última leitura.
  */
 export async function loadXmlCompanies(
   tx: OrgTx,
@@ -135,11 +138,13 @@ export async function loadXmlCompanies(
 ): Promise<XmlCompanyView[]> {
   const cl = schema.clients;
   const c = schema.nfseClientCertificates;
+  const fp = schema.fiscalClientProfiles;
   const rows = await tx
-    .select({ clientId: cl.id, name: cl.name, cnpj: cl.cnpj })
+    .select({ clientId: cl.id, name: cl.name, cnpj: cl.cnpj, cnaeCode: cl.cnaeCode, issuer: fp.nfseIssuerApplicability })
     .from(cl)
     .leftJoin(c, and(eq(c.orgId, cl.orgId), eq(c.clientId, cl.id)))
-    .where(and(eq(cl.orgId, input.orgId), or(eq(cl.active, true), isNotNull(c.id))))
+    .leftJoin(fp, and(eq(fp.orgId, cl.orgId), eq(fp.clientId, cl.id)))
+    .where(and(eq(cl.orgId, input.orgId), or(and(eq(cl.active, true), ne(cl.taxRegime, "mei")), isNotNull(c.id))))
     .orderBy(asc(cl.name));
   const clientIds = rows.map((row) => row.clientId);
   const certificates = await loadClientCertificates(tx, input.orgId);
@@ -153,10 +158,11 @@ export async function loadXmlCompanies(
         .where(eq(cur.orgId, input.orgId))
     ).map((row) => [row.clientId, row]),
   );
-  return rows.map((row) => {
+  return rows.map(({ cnaeCode, issuer, ...row }) => {
     const cursor = cursors.get(row.clientId);
     return {
       ...row,
+      service: nfseIssuer({ applicability: issuer, cnaeCode }),
       certificate: certificates.get(row.clientId) ?? null,
       notes: counts.get(row.clientId) ?? { total: 0, cancelled: 0 },
       sync: cursor

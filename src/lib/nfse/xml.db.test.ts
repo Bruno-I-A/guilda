@@ -257,3 +257,37 @@ test("aba XML: empresas com certificado, notas do mês e leitura; download do m�
   expect(archive.companies.map((company) => company.folder)).toContain("oficina-55000167");
   expect(await withOrgTx(OTHER, (tx) => loadXmlCompanies(tx, { orgId: OTHER, year: 2026, month: 9 }))).toEqual([]);
 });
+
+test("emite NFS-e: o CNAE sugere, a Ficha manda e guarda histórico; MEI fica fora da aba", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const { loadXmlCompanies } = await import("./xml-requests");
+  const { setNfseIssuer } = await import("@/lib/fiscal/nfse-issuer");
+  await withOrgTx(ORG, async (tx) => {
+    await tx.update(schema.clients).set({ cnaeCode: "4520001" }).where(eq(schema.clients.id, CLIENT3));
+    await tx.update(schema.clients).set({ cnaeCode: "4711302" }).where(eq(schema.clients.id, CLIENT2));
+    await tx.insert(schema.clients).values({ orgId: ORG, name: "Zé MEI", taxRegime: "mei", cnpj: "99000167000109" });
+  });
+  const load = () => withOrgTx(ORG, (tx) => loadXmlCompanies(tx, { orgId: ORG, year: 2026, month: 9 }));
+  const before = await load();
+  const service = (list: Awaited<ReturnType<typeof load>>, name: string) => list.find((company) => company.name === name)?.service;
+  expect(before.map((company) => company.name)).not.toContain("Zé MEI");
+  expect(service(before, "Oficina")).toEqual({ issues: true, source: "cnae" });
+  expect(service(before, "Mercado")).toEqual({ issues: false, source: "cnae" });
+  expect(service(before, "Padaria")).toEqual({ issues: null, source: "none" });
+
+  const mark = (clientId: string, issues: boolean) =>
+    withOrgTx(ORG, (tx) => setNfseIssuer(tx, { orgId: ORG, clientId, actorId: "u1", issues }));
+  expect(await mark(CLIENT2, true)).toBe("updated");
+  expect(await mark(CLIENT2, true)).toBe("unchanged");
+  expect(service(await load(), "Mercado")).toEqual({ issues: true, source: "ficha" });
+  const events = await withOrgTx(ORG, (tx) =>
+    tx.select().from(schema.fiscalClientProfileEvents).where(eq(schema.fiscalClientProfileEvents.clientId, CLIENT2)),
+  );
+  expect(events.map((event) => event.eventType)).toEqual(["created", "updated"]);
+  expect(events[1]).toMatchObject({ changedFields: ["nfseIssuerApplicability"], snapshot: { nfseIssuerApplicability: "required" } });
+
+  const [mei] = await withOrgTx(ORG, (tx) =>
+    tx.select({ id: schema.clients.id }).from(schema.clients).where(eq(schema.clients.name, "Zé MEI")),
+  );
+  expect(await mark(mei.id, true)).toBe("mei");
+});

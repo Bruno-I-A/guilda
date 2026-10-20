@@ -49,6 +49,8 @@ const profileSchema = z.object({
   nfsApplicability: applicabilitySchema,
   deliveryApplicability: applicabilitySchema,
   factorRApplicability: applicabilitySchema,
+  // Opcional: "não informado" usa a sugestão do CNAE na aba XML das notas.
+  nfseIssuerApplicability: applicabilitySchema.default("unknown"),
   deliveryChannel: z
     .string()
     .trim()
@@ -111,6 +113,7 @@ function changedProfileFields(
     ["nfsApplicability", current.nfsApplicability, next.nfsApplicability],
     ["deliveryApplicability", current.deliveryApplicability, next.deliveryApplicability],
     ["factorRApplicability", current.factorRApplicability, next.factorRApplicability],
+    ["nfseIssuerApplicability", current.nfseIssuerApplicability, next.nfseIssuerApplicability],
     ["deliveryChannel", current.deliveryChannel ?? "", next.deliveryApplicability === "required" ? next.deliveryChannel : ""],
     ["revenueReference", current.revenueReference ?? "", next.revenueReference ?? ""],
     ["permanentNotes", current.permanentNotes ?? "", next.permanentNotes ?? ""],
@@ -173,6 +176,7 @@ export async function saveFiscalClientProfile(
       nfsApplicability: data.nfsApplicability,
       deliveryApplicability: data.deliveryApplicability,
       factorRApplicability: data.factorRApplicability,
+      nfseIssuerApplicability: data.nfseIssuerApplicability,
       deliveryChannel: data.deliveryApplicability === "required" ? data.deliveryChannel || null : null,
       revenueReference: data.revenueReference || null,
       permanentNotes: data.permanentNotes || null,
@@ -205,6 +209,7 @@ export async function saveFiscalClientProfile(
           "nfsApplicability",
           "deliveryApplicability",
           "factorRApplicability",
+          "nfseIssuerApplicability",
           "deliveryChannel",
           "revenueReference",
           "permanentNotes",

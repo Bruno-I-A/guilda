@@ -50,6 +50,7 @@ export interface FiscalProfileView {
   nfsApplicability: FiscalApplicability;
   deliveryApplicability: FiscalApplicability;
   factorRApplicability: FiscalApplicability;
+  nfseIssuerApplicability: FiscalApplicability;
   deliveryChannel: string | null;
   revenueReference: string | null;
   permanentNotes: string | null;
@@ -72,6 +73,7 @@ const FIELD_LABELS: Record<string, string> = {
   nfsApplicability: "Notas fiscais",
   deliveryApplicability: "Entrega",
   factorRApplicability: "Fator R",
+  nfseIssuerApplicability: "Emite NFS-e",
   deliveryChannel: "Entrega",
   revenueReference: "Referência de faturamento",
   permanentNotes: "Observações",
@@ -143,6 +145,7 @@ export function FiscalProfileDialog({
   const [nfs, setNfs] = useState(profile.nfsApplicability);
   const [deliveryApplicability, setDeliveryApplicability] = useState(profile.deliveryApplicability);
   const [factorR, setFactorR] = useState(profile.factorRApplicability);
+  const [nfseIssuer, setNfseIssuer] = useState(profile.nfseIssuerApplicability);
   const [delivery, setDelivery] = useState(profile.deliveryChannel ?? "");
   const [revenue, setRevenue] = useState(profile.revenueReference ?? "");
   const [notes, setNotes] = useState(profile.permanentNotes ?? "");
@@ -158,6 +161,7 @@ export function FiscalProfileDialog({
     setNfs(profile.nfsApplicability);
     setDeliveryApplicability(profile.deliveryApplicability);
     setFactorR(profile.factorRApplicability);
+    setNfseIssuer(profile.nfseIssuerApplicability);
     setDelivery(profile.deliveryChannel ?? "");
     setRevenue(profile.revenueReference ?? "");
     setNotes(profile.permanentNotes ?? "");
@@ -176,6 +180,7 @@ export function FiscalProfileDialog({
         nfsApplicability: nfs,
         deliveryApplicability,
         factorRApplicability: factorR,
+        nfseIssuerApplicability: nfseIssuer,
         deliveryChannel: delivery,
         revenueReference: revenue,
         permanentNotes: notes,
@@ -228,6 +233,8 @@ export function FiscalProfileDialog({
             <ApplicabilityField id={`${clientId}-nfs`} label="Importar notas (NF-e/NFS-e)" value={nfs} disabled={!canManage} onValueChange={setNfs} />
             <ApplicabilityField id={`${clientId}-delivery-required`} label="Enviar guia" value={deliveryApplicability} disabled={!canManage} onValueChange={setDeliveryApplicability} />
             <ApplicabilityField id={`${clientId}-factor-r`} label="Controla Fator R" value={factorR} disabled={!canManage} onValueChange={setFactorR} />
+            {/* Opcional: "Não informado" usa a sugestão do CNAE na aba XML das notas. */}
+            <ApplicabilityField id={`${clientId}-nfse-issuer`} label="Emite NFS-e (serviço)" value={nfseIssuer} disabled={!canManage} onValueChange={setNfseIssuer} />
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">

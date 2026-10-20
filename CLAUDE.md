@@ -25,6 +25,15 @@ download da competência. Não voltar a esconder o envio num botão da Carteira.
 O download do mês inteiro inclui quem tem nota guardada no período mesmo sem a
 competência aberta no Controle mensal.
 
+**Só empresas de serviço (2026-10-20)**: a aba lista por padrão quem emite
+NFS-e. A marcação **"Emite NFS-e (serviço)"** mora na Ficha Fiscal
+(`nfse_issuer_applicability`, com versão e histórico) e se troca na própria aba
+("É de serviço? Sim · Não", `setNfseIssuer`). "Não informado" cai na sugestão
+do CNAE principal (`src/domain/nfse-service.ts`, por divisão do CNAE); o
+Fiscal corrige as exceções, como comércio que também presta serviço. "Todas"
+mostra o resto para marcar. MEI fica fora (aba MEI). A rotina continua lendo
+toda empresa com certificado válido, marcada ou não.
+
 Plataforma multi-tenant de gestão de tarefas com sistema de recompensa (XP e níveis).
 Cada empresa (organização/tenant) tem seus usuários, tarefas e leaderboard isolados.
 Projeto de portfólio: qualidade de código e segurança são requisitos, não opcionais.

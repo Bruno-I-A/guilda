@@ -2,7 +2,9 @@
 
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +14,7 @@ import type { ClientCertificateView, XmlCompanyView, XmlRoutineView } from "@/li
 import { cn } from "@/lib/utils";
 
 import { ClientCertificateDialog } from "./client-certificate-dialog";
+import { setClientNfseIssuer } from "./nfse-xml-actions";
 import {
   RunXmlRoutineButton,
   useXmlAutoRefresh,
@@ -76,6 +79,59 @@ function SyncStatus({ company, now }: { company: XmlCompanyView; now: Date }) {
   return <span className="text-muted-foreground">Lida em {xmlTimeLabel(company.sync.lastSyncedAt ?? company.sync.initialSyncAt)}</span>;
 }
 
+/** "É de serviço? Sim · Não": a Ficha manda; sem marcação, o CNAE sugere. */
+function ServiceToggle({ clanId, company, canManage }: { clanId: string; company: XmlCompanyView; canManage: boolean }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const { issues, source } = company.service;
+  const note = source === "cnae" ? "sugerido pelo CNAE" : source === "none" ? "sem CNAE no cadastro" : "marcado na Ficha";
+
+  function mark(value: boolean) {
+    startTransition(async () => {
+      const result = await setClientNfseIssuer({ clanId, clientId: company.clientId, issues: value });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(value ? `${company.name} marcada como de serviço.` : `${company.name} saiu da lista de serviço.`);
+      router.refresh();
+    });
+  }
+
+  return (
+    <span className="flex flex-wrap items-center gap-1.5 text-xs">
+      <span className="text-muted-foreground">É de serviço?</span>
+      {canManage ? (
+        <span className="inline-flex border border-border/70" role="group" aria-label={`${company.name} emite NFS-e?`}>
+          {([true, false] as const).map((value) => {
+            const selected = issues === value;
+            const confirmed = selected && source === "ficha";
+            return (
+              <button
+                key={String(value)}
+                type="button"
+                aria-pressed={confirmed}
+                disabled={pending || confirmed}
+                onClick={() => mark(value)}
+                className={cn(
+                  "touch-target min-h-8 px-2.5 transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-default",
+                  value ? "border-r border-border/70" : "",
+                  selected && "bg-primary/10 text-primary",
+                )}
+              >
+                {value ? "Sim" : "Não"}
+              </button>
+            );
+          })}
+        </span>
+      ) : (
+        <span>{issues === null ? "a classificar" : issues ? "Sim" : "Não"}</span>
+      )}
+      <span className="text-muted-foreground">({note})</span>
+    </span>
+  );
+}
+
 export function XmlNotesBoard({
   clanId,
   year,
@@ -96,6 +152,8 @@ export function XmlNotesBoard({
   const now = useMemo(() => new Date(), []);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  // Padrão: só quem emite NFS-e (decisão de 2026-10-20). "Todas" serve para marcar as que faltam.
+  const [scope, setScope] = useState<"service" | "all">("service");
   const monthName = MONTHS[month - 1];
   const title = `${monthName.charAt(0).toUpperCase()}${monthName.slice(1)} de ${year}`;
   const previous = adjacentPeriod(year, month, -1);
@@ -104,8 +162,10 @@ export function XmlNotesBoard({
   const checking = companies.some((company) => company.certificate?.status === "pending");
   useXmlAutoRefresh(running || checking);
 
+  const serviceCompanies = useMemo(() => companies.filter((company) => company.service.issues === true), [companies]);
+  const scoped = scope === "service" ? serviceCompanies : companies;
   const summary = summarizeCertificates(
-    companies.map((company) => ({
+    serviceCompanies.map((company) => ({
       status: company.certificate?.status ?? null,
       validUntil: company.certificate?.validUntil ? new Date(company.certificate.validUntil) : null,
     })),
@@ -127,17 +187,17 @@ export function XmlNotesBoard({
     [companies, now],
   );
   const counts: Record<Filter, number> = {
-    all: companies.length,
-    missing: summary.missing,
-    problem: problemIds.size,
-    notes: companies.filter((company) => company.notes.total > 0).length,
+    all: scoped.length,
+    missing: scoped.filter((company) => !company.certificate).length,
+    problem: scoped.filter((company) => problemIds.has(company.clientId)).length,
+    notes: scoped.filter((company) => company.notes.total > 0).length,
   };
 
   const steps = [
     {
       key: "certificates",
       label: "Certificados",
-      detail: `${ready} de ${companies.length} prontos${summary.pending > 0 ? ` · ${summary.pending} conferindo` : ""}`,
+      detail: `${ready} de ${serviceCompanies.length} prontos${summary.pending > 0 ? ` · ${summary.pending} conferindo` : ""}`,
       done: ready > 0 && summary.pending === 0,
     },
     {
@@ -158,17 +218,17 @@ export function XmlNotesBoard({
   const visible = useMemo(() => {
     const needle = normalize(query.trim());
     const digits = query.replace(/\D/g, "");
-    return companies.filter((company) => {
+    return scoped.filter((company) => {
       if (needle && !normalize(company.name).includes(needle) && !(digits && company.cnpj?.includes(digits))) return false;
       if (filter === "missing") return !company.certificate;
       if (filter === "problem") return problemIds.has(company.clientId);
       if (filter === "notes") return company.notes.total > 0;
       return true;
     });
-  }, [companies, filter, problemIds, query]);
+  }, [scoped, filter, problemIds, query]);
 
   const filters: { key: Filter; label: string }[] = [
-    { key: "all", label: "Todas" },
+    { key: "all", label: "Sem filtro" },
     { key: "missing", label: "Sem certificado" },
     { key: "problem", label: "Com problema" },
     { key: "notes", label: `Com notas em ${monthName}` },
@@ -267,6 +327,14 @@ export function XmlNotesBoard({
       <section className="grid min-w-0 gap-3">
         <h2>Empresas</h2>
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Quais empresas mostrar">
+            <Button type="button" size="sm" variant={scope === "service" ? "default" : "outline"} aria-pressed={scope === "service"} onClick={() => setScope("service")}>
+              Empresas de serviço ({serviceCompanies.length})
+            </Button>
+            <Button type="button" size="sm" variant={scope === "all" ? "default" : "outline"} aria-pressed={scope === "all"} onClick={() => setScope("all")}>
+              Todas ({companies.length})
+            </Button>
+          </div>
           <div className="relative min-w-0 flex-1 sm:max-w-xs">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input
@@ -303,7 +371,21 @@ export function XmlNotesBoard({
 
         {visible.length === 0 ? (
           <div className="grid justify-items-center gap-2 rounded-lg border border-dashed p-8 text-center text-sm">
-            <p className="font-medium">Nenhuma empresa neste filtro.</p>
+            <p className="font-medium">
+              {scope === "service" && serviceCompanies.length === 0
+                ? "Nenhuma empresa de serviço ainda."
+                : "Nenhuma empresa neste filtro."}
+            </p>
+            {scope === "service" && serviceCompanies.length === 0 ? (
+              <>
+                <p className="max-w-prose text-muted-foreground">
+                  A lista sai do CNAE principal ou da marcação na Ficha Fiscal. Em Todas, marque as que emitem NFS-e.
+                </p>
+                <Button type="button" variant="outline" size="sm" onClick={() => setScope("all")}>
+                  Ver todas
+                </Button>
+              </>
+            ) : null}
             {filter !== "all" || query ? (
               <Button type="button" variant="outline" size="sm" onClick={() => { setFilter("all"); setQuery(""); }}>
                 Limpar filtro
@@ -319,6 +401,7 @@ export function XmlNotesBoard({
                   <span className="font-mono text-xs text-muted-foreground">{company.cnpj ? formatCnpj(company.cnpj) : "sem CNPJ no cadastro"}</span>
                   <span><CertificateStatus certificate={company.certificate} now={now} /></span>
                   <span className="text-xs"><SyncStatus company={company} now={now} /></span>
+                  <ServiceToggle clanId={clanId} company={company} canManage={canManage} />
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                   <span className="font-mono text-xs tabular-nums text-muted-foreground">

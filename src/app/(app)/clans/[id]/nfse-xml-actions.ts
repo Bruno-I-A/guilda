@@ -6,6 +6,7 @@ import { z } from "zod";
 import * as schema from "@/db/schema";
 import { XML_ROUTINE_FREQUENCIES, XML_ROUTINE_TIME_PATTERN } from "@/domain/nfse-xml";
 import { err, type ActionResult } from "@/lib/action-context";
+import { setNfseIssuer } from "@/lib/fiscal/nfse-issuer";
 import { vaultEnvelopeSchema } from "@/lib/nfse/vault";
 import { loadClientXmlMonths, loadVaultPublicKey } from "@/lib/nfse/xml-requests";
 import { asFiscalOperator } from "@/lib/office-fees/fiscal-operator";
@@ -103,6 +104,21 @@ export async function requestXmlRoutineRun(input: { clanId: string }): Promise<A
     const r = schema.nfseXmlRoutines;
     const now = new Date();
     await tx.insert(r).values({ orgId: ctx.orgId, runRequestedAt: now }).onConflictDoUpdate({ target: r.orgId, set: { runRequestedAt: now } });
+    return { ok: true, data: null };
+  });
+  if (result.ok) revalidateClan();
+  return result;
+}
+
+/** "É de serviço? Sim · Não" da aba XML das notas: grava na Ficha Fiscal, com histórico. */
+export async function setClientNfseIssuer(input: z.input<typeof clientSchema> & { issues: boolean }): Promise<ActionResult<null>> {
+  const parsed = clientSchema.extend({ issues: z.boolean() }).safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Pedido inválido.");
+  const { clanId, clientId, issues } = parsed.data;
+  const result = await asFiscalOperator(clanId, async (tx, ctx) => {
+    const change = await setNfseIssuer(tx, { orgId: ctx.orgId, clientId, actorId: ctx.userId, issues });
+    if (change === "missing") return err("Empresa não encontrada.");
+    if (change === "mei") return err("Empresas MEI são controladas na aba MEI.");
     return { ok: true, data: null };
   });
   if (result.ok) revalidateClan();

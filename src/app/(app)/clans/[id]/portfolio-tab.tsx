@@ -94,6 +94,8 @@ export async function PortfolioTab({
         deliveryApplicability: schema.fiscalClientProfiles.deliveryApplicability,
         factorRApplicability:
           schema.fiscalClientProfiles.factorRApplicability,
+        nfseIssuerApplicability:
+          schema.fiscalClientProfiles.nfseIssuerApplicability,
         deliveryChannel: schema.fiscalClientProfiles.deliveryChannel,
         revenueReference: schema.fiscalClientProfiles.revenueReference,
         permanentNotes: schema.fiscalClientProfiles.permanentNotes,
@@ -190,6 +192,7 @@ export async function PortfolioTab({
         nfsApplicability,
         deliveryApplicability,
         factorRApplicability,
+        nfseIssuerApplicability: detail?.nfseIssuerApplicability ?? "unknown",
         deliveryChannel,
         revenueReference: detail?.revenueReference ?? null,
         permanentNotes:
