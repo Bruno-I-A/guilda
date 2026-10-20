@@ -128,8 +128,8 @@ export interface XmlCompanyView {
 }
 
 /**
- * A lista da aba XML das notas: as empresas ativas fora do MEI (controlado na
- * aba MEI), mais quem ainda tem certificado (para dar para remover), com a
+ * A lista da aba XML das notas: as empresas ativas, mais quem ainda tem
+ * certificado (para dar para remover), nunca MEI (decisão do Bruno), com a
  * classificação de serviço, o certificado, as notas do mês e a última leitura.
  */
 export async function loadXmlCompanies(
@@ -144,7 +144,7 @@ export async function loadXmlCompanies(
     .from(cl)
     .leftJoin(c, and(eq(c.orgId, cl.orgId), eq(c.clientId, cl.id)))
     .leftJoin(fp, and(eq(fp.orgId, cl.orgId), eq(fp.clientId, cl.id)))
-    .where(and(eq(cl.orgId, input.orgId), or(and(eq(cl.active, true), ne(cl.taxRegime, "mei")), isNotNull(c.id))))
+    .where(and(eq(cl.orgId, input.orgId), ne(cl.taxRegime, "mei"), or(eq(cl.active, true), isNotNull(c.id))))
     .orderBy(asc(cl.name));
   const clientIds = rows.map((row) => row.clientId);
   const certificates = await loadClientCertificates(tx, input.orgId);
@@ -231,7 +231,7 @@ export async function loadXmlArchiveInput(
       .selectDistinct({ clientId: cl.id, name: cl.name, cnpj: cl.cnpj })
       .from(n)
       .innerJoin(cl, and(eq(cl.orgId, n.orgId), eq(cl.id, n.clientId)))
-      .where(and(eq(n.orgId, input.orgId), gte(n.issuedAt, start), lt(n.issuedAt, end)));
+      .where(and(eq(n.orgId, input.orgId), ne(cl.taxRegime, "mei"), gte(n.issuedAt, start), lt(n.issuedAt, end)));
     for (const row of withNotes) if (!known.has(row.clientId)) controlRows.push({ ...row, nfsApplicability: null });
     controlRows.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }

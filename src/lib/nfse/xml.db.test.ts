@@ -291,3 +291,22 @@ test("emite NFS-e: o CNAE sugere, a Ficha manda e guarda histórico; MEI fica fo
   );
   expect(await mark(mei.id, true)).toBe("mei");
 });
+
+test("MEI nunca aparece na aba, nem com certificado, e a rotina não o lê", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const { loadXmlCompanies } = await import("./xml-requests");
+  const repo = await import("./xml-repository");
+  const [mei] = await withOrgTx(ORG, (tx) =>
+    tx.select({ id: schema.clients.id }).from(schema.clients).where(eq(schema.clients.name, "Zé MEI")),
+  );
+  await withOrgTx(ORG, (tx) =>
+    tx.insert(schema.nfseClientCertificates).values({
+      orgId: ORG, clientId: mei.id, envelope: ENVELOPE, uploadedBy: "u1",
+      status: "valid", certificateCnpj: "99000167000109", validUntil: new Date("2030-01-01T00:00:00Z"),
+    }),
+  );
+  const companies = await withOrgTx(ORG, (tx) => loadXmlCompanies(tx, { orgId: ORG, year: 2026, month: 9 }));
+  expect(companies.map((company) => company.name)).not.toContain("Zé MEI");
+  const routine = await repo.listRoutineClients(ORG, new Date("2026-10-20T12:00:00Z"));
+  expect(routine.map((client) => client.clientId)).not.toContain(mei.id);
+});

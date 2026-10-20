@@ -2,7 +2,7 @@ import "server-only";
 
 import { gzipSync } from "node:zlib";
 
-import { and, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull, ne, sql } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -131,7 +131,7 @@ export async function listRoutineClients(
       .from(c)
       .innerJoin(cl, and(eq(cl.orgId, c.orgId), eq(cl.id, c.clientId)))
       .leftJoin(cur, and(eq(cur.orgId, c.orgId), eq(cur.clientId, c.clientId)))
-      .where(and(eq(c.orgId, orgId), eq(c.status, "valid"), gt(c.validUntil, now), eq(cl.active, true), isNotNull(cl.cnpj)))
+      .where(and(eq(c.orgId, orgId), eq(c.status, "valid"), gt(c.validUntil, now), eq(cl.active, true), ne(cl.taxRegime, "mei"), isNotNull(cl.cnpj)))
       .orderBy(cl.name),
   );
   // O filtro isNotNull garante o CNPJ; o tipo da coluna não sabe disso.

@@ -31,7 +31,7 @@ NFS-e. A marcação **"Emite NFS-e (serviço)"** mora na Ficha Fiscal
 ("É de serviço? Sim · Não", `setNfseIssuer`). "Não informado" cai na sugestão
 do CNAE principal (`src/domain/nfse-service.ts`, por divisão do CNAE); o
 Fiscal corrige as exceções, como comércio que também presta serviço. "Todas"
-mostra o resto para marcar. MEI fica fora (aba MEI). A rotina continua lendo
+mostra o resto para marcar. MEI nunca aparece nem é lido, nem com certificado (aba MEI). A rotina lê
 toda empresa com certificado válido, marcada ou não.
 
 Plataforma multi-tenant de gestão de tarefas com sistema de recompensa (XP e níveis).
