@@ -21,6 +21,7 @@ function ctx(overrides: {
   completedBy?: string | null;
   fromInformative?: boolean;
   managedByCompanyFlow?: boolean;
+  companyFlowRhVerification?: boolean;
   now?: Date;
 }): TransitionContext {
   return {
@@ -34,6 +35,7 @@ function ctx(overrides: {
       completedBy: overrides.completedBy ?? null,
       fromInformative: overrides.fromInformative ?? false,
       managedByCompanyFlow: overrides.managedByCompanyFlow ?? false,
+      companyFlowRhVerification: overrides.companyFlowRhVerification ?? false,
     },
     now: overrides.now,
   };
@@ -543,6 +545,53 @@ describe("missão governada pelo Fluxo Societário", () => {
         ctx({ ...doFluxo, managedByCompanyFlow: false, status: "in_progress" }),
       ).allowed,
     ).toBe(true);
+  });
+});
+
+describe("verificação preventiva do RH em Fluxo de baixa", () => {
+  const verificacaoRh = {
+    actorId: "rh-responsavel",
+    creatorId: "societario-criador",
+    assigneeId: "rh-responsavel",
+    companyFlowRhVerification: true,
+  };
+
+  test("responsável do RH conclui diretamente e não envia para aprovação", () => {
+    expect(
+      authorizeTransition(
+        "completed",
+        ctx({ ...verificacaoRh, status: "in_progress" }),
+      ).allowed,
+    ).toBe(true);
+
+    const entrega = authorizeTransition(
+      "awaiting_approval",
+      ctx({ ...verificacaoRh, status: "in_progress" }),
+    );
+    expect(entrega.allowed).toBe(false);
+    expect(entrega.allowed === false && entrega.reason).toContain("libera o Fluxo");
+  });
+
+  test("responsável do RH destrava missão antiga presa em aprovação", () => {
+    expect(
+      authorizeTransition(
+        "completed",
+        ctx({ ...verificacaoRh, status: "awaiting_approval" }),
+      ).allowed,
+    ).toBe(true);
+  });
+
+  test("outro membro não confirma a verificação no lugar do responsável", () => {
+    expect(
+      authorizeTransition(
+        "completed",
+        ctx({
+          ...verificacaoRh,
+          actorId: "outro-membro",
+          status: "awaiting_approval",
+        }),
+      ).allowed,
+    ).toBe(false);
   });
 });
 

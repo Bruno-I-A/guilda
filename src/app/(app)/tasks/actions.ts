@@ -887,7 +887,9 @@ export async function completeTask(input: {
   return transitionTask({
     taskId: parsed.data.taskId,
     to: "completed",
-    allowedFrom: ["in_progress"],
+    // `awaiting_approval` recupera apenas a verificação do RH de baixas que
+    // ficou presa pela regra antiga; authorizeTransition bloqueia as demais.
+    allowedFrom: ["in_progress", "awaiting_approval"],
     sideEffect: creditTaskXp,
   });
 }

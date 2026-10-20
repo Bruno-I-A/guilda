@@ -10,7 +10,7 @@ import {
   type OrgRole,
   type TaskStatus,
 } from "@/domain/task-state";
-import { isTaskManagedByCompanyFlow } from "@/lib/company-flows/managed-task";
+import { findCompanyFlowTaskLink } from "@/lib/company-flows/managed-task";
 import { syncClosingFromTask } from "@/lib/closings/task-sync";
 import { syncCommitmentPeriodFromTask } from "@/lib/commitments/task-sync";
 
@@ -72,18 +72,15 @@ export async function runTelegramTaskAction(input: {
         error: "A missão mudou de estado. Consulte a lista novamente.",
       };
     }
+    const companyFlowLink = await findCompanyFlowTaskLink(
+      tx,
+      input.orgId,
+      task.id,
+    );
     if (intent.to === "cancelled") {
-      const [linkedRhVerificationFlow] = await tx
-        .select({ id: schema.companyFlows.id, status: schema.companyFlows.status })
-        .from(schema.companyFlows)
-        .where(and(
-          eq(schema.companyFlows.orgId, input.orgId),
-          eq(schema.companyFlows.rhVerificationTaskId, task.id),
-        ))
-        .limit(1);
       if (
-        linkedRhVerificationFlow &&
-        linkedRhVerificationFlow.status !== "cancelled"
+        companyFlowLink?.kind === "rh_verification" &&
+        companyFlowLink.flowStatus !== "cancelled"
       ) {
         return {
           ok: false,
@@ -114,11 +111,9 @@ export async function runTelegramTaskAction(input: {
         completedBy: null,
         // O botão "Concluir" chega pelo Telegram também: sem este fato, a
         // missão do Fluxo seria concluída por fora do Fluxo pelo celular.
-        managedByCompanyFlow: await isTaskManagedByCompanyFlow(
-          tx,
-          input.orgId,
-          task.id,
-        ),
+        managedByCompanyFlow: companyFlowLink?.kind === "managed",
+        companyFlowRhVerification:
+          companyFlowLink?.kind === "rh_verification",
       },
     });
     if (!decision.allowed) return { ok: false, error: decision.reason };

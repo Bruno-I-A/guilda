@@ -210,7 +210,7 @@ export function createGuildaMcpServer(actor: McpActor): McpServer {
     async ({ mission_id, idempotency_key }) => {
       const denied = requireScope(actor, "missions:write");
       if (denied) return denied;
-      const result = await transitionMissionCommand({ actor, tool: "concluir_missao", idempotencyKey: idempotency_key, missionId: mission_id, to: "completed", allowedFrom: ["in_progress"], creditXp: true });
+      const result = await transitionMissionCommand({ actor, tool: "concluir_missao", idempotencyKey: idempotency_key, missionId: mission_id, to: "completed", allowedFrom: ["in_progress", "awaiting_approval"], creditXp: true });
       return result.ok ? text(result) : failure(result.error);
     },
   );

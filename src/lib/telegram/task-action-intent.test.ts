@@ -18,4 +18,11 @@ describe("TASK_ACTION_TRANSITIONS", () => {
       "awaiting_approval",
     ]);
   });
+
+  it("permite concluir a verificação do RH que ficou presa em aprovação", () => {
+    expect(TASK_ACTION_TRANSITIONS.complete).toEqual({
+      to: "completed",
+      allowedFrom: ["in_progress", "awaiting_approval"],
+    });
+  });
 });
