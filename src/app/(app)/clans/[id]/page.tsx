@@ -36,6 +36,7 @@ import { PortfolioTab } from "./portfolio-tab";
 import { CompanyFlowTab } from "./company-flow-tab";
 import { FiscalInstallmentTab } from "./fiscal-installment-tab";
 import { OfficeFeeTab } from "./office-fee-tab";
+import { XmlNotesTab } from "./xml-notes-tab";
 
 export const metadata: Metadata = { title: "Clã" };
 
@@ -377,6 +378,16 @@ export default async function ClanPage({
             isAdmin={isAdminRole(role)}
             memberships={memberships}
             requestedView={feeView}
+            requestedYear={fiscalYear}
+            requestedMonth={fiscalMonth}
+          />
+        ) : null}
+
+        {activeTab === "xml" ? (
+          <XmlNotesTab
+            orgId={session.orgId}
+            clanId={clan.id}
+            canManage={canManageFiscalPortfolio(clanFacts)}
             requestedYear={fiscalYear}
             requestedMonth={fiscalMonth}
           />

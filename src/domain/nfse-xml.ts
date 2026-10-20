@@ -146,6 +146,37 @@ export function certificateState(input: {
   return { state: daysLeft < CERTIFICATE_WARNING_DAYS ? "expiring" : "valid", daysLeft };
 }
 
+export interface CertificateSummary {
+  total: number;
+  /** Válido e com mais de 30 dias pela frente. */
+  valid: number;
+  expiring: number;
+  pending: number;
+  /** Com problema na conferência ou vencido: a rotina não lê essas empresas. */
+  problem: number;
+  missing: number;
+}
+
+/** O passo 1 da aba XML das notas: em que pé estão os certificados das empresas. */
+export function summarizeCertificates(
+  items: readonly { status: CertificateStatus | null; validUntil: Date | null }[],
+  now: Date,
+): CertificateSummary {
+  const summary: CertificateSummary = { total: items.length, valid: 0, expiring: 0, pending: 0, problem: 0, missing: 0 };
+  for (const item of items) {
+    const { state } = certificateState({ ...item, now });
+    if (state === "invalid" || state === "expired") summary.problem++;
+    else summary[state]++;
+  }
+  return summary;
+}
+
+/** O mês que o Fiscal apura agora: o anterior ao de hoje, em Brasília (em outubro, setembro). */
+export function previousEmissionMonth(now: Date): { year: number; month: number } {
+  const today = brasiliaDate(now);
+  return today.month === 1 ? { year: today.year - 1, month: 12 } : { year: today.year, month: today.month - 1 };
+}
+
 /** A API aceita certificado de mesma raiz (os 8 primeiros dígitos). */
 export function cnpjRootMatches(a: string, b: string): boolean {
   return /^\d{14}$/.test(a) && /^\d{14}$/.test(b) && a.slice(0, 8) === b.slice(0, 8);

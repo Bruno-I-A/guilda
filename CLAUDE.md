@@ -15,6 +15,16 @@ Fiscal; não passa pelo serviço fiscal. Certificados e senhas nunca chegam em
 claro ao app. Plano e teste real em
 `docs/superpowers/plans/2026-10-19-xml-nfse-prestadas.md`.
 
+**Tela (2026-10-20, a pedido do Bruno, que não achou a função no clã)**: tudo
+mora na aba **XML das notas** do Fiscal (`xml-notes-tab.tsx`), com os passos
+Certificados → Rotina → Baixar no topo, "Rodar agora" e "Configurar rotina" à
+vista, e a lista de empresas com Enviar/Trocar certificado, a última leitura e
+o download. Abre no mês anterior (o que se apura). A Carteira só tem o selo de
+alerta do certificado, que leva à aba; o Controle mensal mostra a contagem e o
+download da competência. Não voltar a esconder o envio num botão da Carteira.
+O download do mês inteiro inclui quem tem nota guardada no período mesmo sem a
+competência aberta no Controle mensal.
+
 Plataforma multi-tenant de gestão de tarefas com sistema de recompensa (XP e níveis).
 Cada empresa (organização/tenant) tem seus usuários, tarefas e leaderboard isolados.
 Projeto de portfólio: qualidade de código e segurança são requisitos, não opcionais.

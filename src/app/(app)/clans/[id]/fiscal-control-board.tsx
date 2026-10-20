@@ -453,7 +453,7 @@ export function FiscalControlBoard({
             <div className="clan-status-cell"><span className="text-xs text-muted-foreground">Bloqueadas</span><strong className={cn("block font-mono text-lg", blocked > 0 && "text-destructive")}>{blocked}</strong></div>
             <div className="clan-status-cell"><span className="text-xs text-muted-foreground">Sem responsável</span><strong className="block font-mono text-lg">{rows.filter((row) => !row.responsibleUserId).length}</strong></div>
           </div>
-          {canManage ? <XmlRoutinePanel clanId={clanId} year={year} month={month} routine={xmlRoutine} totalNotes={rows.reduce((sum, row) => sum + row.xmlNotes.total, 0)} canManage={canManage} /> : null}
+          {canManage ? <XmlRoutinePanel clanId={clanId} year={year} month={month} routine={xmlRoutine} totalNotes={rows.reduce((sum, row) => sum + row.xmlNotes.total, 0)} /> : null}
 
           {byResponsible.length > 0 ? (
             <div className="flex gap-2 overflow-x-auto pb-1">

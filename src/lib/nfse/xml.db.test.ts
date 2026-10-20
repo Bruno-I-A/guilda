@@ -239,3 +239,21 @@ test("guilda_app: configuração e cursor não se apagam; RLS em pé nas tabelas
     })),
   );
 });
+
+test("aba XML: empresas com certificado, notas do mês e leitura; download do mês sem competência aberta", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const { loadXmlArchiveInput, loadXmlCompanies } = await import("./xml-requests");
+  const now = new Date("2026-10-20T12:00:00Z");
+  const companies = await withOrgTx(ORG, (tx) => loadXmlCompanies(tx, { orgId: ORG, year: 2026, month: 9 }));
+  expect(companies.map((company) => company.name)).toEqual(["Mercado", "Oficina", "Padaria"]);
+  const oficina = companies.find((company) => company.name === "Oficina")!;
+  expect(oficina).toMatchObject({ cnpj: "55000167000103", certificate: null, notes: { total: 2, cancelled: 0 } });
+  expect(oficina.sync).toMatchObject({ lastError: null });
+  expect(oficina.sync?.initialSyncAt).toEqual(expect.any(String));
+  expect(companies.find((company) => company.name === "Mercado")!.notes).toEqual({ total: 0, cancelled: 0 });
+
+  // Nenhuma competência aberta no Controle mensal: o mês inteiro ainda sai com quem tem nota guardada.
+  const archive = await withOrgTx(ORG, (tx) => loadXmlArchiveInput(tx, { orgId: ORG, year: 2026, month: 9, now }));
+  expect(archive.companies.map((company) => company.folder)).toContain("oficina-55000167");
+  expect(await withOrgTx(OTHER, (tx) => loadXmlCompanies(tx, { orgId: OTHER, year: 2026, month: 9 }))).toEqual([]);
+});

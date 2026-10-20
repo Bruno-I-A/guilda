@@ -7,6 +7,8 @@ import {
   emissionRangeLabel,
   isXmlRoutineDue,
   lastScheduledRun,
+  previousEmissionMonth,
+  summarizeCertificates,
   XML_ROUTINE_DEFAULTS,
   xmlCompanyFolder,
   xmlNoteFileName,
@@ -166,5 +168,32 @@ describe("certificado da empresa", () => {
   test("raiz do CNPJ", () => {
     expect(cnpjRootMatches("33000167000101", "33000167000282")).toBe(true);
     expect(cnpjRootMatches("33000167000101", "11222333000181")).toBe(false);
+  });
+});
+
+describe("aba XML das notas", () => {
+  test("abre no mês anterior, que é o que o Fiscal apura", () => {
+    expect(previousEmissionMonth(at("2026-10-20T09:00:00-03:00"))).toEqual({ year: 2026, month: 9 });
+    expect(previousEmissionMonth(at("2027-01-01T00:30:00-03:00"))).toEqual({ year: 2026, month: 12 });
+    // 01/11 01:00 em UTC ainda é 31/10 em Brasília.
+    expect(previousEmissionMonth(at("2026-11-01T01:00:00Z"))).toEqual({ year: 2026, month: 9 });
+  });
+
+  test("resumo dos certificados para o passo 1", () => {
+    const now = at("2026-10-20T12:00:00-03:00");
+    expect(
+      summarizeCertificates(
+        [
+          { status: null, validUntil: null },
+          { status: null, validUntil: null },
+          { status: "pending", validUntil: null },
+          { status: "invalid", validUntil: null },
+          { status: "valid", validUntil: at("2026-10-01T00:00:00-03:00") },
+          { status: "valid", validUntil: at("2026-11-01T00:00:00-03:00") },
+          { status: "valid", validUntil: at("2027-03-19T00:00:00-03:00") },
+        ],
+        now,
+      ),
+    ).toEqual({ total: 7, valid: 1, expiring: 1, pending: 1, problem: 2, missing: 2 });
   });
 });
