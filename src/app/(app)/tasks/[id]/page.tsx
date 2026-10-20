@@ -69,7 +69,7 @@ export default async function TaskDetailPage({
   const voltarPara = parseReturnTo((await searchParams).returnTo);
   if (!z.uuid().safeParse(id).success) notFound();
 
-  const { task, viewerClanMembership, candidateMemberships, fluxoVinculado, canOpenInformative } =
+  const { task, viewerClanMembership, candidateMemberships, fluxoVinculado, isRhVerificationTask, canOpenInformative } =
     await withOrgTx(
     session.orgId,
     async (tx) => {
@@ -103,6 +103,7 @@ export default async function TaskDetailPage({
           viewerClanMembership: null,
           candidateMemberships: [],
           fluxoVinculado: null,
+          isRhVerificationTask: false,
           canOpenInformative: false,
         };
       }
@@ -139,6 +140,15 @@ export default async function TaskDetailPage({
         )
         .limit(1);
       const fluxoVinculado = fluxoRows.at(0) ?? null;
+      const [rhVerificationFlow] = await tx
+        .select({ id: schema.companyFlows.id })
+        .from(schema.companyFlows)
+        .where(and(
+          eq(schema.companyFlows.orgId, session.orgId),
+          eq(schema.companyFlows.rhVerificationTaskId, taskRow.id),
+        ))
+        .limit(1);
+      const isRhVerificationTask = Boolean(rhVerificationFlow);
       const canOpenInformative = fluxoVinculado?.informativeTaskId === taskRow.id
         ? await canAccessCompanyFlowInformative(tx, {
             orgId: session.orgId,
@@ -198,6 +208,7 @@ export default async function TaskDetailPage({
         viewerClanMembership: viewerMembership ?? null,
         candidateMemberships: candidates,
         fluxoVinculado: fluxoVinculado ?? null,
+        isRhVerificationTask,
         canOpenInformative,
       };
     },
@@ -220,6 +231,7 @@ export default async function TaskDetailPage({
       // A página já fez a busca reversa pelo Fluxo; o fato é o mesmo que o
       // servidor usa, então os botões batem com o que a action aceita.
       managedByCompanyFlow: Boolean(fluxoVinculado),
+      companyFlowRhVerification: isRhVerificationTask,
       // Os MESMOS fatos da action: sem eles o botão "Reverter conclusão"
       // sumia para quem podia desfazer dentro da janela, e quem perdesse o
       // aviso ficava sem caminho de volta mesmo estando autorizado.
@@ -243,7 +255,8 @@ export default async function TaskDetailPage({
       task.status === "rejected" &&
       authorizeTransition("in_progress", context).allowed,
     complete:
-      task.status === "in_progress" &&
+      (task.status === "in_progress" ||
+        (task.status === "awaiting_approval" && isRhVerificationTask)) &&
       !isFlowInformativeTask &&
       authorizeTransition("completed", context).allowed,
     // Entregar é para quem PEDIU. Auto-missão conclui direto: entregar um

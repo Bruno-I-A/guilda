@@ -12,6 +12,7 @@ import {
 } from "@/domain/clans";
 import {
   authorizeTaskDeletion,
+  authorizeTransition,
   type TaskStatus,
 } from "@/domain/task-state";
 import { canQuickCompleteUnassignedInformativeTask } from "@/domain/guild-permissions";
@@ -31,6 +32,7 @@ import {
 } from "@/lib/clans/facts";
 import { createTaskRecord } from "@/lib/tasks/create";
 import { transitionTaskForActor } from "@/lib/tasks/transition-service";
+import { findCompanyFlowTaskLink } from "@/lib/company-flows/managed-task";
 import {
   enqueueTelegramNotificationIfEnabled,
   notificationPayload,
@@ -367,10 +369,15 @@ function revalidateTaskPaths(taskId: string): void {
   revalidatePath(`/tasks/${taskId}`);
   revalidatePath("/dashboard");
   revalidatePath("/clans");
+  revalidatePath("/clans/[id]", "page");
   revalidatePath("/mural");
 }
 
-/** Membro ativo assume atomicamente uma missão pendente e sem responsável. */
+/**
+ * Membro ativo assume e inicia atomicamente uma missão pendente sem responsável.
+ * O próximo passo visível passa a ser a conclusão; não existe mais um segundo
+ * clique em "Iniciar" depois de assumir.
+ */
 export async function claimTask(input: {
   taskId: string;
 }): Promise<ActionResult> {
@@ -404,7 +411,7 @@ export async function claimTask(input: {
     await lockActiveClansForMembershipRead(tx, ctx.orgId);
 
     const [membership] = await tx
-      .select({ id: schema.clanMemberships.id })
+      .select({ id: schema.clanMemberships.id, name: schema.user.name })
       .from(schema.clanMemberships)
       .innerJoin(
         schema.clans,
@@ -420,6 +427,7 @@ export async function claimTask(input: {
           eq(schema.member.organizationId, schema.clanMemberships.orgId),
         ),
       )
+      .innerJoin(schema.user, eq(schema.user.id, schema.clanMemberships.userId))
       .where(
         and(
           eq(schema.clanMemberships.orgId, ctx.orgId),
@@ -436,10 +444,31 @@ export async function claimTask(input: {
       return err("Apenas um membro ativo deste clã pode assumir a missão.");
     }
 
+    const companyFlowLink = await findCompanyFlowTaskLink(
+      tx,
+      ctx.orgId,
+      task.id,
+    );
+    const decision = authorizeTransition("in_progress", {
+      actor: { id: ctx.userId, role: ctx.role },
+      task: {
+        creatorId: task.creatorId,
+        assigneeId: ctx.userId,
+        status: task.status,
+        completedAt: task.completedAt,
+        completedBy: null,
+        fromInformative: task.informativeId !== null,
+        managedByCompanyFlow: companyFlowLink?.kind === "managed",
+        companyFlowRhVerification:
+          companyFlowLink?.kind === "rh_verification",
+      },
+    });
+    if (!decision.allowed) return err(decision.reason);
+
     const now = new Date();
     await tx
       .update(schema.tasks)
-      .set({ assigneeId: ctx.userId, updatedAt: now })
+      .set({ assigneeId: ctx.userId, status: "in_progress", updatedAt: now })
       .where(
         and(eq(schema.tasks.id, task.id), eq(schema.tasks.orgId, ctx.orgId)),
       );
@@ -452,6 +481,32 @@ export async function claimTask(input: {
       fromClanId: task.clanId,
       toClanId: task.clanId,
     });
+    const [event] = await tx
+      .insert(schema.taskEvents)
+      .values({
+        orgId: ctx.orgId,
+        taskId: task.id,
+        actorId: ctx.userId,
+        fromStatus: "pending",
+        toStatus: "in_progress",
+        note: "Missão assumida e iniciada.",
+      })
+      .returning({ id: schema.taskEvents.id });
+
+    if (task.creatorId !== ctx.userId) {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;
+      await enqueueTelegramNotificationIfEnabled(tx, {
+        orgId: ctx.orgId,
+        userId: task.creatorId,
+        eventType: "task_started",
+        dedupeKey: `task-event:${event.id}:started`,
+        payload: notificationPayload(
+          "tasks",
+          `▶️ ${membership.name} assumiu e iniciou a missão\n\n${task.title}`,
+          [[{ text: "Ver missão", url: taskUrl(task.id, baseUrl) }]],
+        ),
+      });
+    }
 
     return { ok: true };
   });
@@ -887,7 +942,9 @@ export async function completeTask(input: {
   return transitionTask({
     taskId: parsed.data.taskId,
     to: "completed",
-    allowedFrom: ["in_progress"],
+    // `awaiting_approval` recupera apenas a verificação do RH de baixas que
+    // ficou presa pela regra antiga; authorizeTransition bloqueia as demais.
+    allowedFrom: ["in_progress", "awaiting_approval"],
     sideEffect: creditTaskXp,
   });
 }

@@ -51,6 +51,12 @@ export interface TransitionContext {
      * "Em processamento" enquanto a missão esperava uma aprovação sem sentido.
      */
     managedByCompanyFlow: boolean;
+    /**
+     * Verificação preventiva de folha/pró-labore criada por um Fluxo de baixa.
+     * O RH executa e confirma esta missão; a conclusão é a própria liberação
+     * para o Societário, portanto não existe aprovação posterior do criador.
+     */
+    companyFlowRhVerification: boolean;
   };
   /** Injetável para o teste não depender do relógio da máquina. */
   now?: Date;
@@ -151,6 +157,12 @@ export function authorizeTransition(
     );
   }
 
+  if (task.companyFlowRhVerification && to === "awaiting_approval") {
+    return deny(
+      "A confirmação do RH conclui esta missão diretamente e libera o Fluxo de baixa.",
+    );
+  }
+
   // pending → in_progress (iniciar) e rejected → in_progress (retomar)
   if (to === "in_progress" && (from === "pending" || from === "rejected")) {
     return isAssignee
@@ -191,7 +203,11 @@ export function authorizeTransition(
     if (!isAssignee) {
       return deny("Apenas a pessoa responsável pode concluir a missão.");
     }
-    if (task.fromInformative || task.creatorId === task.assigneeId) {
+    if (
+      task.fromInformative ||
+      task.companyFlowRhVerification ||
+      task.creatorId === task.assigneeId
+    ) {
       return ALLOW;
     }
     return deny(
@@ -202,6 +218,18 @@ export function authorizeTransition(
   // awaiting_approval → completed | rejected (decisão de aprovação)
   if (to === "completed" || to === "rejected") {
     const selfAssigned = task.creatorId === task.assigneeId;
+
+    if (task.companyFlowRhVerification) {
+      if (to === "completed" && isAssignee) {
+        // Repara também verificações antigas que já tenham sido enviadas para
+        // aprovação antes desta regra: o próprio RH as confirma e destrava o
+        // Fluxo, sem depender de quem abriu a baixa.
+        return ALLOW;
+      }
+      return deny(
+        "A confirmação desta missão pertence à pessoa responsável do RH.",
+      );
+    }
 
     if (selfAssigned && isAssignee) {
       // Auto-tarefa não precisa de aprovação de terceiros (cobre também

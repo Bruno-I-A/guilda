@@ -5,22 +5,33 @@ import { and, eq, or } from "drizzle-orm";
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 
+export type CompanyFlowTaskLink = {
+  flowId: string;
+  flowStatus: (typeof schema.companyFlows.$inferSelect)["status"];
+  kind: "managed" | "rh_verification";
+};
+
 /**
- * A missão é governada por um Fluxo Societário?
+ * Qual é o papel da missão dentro de um Fluxo Societário?
  *
- * O vínculo mora no Fluxo (`processing_task_id` / `informative_task_id`), então
- * a busca é reversa — os dois índices únicos parciais a tornam barata. Existe
- * como helper porque TODO caminho que autoriza transição de missão precisa
- * deste fato (web, Telegram, MCP): uma cópia esquecida num deles reabre o
- * desvio que deixava o Fluxo parado enquanto a missão esperava aprovação.
+ * As missões de processamento/Informativo são governadas pelo Fluxo e apenas
+ * refletem o avanço dele. A verificação preventiva da baixa é diferente: o RH
+ * trabalha e confirma pela própria missão, e essa conclusão libera o
+ * Societário. Como todos os vínculos moram no Fluxo, a busca é reversa.
  */
-export async function isTaskManagedByCompanyFlow(
+export async function findCompanyFlowTaskLink(
   tx: OrgTx,
   orgId: string,
   taskId: string,
-): Promise<boolean> {
+): Promise<CompanyFlowTaskLink | null> {
   const [flow] = await tx
-    .select({ id: schema.companyFlows.id })
+    .select({
+      id: schema.companyFlows.id,
+      status: schema.companyFlows.status,
+      processingTaskId: schema.companyFlows.processingTaskId,
+      informativeTaskId: schema.companyFlows.informativeTaskId,
+      rhVerificationTaskId: schema.companyFlows.rhVerificationTaskId,
+    })
     .from(schema.companyFlows)
     .where(
       and(
@@ -28,9 +39,27 @@ export async function isTaskManagedByCompanyFlow(
         or(
           eq(schema.companyFlows.processingTaskId, taskId),
           eq(schema.companyFlows.informativeTaskId, taskId),
+          eq(schema.companyFlows.rhVerificationTaskId, taskId),
         ),
       ),
     )
     .limit(1);
-  return Boolean(flow);
+  if (!flow) return null;
+  return {
+    flowId: flow.id,
+    flowStatus: flow.status,
+    kind:
+      flow.rhVerificationTaskId === taskId
+        ? "rh_verification"
+        : "managed",
+  };
+}
+
+/** Mantido para os pontos que só precisam bloquear gestão fora do Fluxo. */
+export async function isTaskManagedByCompanyFlow(
+  tx: OrgTx,
+  orgId: string,
+  taskId: string,
+): Promise<boolean> {
+  return (await findCompanyFlowTaskLink(tx, orgId, taskId))?.kind === "managed";
 }

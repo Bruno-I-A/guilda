@@ -7,7 +7,7 @@ import * as schema from "@/db/schema";
 import { isAdminRole } from "@/domain/guild-permissions";
 import { authorizeTransition, type TaskStatus } from "@/domain/task-state";
 import { mcpMissionTransitionTargets } from "@/domain/mcp-access";
-import { isTaskManagedByCompanyFlow } from "@/lib/company-flows/managed-task";
+import { findCompanyFlowTaskLink } from "@/lib/company-flows/managed-task";
 
 import type { McpActor } from "./access";
 
@@ -227,6 +227,11 @@ export async function missionDetails(actor: McpActor, taskId: string) {
       ...transfers.flatMap((item) => [item.actorId, item.fromAssigneeId ?? "", item.toAssigneeId ?? ""]),
     ]);
     const lastCompletion = [...events].reverse().find((event) => event.toStatus === "completed");
+    const companyFlowLink = await findCompanyFlowTaskLink(
+      tx,
+      actor.orgId,
+      task.id,
+    );
     const transitionContext = {
       actor: { id: actor.userId, role: actor.role },
       task: {
@@ -238,11 +243,9 @@ export async function missionDetails(actor: McpActor, taskId: string) {
         fromInformative: task.informativeId !== null,
         // `allowed_transitions` é contrato com o agente: anunciar "concluir"
         // numa missão do Fluxo seria mandá-lo contornar o Fluxo.
-        managedByCompanyFlow: await isTaskManagedByCompanyFlow(
-          tx,
-          actor.orgId,
-          task.id,
-        ),
+        managedByCompanyFlow: companyFlowLink?.kind === "managed",
+        companyFlowRhVerification:
+          companyFlowLink?.kind === "rh_verification",
       },
     };
     const possible = mcpMissionTransitionTargets(task.status);

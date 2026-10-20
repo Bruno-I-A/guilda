@@ -5,7 +5,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { withOrgTx, type OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { authorizeTransition, type OrgRole, type TaskStatus } from "@/domain/task-state";
-import { isTaskManagedByCompanyFlow } from "@/lib/company-flows/managed-task";
+import { findCompanyFlowTaskLink } from "@/lib/company-flows/managed-task";
 import type { ActionResult } from "@/lib/action-context";
 import { syncClosingFromTask } from "@/lib/closings/task-sync";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
@@ -19,15 +19,6 @@ export interface TaskActor {
   orgId: string;
   userId: string;
   role: OrgRole;
-}
-
-async function linkedRhFlow(tx: OrgTx, orgId: string, taskId: string) {
-  const [flow] = await tx
-    .select({ id: schema.companyFlows.id, status: schema.companyFlows.status })
-    .from(schema.companyFlows)
-    .where(and(eq(schema.companyFlows.orgId, orgId), eq(schema.companyFlows.rhVerificationTaskId, taskId)))
-    .limit(1);
-  return flow ?? null;
 }
 
 export async function creditTaskXp(
@@ -79,14 +70,19 @@ export async function transitionTaskForActor(input: {
       }
     }
 
-    const rhFlow = input.to === "cancelled" || (task.status === "completed" && input.to === "in_progress")
-      ? await linkedRhFlow(tx, actor.orgId, task.id)
+    const companyFlowLink = await findCompanyFlowTaskLink(
+      tx,
+      actor.orgId,
+      task.id,
+    );
+    const rhFlow = companyFlowLink?.kind === "rh_verification"
+      ? companyFlowLink
       : null;
-    if (rhFlow && rhFlow.status !== "cancelled") {
+    if (rhFlow && rhFlow.flowStatus !== "cancelled") {
       if (input.to === "cancelled") {
         return { ok: false, error: "Esta é a verificação obrigatória do RH. Cancele o Fluxo de baixa para cancelar a missão." };
       }
-      if (!["sent_to_corporate", "in_progress"].includes(rhFlow.status)) {
+      if (!["sent_to_corporate", "in_progress"].includes(rhFlow.flowStatus)) {
         return { ok: false, error: "A confirmação do RH não pode ser revertida porque o Fluxo de baixa já avançou para o dono." };
       }
     }
@@ -134,11 +130,6 @@ export async function transitionTaskForActor(input: {
       completedBy = completion?.actorId ?? null;
     }
 
-    const managedByCompanyFlow = await isTaskManagedByCompanyFlow(
-      tx,
-      actor.orgId,
-      task.id,
-    );
     const decision = authorizeTransition(input.to, {
       actor: { id: actor.userId, role: actor.role },
       task: {
@@ -148,7 +139,9 @@ export async function transitionTaskForActor(input: {
         completedAt: task.completedAt,
         completedBy,
         fromInformative: task.informativeId !== null,
-        managedByCompanyFlow,
+        managedByCompanyFlow: companyFlowLink?.kind === "managed",
+        companyFlowRhVerification:
+          companyFlowLink?.kind === "rh_verification",
       },
     });
     if (!decision.allowed) return { ok: false, error: decision.reason };

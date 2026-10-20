@@ -1,8 +1,11 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 import { ChevronRight, ListChecks } from "lucide-react";
+import Link from "next/link";
 
 import { MissionRow } from "@/components/mission-row";
-import { clanTabHref } from "@/lib/clan-tabs";
+import { SegmentedNav } from "@/components/segmented-nav";
+import { Button } from "@/components/ui/button";
+import { missionPage } from "@/domain/mission-pagination";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -25,6 +28,14 @@ const OPEN_STATUSES = [
   "rejected",
 ] as const;
 
+const COMPLETED_PAGE_SIZE = 50;
+
+type MissionsView = "open" | "completed";
+
+function parseMissionsView(value: string | undefined): MissionsView {
+  return value === "completed" ? "completed" : "open";
+}
+
 /**
  * A mesa do clã: quem ainda não tem dono, quem está com o quê e quanto
  * cada integrante já carrega.
@@ -35,33 +46,68 @@ export async function MissionsTab({
   memberships,
   canDistribute,
   canQuickComplete,
+  requestedView,
+  requestedPage,
 }: {
   orgId: string;
   clanId: string;
   memberships: readonly ClanMemberView[];
   canDistribute: boolean;
   canQuickComplete: boolean;
+  requestedView?: string;
+  requestedPage?: string;
 }) {
+  const view = parseMissionsView(requestedView);
+  const missionsHref = (nextView: MissionsView, page = 1) => {
+    const params = new URLSearchParams({ tab: "missions" });
+    if (nextView === "completed") params.set("missionsView", "completed");
+    if (nextView === "completed" && page > 1) {
+      params.set("missionsPage", String(page));
+    }
+    return `/clans/${clanId}?${params}`;
+  };
+
   // Quem abre uma missão daqui volta para a Mesa deste clã, não para a lista
   // geral de missões — a aba vai junto para a pessoa cair na seção de onde saiu.
-  const voltarParaAMesa = clanTabHref(clanId, "missions");
+  const voltarParaAMesa = missionsHref(view, Number(requestedPage) || 1);
   const taskHref = (taskId: string) =>
     `/tasks/${taskId}?returnTo=${encodeURIComponent(voltarParaAMesa)}`;
 
-  const { openTasks, suggestedUsers } = await withOrgTx(orgId, async (tx) => {
+  const { tasks, suggestedUsers, openCount, completedCount, pagination } = await withOrgTx(orgId, async (tx) => {
+    const scope = and(
+      eq(schema.tasks.orgId, orgId),
+      eq(schema.tasks.clanId, clanId),
+    );
+    const openWhere = and(scope, inArray(schema.tasks.status, [...OPEN_STATUSES]));
+    const completedWhere = and(scope, eq(schema.tasks.status, "completed"));
+    const [openTotal] = await tx
+      .select({ value: count() })
+      .from(schema.tasks)
+      .where(openWhere);
+    const [completedTotal] = await tx
+      .select({ value: count() })
+      .from(schema.tasks)
+      .where(completedWhere);
+    const pagination = missionPage(
+      view === "completed" ? requestedPage : undefined,
+      completedTotal.value,
+      COMPLETED_PAGE_SIZE,
+    );
     const tasks = await tx.query.tasks.findMany({
-      where: and(
-        eq(schema.tasks.orgId, orgId),
-        eq(schema.tasks.clanId, clanId),
-        inArray(schema.tasks.status, [...OPEN_STATUSES]),
-      ),
+      where: view === "completed" ? completedWhere : openWhere,
       with: {
         client: { columns: { id: true, name: true } },
         assignee: { columns: { id: true, name: true } },
         informative: { columns: { id: true, createdAt: true } },
         suggestions: { columns: { userId: true, rawName: true } },
       },
-      orderBy: [asc(schema.tasks.createdAt)],
+      orderBy:
+        view === "completed"
+          ? [desc(schema.tasks.completedAt), desc(schema.tasks.updatedAt)]
+          : [asc(schema.tasks.createdAt)],
+      ...(view === "completed"
+        ? { limit: COMPLETED_PAGE_SIZE, offset: pagination.offset }
+        : {}),
     });
 
     // Nomes das sugestões reconhecidas, resolvidos numa consulta só.
@@ -81,10 +127,18 @@ export async function MissionsTab({
           .where(inArray(schema.user.id, suggestedIds))
       : [];
 
-    return { openTasks: tasks, suggestedUsers: users };
+    return {
+      tasks,
+      suggestedUsers: users,
+      openCount: openTotal.value,
+      completedCount: completedTotal.value,
+      pagination,
+    };
   });
 
   const nameById = new Map(suggestedUsers.map((row) => [row.id, row.name]));
+  const openTasks = view === "open" ? tasks : [];
+  const completedTasks = view === "completed" ? tasks : [];
   const orphans = openTasks.filter((task) => !task.assigneeId);
   const assigned = openTasks.filter((task) => task.assigneeId);
 
@@ -139,6 +193,92 @@ export async function MissionsTab({
 
   return (
     <div className="grid gap-6">
+      <SegmentedNav
+        label="Situação das missões do clã"
+        active={view}
+        items={[
+          {
+            key: "open",
+            label: `Em aberto (${openCount})`,
+            href: missionsHref("open"),
+          },
+          {
+            key: "completed",
+            label: `Concluídas (${completedCount})`,
+            href: missionsHref("completed"),
+          },
+        ]}
+      />
+
+      {view === "completed" ? (
+        <section className="grid gap-3">
+          <ClanSectionHeading count={completedCount}>Concluídas</ClanSectionHeading>
+          {completedTasks.length === 0 ? (
+            <ClanEmptyState
+              icon={<ListChecks className="size-6" aria-hidden />}
+              title="Nenhuma missão concluída"
+              description="As missões encerradas por este clã aparecerão aqui."
+              compact
+            />
+          ) : (
+            <ul className="grid gap-1.5">
+              {completedTasks.map((task) => (
+                <li key={task.id}>
+                  <MissionRow
+                    variant="compact"
+                    href={taskHref(task.id)}
+                    task={{
+                      id: task.id,
+                      title: task.title,
+                      status: task.status,
+                      xpValue: task.xpValue,
+                      dueDate: task.dueDate,
+                      clientName: task.client?.name ?? null,
+                      assigneeName: task.assignee?.name ?? null,
+                    }}
+                    trailing={
+                      <Avatar className="size-6 shrink-0">
+                        <AvatarFallback className="text-xs" aria-hidden>
+                          {initials(task.assignee?.name ?? "?")}
+                        </AvatarFallback>
+                      </Avatar>
+                    }
+                    after={
+                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {pagination.pages > 1 ? (
+            <nav
+              aria-label="Páginas das missões concluídas"
+              className="flex flex-wrap items-center justify-between gap-3 pt-2"
+            >
+              {pagination.page > 1 ? (
+                <Button asChild variant="outline">
+                  <Link href={missionsHref("completed", pagination.page - 1)}>
+                    Página anterior
+                  </Link>
+                </Button>
+              ) : <span />}
+              <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                {pagination.page} / {pagination.pages}
+              </span>
+              {pagination.page < pagination.pages ? (
+                <Button asChild variant="outline">
+                  <Link href={missionsHref("completed", pagination.page + 1)}>
+                    Próxima página
+                  </Link>
+                </Button>
+              ) : <span />}
+            </nav>
+          ) : null}
+        </section>
+      ) : (
+        <>
       <ClanStatusStrip
         items={[
           {
@@ -213,6 +353,8 @@ export async function MissionsTab({
         groups={boardGroups}
         members={members}
       />
+        </>
+      )}
     </div>
   );
 }
