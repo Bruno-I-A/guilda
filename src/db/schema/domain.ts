@@ -2138,14 +2138,6 @@ export const fiscalControlStage = pgEnum("fiscal_control_stage", [
   "delivery",
 ]);
 
-/** Meio usado pelo escritório para cobrar o honorário mensal. */
-export const officeFeeBillingMethod = pgEnum("office_fee_billing_method", [
-  "asaas",
-  "recibo",
-  "pix",
-  "other",
-]);
-
 export const officeFeeProfileEventType = pgEnum("office_fee_profile_event_type", [
   "created",
   "updated",
@@ -2199,7 +2191,6 @@ export type FiscalImportReport = {
 /** Retrato de como o honorário deve ser tratado quando o mês foi aberto. */
 export type OfficeFeeProfileSnapshot = {
   version: number;
-  billingMethod: (typeof officeFeeBillingMethod.enumValues)[number];
   chargesAdditionalInstallment: boolean;
   monthlyFee: string;
   permanentNotes: string | null;
@@ -2651,7 +2642,7 @@ export const fiscalControlEvents = pgTable(
 
 /**
  * Regra permanente de cobrança dos honorários do escritório. Diferente da
- * carteira, mudar o responsável nunca altera meio, valor ou observações.
+ * carteira, mudar o responsável nunca altera valor ou observações.
  */
 export const officeFeeProfiles = pgTable(
   "office_fee_profiles",
@@ -2661,7 +2652,6 @@ export const officeFeeProfiles = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     clientId: uuid("client_id").notNull(),
-    billingMethod: officeFeeBillingMethod("billing_method").notNull(),
     chargesAdditionalInstallment: boolean("charges_additional_installment")
       .notNull()
       .default(false),

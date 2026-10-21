@@ -1,6 +1,5 @@
 import { normalizeCnpj, validateCnpj } from "./cnpj";
 import { normalizeCompanyName } from "./fiscal-import";
-import type { OfficeFeeBillingMethod } from "./office-fee-control";
 
 function fold(value: string): string {
   return value
@@ -36,7 +35,7 @@ function multilineText(value: unknown): string | null {
 }
 
 export interface OfficeFeeImportIssue {
-  field: "companyName" | "cnpj" | "billingMethod" | "additionalInstallment" | "monthlyFee";
+  field: "companyName" | "cnpj" | "additionalInstallment" | "monthlyFee";
   raw: string | null;
   message: string;
 }
@@ -45,24 +44,10 @@ export interface ParsedOfficeFeeImportRow {
   companyName: string | null;
   normalizedCompanyName: ReturnType<typeof normalizeCompanyName>;
   cnpj: string | null;
-  billingMethod: OfficeFeeBillingMethod | null;
   chargesAdditionalInstallment: boolean | null;
   monthlyFee: string | null;
   observations: string | null;
   issues: readonly OfficeFeeImportIssue[];
-}
-
-function parseBillingMethod(input: unknown): {
-  value: OfficeFeeBillingMethod | null;
-  raw: string | null;
-} {
-  const raw = cellText(input);
-  if (!raw) return { value: null, raw };
-  const normalized = fold(raw).replace(/\s/g, "");
-  if (normalized === "asaas") return { value: "asaas", raw };
-  if (["recibo", "recibos"].includes(normalized)) return { value: "recibo", raw };
-  if (normalized === "pix") return { value: "pix", raw };
-  return { value: "other", raw };
 }
 
 function parseAdditionalInstallment(input: unknown): {
@@ -97,7 +82,6 @@ export function parseOfficeFeeImportRow(
   row: {
     companyName?: unknown;
     cnpj?: unknown;
-    billingMethod?: unknown;
     additionalInstallment?: unknown;
     monthlyFee?: unknown;
     observations?: unknown;
@@ -107,7 +91,6 @@ export function parseOfficeFeeImportRow(
   const cnpjRaw = cellText(row.cnpj);
   const normalizedCnpj = cnpjRaw ? normalizeCnpj(cnpjRaw) : "";
   const cnpj = normalizedCnpj && validateCnpj(normalizedCnpj) ? normalizedCnpj : null;
-  const billingMethod = parseBillingMethod(row.billingMethod);
   const additionalInstallment = parseAdditionalInstallment(row.additionalInstallment);
   const monthlyFee = parseMonthlyFee(row.monthlyFee);
   const issues: OfficeFeeImportIssue[] = [];
@@ -117,9 +100,6 @@ export function parseOfficeFeeImportRow(
   }
   if (cnpjRaw && !cnpj) {
     issues.push({ field: "cnpj", raw: cnpjRaw, message: "CNPJ inválido; ele não será usado para conciliar." });
-  }
-  if (!billingMethod.value) {
-    issues.push({ field: "billingMethod", raw: billingMethod.raw, message: "Informe a forma de cobrança." });
   }
   if (additionalInstallment.value === null) {
     issues.push({ field: "additionalInstallment", raw: additionalInstallment.raw, message: "Informe SIM ou NÃO para a parcela adicional." });
@@ -132,7 +112,6 @@ export function parseOfficeFeeImportRow(
     companyName,
     normalizedCompanyName: normalizeCompanyName(companyName ?? ""),
     cnpj,
-    billingMethod: billingMethod.value,
     chargesAdditionalInstallment: additionalInstallment.value,
     monthlyFee: monthlyFee.value,
     observations: multilineText(row.observations),
@@ -143,7 +122,6 @@ export function parseOfficeFeeImportRow(
 const FIELDS = [
   "companyName",
   "cnpj",
-  "billingMethod",
   "additionalInstallment",
   "monthlyFee",
   "observations",
@@ -155,12 +133,13 @@ type ColumnMap = Partial<Record<OfficeFeeSpreadsheetField, number>>;
 const HEADER_ALIASES: Readonly<Record<OfficeFeeSpreadsheetField, readonly string[]>> = {
   companyName: ["cliente", "clientes", "empresa", "empresas", "razao social"],
   cnpj: ["cnpj", "cpf cnpj", "documento"],
-  billingMethod: ["cobranca", "forma de cobranca", "meio de cobranca"],
   additionalInstallment: [
     "cobra parcela adicional2",
     "cobra parcela adicional",
     "parcela adicional2",
     "parcela adicional",
+    "parcela adiciona",
+    "pa",
   ],
   monthlyFee: [
     "honorario 2025 atualizado",
@@ -218,7 +197,6 @@ export function parseOfficeFeeSpreadsheetRows(
     const next = mapHeader(sheet[index] ?? []);
     if (
       next.companyName !== undefined &&
-      next.billingMethod !== undefined &&
       next.additionalInstallment !== undefined &&
       next.monthlyFee !== undefined
     ) {
@@ -233,7 +211,7 @@ export function parseOfficeFeeSpreadsheetRows(
       rejectedRows: [],
       skippedRows: [],
       missingColumns: FIELDS,
-      errors: ["Não encontrei o cabeçalho de Clientes, Cobrança, Parcela adicional e Honorário."],
+      errors: ["Não encontrei o cabeçalho de Clientes, Parcela adicional e Honorário."],
     };
   }
 
@@ -259,7 +237,6 @@ export function parseOfficeFeeSpreadsheetRows(
     const repeatedColumns = mapHeader(source);
     if (
       repeatedColumns.companyName !== undefined &&
-      repeatedColumns.billingMethod !== undefined &&
       repeatedColumns.additionalInstallment !== undefined &&
       repeatedColumns.monthlyFee !== undefined
     ) {
@@ -269,7 +246,6 @@ export function parseOfficeFeeSpreadsheetRows(
     const parsed = parseOfficeFeeImportRow({
       companyName: readCell(source, columns, "companyName"),
       cnpj: readCell(source, columns, "cnpj"),
-      billingMethod: readCell(source, columns, "billingMethod"),
       additionalInstallment: readCell(source, columns, "additionalInstallment"),
       monthlyFee: readCell(source, columns, "monthlyFee"),
       observations: readCell(source, columns, "observations"),

@@ -48,8 +48,8 @@ test("ciclo completo: enfileirar, emitir, marcar etapa, cancelar, reabrir", asyn
 
   await withOrgTx(ORG, async (tx) => {
     await tx.insert(schema.officeFeeProfiles).values([
-      { orgId: ORG, clientId: "00000000-0000-4000-8000-000000000001", billingMethod: "pix", monthlyFee: "850.00", chargesAdditionalInstallment: true },
-      { orgId: ORG, clientId: "00000000-0000-4000-8000-000000000002", billingMethod: "pix", monthlyFee: "500.00" },
+      { orgId: ORG, clientId: "00000000-0000-4000-8000-000000000001", monthlyFee: "850.00", chargesAdditionalInstallment: true },
+      { orgId: ORG, clientId: "00000000-0000-4000-8000-000000000002", monthlyFee: "500.00" },
     ]);
     await materializeOfficeFeeControl(tx, { orgId: ORG, actorId: "u1", periodYear: 2026, periodMonth: 9 });
     expect((await requests.upsertNfseSettings(tx, { orgId: ORG, actorId: "u1", providerCnpj: "11222333000181", dpsSeries: "1", template: TEST_TEMPLATE })).ok).toBe(true);

@@ -26,7 +26,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { OfficeFeeBillingMethod } from "@/domain/office-fee-control";
 
 import { saveOfficeFeeProfile } from "./office-fee-actions";
 
@@ -42,32 +41,18 @@ export interface OfficeFeeProfileHistoryView {
 export interface OfficeFeeProfileView {
   id: string | null;
   version: number;
-  billingMethod: OfficeFeeBillingMethod;
   chargesAdditionalInstallment: boolean;
   monthlyFee: string;
   permanentNotes: string | null;
   history: readonly OfficeFeeProfileHistoryView[];
 }
 
-const BILLING_METHODS: Array<{ value: OfficeFeeBillingMethod; label: string }> = [
-  { value: "asaas", label: "Asaas" },
-  { value: "recibo", label: "Recibo" },
-  { value: "pix", label: "Pix" },
-  { value: "other", label: "Outro" },
-];
-
 const FIELD_LABELS: Record<string, string> = {
+  // Campo removido em 2026-10-21; continua aqui para o histórico antigo.
   billingMethod: "Cobrança",
   chargesAdditionalInstallment: "Parcela adicional",
   monthlyFee: "Honorário mensal",
   permanentNotes: "Observações",
-};
-
-export const OFFICE_FEE_BILLING_LABELS: Record<OfficeFeeBillingMethod, string> = {
-  asaas: "Asaas",
-  recibo: "Recibo",
-  pix: "Pix",
-  other: "Outro",
 };
 
 function eventLabel(event: OfficeFeeProfileHistoryView["eventType"]): string {
@@ -94,9 +79,6 @@ export function OfficeFeeProfileDialog({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [billingMethod, setBillingMethod] = useState<OfficeFeeBillingMethod>(
-    profile?.billingMethod ?? "asaas",
-  );
   const [additionalInstallment, setAdditionalInstallment] = useState(
     profile?.chargesAdditionalInstallment ? "yes" : "no",
   );
@@ -104,7 +86,6 @@ export function OfficeFeeProfileDialog({
   const [notes, setNotes] = useState(profile?.permanentNotes ?? "");
 
   function reset() {
-    setBillingMethod(profile?.billingMethod ?? "asaas");
     setAdditionalInstallment(profile?.chargesAdditionalInstallment ? "yes" : "no");
     setMonthlyFee(profile?.monthlyFee ?? "");
     setNotes(profile?.permanentNotes ?? "");
@@ -116,7 +97,6 @@ export function OfficeFeeProfileDialog({
         clanId,
         clientId,
         expectedVersion: profile?.id ? profile.version : null,
-        billingMethod,
         chargesAdditionalInstallment: additionalInstallment === "yes",
         monthlyFee,
         permanentNotes: notes,
@@ -155,15 +135,6 @@ export function OfficeFeeProfileDialog({
         </DialogHeader>
         <div className="grid gap-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-1.5">
-              <Label htmlFor={`${clientId}-billing-method`}>Cobrança</Label>
-              <Select value={billingMethod} disabled={!canManage} onValueChange={(value) => setBillingMethod(value as OfficeFeeBillingMethod)}>
-                <SelectTrigger id={`${clientId}-billing-method`}><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {BILLING_METHODS.map((method) => <SelectItem key={method.value} value={method.value}>{method.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
             <div className="grid gap-1.5">
               <Label htmlFor={`${clientId}-additional-installment`}>Cobra parcela adicional?</Label>
               <Select value={additionalInstallment} disabled={!canManage} onValueChange={setAdditionalInstallment}>

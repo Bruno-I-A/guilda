@@ -17,7 +17,6 @@ export function officeFeeProfileSnapshot(
 ): schema.OfficeFeeProfileSnapshot {
   return {
     version: profile.version,
-    billingMethod: profile.billingMethod,
     chargesAdditionalInstallment: profile.chargesAdditionalInstallment,
     monthlyFee: profile.monthlyFee,
     permanentNotes: profile.permanentNotes,

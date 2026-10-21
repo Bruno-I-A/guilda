@@ -25,14 +25,12 @@ import {
   OFFICE_FEE_STAGE_COLUMNS,
 } from "@/lib/office-fees/step-change";
 
-const BILLING_METHODS = ["asaas", "recibo", "pix", "other"] as const;
 const STEP_STATUSES = ["not_applicable", "pending", "completed", "blocked"] as const;
 
 const profileSchema = z.object({
   clanId: z.uuid("Clã inválido."),
   clientId: z.uuid("Empresa inválida."),
   expectedVersion: z.number().int().min(1).nullable(),
-  billingMethod: z.enum(BILLING_METHODS),
   chargesAdditionalInstallment: z.boolean(),
   monthlyFee: z
     .string()
@@ -46,7 +44,6 @@ function changedProfileFields(
   next: z.output<typeof profileSchema>,
 ): string[] {
   const pairs = [
-    ["billingMethod", current.billingMethod, next.billingMethod],
     [
       "chargesAdditionalInstallment",
       current.chargesAdditionalInstallment,
@@ -98,7 +95,6 @@ export async function saveOfficeFeeProfile(
       return err("O cadastro de honorário mudou enquanto estava aberto. Reabra e revise antes de salvar.");
     }
     const values = {
-      billingMethod: data.billingMethod,
       chargesAdditionalInstallment: data.chargesAdditionalInstallment,
       monthlyFee: data.monthlyFee,
       permanentNotes: data.permanentNotes || null,
@@ -118,7 +114,6 @@ export async function saveOfficeFeeProfile(
         version: created.version,
         snapshot: officeFeeProfileSnapshot(created),
         changedFields: [
-          "billingMethod",
           "chargesAdditionalInstallment",
           "monthlyFee",
           "permanentNotes",

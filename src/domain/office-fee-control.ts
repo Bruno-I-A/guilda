@@ -11,7 +11,6 @@ export const OFFICE_FEE_STAGES = [
 ] as const;
 
 export type OfficeFeeStage = (typeof OFFICE_FEE_STAGES)[number];
-export type OfficeFeeBillingMethod = "asaas" | "recibo" | "pix" | "other";
 
 /** Valor armazenado em decimal canônico, para nunca depender do locale da tela. */
 export function isCanonicalFee(value: string): boolean {
