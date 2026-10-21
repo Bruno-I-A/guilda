@@ -28,7 +28,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatCnpj } from "@/domain/cnpj";
-import type { OfficeFeeBillingMethod } from "@/domain/office-fee-control";
 
 import {
   applyOfficeFeeImport,
@@ -36,14 +35,12 @@ import {
   type OfficeFeeImportApplyResult,
   type OfficeFeeImportPreview,
 } from "./office-fee-import-actions";
-import { OFFICE_FEE_BILLING_LABELS } from "./office-fee-profile-dialog";
 
 type Resolution = { clientId: string | null; ignored: boolean };
 
 const COLUMN_LABELS: Record<string, string> = {
   companyName: "Clientes",
   cnpj: "CNPJ",
-  billingMethod: "Cobrança",
   additionalInstallment: "Parcela adicional",
   monthlyFee: "Honorário",
   observations: "Observações",
@@ -55,9 +52,7 @@ function money(value: string | null): string {
 }
 
 function importSummary(row: OfficeFeeImportPreview["rows"][number]): string {
-  const method = row.imported.billingMethod as OfficeFeeBillingMethod | null;
   return [
-    method ? OFFICE_FEE_BILLING_LABELS[method] ?? method : null,
     row.imported.chargesAdditionalInstallment === null ? null : row.imported.chargesAdditionalInstallment ? "com parcela adicional" : "sem parcela adicional",
     money(row.imported.monthlyFee),
   ].filter(Boolean).join(" · ");
@@ -69,9 +64,7 @@ function diffs(
 ): { field: string; before: string; after: string }[] {
   if (!client) return [];
   const current = client.profile;
-  const method = row.imported.billingMethod as OfficeFeeBillingMethod | null;
   const values = [
-    ["Cobrança", current?.billingMethod ? OFFICE_FEE_BILLING_LABELS[current.billingMethod as OfficeFeeBillingMethod] : "Não cadastrada", method ? OFFICE_FEE_BILLING_LABELS[method] : null],
     ["Parcela adicional", current?.chargesAdditionalInstallment ? "Sim" : "Não", row.imported.chargesAdditionalInstallment === null ? null : row.imported.chargesAdditionalInstallment ? "Sim" : "Não"],
     ["Honorário mensal", current ? money(current.monthlyFee) : "Não cadastrado", row.imported.monthlyFee ? money(row.imported.monthlyFee) : null],
     ["Observações", current?.observations ?? "Sem observações", row.imported.observations],
@@ -168,7 +161,7 @@ export function OfficeFeeImportDialog({ clanId }: { clanId: string }) {
           <DialogHeader>
             <DialogTitle>Importar controle de honorários</DialogTitle>
             <DialogDescription>
-              Lê Clientes, CNPJ, Cobrança, parcela adicional, Honorário e Observações. O CNPJ é usado primeiro quando existir; diferenças de nome precisam de confirmação humana.
+              Lê Clientes, CNPJ, parcela adicional, Honorário e Observações. O CNPJ é usado primeiro quando existir; diferenças de nome precisam de confirmação humana.
             </DialogDescription>
           </DialogHeader>
           {!preview ? (

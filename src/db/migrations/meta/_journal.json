@@ -589,6 +589,13 @@
       "when": 1792519677273,
       "tag": "0083_fiscal-nfse-issuer",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1792602468965,
+      "tag": "0084_office-fee-drop-billing",
+      "breakpoints": true
     }
   ]
 }

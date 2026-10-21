@@ -43,7 +43,6 @@ export interface OfficeFeeImportPreviewRow {
   suggestions: readonly ImportSuggestionView[];
   imported: {
     cnpj: string | null;
-    billingMethod: string | null;
     chargesAdditionalInstallment: boolean | null;
     monthlyFee: string | null;
     observations: string | null;
@@ -61,7 +60,6 @@ export interface OfficeFeeImportPreview {
     active: boolean;
     profile: {
       version: number;
-      billingMethod: string;
       chargesAdditionalInstallment: boolean;
       monthlyFee: string;
       observations: string | null;
@@ -102,7 +100,6 @@ function jsonSafeCells(cells: readonly unknown[]): unknown[] {
 function compactImported(parsed: ParsedOfficeFeeImportRow) {
   return {
     cnpj: parsed.cnpj,
-    billingMethod: parsed.billingMethod,
     chargesAdditionalInstallment: parsed.chargesAdditionalInstallment,
     monthlyFee: parsed.monthlyFee,
     observations: parsed.observations,
@@ -137,7 +134,10 @@ export async function previewOfficeFeeSpreadsheet(
   }
   const parsedSheet = parseOfficeFeeSpreadsheetRows(sheet);
   if (parsedSheet.errors.length > 0) return err(parsedSheet.errors[0] ?? "Planilha inválida.");
-  if (parsedSheet.rows.length === 0) return err("Nenhuma linha de honorário encontrada.");
+  if (parsedSheet.rows.length === 0) {
+    const first = parsedSheet.rejectedRows[0];
+    return err(first ? `Nenhuma linha pôde ser lida. Linha ${first.rowNumber}: ${first.message}` : "Nenhuma linha de honorário encontrada.");
+  }
   if (parsedSheet.rows.length > 1000) return err("Importe no máximo 1000 empresas por arquivo.");
 
   return withOrgTx(ctx.orgId, async (tx): Promise<ActionResult<OfficeFeeImportPreview>> => {
@@ -152,7 +152,6 @@ export async function previewOfficeFeeSpreadsheet(
         active: schema.clients.active,
         profileId: schema.officeFeeProfiles.id,
         profileVersion: schema.officeFeeProfiles.version,
-        billingMethod: schema.officeFeeProfiles.billingMethod,
         chargesAdditionalInstallment: schema.officeFeeProfiles.chargesAdditionalInstallment,
         monthlyFee: schema.officeFeeProfiles.monthlyFee,
         observations: schema.officeFeeProfiles.permanentNotes,
@@ -284,7 +283,6 @@ export async function previewOfficeFeeSpreadsheet(
           profile: client.profileId
             ? {
                 version: client.profileVersion!,
-                billingMethod: client.billingMethod!,
                 chargesAdditionalInstallment: client.chargesAdditionalInstallment!,
                 monthlyFee: client.monthlyFee!,
                 observations: client.observations,
@@ -445,17 +443,14 @@ export async function applyOfficeFeeImport(
       if (!officeFeeProfileVersionMatches(profile?.version, resolution.expectedProfileVersion)) {
         return err(`Linha ${row.rowNumber}: o cadastro de honorário mudou depois da prévia. Gere uma nova prévia.`);
       }
-      const billingMethod = values.billingMethod;
       const chargesAdditionalInstallment = values.chargesAdditionalInstallment;
       const monthlyFee = values.monthlyFee;
       if (
-        !["asaas", "recibo", "pix", "other"].includes(String(billingMethod)) ||
         typeof chargesAdditionalInstallment !== "boolean" ||
         typeof monthlyFee !== "string" ||
         !/^\d+(?:\.\d{1,2})?$/.test(monthlyFee)
       ) return err(`Linha ${row.rowNumber}: os dados de honorário originais são inválidos.`);
       const next = {
-        billingMethod: billingMethod as schema.OfficeFeeProfile["billingMethod"],
         chargesAdditionalInstallment,
         monthlyFee,
         permanentNotes: typeof values.observations === "string" && values.observations.trim() ? values.observations.trim() : null,
@@ -464,12 +459,11 @@ export async function applyOfficeFeeImport(
       };
       const changedFields = profile
         ? [
-            ["billingMethod", profile.billingMethod, next.billingMethod],
             ["chargesAdditionalInstallment", profile.chargesAdditionalInstallment, next.chargesAdditionalInstallment],
             ["monthlyFee", profile.monthlyFee, next.monthlyFee],
             ["permanentNotes", profile.permanentNotes ?? "", next.permanentNotes ?? ""],
           ].filter(([, before, after]) => before !== after).map((entry) => String(entry[0]))
-        : ["billingMethod", "chargesAdditionalInstallment", "monthlyFee", "permanentNotes"];
+        : ["chargesAdditionalInstallment", "monthlyFee", "permanentNotes"];
       let saved = profile;
       if (!profile) {
         [saved] = await tx.insert(schema.officeFeeProfiles).values({

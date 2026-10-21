@@ -102,7 +102,6 @@ export async function OfficeFeeTab({
           active: schema.clients.active,
           profileId: schema.officeFeeProfiles.id,
           profileVersion: schema.officeFeeProfiles.version,
-          billingMethod: schema.officeFeeProfiles.billingMethod,
           chargesAdditionalInstallment: schema.officeFeeProfiles.chargesAdditionalInstallment,
           monthlyFee: schema.officeFeeProfiles.monthlyFee,
           permanentNotes: schema.officeFeeProfiles.permanentNotes,
@@ -163,7 +162,6 @@ export async function OfficeFeeTab({
       profile: {
         id: row.profileId,
         version: row.profileVersion,
-        billingMethod: row.billingMethod,
         chargesAdditionalInstallment: row.chargesAdditionalInstallment,
         monthlyFee: row.monthlyFee,
         permanentNotes: row.permanentNotes,
