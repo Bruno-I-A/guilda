@@ -1,6 +1,6 @@
 "use client";
 
-import { FilePenLine, History, LoaderCircle, Search, UserPlus } from "lucide-react";
+import { FilePenLine, History, LoaderCircle, Search, Trash2, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -23,7 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { formatCnpj, normalizeCnpj, validateTaxDocument } from "@/domain/cnpj";
 
-import { lookupOfficeFeeTakerCnpj, saveOfficeFeeTaker } from "./office-fee-actions";
+import { deleteOfficeFeeProfile, lookupOfficeFeeTakerCnpj, saveOfficeFeeTaker } from "./office-fee-actions";
 import { OFFICE_FEE_FIELD_LABELS, type OfficeFeeProfileView } from "./office-fee-profile-dialog";
 
 export interface OfficeFeeTakerAddressView {
@@ -134,6 +134,21 @@ export function OfficeFeeTakerDialog({
     });
   }
 
+  function remove() {
+    if (!taker) return;
+    if (!window.confirm(`Apagar o tomador ${taker.name}? Sai do cadastro e das linhas do Mês a mês. Se já tiver nota emitida, desmarque “Ativo” em vez de apagar.`)) return;
+    startTransition(async () => {
+      const result = await deleteOfficeFeeProfile({ clanId, clientId: null, takerId: taker.id });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Tomador apagado.");
+      setOpen(false);
+      router.refresh();
+    });
+  }
+
   return (
     <Dialog
       open={open}
@@ -235,6 +250,11 @@ export function OfficeFeeTakerDialog({
           ) : null}
         </div>
         <DialogFooter>
+          {taker ? (
+            <Button type="button" variant="ghost" className="mr-auto text-destructive" disabled={pending} onClick={remove}>
+              <Trash2 aria-hidden /> Apagar
+            </Button>
+          ) : null}
           <Button type="button" disabled={pending || !name.trim() || !documentOk || !monthlyFee} onClick={save}>
             {taker ? "Salvar tomador" : "Cadastrar tomador"}
           </Button>
