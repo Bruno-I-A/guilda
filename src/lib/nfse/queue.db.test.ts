@@ -132,3 +132,49 @@ test("ciclo completo: enfileirar, emitir, marcar etapa, cancelar, reabrir", asyn
   const events = await withOrgTx(ORG, (tx) => tx.select({ type: schema.nfseInvoiceEvents.eventType }).from(schema.nfseInvoiceEvents));
   expect(events.map((event) => event.type).sort()).toEqual(["cancel_requested", "cancelled", "failed", "issued", "requested", "requested", "retried"]);
 }, 120_000);
+
+test("tomador avulso com CPF: abre o mês, entra no lote e emite sem virar empresa", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const { materializeOfficeFeeControl } = await import("@/lib/office-fees/materialize");
+  const requests = await import("./requests");
+
+  const takerId = await withOrgTx(ORG, async (tx) => {
+    const [taker] = await tx.insert(schema.officeFeeTakers).values({
+      orgId: ORG,
+      name: "Pedro Rodighiero",
+      document: "40503119091",
+      address: { street: "LINHA SAO JOAO", number: null, complement: null, district: "INTERIOR", city: "GETULIO VARGAS", state: "RS", zipCode: "99900000" },
+    }).returning();
+    await tx.insert(schema.officeFeeProfiles).values({ orgId: ORG, takerId: taker.id, monthlyFee: "700.00" });
+    // Empresa e avulso ao mesmo tempo não pode.
+    await expect(
+      tx.execute(sql`SAVEPOINT payer`).then(() => tx.insert(schema.officeFeeProfiles).values({ orgId: ORG, clientId: "00000000-0000-4000-8000-000000000002", takerId: taker.id, monthlyFee: "1.00" })),
+    ).rejects.toThrow();
+    await tx.execute(sql`ROLLBACK TO SAVEPOINT payer`);
+    await materializeOfficeFeeControl(tx, { orgId: ORG, actorId: "u1", periodYear: 2026, periodMonth: 10 });
+    // Abrir de novo não duplica a linha do avulso.
+    await materializeOfficeFeeControl(tx, { orgId: ORG, actorId: "u1", periodYear: 2026, periodMonth: 10 });
+    return taker.id;
+  });
+
+  const controls = await withOrgTx(ORG, (tx) => tx.select().from(schema.officeFeeControlPeriods).where(sql`taker_id = ${takerId}`));
+  expect(controls).toHaveLength(1);
+  expect(controls[0]).toMatchObject({ clientId: null, clientCnpjSnapshot: "40503119091", responsibleUserId: null });
+
+  const preview = await withOrgTx(ORG, (tx) => requests.loadNfseEmissionPreview(tx, { orgId: ORG, year: 2026, month: 10, includeAdditional: false }));
+  const item = preview.items.find((candidate) => candidate.takerId === takerId);
+  expect(item).toMatchObject({ clientId: null, cnpj: "40503119091", amountCents: 70000, kind: "monthly" });
+  expect(item?.address?.cityCode).toBe("4308904");
+
+  const queued = await withOrgTx(ORG, (tx) => requests.enqueueNfseBatch(tx, { orgId: ORG, actorId: "u1", year: 2026, month: 10, includeAdditional: false, selected: [nfseBatchItemKey(item!)], expectedCount: 1, expectedTotalCents: 70000, today: "2026-10-21" }));
+  expect(queued).toEqual({ ok: true, data: { queued: 1 } });
+  const again = await withOrgTx(ORG, (tx) => requests.loadNfseEmissionPreview(tx, { orgId: ORG, year: 2026, month: 10, includeAdditional: false }));
+  expect(again.items.some((candidate) => candidate.takerId === takerId)).toBe(false);
+  const [invoice] = await withOrgTx(ORG, (tx) => tx.select().from(schema.nfseInvoices).where(sql`taker_id = ${takerId}`));
+  expect(invoice).toMatchObject({ clientId: null, takerCnpj: "40503119091", takerName: "Pedro Rodighiero" });
+
+  // O avulso não aparece como empresa, e não se apaga (desativa).
+  expect(await withOrgTx(ORG, (tx) => tx.select().from(schema.clients).where(sql`name = 'Pedro Rodighiero'`))).toHaveLength(0);
+  const deleted = await withOrgTx(ORG, (tx) => tx.delete(schema.officeFeeTakers)).then(() => "apagou", () => "recusou");
+  expect(deleted).toBe("recusou");
+});

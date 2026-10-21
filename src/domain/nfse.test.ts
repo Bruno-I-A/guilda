@@ -22,6 +22,7 @@ function candidate(overrides: Partial<NfseCandidate> = {}): NfseCandidate {
   return {
     controlPeriodId: "c1",
     clientId: "cli1",
+    takerId: null,
     clientName: "Padaria Pão Quente",
     cnpj: CNPJ_OK,
     monthlyFee: "850.00",
@@ -96,8 +97,8 @@ describe("seleção do lote", () => {
         candidate({ controlPeriodId: "c4", clientId: "cli4", clientName: "Zerada", monthlyFee: "0.00" }),
         candidate({ controlPeriodId: "c5", clientId: "cli5", clientName: "Já emitida" }),
       ],
-      activeMonthlyClientIds: new Set(["cli5"]),
-      activeAdditionalClientIds: new Set(),
+      activeMonthlyPayers: new Set(["client:cli5"]),
+      activeAdditionalPayers: new Set(),
       includeAdditional: false,
     });
     expect(batch.items.map((item) => item.clientId)).toEqual(["cli1"]);
@@ -116,15 +117,31 @@ describe("seleção do lote", () => {
       candidate({ controlPeriodId: "c2", clientId: "cli2", clientName: "Já teve PA", chargesAdditionalInstallment: true }),
       candidate({ controlPeriodId: "c3", clientId: "cli3", clientName: "Não cobra PA" }),
     ];
-    const without = selectNfseBatch({ candidates, activeMonthlyClientIds: new Set(), activeAdditionalClientIds: new Set(["cli2"]), includeAdditional: false });
+    const without = selectNfseBatch({ candidates, activeMonthlyPayers: new Set(), activeAdditionalPayers: new Set(["client:cli2"]), includeAdditional: false });
     expect(without.items.filter((item) => item.kind === "additional_installment")).toHaveLength(0);
 
-    const withPa = selectNfseBatch({ candidates, activeMonthlyClientIds: new Set(), activeAdditionalClientIds: new Set(["cli2"]), includeAdditional: true });
+    const withPa = selectNfseBatch({ candidates, activeMonthlyPayers: new Set(), activeAdditionalPayers: new Set(["client:cli2"]), includeAdditional: true });
     expect(withPa.items.filter((item) => item.kind === "additional_installment").map((item) => item.clientId)).toEqual(["cli1"]);
     expect(withPa.excluded).toEqual([
       { controlPeriodId: "c2", clientName: "Já teve PA", kind: "additional_installment", reason: "already_active" },
     ]);
     expect(withPa.totalCents).toBe(85000 * 4);
+  });
+});
+
+describe("tomador avulso", () => {
+  test("entra com CPF de produtor rural e não colide com a empresa de mesmo id", () => {
+    const batch = selectNfseBatch({
+      candidates: [
+        candidate({ controlPeriodId: "t1", clientId: null, takerId: "cli1", clientName: "Produtor", cnpj: "40503119091" }),
+        candidate({ controlPeriodId: "t2", clientId: null, takerId: "tk2", clientName: "CPF errado", cnpj: "40503119092" }),
+      ],
+      activeMonthlyPayers: new Set(["client:cli1"]),
+      activeAdditionalPayers: new Set(),
+      includeAdditional: false,
+    });
+    expect(batch.items.map((item) => [item.takerId, item.cnpj])).toEqual([["cli1", "40503119091"]]);
+    expect(batch.excluded.map((item) => item.reason)).toEqual(["invalid_cnpj"]);
   });
 });
 
@@ -154,8 +171,8 @@ describe("endereço do tomador", () => {
   test("com IBS/CBS, empresa sem endereço fica fora do lote com o motivo", () => {
     const batch = selectNfseBatch({
       candidates: [candidate()],
-      activeMonthlyClientIds: new Set(),
-      activeAdditionalClientIds: new Set(),
+      activeMonthlyPayers: new Set(),
+      activeAdditionalPayers: new Set(),
       includeAdditional: false,
       requireAddress: true,
     });

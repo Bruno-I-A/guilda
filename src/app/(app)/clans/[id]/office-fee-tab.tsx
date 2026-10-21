@@ -10,7 +10,7 @@ import { loadNfseMonth, loadNfseSettings } from "@/lib/nfse/requests";
 import { NfseSetupCard, type NfseSettingsPanelView } from "./nfse-parts";
 import type { OfficeFeeControlRowView } from "./office-fee-control-board";
 import { OfficeFeeMonth } from "./office-fee-month";
-import { OfficeFeeProfileBoard, type OfficeFeeProfileRowView } from "./office-fee-profile-board";
+import { OfficeFeeProfileBoard, type OfficeFeeProfileRowView, type OfficeFeeTakerRowView } from "./office-fee-profile-board";
 
 function currentPeriodInSaoPaulo(): { year: number; month: number } {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -93,7 +93,7 @@ export async function OfficeFeeTab({
 }) {
   const view = requestedView === "base" ? "base" : "month";
   if (view === "base") {
-    const { rows, events, availableClients, nfseSettings } = await withOrgTx(orgId, async (tx) => {
+    const { rows, takers, events, availableClients, nfseSettings } = await withOrgTx(orgId, async (tx) => {
       const rows = await tx
         .select({
           clientId: schema.clients.id,
@@ -116,7 +116,20 @@ export async function OfficeFeeTab({
         )
         .where(eq(schema.officeFeeProfiles.orgId, orgId))
         .orderBy(asc(schema.clients.name));
-      const events = rows.length > 0
+      const takers = await tx
+        .select({ taker: schema.officeFeeTakers, profile: schema.officeFeeProfiles })
+        .from(schema.officeFeeProfiles)
+        .innerJoin(
+          schema.officeFeeTakers,
+          and(
+            eq(schema.officeFeeTakers.orgId, schema.officeFeeProfiles.orgId),
+            eq(schema.officeFeeTakers.id, schema.officeFeeProfiles.takerId),
+          ),
+        )
+        .where(eq(schema.officeFeeProfiles.orgId, orgId))
+        .orderBy(asc(schema.officeFeeTakers.name));
+      const profileIds = [...rows.map((row) => row.profileId), ...takers.map((row) => row.profile.id)];
+      const events = profileIds.length > 0
         ? await tx
             .select({
               id: schema.officeFeeProfileEvents.id,
@@ -129,7 +142,7 @@ export async function OfficeFeeTab({
             })
             .from(schema.officeFeeProfileEvents)
             .leftJoin(schema.user, eq(schema.user.id, schema.officeFeeProfileEvents.actorId))
-            .where(and(eq(schema.officeFeeProfileEvents.orgId, orgId), inArray(schema.officeFeeProfileEvents.profileId, rows.map((row) => row.profileId))))
+            .where(and(eq(schema.officeFeeProfileEvents.orgId, orgId), inArray(schema.officeFeeProfileEvents.profileId, profileIds)))
             .orderBy(desc(schema.officeFeeProfileEvents.createdAt))
             .limit(1500)
         : [];
@@ -146,7 +159,7 @@ export async function OfficeFeeTab({
         .where(and(eq(schema.clients.orgId, orgId), eq(schema.clients.active, true)))
         .orderBy(asc(schema.clients.name));
       const nfseSettings = await loadNfseSettings(tx, orgId);
-      return { rows, events, nfseSettings, availableClients: availableClients.filter((client) => !rows.some((row) => row.clientId === client.id)) };
+      return { rows, takers, events, nfseSettings, availableClients: availableClients.filter((client) => !rows.some((row) => row.clientId === client.id)) };
     });
     const historyByProfile = new Map<string, typeof events>();
     for (const event of events) {
@@ -154,6 +167,22 @@ export async function OfficeFeeTab({
       if (current.length < 8) current.push(event);
       historyByProfile.set(event.profileId, current);
     }
+    const historyView = (profileId: string) => (historyByProfile.get(profileId) ?? []).map((event) => ({
+      ...event,
+      actorName: event.actorName ?? null,
+      createdAt: event.createdAt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
+    }));
+    const takerViews: OfficeFeeTakerRowView[] = takers.map(({ taker, profile }) => ({
+      taker: { id: taker.id, name: taker.name, document: taker.document, address: taker.address, active: taker.active },
+      profile: {
+        id: profile.id,
+        version: profile.version,
+        chargesAdditionalInstallment: profile.chargesAdditionalInstallment,
+        monthlyFee: profile.monthlyFee,
+        permanentNotes: profile.permanentNotes,
+        history: historyView(profile.id),
+      },
+    }));
     const views: OfficeFeeProfileRowView[] = rows.map((row) => ({
       clientId: row.clientId,
       clientName: row.clientName,
@@ -165,17 +194,13 @@ export async function OfficeFeeTab({
         chargesAdditionalInstallment: row.chargesAdditionalInstallment,
         monthlyFee: row.monthlyFee,
         permanentNotes: row.permanentNotes,
-        history: (historyByProfile.get(row.profileId) ?? []).map((event) => ({
-          ...event,
-          actorName: event.actorName ?? null,
-          createdAt: event.createdAt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
-        })),
+        history: historyView(row.profileId),
       },
     }));
     return (
       <FeeViews clanId={clanId} active="base">
         {canManage ? <NfseSetupCard clanId={clanId} settings={settingsView(nfseSettings)} isAdmin={isAdmin} /> : null}
-        <OfficeFeeProfileBoard clanId={clanId} canManage={canManage} rows={views} availableClients={availableClients} />
+        <OfficeFeeProfileBoard clanId={clanId} canManage={canManage} rows={views} takers={takerViews} availableClients={availableClients} />
       </FeeViews>
     );
   }

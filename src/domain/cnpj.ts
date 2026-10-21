@@ -36,8 +36,28 @@ export function validateCnpj(cnpj: string): boolean {
   return dv2 === Number(cnpj[13]);
 }
 
-/** "12345678000195" → "12.345.678/0001-95" (exibição). */
+/** Valida um CPF JÁ NORMALIZADO (11 dígitos + DVs; rejeita repetição). */
+export function validateCpf(cpf: string): boolean {
+  if (!/^\d{11}$/.test(cpf)) return false;
+  if (/^(\d)\1{10}$/.test(cpf)) return false;
+  const dv = (length: number) => {
+    const sum = [...cpf.slice(0, length)].reduce((acc, digit, i) => acc + Number(digit) * (length + 1 - i), 0);
+    return ((sum * 10) % 11) % 10;
+  };
+  return dv(9) === Number(cpf[9]) && dv(10) === Number(cpf[10]);
+}
+
+/** Documento do tomador da nota: CNPJ ou CPF válido, já normalizado. */
+export function validateTaxDocument(document: string): boolean {
+  return document.length === 11 ? validateCpf(document) : validateCnpj(document);
+}
+
+/**
+ * "12345678000195" → "12.345.678/0001-95" (exibição). Tomador avulso pode
+ * ter CPF: "12345678909" → "123.456.789-09".
+ */
 export function formatCnpj(cnpj: string): string {
+  if (/^\d{11}$/.test(cnpj)) return `${cnpj.slice(0, 3)}.${cnpj.slice(3, 6)}.${cnpj.slice(6, 9)}-${cnpj.slice(9)}`;
   if (!/^\d{14}$/.test(cnpj)) return cnpj;
   return `${cnpj.slice(0, 2)}.${cnpj.slice(2, 5)}.${cnpj.slice(5, 8)}/${cnpj.slice(8, 12)}-${cnpj.slice(12)}`;
 }

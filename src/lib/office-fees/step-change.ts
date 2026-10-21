@@ -69,6 +69,7 @@ export async function applyOfficeFeeStepChange(
     orgId: input.orgId,
     controlPeriodId: control.id,
     clientId: control.clientId,
+    takerId: control.takerId,
     eventType: "step_updated",
     stage: input.stage,
     previousValue: { status: previous },
@@ -80,6 +81,7 @@ export async function applyOfficeFeeStepChange(
       orgId: input.orgId,
       controlPeriodId: control.id,
       clientId: control.clientId,
+      takerId: control.takerId,
       eventType:
         nextStatus === "completed" ? "completed" : control.status === "completed" ? "reopened" : "status_updated",
       previousValue: { status: control.status },

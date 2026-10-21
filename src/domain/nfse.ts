@@ -1,4 +1,4 @@
-import { validateCnpj } from "./cnpj";
+import { validateTaxDocument } from "./cnpj";
 
 /**
  * Regras puras das notas de honorário (NFS-e nacional). Desenho em
@@ -175,9 +175,19 @@ export function buildNfseTakerAddress(
   };
 }
 
-export interface NfseCandidate {
+/** Quem paga: empresa-cliente ou tomador avulso do Honorários (um dos dois). */
+export interface NfsePayer {
+  clientId: string | null;
+  takerId: string | null;
+}
+
+/** Chave única de quem paga, para não emitir duas notas iguais. */
+export function nfsePayerKey(payer: NfsePayer): string {
+  return payer.clientId ? `client:${payer.clientId}` : `taker:${payer.takerId}`;
+}
+
+export interface NfseCandidate extends NfsePayer {
   controlPeriodId: string;
-  clientId: string;
   clientName: string;
   cnpj: string | null;
   monthlyFee: string;
@@ -193,16 +203,15 @@ export type NfseExclusionReason =
   | "already_active";
 
 export const NFSE_EXCLUSION_LABELS: Record<NfseExclusionReason, string> = {
-  missing_cnpj: "Sem CNPJ cadastrado",
-  invalid_cnpj: "CNPJ inválido",
+  missing_cnpj: "Sem CNPJ/CPF cadastrado",
+  invalid_cnpj: "CNPJ/CPF inválido",
   zero_amount: "Honorário zerado",
   missing_address: "Endereço incompleto no cadastro (rua, bairro, CEP e cidade)",
   already_active: "Nota já emitida ou na fila",
 };
 
-export interface NfseBatchItem {
+export interface NfseBatchItem extends NfsePayer {
   controlPeriodId: string;
-  clientId: string;
   clientName: string;
   cnpj: string;
   kind: NfseInvoiceKind;
@@ -241,8 +250,9 @@ export type NfseEmissionPreviewView = NfseBatch & {
  */
 export function selectNfseBatch(input: {
   candidates: readonly NfseCandidate[];
-  activeMonthlyClientIds: ReadonlySet<string>;
-  activeAdditionalClientIds: ReadonlySet<string>;
+  /** Chaves de `nfsePayerKey` com nota ativa. */
+  activeMonthlyPayers: ReadonlySet<string>;
+  activeAdditionalPayers: ReadonlySet<string>;
   includeAdditional: boolean;
   /** Nota com IBS/CBS exige o endereço do tomador (E0234). */
   requireAddress?: boolean;
@@ -253,7 +263,7 @@ export function selectNfseBatch(input: {
     const base = { controlPeriodId: candidate.controlPeriodId, clientName: candidate.clientName };
     const problem: NfseExclusionReason | null = !candidate.cnpj
       ? "missing_cnpj"
-      : !validateCnpj(candidate.cnpj)
+      : !validateTaxDocument(candidate.cnpj)
         ? "invalid_cnpj"
         : amountToCents(candidate.monthlyFee) === 0
           ? "zero_amount"
@@ -265,14 +275,15 @@ export function selectNfseBatch(input: {
       continue;
     }
     const amountCents = amountToCents(candidate.monthlyFee);
-    const item = { ...base, clientId: candidate.clientId, cnpj: candidate.cnpj, amountCents, address: candidate.address };
-    if (input.activeMonthlyClientIds.has(candidate.clientId)) {
+    const item = { ...base, clientId: candidate.clientId, takerId: candidate.takerId, cnpj: candidate.cnpj, amountCents, address: candidate.address };
+    const payer = nfsePayerKey(candidate);
+    if (input.activeMonthlyPayers.has(payer)) {
       excluded.push({ ...base, kind: "monthly", reason: "already_active" });
     } else {
       items.push({ ...item, kind: "monthly" });
     }
     if (!input.includeAdditional || !candidate.chargesAdditionalInstallment) continue;
-    if (input.activeAdditionalClientIds.has(candidate.clientId)) {
+    if (input.activeAdditionalPayers.has(payer)) {
       excluded.push({ ...base, kind: "additional_installment", reason: "already_active" });
     } else {
       items.push({ ...item, kind: "additional_installment" });
