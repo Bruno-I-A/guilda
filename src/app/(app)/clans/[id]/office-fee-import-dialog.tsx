@@ -160,7 +160,7 @@ export function OfficeFeeImportDialog({ clanId }: { clanId: string }) {
         <DialogHeader>
           <DialogTitle>Importar controle de honorários</DialogTitle>
           <DialogDescription>
-            Lê Clientes, CNPJ, parcela adicional, Honorário e Observações. O CNPJ é usado primeiro quando existir; diferenças de nome precisam de confirmação humana.
+            Lê Clientes, CNPJ, parcela adicional, Honorário e Observações. O CNPJ ajuda a achar a empresa; a conciliação manda e só os valores do honorário entram no cadastro.
           </DialogDescription>
         </DialogHeader>
         {!preview ? (
@@ -174,11 +174,10 @@ export function OfficeFeeImportDialog({ clanId }: { clanId: string }) {
           </form>
         ) : summary ? (
           <div className="grid gap-4">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-3 gap-2">
               <div className="rounded-lg bg-success/10 p-3 text-center"><strong className="block font-mono text-xl text-success">{summary.createdProfiles}</strong><span className="text-xs">cadastros criados</span></div>
               <div className="rounded-lg bg-primary/10 p-3 text-center"><strong className="block font-mono text-xl text-primary">{summary.updatedProfiles}</strong><span className="text-xs">atualizados</span></div>
               <div className="rounded-lg bg-muted/40 p-3 text-center"><strong className="block font-mono text-xl">{summary.unchangedProfiles}</strong><span className="text-xs">sem mudança</span></div>
-              <div className="rounded-lg bg-muted/40 p-3 text-center"><strong className="block font-mono text-xl">{summary.cnpjsAdded}</strong><span className="text-xs">CNPJ(s) incluído(s)</span></div>
             </div>
             <p className="text-sm text-muted-foreground">Os nomes conciliados foram memorizados para as próximas importações.</p>
             <DialogFooter><Button type="button" onClick={() => setOpen(false)}>Concluir</Button></DialogFooter>

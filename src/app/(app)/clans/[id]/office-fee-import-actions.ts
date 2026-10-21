@@ -7,7 +7,6 @@ import { z } from "zod";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
-import { formatCnpj } from "@/domain/cnpj";
 import {
   hasDuplicateFiscalImportTargets,
   normalizeCompanyName,
@@ -337,7 +336,6 @@ export interface OfficeFeeImportApplyResult {
   createdProfiles: number;
   updatedProfiles: number;
   unchangedProfiles: number;
-  cnpjsAdded: number;
 }
 
 export async function applyOfficeFeeImport(
@@ -396,22 +394,11 @@ export async function applyOfficeFeeImport(
       and(eq(schema.fiscalClientAliases.orgId, ctx.orgId), inArray(schema.fiscalClientAliases.normalizedName, rows.map((row) => row.normalizedSourceName))),
     );
     const aliasByName = new Map(aliases.map((alias) => [alias.normalizedName, alias.clientId]));
-    const resolutions = new Map(data.resolutions.map((item) => [item.rowId, item]));
-    for (const row of rows) {
-      const resolution = resolutions.get(row.id);
-      if (!resolution || resolution.action === "ignore") continue;
-      const existingTarget = aliasByName.get(row.normalizedSourceName);
-      if (existingTarget && existingTarget !== resolution.clientId) {
-        return err(`Linha ${row.rowNumber}: este nome já está conciliado com outra empresa.`);
-      }
-    }
-
     let imported = 0;
     let ignored = 0;
     let createdProfiles = 0;
     let updatedProfiles = 0;
     let unchangedProfiles = 0;
-    let cnpjsAdded = 0;
     for (const resolution of data.resolutions) {
       const row = rowById.get(resolution.rowId)!;
       if (resolution.action === "ignore") {
@@ -423,20 +410,8 @@ export async function applyOfficeFeeImport(
       if (!client) return err("Empresa selecionada não pertence à organização.");
       const raw = row.rawData as { parsed?: Record<string, unknown> };
       const values = raw.parsed ?? {};
-      const sourceCnpj = typeof values.cnpj === "string" ? values.cnpj : null;
-      if (sourceCnpj && client.cnpj && client.cnpj !== sourceCnpj) {
-        return err(`Linha ${row.rowNumber}: o CNPJ ${formatCnpj(sourceCnpj)} diverge do cadastro desta empresa.`);
-      }
-      if (sourceCnpj && !client.cnpj) {
-        const [holder] = await tx.select({ id: schema.clients.id }).from(schema.clients).where(
-          and(eq(schema.clients.orgId, ctx.orgId), eq(schema.clients.cnpj, sourceCnpj)),
-        ).for("update");
-        if (holder && holder.id !== client.id) return err(`Linha ${row.rowNumber}: o CNPJ já pertence a outra empresa cadastrada.`);
-        await tx.update(schema.clients).set({ cnpj: sourceCnpj }).where(
-          and(eq(schema.clients.orgId, ctx.orgId), eq(schema.clients.id, client.id)),
-        );
-        cnpjsAdded += 1;
-      }
+      // A conciliação manda: da planilha só entram os valores do honorário.
+      // Nome e CNPJ da linha nunca mudam o cadastro da empresa escolhida.
       const [profile] = await tx.select().from(schema.officeFeeProfiles).where(
         and(eq(schema.officeFeeProfiles.orgId, ctx.orgId), eq(schema.officeFeeProfiles.clientId, client.id)),
       ).for("update");
@@ -495,7 +470,10 @@ export async function applyOfficeFeeImport(
           actorId: ctx.userId,
         });
       }
-      const [alias] = await tx.insert(schema.fiscalClientAliases).values({
+      // O nome vira apelido para as próximas importações, salvo quando já é
+      // apelido de outra empresa (a Ficha Fiscal também usa): aí fica como está.
+      const aliasOwner = aliasByName.get(row.normalizedSourceName);
+      const [alias] = aliasOwner && aliasOwner !== client.id ? [] : await tx.insert(schema.fiscalClientAliases).values({
         orgId: ctx.orgId,
         clientId: client.id,
         aliasName: row.sourceName,
@@ -514,7 +492,7 @@ export async function applyOfficeFeeImport(
       await tx.update(schema.fiscalImportRows).set({
         status: "imported",
         resolvedClientId: client.id,
-        resolvedAliasId: alias.id,
+        resolvedAliasId: alias?.id ?? null,
         resolutionMethod: method,
         resolvedBy: ctx.userId,
         appliedAt: new Date(),
@@ -543,7 +521,7 @@ export async function applyOfficeFeeImport(
       completedAt: new Date(),
       updatedAt: new Date(),
     }).where(and(eq(schema.fiscalImportBatches.orgId, ctx.orgId), eq(schema.fiscalImportBatches.id, batch.id)));
-    return { ok: true, data: { imported, ignored, errors, createdProfiles, updatedProfiles, unchangedProfiles, cnpjsAdded } };
+    return { ok: true, data: { imported, ignored, errors, createdProfiles, updatedProfiles, unchangedProfiles } };
   });
   if (result.ok) revalidatePath(`/clans/${data.clanId}`);
   return result;

@@ -145,6 +145,10 @@
   }
   html {
     @apply font-sans;
+    /* Dark é o tema único: sem isto o navegador desenha barras de rolagem claras. */
+    color-scheme: dark;
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.75 0.03 240 / 28%) transparent;
   }
   /*
    * Escala display de quatro passos. Antes disto só h1/h2 eram temáticos, e

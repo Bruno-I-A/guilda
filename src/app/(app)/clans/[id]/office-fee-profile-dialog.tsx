@@ -1,6 +1,6 @@
 "use client";
 
-import { FilePenLine, FileText, History } from "lucide-react";
+import { FilePenLine, FileText, History, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-import { saveOfficeFeeProfile } from "./office-fee-actions";
+import { deleteOfficeFeeProfile, saveOfficeFeeProfile } from "./office-fee-actions";
 
 export interface OfficeFeeProfileHistoryView {
   id: string;
@@ -115,6 +115,20 @@ export function OfficeFeeProfileDialog({
     });
   }
 
+  function remove() {
+    if (!window.confirm(`Apagar o honorário de ${clientName}? Sai do cadastro e das linhas do Mês a mês. Só dá se ainda não houver nota emitida na Guilda.`)) return;
+    startTransition(async () => {
+      const result = await deleteOfficeFeeProfile({ clanId, clientId, takerId: null });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Honorário apagado.");
+      setOpen(false);
+      router.refresh();
+    });
+  }
+
   return (
     <Dialog
       open={open}
@@ -186,6 +200,11 @@ export function OfficeFeeProfileDialog({
         </div>
         {canManage ? (
           <DialogFooter>
+            {profile?.id ? (
+              <Button type="button" variant="ghost" className="mr-auto text-destructive" disabled={pending} onClick={remove}>
+                <Trash2 aria-hidden /> Apagar
+              </Button>
+            ) : null}
             <Button type="button" disabled={pending || !monthlyFee} onClick={save}>Salvar honorário</Button>
           </DialogFooter>
         ) : null}

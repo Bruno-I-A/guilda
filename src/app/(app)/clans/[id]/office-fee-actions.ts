@@ -17,6 +17,7 @@ import {
 } from "@/domain/guild-permissions";
 import { err, requireMemberContext, type ActionResult } from "@/lib/action-context";
 import { lookupCnpj, type CnpjAddress } from "@/lib/cnpj-lookup";
+import { deleteOfficeFeePayer } from "@/lib/office-fees/delete-payer";
 import { requireFiscalClan } from "@/lib/office-fees/fiscal-clan";
 import {
   materializeOfficeFeeControl,
@@ -310,6 +311,36 @@ export async function saveOfficeFeeTaker(
       changedFields,
       actorId: ctx.userId,
     });
+    return { ok: true };
+  });
+  if (result.ok) revalidatePath(`/clans/${data.clanId}`);
+  return result;
+}
+
+const deleteProfileSchema = z.object({
+  clanId: z.uuid("Clã inválido."),
+  clientId: z.uuid("Empresa inválida.").nullable(),
+  takerId: z.uuid("Tomador inválido.").nullable(),
+}).refine((value) => Boolean(value.clientId) !== Boolean(value.takerId), "Informe a empresa ou o tomador.");
+
+/** Apaga o cadastro de honorário; a regra mora em `deleteOfficeFeePayer`. */
+export async function deleteOfficeFeeProfile(
+  input: z.input<typeof deleteProfileSchema>,
+): Promise<ActionResult> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  const parsed = deleteProfileSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+  const data = parsed.data;
+
+  const result = await withOrgTx(ctx.orgId, async (tx): Promise<ActionResult> => {
+    const fiscal = await requireFiscalClan(tx, { orgId: ctx.orgId, clanId: data.clanId, userId: ctx.userId, role: ctx.role });
+    if (!fiscal) return err("Clã Fiscal não encontrado.");
+    if (!canManageFiscalOperations(fiscal.facts)) {
+      return err("Apenas integrantes do Fiscal ou um admin podem apagar honorários.");
+    }
+    const deleted = await deleteOfficeFeePayer(tx, { orgId: ctx.orgId, clientId: data.clientId, takerId: data.takerId });
+    if (!deleted.ok) return err(deleted.error);
     return { ok: true };
   });
   if (result.ok) revalidatePath(`/clans/${data.clanId}`);

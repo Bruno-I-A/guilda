@@ -292,8 +292,10 @@ Desenho em `docs/superpowers/specs/2026-10-10-notas-de-honorario-design.md`.
   `office_fee_takers`, só no Honorários — fora da lista de empresas, do Fiscal
   e do XML, a pedido do Bruno. Perfil, controle, eventos e nota têm
   `client_id` OU `taker_id` (check `num_nonnulls = 1`); a nota sai com
-  `<CPF>` quando o documento tem 11 dígitos. Desativa, não apaga (DELETE
-  revogado: a cascata levaria as notas).
+  `<CPF>` quando o documento tem 11 dígitos.
+- **Apagar (2026-10-21)**: empresa ou avulso sai do cadastro (com as linhas
+  do Mês a mês) só sem nota na Guilda — `deleteOfficeFeePayer` confere antes,
+  porque a cascata levaria as notas. Com nota, o avulso se desativa.
 
 ## Estrutura por clã (decisões de 2026-08-18)
 

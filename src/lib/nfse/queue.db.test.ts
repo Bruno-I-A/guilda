@@ -173,8 +173,22 @@ test("tomador avulso com CPF: abre o mês, entra no lote e emite sem virar empre
   const [invoice] = await withOrgTx(ORG, (tx) => tx.select().from(schema.nfseInvoices).where(sql`taker_id = ${takerId}`));
   expect(invoice).toMatchObject({ clientId: null, takerCnpj: "40503119091", takerName: "Pedro Rodighiero" });
 
-  // O avulso não aparece como empresa, e não se apaga (desativa).
+  // O avulso não aparece como empresa.
   expect(await withOrgTx(ORG, (tx) => tx.select().from(schema.clients).where(sql`name = 'Pedro Rodighiero'`))).toHaveLength(0);
-  const deleted = await withOrgTx(ORG, (tx) => tx.delete(schema.officeFeeTakers)).then(() => "apagou", () => "recusou");
-  expect(deleted).toBe("recusou");
+
+  // Com nota, apagar recusa (desativa); sem nota, apaga cadastro e Mês a mês.
+  const { deleteOfficeFeePayer } = await import("@/lib/office-fees/delete-payer");
+  const refused = await withOrgTx(ORG, (tx) => deleteOfficeFeePayer(tx, { orgId: ORG, clientId: null, takerId }));
+  expect(refused.ok).toBe(false);
+  const wrongId = await withOrgTx(ORG, async (tx) => {
+    const [taker] = await tx.insert(schema.officeFeeTakers).values({ orgId: ORG, name: "KMJ cadastrada errado", document: "03750194000564" }).returning();
+    await tx.insert(schema.officeFeeProfiles).values({ orgId: ORG, takerId: taker.id, monthlyFee: "415.00" });
+    await materializeOfficeFeeControl(tx, { orgId: ORG, actorId: "u1", periodYear: 2026, periodMonth: 10 });
+    return taker.id;
+  });
+  expect(await withOrgTx(ORG, (tx) => deleteOfficeFeePayer(tx, { orgId: ORG, clientId: null, takerId: wrongId }))).toEqual({ ok: true });
+  expect(await withOrgTx(ORG, (tx) => tx.select().from(schema.officeFeeTakers).where(sql`id = ${wrongId}`))).toHaveLength(0);
+  expect(await withOrgTx(ORG, (tx) => tx.select().from(schema.officeFeeControlPeriods).where(sql`taker_id = ${wrongId}`))).toHaveLength(0);
+  // Empresa sem nota (o "Sem CNPJ" nunca emitiu) também apaga.
+  expect(await withOrgTx(ORG, (tx) => deleteOfficeFeePayer(tx, { orgId: ORG, clientId: "00000000-0000-4000-8000-000000000002", takerId: null }))).toEqual({ ok: true });
 });
