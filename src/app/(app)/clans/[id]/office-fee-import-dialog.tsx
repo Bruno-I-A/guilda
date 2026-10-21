@@ -152,65 +152,64 @@ export function OfficeFeeImportDialog({ clanId }: { clanId: string }) {
   }
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogTrigger asChild>
-          <Button type="button" variant="outline" size="sm"><FileSpreadsheet aria-hidden /> Importar planilha</Button>
-        </DialogTrigger>
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-5xl">
-          <DialogHeader>
-            <DialogTitle>Importar controle de honorários</DialogTitle>
-            <DialogDescription>
-              Lê Clientes, CNPJ, parcela adicional, Honorário e Observações. O CNPJ é usado primeiro quando existir; diferenças de nome precisam de confirmação humana.
-            </DialogDescription>
-          </DialogHeader>
-          {!preview ? (
-            <form className="grid gap-4" onSubmit={(event) => { event.preventDefault(); previewFile(new FormData(event.currentTarget)); }}>
-              <div className="grid gap-1.5">
-                <Label htmlFor="office-fee-import-file">Planilha de controle de notas</Label>
-                <Input id="office-fee-import-file" name="file" type="file" accept=".xlsx" required />
-                <p className="text-xs text-muted-foreground">Até 5 MB. Nenhuma empresa é criada automaticamente.</p>
-              </div>
-              <DialogFooter><Button type="submit" disabled={pending}>{pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <FileSearch aria-hidden />} Gerar prévia</Button></DialogFooter>
-            </form>
-          ) : summary ? (
-            <div className="grid gap-4">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <div className="rounded-lg bg-success/10 p-3 text-center"><strong className="block font-mono text-xl text-success">{summary.createdProfiles}</strong><span className="text-xs">cadastros criados</span></div>
-                <div className="rounded-lg bg-primary/10 p-3 text-center"><strong className="block font-mono text-xl text-primary">{summary.updatedProfiles}</strong><span className="text-xs">atualizados</span></div>
-                <div className="rounded-lg bg-muted/40 p-3 text-center"><strong className="block font-mono text-xl">{summary.unchangedProfiles}</strong><span className="text-xs">sem mudança</span></div>
-                <div className="rounded-lg bg-muted/40 p-3 text-center"><strong className="block font-mono text-xl">{summary.cnpjsAdded}</strong><span className="text-xs">CNPJ(s) incluído(s)</span></div>
-              </div>
-              <p className="text-sm text-muted-foreground">Os nomes conciliados foram memorizados para as próximas importações.</p>
-              <DialogFooter><Button type="button" onClick={() => setOpen(false)}>Concluir</Button></DialogFooter>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline" size="sm"><FileSpreadsheet aria-hidden /> Importar planilha</Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-5xl">
+        <DialogHeader>
+          <DialogTitle>Importar controle de honorários</DialogTitle>
+          <DialogDescription>
+            Lê Clientes, CNPJ, parcela adicional, Honorário e Observações. O CNPJ é usado primeiro quando existir; diferenças de nome precisam de confirmação humana.
+          </DialogDescription>
+        </DialogHeader>
+        {!preview ? (
+          <form className="grid gap-4" onSubmit={(event) => { event.preventDefault(); previewFile(new FormData(event.currentTarget)); }}>
+            <div className="grid gap-1.5">
+              <Label htmlFor="office-fee-import-file">Planilha de controle de notas</Label>
+              <Input id="office-fee-import-file" name="file" type="file" accept=".xlsx" required />
+              <p className="text-xs text-muted-foreground">Até 5 MB. Nenhuma empresa é criada automaticamente.</p>
             </div>
-          ) : (
-            <div className="grid gap-4">
-              <div className="flex flex-wrap items-center gap-2 text-xs"><Badge variant="outline">{preview.fileName}</Badge><span>{preview.rows.length} linha(s)</span><span>{preview.rejected} rejeitada(s)</span><span>{preview.skipped} ignorada(s)</span>{preview.missingColumns.length > 0 ? <Badge variant="outline" className="border-warning/40 text-warning">Sem {preview.missingColumns.map((column) => COLUMN_LABELS[column] ?? column).join(", ")}</Badge> : null}</div>
-              {preview.rejectedRows.length > 0 ? <div className="rounded-lg border border-destructive/35 bg-destructive/5 p-3 text-xs"><strong className="text-destructive">Linhas rejeitadas</strong><ul className="mt-1 grid gap-1 text-muted-foreground">{preview.rejectedRows.map((row) => <li key={`${row.rowNumber}-${row.message}`}>Linha {row.rowNumber}: {row.message}</li>)}</ul></div> : null}
-              <div className="grid max-h-[48vh] gap-2 overflow-y-auto pr-1">
-                {preview.rows.map((row) => {
-                  const resolution = resolutions[row.id];
-                  const selectedName = resolution?.clientId ? clientNameById.get(resolution.clientId) : null;
-                  const selectedClient = preview.clients.find((client) => client.id === resolution?.clientId);
-                  const changes = diffs(row, selectedClient);
-                  return <article key={row.id} className="grid gap-2 rounded-lg border bg-card/50 p-3 sm:grid-cols-[minmax(12rem,1fr)_minmax(14rem,1fr)_auto] sm:items-center">
-                    <div className="min-w-0"><div className="flex items-center gap-1.5"><span className="font-mono text-xs text-muted-foreground">#{row.rowNumber}</span><strong className="truncate">{row.sourceName}</strong></div><p className="truncate text-[11px] text-muted-foreground">{importSummary(row)}</p>{row.imported.cnpj ? <p className="text-[11px] text-muted-foreground">{formatCnpj(row.imported.cnpj)}</p> : null}{row.imported.observations ? <p className="line-clamp-2 text-[11px] text-muted-foreground">{row.imported.observations}</p> : null}</div>
-                    <div className="min-w-0">{resolution?.ignored ? <Badge variant="outline">Linha ignorada</Badge> : selectedName ? <p className="flex items-center gap-1.5 text-sm"><Check className="size-4 text-success" aria-hidden /><span className="truncate">{selectedName}</span>{selectedClient && !selectedClient.active ? <Badge variant="outline">inativa</Badge> : null}{row.status !== "matched" ? <Badge variant="outline">confirmada manualmente</Badge> : null}</p> : <p className="flex items-center gap-1.5 text-sm text-destructive"><AlertTriangle className="size-4" aria-hidden /> Sem conciliação</p>}<p className="line-clamp-2 text-[11px] text-muted-foreground">{row.explanation}</p>{row.issues.length > 0 ? <p className="text-[11px] text-warning">{row.issues.map((issue) => `${COLUMN_LABELS[issue.field] ?? issue.field}: ${issue.message}`).join(" ")}</p> : null}{selectedClient ? <details className="mt-1 text-[11px]"><summary className="cursor-pointer text-muted-foreground">{changes.length > 0 ? `${changes.length} alteração(ões) no cadastro` : "Nenhuma alteração no cadastro"}</summary>{changes.length > 0 ? <ul className="mt-1 grid gap-1 rounded border bg-muted/30 p-2">{changes.map((change) => <li key={change.field}><strong>{change.field}:</strong> <span className="text-muted-foreground">{change.before}</span><span aria-hidden> → </span>{change.after}</li>)}</ul> : null}</details> : null}</div>
-                    <div className="flex gap-1"><Button type="button" variant="outline" size="sm" onClick={() => { setClientSearch(""); setEditingRowId(row.id); }}><Pencil aria-hidden /> Conciliar</Button><Button type="button" variant="ghost" size="icon-sm" aria-label="Ignorar linha" onClick={() => setRow(row.id, { clientId: null, ignored: !resolution?.ignored })}>{resolution?.ignored ? <Upload aria-hidden /> : <X aria-hidden />}</Button></div>
-                  </article>;
-                })}
-              </div>
-              <label className="flex items-start gap-2 rounded-lg border bg-muted/25 p-3 text-xs"><input type="checkbox" className="mt-0.5 accent-primary" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>Revisei as conciliações e autorizo atualizar os honorários do escritório. A planilha não substitui uma ficha que mudou depois desta prévia.</span></label>
-              {unresolved > 0 ? <p className="text-xs text-destructive">Concilie ou ignore {unresolved} linha(s) antes de aplicar.</p> : null}
-              <DialogFooter><Button type="button" variant="outline" disabled={pending} onClick={() => { setPreview(null); setResolutions({}); }}>Escolher outro arquivo</Button><Button type="button" disabled={pending || unresolved > 0 || !confirmed} onClick={apply}>{pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Upload aria-hidden />} Aplicar importação</Button></DialogFooter>
+            <DialogFooter><Button type="submit" disabled={pending}>{pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <FileSearch aria-hidden />} Gerar prévia</Button></DialogFooter>
+          </form>
+        ) : summary ? (
+          <div className="grid gap-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="rounded-lg bg-success/10 p-3 text-center"><strong className="block font-mono text-xl text-success">{summary.createdProfiles}</strong><span className="text-xs">cadastros criados</span></div>
+              <div className="rounded-lg bg-primary/10 p-3 text-center"><strong className="block font-mono text-xl text-primary">{summary.updatedProfiles}</strong><span className="text-xs">atualizados</span></div>
+              <div className="rounded-lg bg-muted/40 p-3 text-center"><strong className="block font-mono text-xl">{summary.unchangedProfiles}</strong><span className="text-xs">sem mudança</span></div>
+              <div className="rounded-lg bg-muted/40 p-3 text-center"><strong className="block font-mono text-xl">{summary.cnpjsAdded}</strong><span className="text-xs">CNPJ(s) incluído(s)</span></div>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
+            <p className="text-sm text-muted-foreground">Os nomes conciliados foram memorizados para as próximas importações.</p>
+            <DialogFooter><Button type="button" onClick={() => setOpen(false)}>Concluir</Button></DialogFooter>
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            <div className="flex flex-wrap items-center gap-2 text-xs"><Badge variant="outline">{preview.fileName}</Badge><span>{preview.rows.length} linha(s)</span><span>{preview.rejected} rejeitada(s)</span><span>{preview.skipped} ignorada(s)</span>{preview.missingColumns.length > 0 ? <Badge variant="outline" className="border-warning/40 text-warning">Sem {preview.missingColumns.map((column) => COLUMN_LABELS[column] ?? column).join(", ")}</Badge> : null}</div>
+            {preview.rejectedRows.length > 0 ? <div className="rounded-lg border border-destructive/35 bg-destructive/5 p-3 text-xs"><strong className="text-destructive">Linhas rejeitadas</strong><ul className="mt-1 grid gap-1 text-muted-foreground">{preview.rejectedRows.map((row) => <li key={`${row.rowNumber}-${row.message}`}>Linha {row.rowNumber}: {row.message}</li>)}</ul></div> : null}
+            <div className="grid max-h-[48vh] gap-2 overflow-y-auto pr-1">
+              {preview.rows.map((row) => {
+                const resolution = resolutions[row.id];
+                const selectedName = resolution?.clientId ? clientNameById.get(resolution.clientId) : null;
+                const selectedClient = preview.clients.find((client) => client.id === resolution?.clientId);
+                const changes = diffs(row, selectedClient);
+                return <article key={row.id} className="grid gap-2 rounded-lg border bg-card/50 p-3 sm:grid-cols-[minmax(12rem,1fr)_minmax(14rem,1fr)_auto] sm:items-center">
+                  <div className="min-w-0"><div className="flex items-center gap-1.5"><span className="font-mono text-xs text-muted-foreground">#{row.rowNumber}</span><strong className="truncate">{row.sourceName}</strong></div><p className="truncate text-[11px] text-muted-foreground">{importSummary(row)}</p>{row.imported.cnpj ? <p className="text-[11px] text-muted-foreground">{formatCnpj(row.imported.cnpj)}</p> : null}{row.imported.observations ? <p className="line-clamp-2 text-[11px] text-muted-foreground">{row.imported.observations}</p> : null}</div>
+                  <div className="min-w-0">{resolution?.ignored ? <Badge variant="outline">Linha ignorada</Badge> : selectedName ? <p className="flex items-center gap-1.5 text-sm"><Check className="size-4 text-success" aria-hidden /><span className="truncate">{selectedName}</span>{selectedClient && !selectedClient.active ? <Badge variant="outline">inativa</Badge> : null}{row.status !== "matched" ? <Badge variant="outline">confirmada manualmente</Badge> : null}</p> : <p className="flex items-center gap-1.5 text-sm text-destructive"><AlertTriangle className="size-4" aria-hidden /> Sem conciliação</p>}<p className="line-clamp-2 text-[11px] text-muted-foreground">{row.explanation}</p>{row.issues.length > 0 ? <p className="text-[11px] text-warning">{row.issues.map((issue) => `${COLUMN_LABELS[issue.field] ?? issue.field}: ${issue.message}`).join(" ")}</p> : null}{selectedClient ? <details className="mt-1 text-[11px]"><summary className="cursor-pointer text-muted-foreground">{changes.length > 0 ? `${changes.length} alteração(ões) no cadastro` : "Nenhuma alteração no cadastro"}</summary>{changes.length > 0 ? <ul className="mt-1 grid gap-1 rounded border bg-muted/30 p-2">{changes.map((change) => <li key={change.field}><strong>{change.field}:</strong> <span className="text-muted-foreground">{change.before}</span><span aria-hidden> → </span>{change.after}</li>)}</ul> : null}</details> : null}</div>
+                  <div className="flex gap-1"><Button type="button" variant="outline" size="sm" onClick={() => { setClientSearch(""); setEditingRowId(row.id); }}><Pencil aria-hidden /> Conciliar</Button><Button type="button" variant="ghost" size="icon-sm" aria-label="Ignorar linha" onClick={() => setRow(row.id, { clientId: null, ignored: !resolution?.ignored })}>{resolution?.ignored ? <Upload aria-hidden /> : <X aria-hidden />}</Button></div>
+                </article>;
+              })}
+            </div>
+            <label className="flex items-start gap-2 rounded-lg border bg-muted/25 p-3 text-xs"><input type="checkbox" className="mt-0.5 accent-primary" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>Revisei as conciliações e autorizo atualizar os honorários do escritório. A planilha não substitui uma ficha que mudou depois desta prévia.</span></label>
+            {unresolved > 0 ? <p className="text-xs text-destructive">Concilie ou ignore {unresolved} linha(s) antes de aplicar.</p> : null}
+            <DialogFooter><Button type="button" variant="outline" disabled={pending} onClick={() => { setPreview(null); setResolutions({}); }}>Escolher outro arquivo</Button><Button type="button" disabled={pending || unresolved > 0 || !confirmed} onClick={apply}>{pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Upload aria-hidden />} Aplicar importação</Button></DialogFooter>
+          </div>
+        )}
+        {/* Aninhado: irmão do quadro da prévia, abrir a conciliação fazia a prévia fechar. */}
       <Dialog open={Boolean(editingRow)} onOpenChange={(next) => !next && setEditingRowId(null)}>
         <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Conciliar “{editingRow?.sourceName}”</DialogTitle><DialogDescription>Escolha uma empresa já cadastrada. A escolha fica memorizada como alias.</DialogDescription></DialogHeader>{editingRow ? <div className="grid gap-3">{editingRow.suggestions.length > 0 ? <div className="grid gap-1.5"><span className="text-xs font-medium">Sugestões</span>{editingRow.suggestions.map((suggestion) => <button key={suggestion.clientId} type="button" className="rounded-lg border p-2 text-left text-sm hover:bg-muted/50" onClick={() => { setRow(editingRow.id, { clientId: suggestion.clientId, ignored: false }); setEditingRowId(null); }}><span className="flex items-center justify-between gap-2"><strong>{suggestion.clientName}</strong><Badge variant="outline">{Math.round(suggestion.score * 100)}%</Badge></span><span className="text-[11px] text-muted-foreground">{suggestion.reasons[0]}</span></button>)}</div> : null}<div className="grid gap-1.5"><Label>Outra empresa cadastrada</Label><Input value={clientSearch} placeholder="Digite parte do nome ou CNPJ…" autoFocus onChange={(event) => setClientSearch(event.target.value)} /><div className="max-h-52 overflow-y-auto rounded-lg border p-1">{filteredClients.length > 0 ? filteredClients.map((client) => <button key={client.id} type="button" className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted/60" onClick={() => { setRow(editingRow.id, { clientId: client.id, ignored: false }); setEditingRowId(null); }}><span className="truncate">{client.name}</span>{client.cnpj ? <span className="font-mono text-[10px] text-muted-foreground">{formatCnpj(client.cnpj)}</span> : null}</button>) : <p className="p-3 text-sm text-muted-foreground">Nenhuma empresa encontrada.</p>}</div></div></div> : null}</DialogContent>
       </Dialog>
-    </>
+      </DialogContent>
+    </Dialog>
   );
 }
