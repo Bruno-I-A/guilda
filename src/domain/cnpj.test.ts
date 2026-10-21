@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatCnpj, normalizeCnpj, validateCnpj } from "./cnpj";
+import { formatCnpj, normalizeCnpj, validateCnpj, validateCpf, validateTaxDocument } from "./cnpj";
 
 describe("normalizeCnpj", () => {
   it("remove máscara e qualquer não-dígito", () => {
@@ -41,5 +41,19 @@ describe("formatCnpj", () => {
 
   it("devolve como veio quando não é CNPJ normalizado", () => {
     expect(formatCnpj("abc")).toBe("abc");
+  });
+});
+
+describe("validateCpf e o documento do tomador", () => {
+  it("aceita CPF válido e recusa dígito errado ou repetido", () => {
+    expect(validateCpf("65029267034")).toBe(true);
+    expect(validateCpf("65029267035")).toBe(false);
+    expect(validateCpf("11111111111")).toBe(false);
+  });
+
+  it("decide pelo tamanho e formata CPF", () => {
+    expect(validateTaxDocument("40503119091")).toBe(true);
+    expect(validateTaxDocument("11222333000181")).toBe(true);
+    expect(formatCnpj("40503119091")).toBe("405.031.190-91");
   });
 });

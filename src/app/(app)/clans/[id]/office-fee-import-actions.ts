@@ -487,6 +487,7 @@ export async function applyOfficeFeeImport(
           orgId: ctx.orgId,
           profileId: saved.id,
           clientId: saved.clientId,
+          takerId: saved.takerId,
           eventType: "imported",
           version: saved.version,
           snapshot: officeFeeProfileSnapshot(saved),

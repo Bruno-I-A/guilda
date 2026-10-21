@@ -2641,6 +2641,44 @@ export const fiscalControlEvents = pgTable(
 );
 
 /**
+ * Quem paga honorário e recebe nota sem ser empresa-cliente (filial de
+ * terceiro, produtor rural com CPF). Mora só no Honorários: não entra na
+ * lista de empresas, no Fiscal, nos Fechamentos nem no XML.
+ */
+export const officeFeeTakers = pgTable(
+  "office_fee_takers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 200 }).notNull(),
+    /** CPF (11) ou CNPJ (14), só dígitos. */
+    document: varchar("document", { length: 14 }).notNull(),
+    address: jsonb("address").$type<{
+      street: string | null;
+      number: string | null;
+      complement: string | null;
+      district: string | null;
+      city: string | null;
+      state: string | null;
+      zipCode: string | null;
+    }>(),
+    active: boolean("active").notNull().default(true),
+    createdBy: text("created_by").references(() => user.id),
+    updatedBy: text("updated_by").references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("office_fee_takers_org_id_uidx").on(t.orgId, t.id),
+    uniqueIndex("office_fee_takers_org_document_uidx").on(t.orgId, t.document),
+    check("office_fee_takers_document_check", sql`${t.document} ~ '^([0-9]{11}|[0-9]{14})$'`),
+    check("office_fee_takers_name_check", sql`length(btrim(${t.name})) > 0`),
+  ],
+);
+
+/**
  * Regra permanente de cobrança dos honorários do escritório. Diferente da
  * carteira, mudar o responsável nunca altera valor ou observações.
  */
@@ -2651,7 +2689,8 @@ export const officeFeeProfiles = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    clientId: uuid("client_id").notNull(),
+    clientId: uuid("client_id"),
+    takerId: uuid("taker_id"),
     chargesAdditionalInstallment: boolean("charges_additional_installment")
       .notNull()
       .default(false),
@@ -2670,6 +2709,13 @@ export const officeFeeProfiles = pgTable(
       foreignColumns: [clients.orgId, clients.id],
     }).onDelete("cascade"),
     uniqueIndex("office_fee_profiles_org_client_uidx").on(t.orgId, t.clientId),
+    uniqueIndex("office_fee_profiles_org_taker_uidx").on(t.orgId, t.takerId),
+    foreignKey({
+      name: "office_fee_profiles_org_taker_fk",
+      columns: [t.orgId, t.takerId],
+      foreignColumns: [officeFeeTakers.orgId, officeFeeTakers.id],
+    }).onDelete("cascade"),
+    check("office_fee_profiles_payer_check", sql`num_nonnulls(${t.clientId}, ${t.takerId}) = 1`),
     uniqueIndex("office_fee_profiles_org_id_uidx").on(t.orgId, t.id),
     check("office_fee_profiles_version_check", sql`${t.version} >= 1`),
     check("office_fee_profiles_monthly_fee_check", sql`${t.monthlyFee} >= 0`),
@@ -2685,7 +2731,8 @@ export const officeFeeProfileEvents = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     profileId: uuid("profile_id").notNull(),
-    clientId: uuid("client_id").notNull(),
+    clientId: uuid("client_id"),
+    takerId: uuid("taker_id"),
     eventType: officeFeeProfileEventType("event_type").notNull(),
     version: integer("version").notNull(),
     snapshot: jsonb("snapshot").$type<OfficeFeeProfileSnapshot>().notNull(),
@@ -2710,6 +2757,12 @@ export const officeFeeProfileEvents = pgTable(
       t.version,
     ),
     index("office_fee_profile_events_org_client_idx").on(t.orgId, t.clientId),
+    foreignKey({
+      name: "office_fee_profile_events_org_taker_fk",
+      columns: [t.orgId, t.takerId],
+      foreignColumns: [officeFeeTakers.orgId, officeFeeTakers.id],
+    }).onDelete("cascade"),
+    check("office_fee_profile_events_payer_check", sql`num_nonnulls(${t.clientId}, ${t.takerId}) = 1`),
     check("office_fee_profile_events_version_check", sql`${t.version} >= 1`),
     check(
       "office_fee_profile_events_snapshot_version_check",
@@ -2730,7 +2783,8 @@ export const officeFeeControlPeriods = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    clientId: uuid("client_id").notNull(),
+    clientId: uuid("client_id"),
+    takerId: uuid("taker_id"),
     periodYear: smallint("period_year").notNull(),
     periodMonth: smallint("period_month").notNull(),
     clientNameSnapshot: varchar("client_name_snapshot", { length: 200 }).notNull(),
@@ -2774,7 +2828,19 @@ export const officeFeeControlPeriods = pgTable(
       t.periodYear,
       t.periodMonth,
     ),
+    uniqueIndex("office_fee_control_periods_org_taker_period_uidx").on(
+      t.orgId,
+      t.takerId,
+      t.periodYear,
+      t.periodMonth,
+    ),
     uniqueIndex("office_fee_control_periods_org_id_uidx").on(t.orgId, t.id),
+    foreignKey({
+      name: "office_fee_control_periods_org_taker_fk",
+      columns: [t.orgId, t.takerId],
+      foreignColumns: [officeFeeTakers.orgId, officeFeeTakers.id],
+    }).onDelete("cascade"),
+    check("office_fee_control_periods_payer_check", sql`num_nonnulls(${t.clientId}, ${t.takerId}) = 1`),
     index("office_fee_control_periods_org_period_status_idx").on(
       t.orgId,
       t.periodYear,
@@ -2810,7 +2876,8 @@ export const officeFeeControlEvents = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     controlPeriodId: uuid("control_period_id").notNull(),
-    clientId: uuid("client_id").notNull(),
+    clientId: uuid("client_id"),
+    takerId: uuid("taker_id"),
     eventType: officeFeeControlEventType("event_type").notNull(),
     stage: officeFeeControlStage("stage"),
     previousValue: jsonb("previous_value"),
@@ -2837,6 +2904,12 @@ export const officeFeeControlEvents = pgTable(
       t.controlPeriodId,
       t.createdAt,
     ),
+    foreignKey({
+      name: "office_fee_control_events_org_taker_fk",
+      columns: [t.orgId, t.takerId],
+      foreignColumns: [officeFeeTakers.orgId, officeFeeTakers.id],
+    }).onDelete("cascade"),
+    check("office_fee_control_events_payer_check", sql`num_nonnulls(${t.clientId}, ${t.takerId}) = 1`),
   ],
 );
 
@@ -3271,12 +3344,14 @@ export const nfseInvoices = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    clientId: uuid("client_id").notNull(),
+    clientId: uuid("client_id"),
+    takerId: uuid("taker_id"),
     controlPeriodId: uuid("control_period_id").notNull(),
     kind: nfseInvoiceKind("kind").notNull(),
     periodYear: smallint("period_year").notNull(),
     periodMonth: smallint("period_month").notNull(),
     amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
+    /** CNPJ (14) ou, para tomador avulso pessoa física, CPF (11). */
     takerCnpj: varchar("taker_cnpj", { length: 14 }).notNull(),
     takerName: varchar("taker_name", { length: 300 }).notNull(),
     // Endereço do tomador congelado no pedido (o Sistema Nacional exige com
@@ -3332,6 +3407,18 @@ export const nfseInvoices = pgTable(
     uniqueIndex("nfse_invoices_active_additional_uidx")
       .on(t.orgId, t.clientId, t.periodYear)
       .where(sql`kind = 'additional_installment' AND status <> 'cancelled'`),
+    uniqueIndex("nfse_invoices_taker_active_monthly_uidx")
+      .on(t.orgId, t.takerId, t.periodYear, t.periodMonth)
+      .where(sql`kind = 'monthly' AND status <> 'cancelled'`),
+    uniqueIndex("nfse_invoices_taker_active_additional_uidx")
+      .on(t.orgId, t.takerId, t.periodYear)
+      .where(sql`kind = 'additional_installment' AND status <> 'cancelled'`),
+    foreignKey({
+      name: "nfse_invoices_org_taker_fk",
+      columns: [t.orgId, t.takerId],
+      foreignColumns: [officeFeeTakers.orgId, officeFeeTakers.id],
+    }).onDelete("cascade"),
+    check("nfse_invoices_payer_check", sql`num_nonnulls(${t.clientId}, ${t.takerId}) = 1`),
     index("nfse_invoices_org_period_idx").on(t.orgId, t.periodYear, t.periodMonth),
     index("nfse_invoices_pending_idx")
       .on(t.orgId, t.nextAttemptAt)

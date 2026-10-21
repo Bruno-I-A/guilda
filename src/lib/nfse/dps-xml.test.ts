@@ -31,6 +31,12 @@ describe("XML da DPS", () => {
     expect(await nfseXsdErrors(xml, "DPS_v1.01.xsd")).toEqual([]);
   });
 
+  test("tomador pessoa física (produtor rural) vai com CPF e passa no XSD", async () => {
+    const { xml } = buildDpsXml(input({ taker: { cnpj: "40503119091", name: "Pedro Rodighiero" } }));
+    expect(xml).toContain("<toma><CPF>40503119091</CPF><xNome>Pedro Rodighiero</xNome></toma>");
+    expect(await nfseXsdErrors(xml, "DPS_v1.01.xsd")).toEqual([]);
+  });
+
   test("é válido sem total de tributos e sem campos opcionais", async () => {
     const minimal: NfseTemplate = {
       ...TEST_TEMPLATE,

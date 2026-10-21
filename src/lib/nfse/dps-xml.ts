@@ -52,7 +52,9 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
       `${element("xLgr", address.street)}${element("nro", address.number)}` +
       `${element("xCpl", address.complement)}${element("xBairro", address.district)}</end>`
     : "";
-  const toma = `<toma>${element("CNPJ", input.taker.cnpj)}${element("xNome", normalizeName(input.taker.name))}${end}</toma>`;
+  // Tomador avulso pessoa física (produtor rural) vai com CPF.
+  const document = input.taker.cnpj.length === 11 ? element("CPF", input.taker.cnpj) : element("CNPJ", input.taker.cnpj);
+  const toma = `<toma>${document}${element("xNome", normalizeName(input.taker.name))}${end}</toma>`;
   const cServ =
     `<cServ>${element("cTribNac", t.service.nationalTaxCode)}` +
     `${element("cTribMun", t.service.municipalTaxCode)}` +

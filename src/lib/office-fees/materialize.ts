@@ -74,10 +74,33 @@ export async function materializeOfficeFeeControl(
     )
     .orderBy(asc(schema.clients.id))
     .for("update", { of: schema.clients });
+  // Tomador avulso não tem carteira: entra sem responsável.
+  const takers = await tx
+    .select({
+      takerId: schema.officeFeeTakers.id,
+      clientName: schema.officeFeeTakers.name,
+      clientCnpj: schema.officeFeeTakers.document,
+      profile: schema.officeFeeProfiles,
+    })
+    .from(schema.officeFeeProfiles)
+    .innerJoin(
+      schema.officeFeeTakers,
+      and(
+        eq(schema.officeFeeTakers.orgId, schema.officeFeeProfiles.orgId),
+        eq(schema.officeFeeTakers.id, schema.officeFeeProfiles.takerId),
+      ),
+    )
+    .where(and(eq(schema.officeFeeProfiles.orgId, input.orgId), eq(schema.officeFeeTakers.active, true)))
+    .orderBy(asc(schema.officeFeeTakers.id))
+    .for("update", { of: schema.officeFeeTakers });
+  const payers = [
+    ...rows.map((row) => ({ ...row, takerId: null })),
+    ...takers.map((row) => ({ ...row, clientId: null, responsibleUserId: null })),
+  ];
 
   let created = 0;
   let existing = 0;
-  for (const row of rows) {
+  for (const row of payers) {
     const steps = initialOfficeFeeSteps(row.profile.chargesAdditionalInstallment);
     const status = deriveOfficeFeeStatus(steps);
     const [inserted] = await tx
@@ -85,6 +108,7 @@ export async function materializeOfficeFeeControl(
       .values({
         orgId: input.orgId,
         clientId: row.clientId,
+        takerId: row.takerId,
         periodYear: input.periodYear,
         periodMonth: input.periodMonth,
         clientNameSnapshot: row.clientName,
@@ -102,14 +126,9 @@ export async function materializeOfficeFeeControl(
         createdBy: input.actorId,
         updatedBy: input.actorId,
       })
-      .onConflictDoNothing({
-        target: [
-          schema.officeFeeControlPeriods.orgId,
-          schema.officeFeeControlPeriods.clientId,
-          schema.officeFeeControlPeriods.periodYear,
-          schema.officeFeeControlPeriods.periodMonth,
-        ],
-      })
+      // Cada um tem seu índice único (empresa ou avulso): sem alvo, o
+      // conflito de qualquer um dos dois deixa a linha que já existe.
+      .onConflictDoNothing()
       .returning({ id: schema.officeFeeControlPeriods.id });
     if (!inserted) {
       existing += 1;
@@ -120,6 +139,7 @@ export async function materializeOfficeFeeControl(
       orgId: input.orgId,
       controlPeriodId: inserted.id,
       clientId: row.clientId,
+      takerId: row.takerId,
       eventType: "created",
       newValue: { periodYear: input.periodYear, periodMonth: input.periodMonth },
       actorId: input.actorId,

@@ -11,6 +11,7 @@ import {
   danfseFileName,
   isFutureNfsePeriod,
   nfseBatchItemKey,
+  nfsePayerKey,
   normalizeDpsSeries,
   nfseReferencePeriod,
   renderNfseDescription,
@@ -89,18 +90,21 @@ export async function loadNfseEmissionPreview(
     .select({
       id: control.id,
       clientId: control.clientId,
+      takerId: control.takerId,
       clientName: control.clientNameSnapshot,
       cnpj: control.clientCnpjSnapshot,
       snapshot: control.profileSnapshot,
-      address: schema.clients.address,
+      clientAddress: schema.clients.address,
+      takerAddress: schema.officeFeeTakers.address,
     })
     .from(control)
-    .innerJoin(schema.clients, and(eq(schema.clients.orgId, control.orgId), eq(schema.clients.id, control.clientId)))
+    .leftJoin(schema.clients, and(eq(schema.clients.orgId, control.orgId), eq(schema.clients.id, control.clientId)))
+    .leftJoin(schema.officeFeeTakers, and(eq(schema.officeFeeTakers.orgId, control.orgId), eq(schema.officeFeeTakers.id, control.takerId)))
     .where(and(eq(control.orgId, input.orgId), eq(control.periodYear, input.year), eq(control.periodMonth, input.month)))
     .orderBy(asc(control.clientNameSnapshot));
   const invoices = schema.nfseInvoices;
   const active = await tx
-    .select({ clientId: invoices.clientId, kind: invoices.kind, periodMonth: invoices.periodMonth })
+    .select({ clientId: invoices.clientId, takerId: invoices.takerId, kind: invoices.kind, periodMonth: invoices.periodMonth })
     .from(invoices)
     .where(and(eq(invoices.orgId, input.orgId), eq(invoices.periodYear, input.year), ne(invoices.status, "cancelled")));
   const [withoutFee] = await tx
@@ -116,17 +120,18 @@ export async function loadNfseEmissionPreview(
     candidates: rows.map((row) => ({
       controlPeriodId: row.id,
       clientId: row.clientId,
+      takerId: row.takerId,
       clientName: row.clientName,
       cnpj: row.cnpj,
       monthlyFee: row.snapshot.monthlyFee,
       chargesAdditionalInstallment: row.snapshot.chargesAdditionalInstallment,
-      address: buildNfseTakerAddress(row.address as NfseClientAddress | null, ibgeCityCode),
+      address: buildNfseTakerAddress((row.clientAddress ?? row.takerAddress) as NfseClientAddress | null, ibgeCityCode),
     })),
-    activeMonthlyClientIds: new Set(
-      active.filter((row) => row.kind === "monthly" && row.periodMonth === input.month).map((row) => row.clientId),
+    activeMonthlyPayers: new Set(
+      active.filter((row) => row.kind === "monthly" && row.periodMonth === input.month).map(nfsePayerKey),
     ),
-    activeAdditionalClientIds: new Set(
-      active.filter((row) => row.kind === "additional_installment").map((row) => row.clientId),
+    activeAdditionalPayers: new Set(
+      active.filter((row) => row.kind === "additional_installment").map(nfsePayerKey),
     ),
     includeAdditional: input.includeAdditional,
     requireAddress: Boolean(template?.ibsCbs),
@@ -187,6 +192,7 @@ export async function enqueueNfseBatch(
           return {
             orgId: input.orgId,
             clientId: item.clientId,
+            takerId: item.takerId,
             controlPeriodId: item.controlPeriodId,
             kind: item.kind,
             periodYear: input.year,
@@ -256,7 +262,7 @@ export async function requeueNfseInvoice(
 ): Promise<NfseCommandResult> {
   const t = schema.nfseInvoices;
   const [invoice] = await tx
-    .select({ id: t.id, status: t.status, clientId: t.clientId })
+    .select({ id: t.id, status: t.status, clientId: t.clientId, takerId: t.takerId })
     .from(t)
     .where(and(eq(t.orgId, input.orgId), eq(t.id, input.invoiceId)))
     .for("update");
@@ -264,14 +270,19 @@ export async function requeueNfseInvoice(
   if (invoice.status !== "failed") return fail("Só uma nota com erro volta para a fila.");
   // Relê o endereço do cadastro: a recusa mais comum (E0234) se resolve
   // completando o endereço da empresa e tentando de novo.
-  const [client] = await tx
-    .select({ address: schema.clients.address })
-    .from(schema.clients)
-    .where(and(eq(schema.clients.orgId, input.orgId), eq(schema.clients.id, invoice.clientId)));
-  const takerAddress = buildNfseTakerAddress((client?.address ?? null) as NfseClientAddress | null, ibgeCityCode);
+  const [payer] = invoice.clientId
+    ? await tx
+        .select({ address: schema.clients.address })
+        .from(schema.clients)
+        .where(and(eq(schema.clients.orgId, input.orgId), eq(schema.clients.id, invoice.clientId)))
+    : await tx
+        .select({ address: schema.officeFeeTakers.address })
+        .from(schema.officeFeeTakers)
+        .where(and(eq(schema.officeFeeTakers.orgId, input.orgId), eq(schema.officeFeeTakers.id, invoice.takerId!)));
+  const takerAddress = buildNfseTakerAddress((payer?.address ?? null) as NfseClientAddress | null, ibgeCityCode);
   const template = (await loadNfseSettings(tx, input.orgId))?.template;
   if (template?.ibsCbs && !takerAddress) {
-    return fail("O endereço da empresa está incompleto no cadastro (rua, bairro, CEP e cidade). Complete e tente de novo.");
+    return fail("O endereço do tomador está incompleto no cadastro (rua, bairro, CEP e cidade). Complete e tente de novo.");
   }
   await tx
     .update(t)

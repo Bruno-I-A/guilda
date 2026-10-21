@@ -47,12 +47,16 @@ export interface OfficeFeeProfileView {
   history: readonly OfficeFeeProfileHistoryView[];
 }
 
-const FIELD_LABELS: Record<string, string> = {
+export const OFFICE_FEE_FIELD_LABELS: Record<string, string> = {
   // Campo removido em 2026-10-21; continua aqui para o histórico antigo.
   billingMethod: "Cobrança",
   chargesAdditionalInstallment: "Parcela adicional",
   monthlyFee: "Honorário mensal",
   permanentNotes: "Observações",
+  takerName: "Nome",
+  takerDocument: "CPF/CNPJ",
+  takerAddress: "Endereço",
+  takerActive: "Ativo",
 };
 
 function eventLabel(event: OfficeFeeProfileHistoryView["eventType"]): string {
@@ -142,15 +146,15 @@ export function OfficeFeeProfileDialog({
                 <SelectContent><SelectItem value="yes">Sim</SelectItem><SelectItem value="no">Não</SelectItem></SelectContent>
               </Select>
             </div>
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor={`${clientId}-monthly-fee`}>Honorário mensal</Label>
-            <CurrencyInput
-              id={`${clientId}-monthly-fee`}
-              value={monthlyFee}
-              disabled={!canManage}
-              onValueChange={setMonthlyFee}
-            />
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${clientId}-monthly-fee`}>Honorário mensal</Label>
+              <CurrencyInput
+                id={`${clientId}-monthly-fee`}
+                value={monthlyFee}
+                disabled={!canManage}
+                onValueChange={setMonthlyFee}
+              />
+            </div>
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor={`${clientId}-office-fee-notes`}>Observações</Label>
@@ -173,7 +177,7 @@ export function OfficeFeeProfileDialog({
                     <Badge variant="outline">v{event.version}</Badge>
                     <span>{eventLabel(event.eventType)}</span>
                     <span className="text-muted-foreground">por {event.actorName ?? "migração"} · {event.createdAt}</span>
-                    {event.changedFields.length > 0 ? <span className="basis-full text-muted-foreground">{event.changedFields.map((field) => FIELD_LABELS[field] ?? field).join(", ")}</span> : null}
+                    {event.changedFields.length > 0 ? <span className="basis-full text-muted-foreground">{event.changedFields.map((field) => OFFICE_FEE_FIELD_LABELS[field] ?? field).join(", ")}</span> : null}
                   </li>
                 ))}
               </ul>
