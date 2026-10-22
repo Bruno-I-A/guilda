@@ -90,10 +90,22 @@ export function emissionMonthRange(year: number, month: number): { start: Date; 
   return { start: brasiliaInstant(year, month, 1), end: brasiliaInstant(year, month + 1, 1) };
 }
 
-/** "emitidas de 01/09 a 30/09". */
-export function emissionRangeLabel(year: number, month: number): string {
+/** O mês escolhido é o de hoje em Brasília: as notas ainda estão chegando. */
+export function isEmissionMonthInProgress(year: number, month: number, now: Date): boolean {
+  const today = brasiliaDate(now);
+  return today.year === year && today.month === month;
+}
+
+/**
+ * "emitidas de 01/09 a 30/09". Com `now` no mês em andamento, diz até onde
+ * vai de verdade: "emitidas de 01/10 até hoje (22/10)".
+ */
+export function emissionRangeLabel(year: number, month: number, now?: Date): string {
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const mm = String(month).padStart(2, "0");
+  if (now && isEmissionMonthInProgress(year, month, now)) {
+    return `emitidas de 01/${mm} até hoje (${String(brasiliaDate(now).day).padStart(2, "0")}/${mm})`;
+  }
   return `emitidas de 01/${mm} a ${lastDay}/${mm}`;
 }
 

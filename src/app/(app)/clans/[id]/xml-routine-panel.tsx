@@ -2,6 +2,7 @@
 
 import { ArrowRight, Download } from "lucide-react";
 import Link from "next/link";
+import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
 import { emissionRangeLabel } from "@/domain/nfse-xml";
@@ -27,6 +28,7 @@ export function XmlRoutinePanel({
   totalNotes: number;
 }) {
   useXmlAutoRefresh(routine.runRequested || xmlRoutineIsRunning(routine));
+  const now = useMemo(() => new Date(), []);
 
   return (
     <section className="grid min-w-0 gap-2 border-y py-3">
@@ -41,7 +43,7 @@ export function XmlRoutinePanel({
         <div className="flex flex-wrap items-center gap-1">
           <Button asChild size="sm" variant="outline" className="h-auto min-h-9 max-w-full whitespace-normal text-left">
             <a href={`/api/nfse/xml?clanId=${clanId}&year=${year}&month=${month}`}>
-              <Download aria-hidden /> Baixar XML — {emissionRangeLabel(year, month)} ({totalNotes})
+              <Download aria-hidden /> Baixar XML — {emissionRangeLabel(year, month, now)} ({totalNotes})
             </a>
           </Button>
           <Button asChild size="sm" variant="ghost" className="touch-target">

@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCnpj } from "@/domain/cnpj";
-import { certificateState, emissionRangeLabel, previousEmissionMonth, summarizeCertificates } from "@/domain/nfse-xml";
+import { certificateState, emissionRangeLabel, isEmissionMonthInProgress, previousEmissionMonth, summarizeCertificates } from "@/domain/nfse-xml";
 import type { ClientCertificateView, XmlCompanyView, XmlRoutineView } from "@/lib/nfse/xml-requests";
 import { cn } from "@/lib/utils";
 
@@ -84,7 +84,7 @@ function SyncStatus({ company, now }: { company: XmlCompanyView; now: Date }) {
   }
   return (
     <span className="text-muted-foreground">
-      {read} · {company.stored.total} nota(s) guardada(s), a última emitida em {dateLabel(company.stored.lastIssuedAt!)}
+      {read} · {company.stored.total} nota(s) guardada(s) no total, somando todos os meses · a última emitida em {dateLabel(company.stored.lastIssuedAt!)}
     </span>
   );
 }
@@ -93,7 +93,7 @@ function SyncStatus({ company, now }: { company: XmlCompanyView; now: Date }) {
  * O período dos XML por escrito e escolhível: abre no mês anterior (o que se
  * apura) e a pessoa confere as datas ou troca de mês aqui ou nas setas.
  */
-function PeriodPicker({ clanId, year, month }: { clanId: string; year: number; month: number }) {
+function PeriodPicker({ clanId, year, month, now }: { clanId: string; year: number; month: number; now: Date }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const value = `${year}-${String(month).padStart(2, "0")}`;
@@ -117,9 +117,15 @@ function PeriodPicker({ clanId, year, month }: { clanId: string; year: number; m
           startTransition(() => router.push(periodHref(clanId, nextYear, nextMonth)));
         }}
       />
-      <span className="font-mono text-xs tabular-nums">
-        emitidas de 01/{mm}/{year} a {lastDay}/{mm}/{year}
-      </span>
+      {isEmissionMonthInProgress(year, month, now) ? (
+        <span className="font-mono text-xs tabular-nums text-warning">
+          emitidas de 01/{mm}/{year} até hoje · mês em andamento
+        </span>
+      ) : (
+        <span className="font-mono text-xs tabular-nums">
+          emitidas de 01/{mm}/{year} a {lastDay}/{mm}/{year}
+        </span>
+      )}
       {isDefault ? (
         <span className="text-xs text-muted-foreground">(mês anterior, o padrão)</span>
       ) : (
@@ -261,7 +267,7 @@ export function XmlNotesBoard({
     {
       key: "download",
       label: `Baixar ${monthName}`,
-      detail: `${totalNotes} nota(s) guardada(s)`,
+      detail: isEmissionMonthInProgress(year, month, now) ? `${totalNotes} nota(s) até hoje` : `${totalNotes} nota(s) do mês`,
       done: false,
     },
   ] as const;
@@ -298,7 +304,7 @@ export function XmlNotesBoard({
             <Link href={periodHref(clanId, next.year, next.month)} aria-label="Próximo mês"><ChevronRight aria-hidden /></Link>
           </Button>
         </div>
-        <PeriodPicker clanId={clanId} year={year} month={month} />
+        <PeriodPicker clanId={clanId} year={year} month={month} now={now} />
       </div>
 
       <p className="max-w-prose text-sm text-muted-foreground">
@@ -354,7 +360,8 @@ export function XmlNotesBoard({
             </p>
           ) : (
             <p>
-              <strong>Pronto para baixar:</strong> o arquivo traz uma pasta por empresa, com as notas {emissionRangeLabel(year, month)}.
+              <strong>Pronto para baixar:</strong> o arquivo traz uma pasta por empresa, com as notas {emissionRangeLabel(year, month, now)}.
+              {isEmissionMonthInProgress(year, month, now) ? " O mês ainda não acabou: as notas emitidas depois de hoje entram nas próximas leituras." : null}
             </p>
           )}
           <p className="text-muted-foreground">
@@ -368,7 +375,7 @@ export function XmlNotesBoard({
             <XmlRoutineSettingsDialog clanId={clanId} routine={routine} />
             <Button asChild variant={current === "download" ? "default" : "outline"} className="h-auto min-h-9 max-w-full whitespace-normal text-left">
               <a href={xmlHref(clanId, year, month)}>
-                <Download aria-hidden /> Baixar XML — {emissionRangeLabel(year, month)} ({totalNotes})
+                <Download aria-hidden /> Baixar XML — {emissionRangeLabel(year, month, now)} ({totalNotes})
               </a>
             </Button>
           </div>
