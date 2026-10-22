@@ -37,6 +37,7 @@ import { CompanyFlowTab } from "./company-flow-tab";
 import { FiscalInstallmentTab } from "./fiscal-installment-tab";
 import { OfficeFeeTab } from "./office-fee-tab";
 import { XmlNotesTab } from "./xml-notes-tab";
+import { ClientNfseTab } from "./client-nfse-tab";
 
 export const metadata: Metadata = { title: "Clã" };
 
@@ -92,6 +93,7 @@ export default async function ClanPage({
       distributionYear?: string;
       fiscalView?: string;
       feeView?: string;
+      nfseView?: string;
       fiscalYear?: string;
       fiscalMonth?: string;
       meiYear?: string;
@@ -106,6 +108,7 @@ export default async function ClanPage({
     distributionYear,
     fiscalView,
     feeView,
+    nfseView,
     fiscalYear,
     fiscalMonth,
     meiYear,
@@ -378,6 +381,17 @@ export default async function ClanPage({
             isAdmin={isAdminRole(role)}
             memberships={memberships}
             requestedView={feeView}
+            requestedYear={fiscalYear}
+            requestedMonth={fiscalMonth}
+          />
+        ) : null}
+
+        {activeTab === "client-notes" ? (
+          <ClientNfseTab
+            orgId={session.orgId}
+            clanId={clan.id}
+            canManage={canManageFiscalPortfolio(clanFacts)}
+            requestedView={nfseView}
             requestedYear={fiscalYear}
             requestedMonth={fiscalMonth}
           />
