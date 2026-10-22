@@ -16,14 +16,17 @@ import {
   requeueClientNfseInvoice,
   updateClientNfseItem,
 } from "@/lib/client-nfse/month";
+import { loadIssuerSuggestion } from "@/lib/client-nfse/loaders";
 import {
   deleteClientNfseIssuer,
   deleteClientNfseModel,
   deleteClientNfseTaker,
+  importClientNfseSuggestions,
   saveClientNfseIssuer,
   saveClientNfseModel,
   saveClientNfseTaker,
 } from "@/lib/client-nfse/registry";
+import type { IssuerSuggestion } from "@/lib/client-nfse/suggest";
 import { lookupCnpj, type CnpjAddress } from "@/lib/cnpj-lookup";
 import { nfseIssuerTemplateRulesSchema } from "@/lib/nfse/template";
 import { nfseToday } from "@/lib/nfse/time";
@@ -277,6 +280,48 @@ export async function retryInvoice(input: z.input<ReturnType<typeof idSchema>>):
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Pedido inválido.");
   const result = await asFiscalOperator(parsed.data.clanId, (tx, ctx) =>
     requeueClientNfseInvoice(tx, { orgId: ctx.orgId, actorId: ctx.userId, invoiceId: parsed.data.id }),
+  );
+  if (result.ok) revalidateClan();
+  return result;
+}
+
+const suggestSchema = z.object({ clanId: clan, clientId: z.uuid("Empresa inválida."), issuerId: z.uuid().nullable() });
+
+/** Modelo fiscal, série livre e notas padrão sugeridos pelas notas que a empresa já emitiu. */
+export async function suggestIssuerSetup(input: z.input<typeof suggestSchema>): Promise<ActionResult<IssuerSuggestion>> {
+  const parsed = suggestSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Pedido inválido.");
+  const data = parsed.data;
+  return asFiscalOperator(data.clanId, async (tx, ctx) => ({
+    ok: true,
+    data: await loadIssuerSuggestion(tx, { orgId: ctx.orgId, clientId: data.clientId, issuerId: data.issuerId, now: new Date() }),
+  }));
+}
+
+const importSchema = z.object({
+  clanId: clan,
+  issuerId: z.uuid("Empresa inválida."),
+  items: z
+    .array(
+      z.object({
+        takerDocument: z.string().refine(validateTaxDocument, "CPF ou CNPJ inválido."),
+        takerName: z.string().trim().min(1).max(200),
+        address: takerSchema.shape.address,
+        amount: money,
+        description,
+        reference: z.enum(CLIENT_NFSE_REFERENCES),
+      }),
+    )
+    .min(1, "Marque ao menos uma nota.")
+    .max(1000),
+});
+
+export async function importSuggestions(input: z.input<typeof importSchema>): Promise<ActionResult<{ takers: number; models: number }>> {
+  const parsed = importSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Sugestões inválidas.");
+  const data = parsed.data;
+  const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
+    importClientNfseSuggestions(tx, { orgId: ctx.orgId, actorId: ctx.userId, issuerId: data.issuerId, items: data.items }),
   );
   if (result.ok) revalidateClan();
   return result;

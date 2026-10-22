@@ -321,6 +321,13 @@ que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
 - O PDF sai no app, do XML guardado na emissão (o certificado do escritório
   não busca nota de cliente). Sem retenções, sem e-mail ao tomador e sem MEI
   na v1.
+- **Cadastro pelas notas já emitidas (pedido do Bruno)**: ao adicionar a
+  empresa, a Guilda lê o XML que a rotina da aba XML já guardou
+  (`from-xml.ts`, `suggest.ts`) e preenche o modelo fiscal pela nota mais
+  recente, escolhe uma série de DPS que nenhuma nota dela usa (a partir de
+  900, olhando o histórico) e sugere as notas do último mês como notas padrão
+  — marcadas as que também saíram no mês anterior, com o "MM/AAAA" trocado
+  por `{mes}`. Nada é gravado sem o Fiscal confirmar.
 
 ## Estrutura por clã (decisões de 2026-08-18)
 

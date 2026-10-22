@@ -233,3 +233,70 @@ export async function deleteClientNfseModel(tx: OrgTx, input: Actor & { modelId:
     .returning({ id: t.id });
   return deleted ? { ok: true } : err("Nota padrão não encontrada.");
 }
+
+export interface SuggestedModelInput {
+  takerDocument: string;
+  takerName: string;
+  address: AddressInput | null;
+  amount: string;
+  description: string;
+  reference: ClientNfseReference;
+}
+
+/**
+ * Grava as notas padrão que o Fiscal marcou entre as sugestões tiradas das
+ * notas já emitidas. O tomador é reaproveitado pelo CPF/CNPJ; o que faltar,
+ * nasce com nome e endereço da nota.
+ */
+export async function importClientNfseSuggestions(
+  tx: OrgTx,
+  input: Actor & { issuerId: string; items: readonly SuggestedModelInput[] },
+): Promise<ActionResult<{ takers: number; models: number }>> {
+  const issuers = schema.clientNfseIssuers;
+  const [issuer] = await tx
+    .select({ id: issuers.id })
+    .from(issuers)
+    .where(and(eq(issuers.orgId, input.orgId), eq(issuers.id, input.issuerId)))
+    .for("update");
+  if (!issuer) return err("Empresa emissora não encontrada.");
+  const t = schema.clientNfseTakers;
+  const current = await tx
+    .select({ id: t.id, document: t.document })
+    .from(t)
+    .where(and(eq(t.orgId, input.orgId), eq(t.issuerId, issuer.id)));
+  const takerByDocument = new Map(current.map((row) => [row.document, row.id]));
+  let takers = 0;
+  for (const item of input.items) {
+    if (!validateTaxDocument(item.takerDocument)) return err(`CPF/CNPJ inválido: ${item.takerName}.`);
+    if (takerByDocument.has(item.takerDocument)) continue;
+    const [created] = await tx
+      .insert(t)
+      .values({
+        orgId: input.orgId,
+        issuerId: issuer.id,
+        name: item.takerName.replace(/\s+/g, " ").trim(),
+        document: item.takerDocument,
+        address: cleanAddress(item.address),
+        createdBy: input.actorId,
+        updatedBy: input.actorId,
+      })
+      .returning({ id: t.id });
+    takerByDocument.set(item.takerDocument, created.id);
+    takers += 1;
+  }
+  if (input.items.length > 0) {
+    await tx.insert(schema.clientNfseModels).values(
+      input.items.map((item) => ({
+        orgId: input.orgId,
+        issuerId: issuer.id,
+        takerId: takerByDocument.get(item.takerDocument)!,
+        amount: item.amount,
+        description: item.description.trim(),
+        reference: item.reference,
+        createdBy: input.actorId,
+        updatedBy: input.actorId,
+      })),
+    );
+  }
+  return { ok: true, data: { takers, models: input.items.length } };
+}

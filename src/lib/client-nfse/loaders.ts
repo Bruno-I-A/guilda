@@ -2,7 +2,7 @@ import "server-only";
 
 import { gunzipSync } from "node:zlib";
 
-import { and, asc, desc, eq, inArray, isNotNull, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -11,8 +11,10 @@ import { danfseFileName, type NfseClientAddress, type NfseInvoiceStatus } from "
 import { ibgeCityCode } from "@/lib/nfse/municipios";
 import { parseNfseIssuerTemplate, type NfseIssuerTemplate } from "@/lib/nfse/template";
 
+import { readIssuedNoteFacts, type IssuedNoteFacts } from "./from-xml";
 import { loadIssuerReadiness } from "./month";
 import type { ServiceOverride } from "./registry";
+import { freeDpsSeries, suggestFromIssuedNotes, type IssuerSuggestion } from "./suggest";
 
 /** Leituras da aba Notas dos clientes (Cadastro e Mês a mês). */
 
@@ -282,4 +284,45 @@ export async function loadClientDanfseXml(
     used.add(fileName);
     return { fileName, xml: gz ? gunzipSync(Buffer.from(gz)).toString("utf8") : null };
   });
+}
+
+/** Janela das notas lidas para sugerir o cadastro: o último mês e o anterior, com folga. */
+const SUGGESTION_WINDOW_DAYS = 75;
+
+/**
+ * Sugestão do cadastro a partir das notas que a rotina da aba XML já guardou
+ * desta empresa. As recentes dão o modelo fiscal e as notas padrão; uma nota
+ * por mês do histórico inteiro diz que séries de DPS ela já usou.
+ */
+export async function loadIssuerSuggestion(
+  tx: OrgTx,
+  input: { orgId: string; clientId: string; issuerId: string | null; now: Date },
+): Promise<IssuerSuggestion> {
+  const n = schema.nfseIssuedNotes;
+  const since = new Date(input.now.getTime() - SUGGESTION_WINDOW_DAYS * 86_400_000);
+  const recent = await tx
+    .select({ xmlGz: n.xmlGz })
+    .from(n)
+    .where(and(eq(n.orgId, input.orgId), eq(n.clientId, input.clientId), isNull(n.cancelledAt), gte(n.issuedAt, since)))
+    .orderBy(desc(n.issuedAt))
+    .limit(600);
+  const monthly = await tx.execute<{ xml_gz: Uint8Array }>(sql`
+    SELECT DISTINCT ON (date_trunc('month', issued_at)) xml_gz
+      FROM nfse_issued_notes
+     WHERE org_id = ${input.orgId} AND client_id = ${input.clientId} AND issued_at < ${since.toISOString()}::timestamptz
+     ORDER BY date_trunc('month', issued_at), issued_at DESC
+  `);
+  const read = (gz: Uint8Array) => readIssuedNoteFacts(gunzipSync(Buffer.from(gz)).toString("utf8"));
+  const facts = recent.map((row) => read(row.xmlGz)).filter((fact): fact is IssuedNoteFacts => Boolean(fact));
+  const olderSeries = monthly.rows.map((row) => read(row.xml_gz)?.series ?? null);
+  let existing: { takerDocument: string; description: string }[] = [];
+  if (input.issuerId) {
+    existing = await tx
+      .select({ takerDocument: schema.clientNfseTakers.document, description: schema.clientNfseModels.description })
+      .from(schema.clientNfseModels)
+      .innerJoin(schema.clientNfseTakers, and(eq(schema.clientNfseTakers.orgId, schema.clientNfseModels.orgId), eq(schema.clientNfseTakers.id, schema.clientNfseModels.takerId)))
+      .where(and(eq(schema.clientNfseModels.orgId, input.orgId), eq(schema.clientNfseModels.issuerId, input.issuerId)));
+  }
+  const suggestion = suggestFromIssuedNotes(facts, { models: existing });
+  return { ...suggestion, dpsSeries: freeDpsSeries([...facts.map((fact) => fact.series), ...olderSeries]) };
 }

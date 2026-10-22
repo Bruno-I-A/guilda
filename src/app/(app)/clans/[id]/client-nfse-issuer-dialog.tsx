@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, LoaderCircle, Settings2 } from "lucide-react";
+import { Building2, FileSearch, LoaderCircle, Settings2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -17,10 +17,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { formatCnpj } from "@/domain/cnpj";
+import { formatAppDate } from "@/lib/date-time";
 import type { ClientNfseCandidateView, ClientNfseIssuerView } from "@/lib/client-nfse/loaders";
 import type { NfseIssuerTemplate } from "@/lib/nfse/template";
 
-import { saveIssuer } from "./client-nfse-actions";
+import { saveIssuer, suggestIssuerSetup } from "./client-nfse-actions";
 import { Choice, Field, NONE, OPTIONS } from "./nfse-settings-dialog";
 
 const REGIMES = [["3", "Optante do Simples (ME/EPP)"], ["1", "Não optante (Presumido ou Real)"]] as const;
@@ -69,10 +70,13 @@ export function ClientNfseIssuerDialog({
   clanId,
   issuer,
   candidates = [],
+  onCreated,
 }: {
   clanId: string;
   issuer: ClientNfseIssuerView | null;
   candidates?: readonly ClientNfseCandidateView[];
+  /** Empresa nova salva: quem abriu oferece as notas padrão tiradas das notas emitidas. */
+  onCreated?: (issuer: { id: string; clientId: string; name: string }) => void;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -84,18 +88,46 @@ export function ClientNfseIssuerDialog({
   const set = (key: string) => (value: string) => setForm((current) => ({ ...current, [key]: value }));
   const optional = (value: string) => (value.trim() ? value.trim() : undefined);
   const candidate = candidates.find((item) => item.clientId === clientId) ?? null;
+  const [filling, startFilling] = useTransition();
+  const [filledFrom, setFilledFrom] = useState<string | null>(null);
+
+  /**
+   * Preenche pelo XML da última nota que a empresa emitiu (a rotina da aba XML
+   * já guardou): modelo fiscal e, na empresa nova, uma série que ela não usa.
+   */
+  function fill(targetClientId: string, fallback: { simples: boolean; cityCode: string | null } | null) {
+    startFilling(async () => {
+      const result = await suggestIssuerSetup({ clanId, clientId: targetClientId, issuerId: issuer?.id ?? null });
+      if (!result.ok || !result.data) {
+        toast.error(result.ok ? "Sem sugestão." : result.error);
+        return;
+      }
+      const suggestion = result.data;
+      if (!issuer) setSeries(suggestion.dpsSeries);
+      if (suggestion.template) {
+        setForm(initialForm(suggestion.template, fallback?.simples ?? true, fallback?.cityCode ?? null));
+        setFilledFrom(`Preenchido pela nota emitida em ${formatAppDate(suggestion.basedOn.lastIssuedAt!)}. Confira antes de salvar.`);
+      } else {
+        setFilledFrom("Nenhuma nota desta empresa guardada nos últimos meses: preencha com uma nota emitida no Portal.");
+      }
+    });
+  }
 
   function reset() {
     setClientId(issuer?.clientId ?? "");
     setSeries(issuer?.dpsSeries ?? DEFAULT_SERIES);
     setActive(issuer?.active ?? true);
     setForm(initialForm(issuer?.template ?? null));
+    setFilledFrom(null);
   }
 
   function pickCompany(id: string) {
     setClientId(id);
     const next = candidates.find((item) => item.clientId === id);
-    if (next) setForm(initialForm(null, next.suggestion.simples, next.suggestion.cityCode));
+    if (!next) return;
+    setForm(initialForm(null, next.suggestion.simples, next.suggestion.cityCode));
+    setFilledFrom(null);
+    fill(id, next.suggestion);
   }
 
   function save() {
@@ -123,9 +155,10 @@ export function ClientNfseIssuerDialog({
         toast.error(result.error);
         return;
       }
-      toast.success(issuer ? "Modelo fiscal salvo." : "Empresa adicionada. Agora cadastre os tomadores e as notas padrão.");
+      toast.success(issuer ? "Modelo fiscal salvo." : "Empresa adicionada.");
       setOpen(false);
       router.refresh();
+      if (!issuer && result.data && candidate) onCreated?.({ id: result.data.issuerId, clientId, name: candidate.name });
     });
   }
 
@@ -146,6 +179,15 @@ export function ClientNfseIssuerDialog({
             O que não muda de uma nota para outra. Copie de uma nota que a empresa já emitiu no Portal Nacional.
           </DialogDescription>
         </DialogHeader>
+        {issuer || filling || filledFrom ? <div className="flex flex-wrap items-center gap-2 text-sm" aria-live="polite">
+          {issuer ? (
+            <Button type="button" variant="outline" size="sm" disabled={filling} onClick={() => fill(issuer.clientId, null)}>
+              {filling ? <LoaderCircle className="animate-spin" aria-hidden /> : <FileSearch aria-hidden />} Preencher pela última nota emitida
+            </Button>
+          ) : null}
+          {filling ? <span className="flex items-center gap-1.5 text-muted-foreground"><LoaderCircle className="size-4 animate-spin" aria-hidden /> Lendo as notas emitidas…</span> : null}
+          {!filling && filledFrom ? <span className="text-muted-foreground">{filledFrom}</span> : null}
+        </div> : null}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {issuer ? null : (
             <div className="sm:col-span-2">
@@ -214,7 +256,7 @@ export function ClientNfseIssuerDialog({
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => setOpen(false)}>Voltar</Button>
-          <Button type="button" disabled={pending || !clientId} onClick={save}>
+          <Button type="button" disabled={pending || filling || !clientId} onClick={save}>
             {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : null} {issuer ? "Salvar modelo" : "Adicionar empresa"}
           </Button>
         </DialogFooter>

@@ -182,3 +182,57 @@ test("serviço fiscal: sem certificado que abra, a nota falha com o motivo; sér
   expect(renumbered).toMatchObject({ status: "queued", dpsSeries: "901", dpsNumber: 3 });
   expect(renumbered.dpsId.slice(-20)).toBe("00901000000000000003");
 }, 60_000);
+
+test("sugestão pelas notas guardadas da empresa e importação das notas padrão marcadas", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const { gzipSync } = await import("node:zlib");
+  const { testNfseXml } = await import("@/lib/nfse/testing/nfse-xml");
+  const { loadIssuerSuggestion } = await import("./loaders");
+  const registry = await import("./registry");
+
+  const MERCADO_CNPJ = "07412545000154";
+  const notes = [
+    { at: "2026-09-08T10:00:00-03:00", series: "1", cpf: "40503119091", name: "João da Silva", cents: 15000, text: "MENSALIDADE REFERENTE A 08/2026" },
+    { at: "2026-10-08T10:00:00-03:00", series: "1", cpf: "40503119091", name: "João da Silva", cents: 15000, text: "MENSALIDADE REFERENTE A 09/2026" },
+    { at: "2026-10-09T10:00:00-03:00", series: "901", cpf: "65029267034", name: "Maria Oliveira", cents: 5000, text: "AVALIAÇÃO" },
+    // Antiga, fora da janela: só conta para a série já usada.
+    { at: "2025-03-10T10:00:00-03:00", series: "900", cpf: "65029267034", name: "Maria Oliveira", cents: 5000, text: "AVALIAÇÃO" },
+  ];
+  await withOrgTx(ORG, (tx) =>
+    tx.insert(schema.nfseIssuedNotes).values(
+      notes.map((row, index) => {
+        const xml = testNfseXml({ providerCnpj: MERCADO_CNPJ, series: row.series, taker: { cnpj: row.cpf, name: row.name, address: null }, amountCents: row.cents, description: row.text })
+          .replace(/<dhProc>[^<]+<\/dhProc>/, `<dhProc>${row.at}</dhProc>`);
+        return {
+          orgId: ORG,
+          clientId: MERCADO,
+          accessKey: String(index + 1).padStart(50, "7"),
+          nsu: index + 1,
+          issuedAt: new Date(row.at),
+          xmlGz: new Uint8Array(gzipSync(Buffer.from(xml, "utf8"))),
+        };
+      }),
+    ),
+  );
+  const [issuer] = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseIssuers).where(eq(schema.clientNfseIssuers.clientId, MERCADO)));
+  const suggestion = await withOrgTx(ORG, (tx) => loadIssuerSuggestion(tx, { orgId: ORG, clientId: MERCADO, issuerId: issuer.id, now: NOW }));
+  expect(suggestion.dpsSeries).toBe("902");
+  expect(suggestion.template?.service.nationalTaxCode).toBe("171901");
+  expect(suggestion.models.map((model) => [model.takerName, model.description, model.recurring])).toEqual([
+    ["João da Silva", "MENSALIDADE REFERENTE A {mes}", true],
+    ["Maria Oliveira", "AVALIAÇÃO", false],
+  ]);
+
+  // Importa as marcadas; o tomador "Padaria" (já cadastrado) seria reaproveitado pelo documento.
+  const imported = await withOrgTx(ORG, (tx) =>
+    registry.importClientNfseSuggestions(tx, {
+      ...ACTOR,
+      issuerId: issuer.id,
+      items: suggestion.models.map(({ takerDocument, takerName, address, amount, description, reference }) => ({ takerDocument, takerName, address, amount, description, reference })),
+    }),
+  );
+  expect(imported).toEqual({ ok: true, data: { takers: 2, models: 2 } });
+  // Já cadastradas, não voltam como sugestão.
+  const again = await withOrgTx(ORG, (tx) => loadIssuerSuggestion(tx, { orgId: ORG, clientId: MERCADO, issuerId: issuer.id, now: NOW }));
+  expect(again.models).toEqual([]);
+}, 60_000);

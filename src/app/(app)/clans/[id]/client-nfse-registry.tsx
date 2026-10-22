@@ -1,8 +1,8 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileDown, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { deleteIssuer } from "./client-nfse-actions";
 import { ClientNfseModelDialog, ClientNfseTakerDialog } from "./client-nfse-forms";
 import { ClientNfseIssuerDialog } from "./client-nfse-issuer-dialog";
+import { ClientNfseSuggestionsDialog } from "./client-nfse-suggestions";
 
 function addressLine(address: ClientNfseIssuerView["takers"][number]["address"]): string | null {
   if (!address) return null;
@@ -25,6 +26,7 @@ function addressLine(address: ClientNfseIssuerView["takers"][number]["address"])
 function IssuerCard({ clanId, issuer, canManage, period }: { clanId: string; issuer: ClientNfseIssuerView; canManage: boolean; period: { year: number; month: number } }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [suggesting, setSuggesting] = useState(false);
   const activeModels = issuer.models.filter((model) => model.active);
   const total = activeModels.reduce((sum, model) => sum + Number(model.amount), 0);
 
@@ -63,6 +65,10 @@ function IssuerCard({ clanId, issuer, canManage, period }: { clanId: string; iss
             <ClientNfseIssuerDialog clanId={clanId} issuer={issuer} />
             <ClientNfseTakerDialog clanId={clanId} issuerId={issuer.id} taker={null} />
             <ClientNfseModelDialog clanId={clanId} issuer={issuer} model={null} period={period} />
+            <Button type="button" variant="outline" size="sm" onClick={() => setSuggesting(true)}>
+              <FileDown aria-hidden /> Importar das notas emitidas
+            </Button>
+            <ClientNfseSuggestionsDialog clanId={clanId} issuer={issuer} open={suggesting} onOpenChange={setSuggesting} />
             <Button type="button" variant="ghost" size="icon-sm" className="touch-target text-destructive" disabled={pending} aria-label={`Tirar ${issuer.name} das Notas dos clientes`} onClick={remove}>
               <Trash2 aria-hidden />
             </Button>
@@ -145,6 +151,8 @@ export function ClientNfseRegistry({
   candidates: readonly ClientNfseCandidateView[];
   period: { year: number; month: number };
 }) {
+  // Empresa recém-adicionada: oferece na hora as notas padrão tiradas das notas emitidas.
+  const [created, setCreated] = useState<{ id: string; clientId: string; name: string } | null>(null);
   return (
     <div className="grid min-w-0 grid-cols-1 gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -155,7 +163,10 @@ export function ClientNfseRegistry({
             notas que se repetem todo mês; no Mês a mês, a Guilda monta tudo para você revisar e emitir.
           </p>
         </div>
-        {canManage ? <ClientNfseIssuerDialog clanId={clanId} issuer={null} candidates={candidates} /> : null}
+        {canManage ? <ClientNfseIssuerDialog clanId={clanId} issuer={null} candidates={candidates} onCreated={setCreated} /> : null}
+        {created ? (
+          <ClientNfseSuggestionsDialog clanId={clanId} issuer={created} open onOpenChange={(open) => { if (!open) setCreated(null); }} />
+        ) : null}
       </div>
       {issuers.length === 0 ? (
         <div className="grid justify-items-center gap-2 rounded-lg border border-dashed p-8 text-center text-sm">
