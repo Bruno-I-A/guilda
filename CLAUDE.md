@@ -297,6 +297,31 @@ Desenho em `docs/superpowers/specs/2026-10-10-notas-de-honorario-design.md`.
   do Mês a mês) só sem nota na Guilda — `deleteOfficeFeePayer` confere antes,
   porque a cascata levaria as notas. Com nota, o avulso se desativa.
 
+## Notas dos clientes (decisão de 2026-10-22)
+
+Aba **Notas dos clientes** do Fiscal (`client-nfse-*.tsx`): NFS-e de serviço
+que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
+(o mesmo envelope da aba XML; só o `guilda-fiscal` abre). Desenho em
+`docs/superpowers/specs/2026-10-22-notas-dos-clientes-design.md`.
+
+- Módulo próprio (`client_nfse_*`, `src/lib/client-nfse/`), não uma
+  generalização da fila dos Honorários: aquela está em produção e é amarrada
+  ao controle do mês. Reaproveita DPS, assinatura, `runNfseJob`, cancelamento
+  e DANFSe. Não fundir as duas filas sem motivo novo.
+- Cadastro em três níveis: emissor (modelo fiscal + **série/numeração de DPS
+  própria**, porque a DPS é numerada por CNPJ), tomadores e notas padrão
+  (`{mes}`, referência ao mês anterior ou ao próprio). Abrir o mês cria a nota
+  do mês; valor e descrição se ajustam só nela.
+- A nota pedida aponta para emissor, tomador e item **sem cascata**: com nota,
+  o banco recusa apagar o cadastro (a action dá a mensagem antes).
+- **Série colidindo com outro sistema da empresa**: a consulta "a DPS já
+  existe?" devolveria a nota de lá. O serviço confere prestador, tomador e
+  valor (`verify.ts`) e, se não bater, falha pedindo outra série; o "Tentar de
+  novo" com série nova renumera a nota.
+- O PDF sai no app, do XML guardado na emissão (o certificado do escritório
+  não busca nota de cliente). Sem retenções, sem e-mail ao tomador e sem MEI
+  na v1.
+
 ## Estrutura por clã (decisões de 2026-08-18)
 
 O clã deixou de ser um diretório da Guilda e virou o **espaço de trabalho** da
