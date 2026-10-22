@@ -5,6 +5,7 @@ import {
   cnpjRootMatches,
   emissionMonthRange,
   emissionRangeLabel,
+  isEmissionMonthInProgress,
   isXmlRoutineDue,
   lastScheduledRun,
   previousEmissionMonth,
@@ -120,6 +121,14 @@ describe("mês de emissão", () => {
   test("rótulo do botão", () => {
     expect(emissionRangeLabel(2026, 9)).toBe("emitidas de 01/09 a 30/09");
     expect(emissionRangeLabel(2028, 2)).toBe("emitidas de 01/02 a 29/02");
+  });
+
+  test("mês em andamento vai até hoje, no dia de Brasília", () => {
+    // 22/10 01:00 UTC ainda é 21/10 em Brasília.
+    expect(emissionRangeLabel(2026, 10, at("2026-10-22T01:00:00Z"))).toBe("emitidas de 01/10 até hoje (21/10)");
+    expect(emissionRangeLabel(2026, 9, at("2026-10-22T12:00:00Z"))).toBe("emitidas de 01/09 a 30/09");
+    expect(isEmissionMonthInProgress(2026, 10, at("2026-10-31T23:00:00-03:00"))).toBe(true);
+    expect(isEmissionMonthInProgress(2026, 10, at("2026-11-01T00:00:00-03:00"))).toBe(false);
   });
 });
 
