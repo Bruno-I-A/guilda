@@ -15,6 +15,7 @@ export type DashboardShortcutIcon =
   | "mei"
   | "installments"
   | "fees"
+  | "client-notes"
   | "xml"
   | "closings"
   | "flow";

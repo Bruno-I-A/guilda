@@ -31,6 +31,18 @@ describe("XML da DPS", () => {
     expect(await nfseXsdErrors(xml, "DPS_v1.01.xsd")).toEqual([]);
   });
 
+  test("empresa-cliente não optante: outro CNPJ e tributos por esfera passam no XSD", async () => {
+    const presumido: NfseTemplate = {
+      ...TEST_TEMPLATE,
+      taxRegime: { opSimpNac: "1", regEspTrib: "0" },
+      totalTaxes: { kind: "percent", federal: "13.45", state: "0", municipal: "3.00" },
+    };
+    const { id, xml } = buildDpsXml(input({ template: presumido, providerCnpj: "33000167000101", series: "3", number: 1 }));
+    expect(id).toBe("DPS431490223300016700010100003000000000000001");
+    expect(xml).toContain("<pTotTrib><pTotTribFed>13.45</pTotTribFed><pTotTribEst>0</pTotTribEst><pTotTribMun>3.00</pTotTribMun></pTotTrib>");
+    expect(await nfseXsdErrors(xml, "DPS_v1.01.xsd")).toEqual([]);
+  });
+
   test("tomador pessoa física (produtor rural) vai com CPF e passa no XSD", async () => {
     const { xml } = buildDpsXml(input({ taker: { cnpj: "40503119091", name: "Pedro Rodighiero" } }));
     expect(xml).toContain("<toma><CPF>40503119091</CPF><xNome>Pedro Rodighiero</xNome></toma>");

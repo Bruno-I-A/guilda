@@ -3,6 +3,7 @@ import "./load-env";
 import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { runClientNfseQueue } from "../src/lib/client-nfse/service";
 import { loadNfseCertificate, type NfseCertificate } from "../src/lib/nfse/certificate";
 import { readDanfse } from "../src/lib/nfse/danfse-data";
 import { renderDanfsePdf } from "../src/lib/nfse/danfse-pdf";
@@ -31,7 +32,8 @@ import {
  * (src/lib/nfse/fiscal-http.ts). O governo suspendeu a API do DANFSe em
  * 03/08/2026: o PDF é montado aqui, do XML da nota (NT 008/2026). Sobe com
  * GUILDA_SERVICE=fiscal (scripts/start-production.mjs). Tambem confere os
- * certificados das empresas e coleta os XML com o A1 de cada empresa.
+ * certificados das empresas, coleta os XML com o A1 de cada empresa e emite
+ * as notas dos clientes com o A1 da empresa emissora.
  */
 
 const POLL_MS = 10_000;
@@ -121,6 +123,11 @@ async function main() {
               }
             } catch {
               console.error("Falha no ciclo do cofre; nova tentativa no próximo ciclo.");
+            }
+            try {
+              await runClientNfseQueue(orgId, vault, environment);
+            } catch (error) {
+              console.error("Falha na fila das notas dos clientes:", describeError(error));
             }
           }
           if (settings?.template && settings.providerCnpj === certificate.cnpj) {

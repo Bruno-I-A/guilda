@@ -48,6 +48,13 @@ describe("abas específicas de cada clã", () => {
     expect(isSharedClanTab("xml")).toBe(false);
   });
 
+  test("Notas dos clientes só existe no Fiscal, depois do XML (o certificado se envia lá)", () => {
+    expect(keys("fiscal").indexOf("client-notes")).toBe(keys("fiscal").indexOf("xml") + 1);
+    expect(keys("contabilidade")).not.toContain("client-notes");
+    expect(parseClanTab("client-notes", "societario")).toBe("missions");
+    expect(isSharedClanTab("client-notes")).toBe(false);
+  });
+
   test("Fechamentos só existe na Contabilidade", () => {
     expect(clanHasClosings("contabilidade")).toBe(true);
     expect(keys("contabilidade")).toContain("closings");

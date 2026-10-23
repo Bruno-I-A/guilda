@@ -14,6 +14,19 @@ describe("modelo da nota", () => {
   });
 });
 
+describe("modelo fiscal da empresa-cliente", () => {
+  test("não optante exige percentuais por esfera; MEI fica fora", async () => {
+    const { nfseIssuerTemplateRulesSchema } = await import("./template");
+    const { descriptions: _descriptions, ...issuer } = TEST_TEMPLATE;
+    void _descriptions;
+    expect(nfseIssuerTemplateRulesSchema.safeParse(issuer).success).toBe(true);
+    const presumido = { ...issuer, taxRegime: { opSimpNac: "1", regEspTrib: "0" } };
+    expect(nfseIssuerTemplateRulesSchema.safeParse({ ...presumido, totalTaxes: { kind: "none" } }).success).toBe(false);
+    expect(nfseIssuerTemplateRulesSchema.safeParse({ ...presumido, totalTaxes: { kind: "percent", federal: "13.45", state: "0", municipal: "3.00" } }).success).toBe(true);
+    expect(nfseIssuerTemplateRulesSchema.safeParse({ ...issuer, taxRegime: { opSimpNac: "2", regEspTrib: "0" }, totalTaxes: { kind: "none" } }).success).toBe(false);
+  });
+});
+
 describe("utilitários de XML", () => {
   test("escapa os cinco caracteres reservados", () => {
     expect(escapeXml(`a&b<c>"d"'e'`)).toBe("a&amp;b&lt;c&gt;&quot;d&quot;&apos;e&apos;");

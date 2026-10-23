@@ -4,7 +4,7 @@ import { buildCancelRequestXml } from "./cancel-xml";
 import { buildDpsXml } from "./dps-xml";
 import { NfseTransientError, type NfseApiError, type SefinClient } from "./sefin-client";
 import { signNfseXml, type NfseSigningKey } from "./sign";
-import type { NfseTemplate } from "./template";
+import type { NfseIssuerTemplate } from "./template";
 import { nfseIssueDate, nfseIssueTimestamp } from "./time";
 
 /** Uma nota reivindicada da fila, no formato que a orquestração precisa. */
@@ -40,7 +40,7 @@ export interface NfseJobDeps {
   client: SefinClient;
   environment: 1 | 2;
   providerCnpj: string;
-  template: NfseTemplate;
+  template: NfseIssuerTemplate;
   signingKey: NfseSigningKey;
   now: Date;
 }

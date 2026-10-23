@@ -25,9 +25,9 @@ import type { NfseTemplate } from "@/lib/nfse/template";
 import { saveNfseSettings } from "./nfse-actions";
 import type { NfseSettingsPanelView } from "./nfse-parts";
 
-const NONE = "none";
+export const NONE = "none";
 
-const OPTIONS = {
+export const OPTIONS = {
   opSimpNac: [["1", "Não optante"], ["2", "MEI"], ["3", "Optante ME/EPP"]],
   regApTribSN: [[NONE, "Não informar"], ["1", "Federais e ISS pelo Simples"], ["2", "Federais pelo Simples, ISS por fora"], ["3", "Federais e ISS por fora"]],
   regEspTrib: [["0", "Nenhum"], ["1", "Ato cooperado"], ["2", "Estimativa"], ["3", "Microempresa municipal"], ["4", "Notário ou registrador"], ["5", "Profissional autônomo"], ["6", "Sociedade de profissionais"], ["9", "Outros"]],
@@ -51,7 +51,7 @@ const DEFAULTS = {
   additionalInstallment: "PARCELA ADICIONAL DE HONORÁRIOS CONTÁBEIS {ano}",
 };
 
-function Field({ id, label, hint, children }: { id: string; label: string; hint?: string; children: ReactNode }) {
+export function Field({ id, label, hint, children }: { id: string; label: string; hint?: string; children: ReactNode }) {
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={id}>{label}</Label>
@@ -61,7 +61,7 @@ function Field({ id, label, hint, children }: { id: string; label: string; hint?
   );
 }
 
-function Choice({ id, value, options, onChange }: { id: string; value: string; options: readonly (readonly [string, string])[]; onChange: (value: string) => void }) {
+export function Choice({ id, value, options, onChange }: { id: string; value: string; options: readonly (readonly [string, string])[]; onChange: (value: string) => void }) {
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger id={id}><SelectValue /></SelectTrigger>

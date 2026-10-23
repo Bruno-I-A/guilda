@@ -1,6 +1,6 @@
 import { buildDpsId, centsToNfseAmount, normalizeDpsSeries, type NfseTakerAddress } from "@/domain/nfse";
 
-import type { NfseTemplate } from "./template";
+import type { NfseIssuerTemplate } from "./template";
 import {
   element,
   NFSE_APP_VERSION,
@@ -16,7 +16,7 @@ export interface DpsInput {
   series: string;
   number: number;
   providerCnpj: string;
-  template: NfseTemplate;
+  template: NfseIssuerTemplate;
   taker: { cnpj: string; name: string; address?: NfseTakerAddress | null };
   amountCents: number;
   description: string;
@@ -27,7 +27,7 @@ function normalizeName(name: string): string {
 }
 
 /**
- * DPS da nota de honorário, na ordem exata das sequências do XSD v1.01.
+ * DPS de quem emite (escritório ou empresa-cliente), na ordem exata das sequências do XSD v1.01.
  * O prestador é quem emite (tpEmit = 1), então nome e endereço dele vêm do
  * cadastro nacional e não são informados.
  */
@@ -67,7 +67,9 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
   const totTrib =
     t.totalTaxes.kind === "simples"
       ? `<totTrib>${element("pTotTribSN", t.totalTaxes.percent)}</totTrib>`
-      : `<totTrib>${element("indTotTrib", "0")}</totTrib>`;
+      : t.totalTaxes.kind === "percent"
+        ? `<totTrib><pTotTrib>${element("pTotTribFed", t.totalTaxes.federal)}${element("pTotTribEst", t.totalTaxes.state)}${element("pTotTribMun", t.totalTaxes.municipal)}</pTotTrib></totTrib>`
+        : `<totTrib>${element("indTotTrib", "0")}</totTrib>`;
   const valores =
     `<valores><vServPrest>${element("vServ", centsToNfseAmount(input.amountCents))}</vServPrest>` +
     `<trib>${tribMun}${totTrib}</trib></valores>`;

@@ -610,6 +610,13 @@
       "when": 1792612006070,
       "tag": "0086_office-fee-takers-delete",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1792697719030,
+      "tag": "0087_client-nfse",
+      "breakpoints": true
     }
   ]
 }
