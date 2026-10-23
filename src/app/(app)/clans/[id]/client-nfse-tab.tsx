@@ -1,12 +1,8 @@
-import type { ReactNode } from "react";
-
-import { SegmentedNav } from "@/components/segmented-nav";
 import { withOrgTx } from "@/db/org-tx";
-import { loadClientNfseMonth, loadClientNfseRegistry } from "@/lib/client-nfse/loaders";
+import { loadClientNfseWorkspace } from "@/lib/client-nfse/loaders";
 import { loadVaultPublicKey } from "@/lib/nfse/xml-requests";
 
-import { ClientNfseMonth } from "./client-nfse-month";
-import { ClientNfseRegistry } from "./client-nfse-registry";
+import { ClientNfseWorkspace } from "./client-nfse-workspace";
 
 /** O mês de hoje em Brasília: é nele que o Fiscal emite. */
 function currentPeriod(now: Date): { year: number; month: number } {
@@ -23,67 +19,38 @@ function parsePeriod(year: string | undefined, month: string | undefined, now: D
   return currentPeriod(now);
 }
 
-function Views({ clanId, active, children }: { clanId: string; active: "month" | "base"; children: ReactNode }) {
-  return (
-    <div className="grid min-w-0 grid-cols-1 gap-4">
-      <SegmentedNav
-        label="Visões das notas dos clientes"
-        active={active}
-        items={[
-          { key: "month", label: "Mês a mês", href: `/clans/${clanId}?tab=client-notes` },
-          { key: "base", label: "Cadastro", href: `/clans/${clanId}?tab=client-notes&nfseView=base` },
-        ]}
-      />
-      {children}
-    </div>
-  );
-}
-
 /**
- * Notas dos clientes (decisão de 2026-10-22): NFS-e de serviço que as
- * empresas emitem todo mês, pelo CNPJ e com o certificado de cada uma. Duas
- * visões, como nos Honorários: Mês a mês (padrão) e Cadastro.
+ * Notas dos clientes (decisão de 2026-10-22, tela única desde 2026-10-23):
+ * NFS-e de serviço que as empresas emitem todo mês, pelo CNPJ e com o
+ * certificado de cada uma.
  */
 export async function ClientNfseTab({
   orgId,
   clanId,
   canManage,
-  requestedView,
   requestedYear,
   requestedMonth,
 }: {
   orgId: string;
   clanId: string;
   canManage: boolean;
-  requestedView?: string;
   requestedYear?: string;
   requestedMonth?: string;
 }) {
   const now = new Date();
-  if (requestedView === "base") {
-    const registry = await withOrgTx(orgId, (tx) => loadClientNfseRegistry(tx, { orgId, now }));
-    return (
-      <Views clanId={clanId} active="base">
-        <ClientNfseRegistry clanId={clanId} canManage={canManage} issuers={registry.issuers} candidates={registry.candidates} period={currentPeriod(now)} />
-      </Views>
-    );
-  }
   const period = parsePeriod(requestedYear, requestedMonth, now);
-  const { data, vault } = await withOrgTx(orgId, async (tx) => ({
-    data: await loadClientNfseMonth(tx, { orgId, ...period, now }),
+  const { workspace, vault } = await withOrgTx(orgId, async (tx) => ({
+    workspace: await loadClientNfseWorkspace(tx, { orgId, ...period, now }),
     vault: await loadVaultPublicKey(tx, orgId),
   }));
   return (
-    <Views clanId={clanId} active="month">
-      <ClientNfseMonth
-        clanId={clanId}
-        year={period.year}
-        month={period.month}
-        canManage={canManage}
-        activeModels={data.activeModels}
-        issuers={data.issuers}
-        serviceReady={Boolean(vault)}
-      />
-    </Views>
+    <ClientNfseWorkspace
+      clanId={clanId}
+      period={period}
+      canManage={canManage}
+      issuers={workspace.issuers}
+      candidates={workspace.candidates}
+      serviceReady={Boolean(vault)}
+    />
   );
 }

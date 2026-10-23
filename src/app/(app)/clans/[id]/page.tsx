@@ -93,7 +93,6 @@ export default async function ClanPage({
       distributionYear?: string;
       fiscalView?: string;
       feeView?: string;
-      nfseView?: string;
       fiscalYear?: string;
       fiscalMonth?: string;
       meiYear?: string;
@@ -108,7 +107,6 @@ export default async function ClanPage({
     distributionYear,
     fiscalView,
     feeView,
-    nfseView,
     fiscalYear,
     fiscalMonth,
     meiYear,
@@ -391,7 +389,6 @@ export default async function ClanPage({
             orgId={session.orgId}
             clanId={clan.id}
             canManage={canManageFiscalPortfolio(clanFacts)}
-            requestedView={nfseView}
             requestedYear={fiscalYear}
             requestedMonth={fiscalMonth}
           />
