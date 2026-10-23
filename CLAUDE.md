@@ -310,8 +310,17 @@ que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
   e DANFSe. Não fundir as duas filas sem motivo novo.
 - Cadastro em três níveis: emissor (modelo fiscal + **série/numeração de DPS
   própria**, porque a DPS é numerada por CNPJ), tomadores e notas padrão
-  (`{mes}`, referência ao mês anterior ou ao próprio). Abrir o mês cria a nota
-  do mês; valor e descrição se ajustam só nela.
+  (`{mes}`, referência ao mês anterior ou ao próprio).
+- **Tela única, sem "abrir o mês" (2026-10-23, o Bruno rejeitou a primeira
+  versão com Cadastro × Mês a mês)**: cada empresa é um painel com as notas do
+  mês, que aparecem sozinhas a partir das notas padrão
+  (`loadClientNfseMonthRows`). A nota do mês (`client_nfse_items`) só é
+  gravada ao ajustar (valor/texto clicando na linha) ou ao emitir. Emite-se
+  **uma** (botão da linha), **as de uma empresa** (cabeçalho) ou **as
+  escolhidas** (caixas + barra no rodapé), sempre com confirmação. Tomador e
+  nota padrão no mesmo formulário ("+ Nova nota"); dados fiscais em resumo de
+  uma linha, formulário completo só ao editar. Não voltar às duas visões nem ao
+  passo de abrir o mês.
 - A nota pedida aponta para emissor, tomador e item **sem cascata**: com nota,
   o banco recusa apagar o cadastro (a action dá a mensagem antes).
 - **Série colidindo com outro sistema da empresa**: a consulta "a DPS já

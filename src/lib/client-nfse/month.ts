@@ -110,29 +110,125 @@ export async function loadIssuerReadiness(
   return result;
 }
 
+type MonthRow = ClientNfseCandidate & {
+  /** A nota do mês guardada; null enquanto ela só existe como nota padrão. */
+  itemId: string | null;
+  takerId: string;
+  modelService: ServiceOverride | null;
+  /** A nota padrão está ativa (pausada só aparece se já tiver nota do mês). */
+  modelActive: boolean;
+};
+
 /**
- * Abre o mês: uma nota do mês para cada nota padrão ativa (emissor e tomador
- * ativos), com o valor padrão e a descrição já resolvida. Idempotente: abrir
- * de novo só acrescenta o que faltar (nota padrão nova no meio do mês).
+ * As notas do mês, sem "abrir o mês": toda nota padrão ativa (de emissor e
+ * tomador ativos) aparece sozinha, com o valor e a descrição do padrão; a que
+ * já foi ajustada ou pedida neste mês vem da nota do mês guardada
+ * (client_nfse_items), mesmo que o padrão tenha sido pausado depois.
  */
-export async function openClientNfseMonth(
-  tx: OrgTx,
-  input: Actor & Period,
-): Promise<ActionResult<{ created: number; existing: number }>> {
-  const m = schema.clientNfseModels;
-  const i = schema.clientNfseIssuers;
-  const t = schema.clientNfseTakers;
-  const models = await tx
-    .select({ id: m.id, issuerId: m.issuerId, takerId: m.takerId, amount: m.amount, description: m.description, reference: m.reference })
-    .from(m)
-    .innerJoin(i, and(eq(i.orgId, m.orgId), eq(i.id, m.issuerId)))
-    .innerJoin(t, and(eq(t.orgId, m.orgId), eq(t.id, m.takerId)))
-    .where(and(eq(m.orgId, input.orgId), eq(m.active, true), eq(i.active, true), eq(t.active, true)))
-    .orderBy(asc(m.id));
-  if (models.length === 0) return err("Cadastre ao menos uma nota padrão ativa antes de abrir o mês.");
+export async function loadClientNfseMonthRows(tx: OrgTx, input: { orgId: string; now: Date } & Period): Promise<MonthRow[]> {
+  const it = schema.clientNfseItems;
+  const tk = schema.clientNfseTakers;
+  const md = schema.clientNfseModels;
+  const is = schema.clientNfseIssuers;
+  const n = schema.clientNfseInvoices;
   const period = { year: input.year, month: input.month };
-  const inserted = await tx
-    .insert(schema.clientNfseItems)
+  const stored = await tx
+    .select({
+      itemId: it.id,
+      modelId: it.modelId,
+      issuerId: it.issuerId,
+      takerId: it.takerId,
+      amount: it.amount,
+      description: it.description,
+      takerName: tk.name,
+      takerDocument: tk.document,
+      takerAddress: tk.address,
+      modelService: md.service,
+      modelActive: md.active,
+    })
+    .from(it)
+    .innerJoin(tk, and(eq(tk.orgId, it.orgId), eq(tk.id, it.takerId)))
+    .innerJoin(md, and(eq(md.orgId, it.orgId), eq(md.id, it.modelId)))
+    .where(and(eq(it.orgId, input.orgId), eq(it.periodYear, input.year), eq(it.periodMonth, input.month)));
+  const withItem = new Set(stored.map((row) => row.modelId));
+  const standing = (
+    await tx
+      .select({
+        modelId: md.id,
+        issuerId: md.issuerId,
+        takerId: md.takerId,
+        amount: md.amount,
+        template: md.description,
+        reference: md.reference,
+        takerName: tk.name,
+        takerDocument: tk.document,
+        takerAddress: tk.address,
+        modelService: md.service,
+      })
+      .from(md)
+      .innerJoin(is, and(eq(is.orgId, md.orgId), eq(is.id, md.issuerId)))
+      .innerJoin(tk, and(eq(tk.orgId, md.orgId), eq(tk.id, md.takerId)))
+      .where(and(eq(md.orgId, input.orgId), eq(md.active, true), eq(is.active, true), eq(tk.active, true)))
+  ).filter((row) => !withItem.has(row.modelId));
+  const raw = [
+    ...stored,
+    ...standing.map(({ template, reference, ...row }) => ({
+      ...row,
+      itemId: null,
+      description: clientNfseMonthDescription(template, period, reference),
+      modelActive: true,
+    })),
+  ];
+  if (raw.length === 0) return [];
+  const itemIds = stored.map((row) => row.itemId);
+  const active = itemIds.length
+    ? await tx
+        .select({ itemId: n.itemId })
+        .from(n)
+        .where(and(eq(n.orgId, input.orgId), inArray(n.itemId, itemIds), ne(n.status, "cancelled")))
+    : [];
+  const activeItems = new Set(active.map((row) => row.itemId));
+  const issuers = await loadIssuerReadiness(tx, { orgId: input.orgId, issuerIds: [...new Set(raw.map((row) => row.issuerId))], now: input.now });
+  return raw
+    .map((row) => {
+      const issuer = issuers.get(row.issuerId);
+      return {
+        modelId: row.modelId,
+        itemId: row.itemId,
+        issuerId: row.issuerId,
+        takerId: row.takerId,
+        issuerName: issuer?.name ?? "",
+        takerName: row.takerName,
+        takerDocument: row.takerDocument,
+        amount: row.amount,
+        description: row.description,
+        address: buildNfseTakerAddress(row.takerAddress as NfseClientAddress | null, ibgeCityCode),
+        requireAddress: Boolean(issuer?.template?.ibsCbs),
+        hasActiveInvoice: row.itemId ? activeItems.has(row.itemId) : false,
+        issuerProblem: issuer ? issuer.problem : "Empresa emissora não encontrada.",
+        modelService: row.modelService,
+        modelActive: row.modelActive,
+      };
+    })
+    .sort((a, b) => a.issuerName.localeCompare(b.issuerName, "pt-BR") || a.takerName.localeCompare(b.takerName, "pt-BR"));
+}
+
+/**
+ * Guarda a nota do mês das notas padrão dadas (com o valor e a descrição do
+ * padrão), se ainda não existir. É o que acontece ao ajustar ou emitir.
+ */
+async function ensureClientNfseItems(tx: OrgTx, input: Actor & Period & { modelIds: readonly string[] }): Promise<void> {
+  if (input.modelIds.length === 0) return;
+  const md = schema.clientNfseModels;
+  const models = await tx
+    .select({ id: md.id, issuerId: md.issuerId, takerId: md.takerId, amount: md.amount, description: md.description, reference: md.reference })
+    .from(md)
+    .where(and(eq(md.orgId, input.orgId), inArray(md.id, [...input.modelIds])));
+  if (models.length === 0) return;
+  const period = { year: input.year, month: input.month };
+  const it = schema.clientNfseItems;
+  await tx
+    .insert(it)
     .values(
       models.map((model) => ({
         orgId: input.orgId,
@@ -147,128 +243,55 @@ export async function openClientNfseMonth(
         updatedBy: input.actorId,
       })),
     )
-    .onConflictDoNothing({
-      target: [schema.clientNfseItems.orgId, schema.clientNfseItems.modelId, schema.clientNfseItems.periodYear, schema.clientNfseItems.periodMonth],
-    })
-    .returning({ id: schema.clientNfseItems.id });
-  return { ok: true, data: { created: inserted.length, existing: models.length - inserted.length } };
-}
-
-async function activeInvoiceFor(tx: OrgTx, orgId: string, itemId: string) {
-  const n = schema.clientNfseInvoices;
-  const [row] = await tx
-    .select({ id: n.id })
-    .from(n)
-    .where(and(eq(n.orgId, orgId), eq(n.itemId, itemId), ne(n.status, "cancelled")))
-    .limit(1);
-  return row ?? null;
+    .onConflictDoNothing({ target: [it.orgId, it.modelId, it.periodYear, it.periodMonth] });
 }
 
 /** Ajusta valor e descrição só deste mês; a nota padrão não muda. */
-export async function updateClientNfseItem(
+export async function adjustClientNfseMonthNote(
   tx: OrgTx,
-  input: Actor & { itemId: string; amount: string; description: string },
+  input: Actor & Period & { modelId: string; amount: string; description: string },
 ): Promise<ActionResult> {
-  const t = schema.clientNfseItems;
+  await ensureClientNfseItems(tx, { ...input, modelIds: [input.modelId] });
+  const it = schema.clientNfseItems;
   const [item] = await tx
-    .select({ id: t.id })
-    .from(t)
-    .where(and(eq(t.orgId, input.orgId), eq(t.id, input.itemId)))
+    .select({ id: it.id })
+    .from(it)
+    .where(and(eq(it.orgId, input.orgId), eq(it.modelId, input.modelId), eq(it.periodYear, input.year), eq(it.periodMonth, input.month)))
     .for("update");
-  if (!item) return err("Nota do mês não encontrada.");
-  if (await activeInvoiceFor(tx, input.orgId, item.id)) {
-    return err("Esta nota já foi pedida. Para mudar, cancele a nota antes.");
-  }
+  if (!item) return err("Nota padrão não encontrada.");
+  const n = schema.clientNfseInvoices;
+  const [active] = await tx
+    .select({ id: n.id })
+    .from(n)
+    .where(and(eq(n.orgId, input.orgId), eq(n.itemId, item.id), ne(n.status, "cancelled")))
+    .limit(1);
+  if (active) return err("Esta nota já foi pedida. Para mudar, cancele a nota antes.");
   await tx
-    .update(t)
+    .update(it)
     .set({ amount: input.amount, description: input.description.trim(), updatedBy: input.actorId, updatedAt: new Date() })
-    .where(and(eq(t.orgId, input.orgId), eq(t.id, item.id)));
+    .where(and(eq(it.orgId, input.orgId), eq(it.id, item.id)));
   return { ok: true };
 }
 
-/** Tira do mês uma nota que não vai sair desta vez (abrir de novo a recoloca). */
-export async function removeClientNfseItem(tx: OrgTx, input: Actor & { itemId: string }): Promise<ActionResult> {
-  const t = schema.clientNfseItems;
-  const n = schema.clientNfseInvoices;
-  const [anyInvoice] = await tx
-    .select({ id: n.id })
-    .from(n)
-    .where(and(eq(n.orgId, input.orgId), eq(n.itemId, input.itemId)))
-    .limit(1);
-  if (anyInvoice) return err("Esta nota já foi pedida e fica no histórico do mês.");
-  const [deleted] = await tx
-    .delete(t)
-    .where(and(eq(t.orgId, input.orgId), eq(t.id, input.itemId)))
-    .returning({ id: t.id });
-  return deleted ? { ok: true } : err("Nota do mês não encontrada.");
-}
-
-type CandidateRow = ClientNfseCandidate & { modelService: ServiceOverride | null };
-
-async function loadCandidates(tx: OrgTx, input: { orgId: string; now: Date } & Period): Promise<CandidateRow[]> {
-  const it = schema.clientNfseItems;
-  const tk = schema.clientNfseTakers;
-  const md = schema.clientNfseModels;
-  const n = schema.clientNfseInvoices;
-  const rows = await tx
-    .select({
-      itemId: it.id,
-      issuerId: it.issuerId,
-      amount: it.amount,
-      description: it.description,
-      takerName: tk.name,
-      takerDocument: tk.document,
-      takerAddress: tk.address,
-      modelService: md.service,
-    })
-    .from(it)
-    .innerJoin(tk, and(eq(tk.orgId, it.orgId), eq(tk.id, it.takerId)))
-    .innerJoin(md, and(eq(md.orgId, it.orgId), eq(md.id, it.modelId)))
-    .where(and(eq(it.orgId, input.orgId), eq(it.periodYear, input.year), eq(it.periodMonth, input.month)))
-    .orderBy(asc(it.issuerId), asc(tk.name), asc(it.id));
-  if (rows.length === 0) return [];
-  const active = await tx
-    .select({ itemId: n.itemId })
-    .from(n)
-    .where(and(eq(n.orgId, input.orgId), eq(n.periodYear, input.year), eq(n.periodMonth, input.month), ne(n.status, "cancelled")));
-  const activeItems = new Set(active.map((row) => row.itemId));
-  const issuers = await loadIssuerReadiness(tx, { orgId: input.orgId, issuerIds: [...new Set(rows.map((row) => row.issuerId))], now: input.now });
-  return rows.map((row) => {
-    const issuer = issuers.get(row.issuerId);
-    return {
-      itemId: row.itemId,
-      issuerId: row.issuerId,
-      issuerName: issuer?.name ?? "",
-      takerName: row.takerName,
-      takerDocument: row.takerDocument,
-      amount: row.amount,
-      description: row.description,
-      address: buildNfseTakerAddress(row.takerAddress as NfseClientAddress | null, ibgeCityCode),
-      requireAddress: Boolean(issuer?.template?.ibsCbs),
-      hasActiveInvoice: activeItems.has(row.itemId),
-      issuerProblem: issuer ? issuer.problem : "Empresa emissora não encontrada.",
-      modelService: row.modelService,
-    };
-  });
-}
-
-/** Prévia do lote, recalculada no servidor a cada pedido. */
+/** O que pode sair agora e o que fica de fora, recalculado no servidor. */
 export async function loadClientNfsePreview(
   tx: OrgTx,
   input: { orgId: string; now: Date } & Period,
 ): Promise<ClientNfseBatch> {
-  return selectClientNfseBatch(await loadCandidates(tx, input));
+  return selectClientNfseBatch(await loadClientNfseMonthRows(tx, input));
 }
 
 /**
- * Grava o lote na fila. Trava os emissores envolvidos (serializa cliques
- * simultâneos e a numeração), recalcula a prévia e só segue se for a mesma
+ * Grava na fila as notas escolhidas (uma, as de uma empresa ou várias). Trava
+ * os emissores envolvidos (serializa cliques simultâneos e a numeração), guarda
+ * a nota do mês de quem ainda não tinha, recalcula e só segue se for o mesmo
  * que a pessoa viu; reserva os números de DPS de cada emissor na mesma
  * transação — o número nunca muda depois.
  */
 export async function enqueueClientNfseBatch(
   tx: OrgTx,
   input: Actor & Period & {
+    /** Notas padrão escolhidas (a nota do mês de cada uma). */
     selected: readonly string[];
     expectedCount: number;
     expectedTotalCents: number;
@@ -278,9 +301,9 @@ export async function enqueueClientNfseBatch(
 ): Promise<ActionResult<{ queued: number }>> {
   if (isFutureNfsePeriod(input, input.today)) return err("Não dá para emitir nota de um mês que ainda não começou.");
   const wanted = new Set(input.selected);
-  const candidates = await loadCandidates(tx, input);
-  const issuerIds = [...new Set(candidates.filter((row) => wanted.has(row.itemId)).map((row) => row.issuerId))].sort();
-  if (issuerIds.length === 0) return err("Marque ao menos uma nota para emitir.");
+  const candidates = await loadClientNfseMonthRows(tx, input);
+  const issuerIds = [...new Set(candidates.filter((row) => wanted.has(row.modelId)).map((row) => row.issuerId))].sort();
+  if (issuerIds.length === 0) return err("Escolha ao menos uma nota para emitir.");
   const i = schema.clientNfseIssuers;
   const locked = await tx
     .select({ id: i.id, nextDpsNumber: i.nextDpsNumber })
@@ -288,36 +311,30 @@ export async function enqueueClientNfseBatch(
     .where(and(eq(i.orgId, input.orgId), inArray(i.id, issuerIds)))
     .orderBy(asc(i.id))
     .for("update");
-  // Recalcula depois da trava: outra pessoa pode ter emitido no meio.
-  const fresh = await loadCandidates(tx, input);
+  await ensureClientNfseItems(tx, { ...input, modelIds: [...wanted] });
+  // Recalcula depois da trava: outra pessoa pode ter emitido ou ajustado no meio.
+  const fresh = await loadClientNfseMonthRows(tx, input);
   const batch = selectClientNfseBatch(fresh);
-  const items = batch.items.filter((item) => wanted.has(item.itemId));
+  const items = batch.items.filter((item) => wanted.has(item.modelId));
   const totalCents = items.reduce((sum, item) => sum + item.amountCents, 0);
   if (items.length !== wanted.size || items.length !== input.expectedCount || totalCents !== input.expectedTotalCents) {
-    return err("A lista mudou desde a prévia. Abra a prévia de novo antes de emitir.");
+    return err("A nota mudou enquanto a tela estava aberta (ajuste, emissão ou cadastro). Confira e tente de novo.");
   }
   const readiness = await loadIssuerReadiness(tx, { orgId: input.orgId, issuerIds, now: input.now });
-  const serviceByItem = new Map(fresh.map((row) => [row.itemId, row.modelService]));
-  const takerByItem = new Map(
-    (
-      await tx
-        .select({ itemId: schema.clientNfseItems.id, takerId: schema.clientNfseItems.takerId })
-        .from(schema.clientNfseItems)
-        .where(and(eq(schema.clientNfseItems.orgId, input.orgId), inArray(schema.clientNfseItems.id, items.map((item) => item.itemId))))
-    ).map((row) => [row.itemId, row.takerId]),
-  );
+  const rowByModel = new Map(fresh.map((row) => [row.modelId, row]));
   const next = new Map(locked.map((row) => [row.id, row.nextDpsNumber]));
   const values = items.map((item) => {
     const issuer = readiness.get(item.issuerId)!;
+    const row = rowByModel.get(item.modelId)!;
     const number = next.get(item.issuerId)!;
     next.set(item.issuerId, number + 1);
-    const template = issuerTemplateFor(issuer.template!, serviceByItem.get(item.itemId) ?? null);
+    const template = issuerTemplateFor(issuer.template!, row.modelService);
     return {
       orgId: input.orgId,
       issuerId: item.issuerId,
       clientId: issuer.clientId,
-      takerId: takerByItem.get(item.itemId)!,
-      itemId: item.itemId,
+      takerId: row.takerId,
+      itemId: row.itemId!,
       periodYear: input.year,
       periodMonth: input.month,
       amount: centsToNfseAmount(item.amountCents),

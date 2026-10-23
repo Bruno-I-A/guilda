@@ -6,35 +6,51 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, ne, sql } from "dr
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
-import type { ClientNfseReference } from "@/domain/client-nfse";
+import { CLIENT_NFSE_EXCLUSION_LABELS, selectClientNfseBatch, type ClientNfseReference } from "@/domain/client-nfse";
 import { danfseFileName, type NfseClientAddress, type NfseInvoiceStatus } from "@/domain/nfse";
-import { ibgeCityCode } from "@/lib/nfse/municipios";
+import { ibgeCity, ibgeCityCode } from "@/lib/nfse/municipios";
 import { parseNfseIssuerTemplate, type NfseIssuerTemplate } from "@/lib/nfse/template";
 
 import { readIssuedNoteFacts, type IssuedNoteFacts } from "./from-xml";
-import { loadIssuerReadiness } from "./month";
+import { loadClientNfseMonthRows, loadIssuerReadiness } from "./month";
 import type { ServiceOverride } from "./registry";
 import { freeDpsSeries, suggestFromIssuedNotes, type IssuerSuggestion } from "./suggest";
 
-/** Leituras da aba Notas dos clientes (Cadastro e Mês a mês). */
+/** Leituras da aba Notas dos clientes: uma tela só, empresas com as notas do mês. */
 
-export interface ClientNfseTakerView {
+export interface ClientNfseInvoiceView {
   id: string;
-  name: string;
-  document: string;
-  address: NfseClientAddress | null;
-  active: boolean;
+  status: NfseInvoiceStatus;
+  nfseNumber: string | null;
+  issuedAt: string | null;
+  lastError: string | null;
+  dpsSeries: string;
+  dpsNumber: number;
 }
 
-export interface ClientNfseModelView {
-  id: string;
+/** Uma nota do mês: a nota padrão com o que este mês tem de próprio. */
+export interface ClientNfseNoteView {
+  modelId: string;
+  /** Ajustada ou pedida neste mês (sem isso, o valor e o texto são os do padrão). */
+  itemId: string | null;
   takerId: string;
   takerName: string;
+  takerDocument: string;
+  takerAddress: NfseClientAddress | null;
   amount: string;
   description: string;
-  reference: ClientNfseReference;
-  service: ServiceOverride | null;
-  active: boolean;
+  /** A nota padrão, para editar: valor, texto com {mes}, referência e serviço. */
+  model: {
+    amount: string;
+    description: string;
+    reference: ClientNfseReference;
+    service: ServiceOverride | null;
+    active: boolean;
+  };
+  /** A nota mais recente deste mês (a cancelada fica visível até sair outra). */
+  invoice: ClientNfseInvoiceView | null;
+  /** Por que não pode sair agora (sem nota ativa). */
+  blocked: string | null;
 }
 
 export interface ClientNfseIssuerView {
@@ -47,9 +63,16 @@ export interface ClientNfseIssuerView {
   nextDpsNumber: number;
   /** O modelo guardado, mesmo incompleto, para editar. */
   template: NfseIssuerTemplate | null;
+  /** "Getúlio Vargas/RS", para o resumo dos dados fiscais. */
+  cityLabel: string | null;
   problem: string | null;
-  takers: ClientNfseTakerView[];
-  models: ClientNfseModelView[];
+  notes: ClientNfseNoteView[];
+}
+
+/** Nome do município do código IBGE, para a tela não carregar a tabela inteira. */
+function cityLabelOf(code: string | undefined | null): string | null {
+  const city = code ? ibgeCity(code) : null;
+  return city ? `${city.name}/${city.state}` : null;
 }
 
 export interface ClientNfseCandidateView {
@@ -57,13 +80,13 @@ export interface ClientNfseCandidateView {
   name: string;
   cnpj: string;
   certificate: "valid" | "pending" | "invalid" | "missing";
-  /** Sugestão do modelo fiscal: município pelo endereço e regime pelo da empresa. */
+  /** Sugestão do modelo fiscal sem nota guardada: município pelo endereço e regime pelo da empresa. */
   suggestion: { cityCode: string | null; simples: boolean };
 }
 
-export async function loadClientNfseRegistry(
+export async function loadClientNfseWorkspace(
   tx: OrgTx,
-  input: { orgId: string; now: Date },
+  input: { orgId: string; year: number; month: number; now: Date },
 ): Promise<{ issuers: ClientNfseIssuerView[]; candidates: ClientNfseCandidateView[] }> {
   const i = schema.clientNfseIssuers;
   const c = schema.clients;
@@ -74,14 +97,65 @@ export async function loadClientNfseRegistry(
     .where(eq(i.orgId, input.orgId))
     .orderBy(asc(c.name));
   const readiness = await loadIssuerReadiness(tx, { orgId: input.orgId, now: input.now });
-  const takers = await tx
-    .select()
-    .from(schema.clientNfseTakers)
-    .where(eq(schema.clientNfseTakers.orgId, input.orgId))
-    .orderBy(asc(schema.clientNfseTakers.name));
+  const rows = await loadClientNfseMonthRows(tx, input);
+  const blocked = new Map(
+    selectClientNfseBatch(rows).excluded
+      .filter((item) => item.reason !== "already_active")
+      .map((item) => [item.modelId, item.detail ?? CLIENT_NFSE_EXCLUSION_LABELS[item.reason]]),
+  );
   const m = schema.clientNfseModels;
-  const models = await tx.select().from(m).where(eq(m.orgId, input.orgId)).orderBy(asc(m.createdAt));
-  const takerName = new Map(takers.map((taker) => [taker.id, taker.name]));
+  const models = rows.length
+    ? await tx.select().from(m).where(and(eq(m.orgId, input.orgId), inArray(m.id, rows.map((row) => row.modelId))))
+    : [];
+  const modelById = new Map(models.map((model) => [model.id, model]));
+  const tk = schema.clientNfseTakers;
+  const takers = rows.length
+    ? await tx.select({ id: tk.id, address: tk.address }).from(tk).where(and(eq(tk.orgId, input.orgId), inArray(tk.id, rows.map((row) => row.takerId))))
+    : [];
+  const addressByTaker = new Map(takers.map((taker) => [taker.id, taker.address]));
+  const itemIds = rows.flatMap((row) => (row.itemId ? [row.itemId] : []));
+  const n = schema.clientNfseInvoices;
+  const invoices = itemIds.length
+    ? await tx
+        .select({ id: n.id, itemId: n.itemId, status: n.status, nfseNumber: n.nfseNumber, issuedAt: n.issuedAt, lastError: n.lastError, dpsSeries: n.dpsSeries, dpsNumber: n.dpsNumber })
+        .from(n)
+        .where(and(eq(n.orgId, input.orgId), inArray(n.itemId, itemIds)))
+        .orderBy(desc(n.createdAt))
+    : [];
+  const latest = new Map<string, (typeof invoices)[number]>();
+  for (const invoice of invoices) if (!latest.has(invoice.itemId)) latest.set(invoice.itemId, invoice);
+
+  const notesByIssuer = new Map<string, ClientNfseNoteView[]>();
+  for (const row of rows) {
+    const model = modelById.get(row.modelId);
+    if (!model) continue;
+    const invoice = row.itemId ? latest.get(row.itemId) : undefined;
+    const list = notesByIssuer.get(row.issuerId) ?? [];
+    list.push({
+      modelId: row.modelId,
+      itemId: row.itemId,
+      takerId: row.takerId,
+      takerName: row.takerName,
+      takerDocument: row.takerDocument,
+      takerAddress: addressByTaker.get(row.takerId) ?? null,
+      amount: row.amount,
+      description: row.description,
+      model: { amount: model.amount, description: model.description, reference: model.reference, service: model.service, active: model.active },
+      invoice: invoice
+        ? {
+            id: invoice.id,
+            status: invoice.status,
+            nfseNumber: invoice.nfseNumber,
+            issuedAt: invoice.issuedAt?.toISOString() ?? null,
+            lastError: invoice.lastError,
+            dpsSeries: invoice.dpsSeries,
+            dpsNumber: invoice.dpsNumber,
+          }
+        : null,
+      blocked: blocked.get(row.modelId) ?? null,
+    });
+    notesByIssuer.set(row.issuerId, list);
+  }
 
   const cert = schema.nfseClientCertificates;
   const candidates = await tx
@@ -102,22 +176,9 @@ export async function loadClientNfseRegistry(
       dpsSeries: issuer.dpsSeries,
       nextDpsNumber: issuer.nextDpsNumber,
       template: parseNfseIssuerTemplate(issuer.template),
+      cityLabel: cityLabelOf(parseNfseIssuerTemplate(issuer.template)?.cityCode),
       problem: readiness.get(issuer.id)?.problem ?? null,
-      takers: takers
-        .filter((taker) => taker.issuerId === issuer.id)
-        .map((taker) => ({ id: taker.id, name: taker.name, document: taker.document, address: taker.address, active: taker.active })),
-      models: models
-        .filter((model) => model.issuerId === issuer.id)
-        .map((model) => ({
-          id: model.id,
-          takerId: model.takerId,
-          takerName: takerName.get(model.takerId) ?? "",
-          amount: model.amount,
-          description: model.description,
-          reference: model.reference,
-          service: model.service,
-          active: model.active,
-        })),
+      notes: notesByIssuer.get(issuer.id) ?? [],
     })),
     candidates: candidates
       .filter((row) => !taken.has(row.clientId))
@@ -135,100 +196,6 @@ export async function loadClientNfseRegistry(
         };
       }),
   };
-}
-
-export interface ClientNfseInvoiceView {
-  id: string;
-  status: NfseInvoiceStatus;
-  nfseNumber: string | null;
-  issuedAt: string | null;
-  lastError: string | null;
-  dpsSeries: string;
-  dpsNumber: number;
-}
-
-export interface ClientNfseMonthItemView {
-  itemId: string;
-  takerName: string;
-  takerDocument: string;
-  amount: string;
-  description: string;
-  /** A nota mais recente deste item (a cancelada fica visível até sair outra). */
-  invoice: ClientNfseInvoiceView | null;
-}
-
-export interface ClientNfseMonthIssuerView {
-  issuerId: string;
-  name: string;
-  cnpj: string | null;
-  problem: string | null;
-  items: ClientNfseMonthItemView[];
-}
-
-export async function loadClientNfseMonth(
-  tx: OrgTx,
-  input: { orgId: string; year: number; month: number; now: Date },
-): Promise<{ activeModels: number; issuers: ClientNfseMonthIssuerView[] }> {
-  const it = schema.clientNfseItems;
-  const tk = schema.clientNfseTakers;
-  const items = await tx
-    .select({ itemId: it.id, issuerId: it.issuerId, amount: it.amount, description: it.description, takerName: tk.name, takerDocument: tk.document })
-    .from(it)
-    .innerJoin(tk, and(eq(tk.orgId, it.orgId), eq(tk.id, it.takerId)))
-    .where(and(eq(it.orgId, input.orgId), eq(it.periodYear, input.year), eq(it.periodMonth, input.month)))
-    .orderBy(asc(tk.name), asc(it.createdAt));
-  const n = schema.clientNfseInvoices;
-  const invoices = items.length
-    ? await tx
-        .select({ id: n.id, itemId: n.itemId, status: n.status, nfseNumber: n.nfseNumber, issuedAt: n.issuedAt, lastError: n.lastError, dpsSeries: n.dpsSeries, dpsNumber: n.dpsNumber })
-        .from(n)
-        .where(and(eq(n.orgId, input.orgId), inArray(n.itemId, items.map((item) => item.itemId))))
-        .orderBy(desc(n.createdAt))
-    : [];
-  const latest = new Map<string, (typeof invoices)[number]>();
-  for (const invoice of invoices) if (!latest.has(invoice.itemId)) latest.set(invoice.itemId, invoice);
-  const m = schema.clientNfseModels;
-  const i = schema.clientNfseIssuers;
-  const activeModels = (
-    await tx
-      .select({ id: m.id })
-      .from(m)
-      .innerJoin(i, and(eq(i.orgId, m.orgId), eq(i.id, m.issuerId)))
-      .where(and(eq(m.orgId, input.orgId), eq(m.active, true), eq(i.active, true)))
-  ).length;
-  const readiness = await loadIssuerReadiness(tx, { orgId: input.orgId, now: input.now });
-  const groups = new Map<string, ClientNfseMonthIssuerView>();
-  for (const item of items) {
-    const issuer = readiness.get(item.issuerId);
-    const group = groups.get(item.issuerId) ?? {
-      issuerId: item.issuerId,
-      name: issuer?.name ?? "",
-      cnpj: issuer?.cnpj ?? null,
-      problem: issuer?.problem ?? null,
-      items: [],
-    };
-    const invoice = latest.get(item.itemId);
-    group.items.push({
-      itemId: item.itemId,
-      takerName: item.takerName,
-      takerDocument: item.takerDocument,
-      amount: item.amount,
-      description: item.description,
-      invoice: invoice
-        ? {
-            id: invoice.id,
-            status: invoice.status,
-            nfseNumber: invoice.nfseNumber,
-            issuedAt: invoice.issuedAt?.toISOString() ?? null,
-            lastError: invoice.lastError,
-            dpsSeries: invoice.dpsSeries,
-            dpsNumber: invoice.dpsNumber,
-          }
-        : null,
-    });
-    groups.set(item.issuerId, group);
-  }
-  return { activeModels, issuers: [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR")) };
 }
 
 function slug(text: string): string {
@@ -294,10 +261,12 @@ const SUGGESTION_WINDOW_DAYS = 75;
  * desta empresa. As recentes dão o modelo fiscal e as notas padrão; uma nota
  * por mês do histórico inteiro diz que séries de DPS ela já usou.
  */
+export type IssuerSuggestionView = IssuerSuggestion & { cityLabel: string | null };
+
 export async function loadIssuerSuggestion(
   tx: OrgTx,
   input: { orgId: string; clientId: string; issuerId: string | null; now: Date },
-): Promise<IssuerSuggestion> {
+): Promise<IssuerSuggestionView> {
   const n = schema.nfseIssuedNotes;
   const since = new Date(input.now.getTime() - SUGGESTION_WINDOW_DAYS * 86_400_000);
   const recent = await tx
@@ -324,5 +293,9 @@ export async function loadIssuerSuggestion(
       .where(and(eq(schema.clientNfseModels.orgId, input.orgId), eq(schema.clientNfseModels.issuerId, input.issuerId)));
   }
   const suggestion = suggestFromIssuedNotes(facts, { models: existing });
-  return { ...suggestion, dpsSeries: freeDpsSeries([...facts.map((fact) => fact.series), ...olderSeries]) };
+  return {
+    ...suggestion,
+    dpsSeries: freeDpsSeries([...facts.map((fact) => fact.series), ...olderSeries]),
+    cityLabel: cityLabelOf(suggestion.template?.cityCode),
+  };
 }

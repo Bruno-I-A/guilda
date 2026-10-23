@@ -84,12 +84,11 @@ test("ciclo: cadastro, mês, prévia, fila com numeração por empresa, travas e
   await withOrgTx(ORG, (tx) => registry.saveClientNfseModel(tx, { ...ACTOR, issuerId: mercadoId, modelId: null, takerId: mercadoTakerId, amount: "900.00", description: "Aluguel {mes}", reference: "previous", service: null, active: true }));
   await withOrgTx(ORG, (tx) => registry.saveClientNfseModel(tx, { ...ACTOR, issuerId: mercadoId, modelId: null, takerId: mercadoTakerId, amount: "1.00", description: "Pausada", reference: "previous", service: null, active: false }));
 
-  // Abrir novembro: só as ativas, descrição resolvida; abrir de novo não duplica.
-  const opened = await withOrgTx(ORG, (tx) => month.openClientNfseMonth(tx, { ...ACTOR, year: 2026, month: 11 }));
-  expect(opened).toEqual({ ok: true, data: { created: 3, existing: 0 } });
-  expect(await withOrgTx(ORG, (tx) => month.openClientNfseMonth(tx, { ...ACTOR, year: 2026, month: 11 }))).toEqual({ ok: true, data: { created: 0, existing: 3 } });
-  const items = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseItems).orderBy(schema.clientNfseItems.amount));
-  expect(items.map((item) => item.description).sort()).toEqual(["Aluguel 10/2026", "Mensalidade referente a 10/2026", "Taxa de 11/2026"]);
+  // Sem "abrir o mês": as notas padrão ativas já aparecem em novembro, com a descrição resolvida.
+  const rows = await withOrgTx(ORG, (tx) => month.loadClientNfseMonthRows(tx, { orgId: ORG, year: 2026, month: 11, now: NOW }));
+  expect(rows.map((row) => row.description).sort()).toEqual(["Aluguel 10/2026", "Mensalidade referente a 10/2026", "Taxa de 11/2026"]);
+  expect(rows.every((row) => row.itemId === null)).toBe(true);
+  expect(await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseItems))).toHaveLength(0);
 
   // Sem certificado ninguém emite; com certificado conferido, emite.
   const blocked = await withOrgTx(ORG, (tx) => month.loadClientNfsePreview(tx, { orgId: ORG, year: 2026, month: 11, now: NOW }));
@@ -107,13 +106,16 @@ test("ciclo: cadastro, mês, prévia, fila com numeração por empresa, travas e
 
   // Ajuste do mês não mexe na nota padrão.
   const taxa = preview.items.find((item) => item.description === "Taxa de 11/2026")!;
-  expect((await withOrgTx(ORG, (tx) => month.updateClientNfseItem(tx, { ...ACTOR, itemId: taxa.itemId, amount: "45.50", description: "Taxa de novembro" }))).ok).toBe(true);
+  expect((await withOrgTx(ORG, (tx) => month.adjustClientNfseMonthNote(tx, { ...ACTOR, year: 2026, month: 11, modelId: taxa.modelId, amount: "45.50", description: "Taxa de novembro" }))).ok).toBe(true);
+  // Dezembro continua com o padrão.
+  const december = await withOrgTx(ORG, (tx) => month.loadClientNfseMonthRows(tx, { orgId: ORG, year: 2026, month: 12, now: NOW }));
+  expect(december.find((row) => row.modelId === taxa.modelId)).toMatchObject({ amount: "40.00", description: "Taxa de 12/2026", itemId: null });
   const adjusted = await withOrgTx(ORG, (tx) => month.loadClientNfsePreview(tx, { orgId: ORG, year: 2026, month: 11, now: NOW }));
   expect(adjusted.totalCents).toBe(15000 + 4550 + 90000);
   expect((await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseModels).where(eq(schema.clientNfseModels.amount, "40.00")))).length).toBe(1);
 
-  // Prévia velha é recusada; a certa reserva a DPS de cada empresa em sequência.
-  const selected = adjusted.items.map((item) => item.itemId);
+  // Lista velha é recusada; a certa reserva a DPS de cada empresa em sequência.
+  const selected = adjusted.items.map((item) => item.modelId);
   const stale = await withOrgTx(ORG, (tx) => month.enqueueClientNfseBatch(tx, { ...ACTOR, year: 2026, month: 11, selected, expectedCount: 3, expectedTotalCents: 109000, today: "2026-11-05", now: NOW }));
   expect(stale.ok).toBe(false);
   const future = await withOrgTx(ORG, (tx) => month.enqueueClientNfseBatch(tx, { ...ACTOR, year: 2026, month: 12, selected, expectedCount: 3, expectedTotalCents: adjusted.totalCents, today: "2026-11-05", now: NOW }));
@@ -131,7 +133,12 @@ test("ciclo: cadastro, mês, prévia, fila com numeração por empresa, travas e
   // Já pedida: sai da prévia, não se edita, não duplica, e o cadastro não se apaga.
   const after = await withOrgTx(ORG, (tx) => month.loadClientNfsePreview(tx, { orgId: ORG, year: 2026, month: 11, now: NOW }));
   expect(after.items).toHaveLength(0);
-  expect((await withOrgTx(ORG, (tx) => month.updateClientNfseItem(tx, { ...ACTOR, itemId: taxa.itemId, amount: "1.00", description: "x" }))).ok).toBe(false);
+  expect((await withOrgTx(ORG, (tx) => month.adjustClientNfseMonthNote(tx, { ...ACTOR, year: 2026, month: 11, modelId: taxa.modelId, amount: "1.00", description: "x" }))).ok).toBe(false);
+  // Pausar a nota padrão não some com a nota já pedida em novembro.
+  await withOrgTx(ORG, (tx) => tx.update(schema.clientNfseModels).set({ active: false }).where(eq(schema.clientNfseModels.id, taxa.modelId)));
+  const paused = await withOrgTx(ORG, (tx) => month.loadClientNfseMonthRows(tx, { orgId: ORG, year: 2026, month: 11, now: NOW }));
+  expect(paused.find((row) => row.modelId === taxa.modelId)).toMatchObject({ modelActive: false, hasActiveInvoice: true });
+  expect((await withOrgTx(ORG, (tx) => month.loadClientNfseMonthRows(tx, { orgId: ORG, year: 2026, month: 12, now: NOW }))).some((row) => row.modelId === taxa.modelId)).toBe(false);
   expect((await withOrgTx(ORG, (tx) => registry.deleteClientNfseIssuer(tx, { ...ACTOR, issuerId }))).ok).toBe(false);
   expect((await withOrgTx(ORG, (tx) => registry.deleteClientNfseTaker(tx, { ...ACTOR, takerId }))).ok).toBe(false);
   // Mesmo pulando a action, o banco recusa (a nota não tem cascata).
@@ -235,4 +242,23 @@ test("sugestão pelas notas guardadas da empresa e importação das notas padrã
   // Já cadastradas, não voltam como sugestão.
   const again = await withOrgTx(ORG, (tx) => loadIssuerSuggestion(tx, { orgId: ORG, clientId: MERCADO, issuerId: issuer.id, now: NOW }));
   expect(again.models).toEqual([]);
+
+  // Nota com o tomador no mesmo formulário: o CPF de quem já recebe reaproveita o tomador.
+  const note = await withOrgTx(ORG, (tx) =>
+    registry.saveClientNfseNote(tx, {
+      ...ACTOR,
+      issuerId: issuer.id,
+      modelId: null,
+      taker: { document: "40503119091", name: "João da Silva Souza", address: null },
+      amount: "80.00",
+      description: "PERSONAL REFERENTE A {mes}",
+      reference: "previous",
+      service: null,
+      active: true,
+    }),
+  );
+  expect(note.ok).toBe(true);
+  const joaos = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseTakers).where(and(eq(schema.clientNfseTakers.issuerId, issuer.id), eq(schema.clientNfseTakers.document, "40503119091"))));
+  expect(joaos).toHaveLength(1);
+  expect(joaos[0].name).toBe("João da Silva Souza");
 }, 60_000);

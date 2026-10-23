@@ -300,3 +300,52 @@ export async function importClientNfseSuggestions(
   }
   return { ok: true, data: { takers, models: input.items.length } };
 }
+
+/**
+ * Nota padrão com o tomador no mesmo formulário: o tomador é achado pelo
+ * CPF/CNPJ dentro da empresa (atualiza nome e endereço) ou nasce aqui.
+ */
+export async function saveClientNfseNote(
+  tx: OrgTx,
+  input: Actor & {
+    issuerId: string;
+    modelId: string | null;
+    taker: { document: string; name: string; address: AddressInput | null };
+    amount: string;
+    description: string;
+    reference: ClientNfseReference;
+    service: ServiceOverride | null;
+    active: boolean;
+  },
+): Promise<ActionResult<{ modelId: string }>> {
+  const t = schema.clientNfseTakers;
+  const [existing] = await tx
+    .select({ id: t.id, address: t.address })
+    .from(t)
+    .where(and(eq(t.orgId, input.orgId), eq(t.issuerId, input.issuerId), eq(t.document, input.taker.document)))
+    .limit(1);
+  const taker = await saveClientNfseTaker(tx, {
+    orgId: input.orgId,
+    actorId: input.actorId,
+    issuerId: input.issuerId,
+    takerId: existing?.id ?? null,
+    name: input.taker.name,
+    document: input.taker.document,
+    // Endereço em branco no formulário não apaga o que o tomador já tinha.
+    address: cleanAddress(input.taker.address) ?? existing?.address ?? null,
+    active: true,
+  });
+  if (!taker.ok) return taker;
+  return saveClientNfseModel(tx, {
+    orgId: input.orgId,
+    actorId: input.actorId,
+    issuerId: input.issuerId,
+    modelId: input.modelId,
+    takerId: taker.data!.takerId,
+    amount: input.amount,
+    description: input.description,
+    reference: input.reference,
+    service: input.service,
+    active: input.active,
+  });
+}

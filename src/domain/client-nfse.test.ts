@@ -10,7 +10,7 @@ import {
 
 function candidate(overrides: Partial<ClientNfseCandidate> = {}): ClientNfseCandidate {
   return {
-    itemId: "i1",
+    modelId: "i1",
     issuerId: "e1",
     issuerName: "Academia",
     takerName: "Cliente",
@@ -45,17 +45,17 @@ describe("lote do mês", () => {
   test("entra o que pode emitir; o resto sai com o motivo", () => {
     const batch = selectClientNfseBatch([
       candidate(),
-      candidate({ itemId: "i2", hasActiveInvoice: true }),
-      candidate({ itemId: "i3", issuerProblem: "Certificado vencido." }),
-      candidate({ itemId: "i4", takerDocument: "33000167000102" }),
-      candidate({ itemId: "i5", amount: "0.00" }),
-      candidate({ itemId: "i6", description: "  " }),
-      candidate({ itemId: "i7", requireAddress: true }),
-      candidate({ itemId: "i8", takerDocument: "40503119091", amount: "99.90" }),
+      candidate({ modelId: "i2", hasActiveInvoice: true }),
+      candidate({ modelId: "i3", issuerProblem: "Certificado vencido." }),
+      candidate({ modelId: "i4", takerDocument: "33000167000102" }),
+      candidate({ modelId: "i5", amount: "0.00" }),
+      candidate({ modelId: "i6", description: "  " }),
+      candidate({ modelId: "i7", requireAddress: true }),
+      candidate({ modelId: "i8", takerDocument: "40503119091", amount: "99.90" }),
     ]);
-    expect(batch.items.map((item) => item.itemId)).toEqual(["i1", "i8"]);
+    expect(batch.items.map((item) => item.modelId)).toEqual(["i1", "i8"]);
     expect(batch.totalCents).toBe(15000 + 9990);
-    expect(batch.excluded.map((item) => [item.itemId, item.reason])).toEqual([
+    expect(batch.excluded.map((item) => [item.modelId, item.reason])).toEqual([
       ["i2", "already_active"],
       ["i3", "issuer_not_ready"],
       ["i4", "invalid_document"],

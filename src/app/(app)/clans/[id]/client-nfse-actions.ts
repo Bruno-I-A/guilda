@@ -4,29 +4,23 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { normalizeCnpj, validateCnpj, validateTaxDocument } from "@/domain/cnpj";
-import { CLIENT_NFSE_REFERENCES, type ClientNfseBatch } from "@/domain/client-nfse";
+import { CLIENT_NFSE_REFERENCES } from "@/domain/client-nfse";
 import { NFSE_CANCEL_TEXT_MAX, NFSE_CANCEL_TEXT_MIN } from "@/domain/nfse";
 import { err, type ActionResult } from "@/lib/action-context";
+import { loadIssuerSuggestion, type IssuerSuggestionView } from "@/lib/client-nfse/loaders";
 import {
+  adjustClientNfseMonthNote,
   enqueueClientNfseBatch,
-  loadClientNfsePreview,
-  openClientNfseMonth,
-  removeClientNfseItem,
   requestClientNfseCancel,
   requeueClientNfseInvoice,
-  updateClientNfseItem,
 } from "@/lib/client-nfse/month";
-import { loadIssuerSuggestion } from "@/lib/client-nfse/loaders";
 import {
   deleteClientNfseIssuer,
   deleteClientNfseModel,
-  deleteClientNfseTaker,
   importClientNfseSuggestions,
   saveClientNfseIssuer,
-  saveClientNfseModel,
-  saveClientNfseTaker,
+  saveClientNfseNote,
 } from "@/lib/client-nfse/registry";
-import type { IssuerSuggestion } from "@/lib/client-nfse/suggest";
 import { lookupCnpj, type CnpjAddress } from "@/lib/cnpj-lookup";
 import { nfseIssuerTemplateRulesSchema } from "@/lib/nfse/template";
 import { nfseToday } from "@/lib/nfse/time";
@@ -46,28 +40,57 @@ const clan = z.uuid("Clã inválido.");
 const money = z.string().trim().regex(/^\d+(?:\.\d{1,2})?$/, "Valor inválido.");
 const description = z.string().trim().min(1, "Escreva a descrição da nota.").max(2000, "Descrição muito longa (até 2000 caracteres).");
 const optionalText = (max: number) => z.string().trim().max(max, "Texto muito longo.").nullable();
+const document = z.string().transform((value) => normalizeCnpj(value)).refine(validateTaxDocument, "CPF ou CNPJ inválido.");
+const address = z
+  .object({
+    street: optionalText(255),
+    number: optionalText(60),
+    complement: optionalText(156),
+    district: optionalText(60),
+    city: optionalText(100),
+    state: optionalText(2),
+    zipCode: optionalText(9),
+  })
+  .nullable();
+const suggestedNote = z.object({
+  takerDocument: document,
+  takerName: z.string().trim().min(1).max(200),
+  address,
+  amount: money,
+  description,
+  reference: z.enum(CLIENT_NFSE_REFERENCES),
+});
+const idSchema = (label: string) => z.object({ clanId: clan, id: z.uuid(label) });
 
 const issuerSchema = z.object({
   clanId: clan,
   issuerId: z.uuid().nullable(),
-  clientId: z.uuid("Empresa inválida."),
+  clientId: z.uuid("Escolha a empresa."),
   template: nfseIssuerTemplateRulesSchema,
   dpsSeries: z.string().trim(),
   active: z.boolean(),
+  /** Empresa nova: as notas padrão marcadas entre as tiradas das notas emitidas. */
+  notes: z.array(suggestedNote).max(1000).default([]),
 });
 
-export async function saveIssuer(input: z.input<typeof issuerSchema>): Promise<ActionResult<{ issuerId: string }>> {
+export async function saveIssuer(
+  input: z.input<typeof issuerSchema>,
+): Promise<ActionResult<{ issuerId: string; notes: number }>> {
   const parsed = issuerSchema.safeParse(input);
-  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Modelo fiscal inválido.");
-  const data = parsed.data;
-  const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
-    saveClientNfseIssuer(tx, { orgId: ctx.orgId, actorId: ctx.userId, ...data }),
-  );
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados fiscais inválidos.");
+  const { notes, ...data } = parsed.data;
+  const result = await asFiscalOperator(data.clanId, async (tx, ctx) => {
+    const saved = await saveClientNfseIssuer(tx, { orgId: ctx.orgId, actorId: ctx.userId, ...data });
+    if (!saved.ok) return saved;
+    const issuerId = saved.data!.issuerId;
+    if (data.issuerId || notes.length === 0) return { ok: true, data: { issuerId, notes: 0 } };
+    const imported = await importClientNfseSuggestions(tx, { orgId: ctx.orgId, actorId: ctx.userId, issuerId, items: notes });
+    if (!imported.ok) return imported;
+    return { ok: true, data: { issuerId, notes: imported.data!.models } };
+  });
   if (result.ok) revalidateClan();
   return result;
 }
-
-const idSchema = (label: string) => z.object({ clanId: clan, id: z.uuid(label) });
 
 export async function deleteIssuer(input: z.input<ReturnType<typeof idSchema>>): Promise<ActionResult> {
   const parsed = idSchema("Empresa inválida.").safeParse(input);
@@ -79,42 +102,31 @@ export async function deleteIssuer(input: z.input<ReturnType<typeof idSchema>>):
   return result;
 }
 
-const takerSchema = z.object({
-  clanId: clan,
-  issuerId: z.uuid("Empresa inválida."),
-  takerId: z.uuid().nullable(),
-  name: z.string().trim().min(1, "Informe o nome do tomador.").max(200, "Nome muito longo."),
-  document: z.string().transform((value) => normalizeCnpj(value)).refine(validateTaxDocument, "CPF ou CNPJ inválido."),
-  address: z
-    .object({
-      street: optionalText(255),
-      number: optionalText(60),
-      complement: optionalText(156),
-      district: optionalText(60),
-      city: optionalText(100),
-      state: optionalText(2),
-      zipCode: optionalText(9),
-    })
-    .nullable(),
-  active: z.boolean(),
-});
+const suggestSchema = z.object({ clanId: clan, clientId: z.uuid("Empresa inválida."), issuerId: z.uuid().nullable() });
 
-export async function saveTaker(input: z.input<typeof takerSchema>): Promise<ActionResult<{ takerId: string }>> {
-  const parsed = takerSchema.safeParse(input);
-  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Tomador inválido.");
+/** Dados fiscais, série livre e notas padrão sugeridos pelas notas que a empresa já emitiu. */
+export async function suggestIssuerSetup(input: z.input<typeof suggestSchema>): Promise<ActionResult<IssuerSuggestionView>> {
+  const parsed = suggestSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Pedido inválido.");
   const data = parsed.data;
-  const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
-    saveClientNfseTaker(tx, { orgId: ctx.orgId, actorId: ctx.userId, ...data }),
-  );
-  if (result.ok) revalidateClan();
-  return result;
+  return asFiscalOperator(data.clanId, async (tx, ctx) => ({
+    ok: true,
+    data: await loadIssuerSuggestion(tx, { orgId: ctx.orgId, clientId: data.clientId, issuerId: data.issuerId, now: new Date() }),
+  }));
 }
 
-export async function deleteTaker(input: z.input<ReturnType<typeof idSchema>>): Promise<ActionResult> {
-  const parsed = idSchema("Tomador inválido.").safeParse(input);
-  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Pedido inválido.");
-  const result = await asFiscalOperator(parsed.data.clanId, (tx, ctx) =>
-    deleteClientNfseTaker(tx, { orgId: ctx.orgId, actorId: ctx.userId, takerId: parsed.data.id }),
+const importSchema = z.object({
+  clanId: clan,
+  issuerId: z.uuid("Empresa inválida."),
+  items: z.array(suggestedNote).min(1, "Marque ao menos uma nota.").max(1000),
+});
+
+export async function importSuggestions(input: z.input<typeof importSchema>): Promise<ActionResult<{ takers: number; models: number }>> {
+  const parsed = importSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Sugestões inválidas.");
+  const data = parsed.data;
+  const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
+    importClientNfseSuggestions(tx, { orgId: ctx.orgId, actorId: ctx.userId, issuerId: data.issuerId, items: data.items }),
   );
   if (result.ok) revalidateClan();
   return result;
@@ -146,11 +158,11 @@ export async function lookupTakerCnpj(
 
 const digits = (length: number, label: string) => z.string().regex(new RegExp(`^\\d{${length}}$`), `${label} deve ter ${length} dígitos.`);
 
-const modelSchema = z.object({
+const noteSchema = z.object({
   clanId: clan,
   issuerId: z.uuid("Empresa inválida."),
   modelId: z.uuid().nullable(),
-  takerId: z.uuid("Escolha o tomador."),
+  taker: z.object({ document, name: z.string().trim().min(1, "Informe o nome do tomador.").max(200, "Nome muito longo."), address }),
   amount: money,
   description,
   reference: z.enum(CLIENT_NFSE_REFERENCES),
@@ -164,12 +176,13 @@ const modelSchema = z.object({
   active: z.boolean(),
 });
 
-export async function saveModel(input: z.input<typeof modelSchema>): Promise<ActionResult<{ modelId: string }>> {
-  const parsed = modelSchema.safeParse(input);
-  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Nota padrão inválida.");
+/** Nota padrão e tomador no mesmo formulário. */
+export async function saveNote(input: z.input<typeof noteSchema>): Promise<ActionResult<{ modelId: string }>> {
+  const parsed = noteSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Nota inválida.");
   const data = parsed.data;
   const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
-    saveClientNfseModel(tx, { orgId: ctx.orgId, actorId: ctx.userId, ...data }),
+    saveClientNfseNote(tx, { orgId: ctx.orgId, actorId: ctx.userId, ...data }),
   );
   if (result.ok) revalidateClan();
   return result;
@@ -191,52 +204,23 @@ const periodSchema = z.object({
   month: z.number().int().min(1).max(12),
 });
 
-export async function openMonth(input: z.input<typeof periodSchema>): Promise<ActionResult<{ created: number; existing: number }>> {
-  const parsed = periodSchema.safeParse(input);
-  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Período inválido.");
-  const data = parsed.data;
-  const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
-    openClientNfseMonth(tx, { orgId: ctx.orgId, actorId: ctx.userId, year: data.year, month: data.month }),
-  );
-  if (result.ok) revalidateClan();
-  return result;
-}
+const adjustSchema = periodSchema.extend({ modelId: z.uuid("Nota inválida."), amount: money, description });
 
-const itemSchema = z.object({ clanId: clan, itemId: z.uuid("Nota inválida."), amount: money, description });
-
-export async function updateItem(input: z.input<typeof itemSchema>): Promise<ActionResult> {
-  const parsed = itemSchema.safeParse(input);
+/** Valor e texto só deste mês; a nota padrão não muda. */
+export async function adjustNote(input: z.input<typeof adjustSchema>): Promise<ActionResult> {
+  const parsed = adjustSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Nota inválida.");
   const data = parsed.data;
   const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
-    updateClientNfseItem(tx, { orgId: ctx.orgId, actorId: ctx.userId, itemId: data.itemId, amount: data.amount, description: data.description }),
+    adjustClientNfseMonthNote(tx, { orgId: ctx.orgId, actorId: ctx.userId, ...data }),
   );
   if (result.ok) revalidateClan();
   return result;
-}
-
-export async function removeItem(input: z.input<ReturnType<typeof idSchema>>): Promise<ActionResult> {
-  const parsed = idSchema("Nota inválida.").safeParse(input);
-  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Pedido inválido.");
-  const result = await asFiscalOperator(parsed.data.clanId, (tx, ctx) =>
-    removeClientNfseItem(tx, { orgId: ctx.orgId, actorId: ctx.userId, itemId: parsed.data.id }),
-  );
-  if (result.ok) revalidateClan();
-  return result;
-}
-
-export async function previewEmission(input: z.input<typeof periodSchema>): Promise<ActionResult<ClientNfseBatch>> {
-  const parsed = periodSchema.safeParse(input);
-  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Período inválido.");
-  const data = parsed.data;
-  return asFiscalOperator(data.clanId, async (tx, ctx) => ({
-    ok: true,
-    data: await loadClientNfsePreview(tx, { orgId: ctx.orgId, year: data.year, month: data.month, now: new Date() }),
-  }));
 }
 
 const emitSchema = periodSchema.extend({
-  selected: z.array(z.uuid()).min(1, "Marque ao menos uma nota para emitir.").max(2000),
+  /** Notas padrão escolhidas: uma, as de uma empresa ou várias. */
+  selected: z.array(z.uuid()).min(1, "Escolha ao menos uma nota para emitir.").max(2000),
   expectedCount: z.number().int().min(1).max(2000),
   expectedTotalCents: z.number().int().min(1),
 });
@@ -280,48 +264,6 @@ export async function retryInvoice(input: z.input<ReturnType<typeof idSchema>>):
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Pedido inválido.");
   const result = await asFiscalOperator(parsed.data.clanId, (tx, ctx) =>
     requeueClientNfseInvoice(tx, { orgId: ctx.orgId, actorId: ctx.userId, invoiceId: parsed.data.id }),
-  );
-  if (result.ok) revalidateClan();
-  return result;
-}
-
-const suggestSchema = z.object({ clanId: clan, clientId: z.uuid("Empresa inválida."), issuerId: z.uuid().nullable() });
-
-/** Modelo fiscal, série livre e notas padrão sugeridos pelas notas que a empresa já emitiu. */
-export async function suggestIssuerSetup(input: z.input<typeof suggestSchema>): Promise<ActionResult<IssuerSuggestion>> {
-  const parsed = suggestSchema.safeParse(input);
-  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Pedido inválido.");
-  const data = parsed.data;
-  return asFiscalOperator(data.clanId, async (tx, ctx) => ({
-    ok: true,
-    data: await loadIssuerSuggestion(tx, { orgId: ctx.orgId, clientId: data.clientId, issuerId: data.issuerId, now: new Date() }),
-  }));
-}
-
-const importSchema = z.object({
-  clanId: clan,
-  issuerId: z.uuid("Empresa inválida."),
-  items: z
-    .array(
-      z.object({
-        takerDocument: z.string().refine(validateTaxDocument, "CPF ou CNPJ inválido."),
-        takerName: z.string().trim().min(1).max(200),
-        address: takerSchema.shape.address,
-        amount: money,
-        description,
-        reference: z.enum(CLIENT_NFSE_REFERENCES),
-      }),
-    )
-    .min(1, "Marque ao menos uma nota.")
-    .max(1000),
-});
-
-export async function importSuggestions(input: z.input<typeof importSchema>): Promise<ActionResult<{ takers: number; models: number }>> {
-  const parsed = importSchema.safeParse(input);
-  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Sugestões inválidas.");
-  const data = parsed.data;
-  const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
-    importClientNfseSuggestions(tx, { orgId: ctx.orgId, actorId: ctx.userId, issuerId: data.issuerId, items: data.items }),
   );
   if (result.ok) revalidateClan();
   return result;

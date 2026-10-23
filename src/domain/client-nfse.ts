@@ -39,7 +39,7 @@ export function clientNfseMonthDescription(text: string, period: Period, referen
 }
 
 export interface ClientNfseCandidate {
-  itemId: string;
+  modelId: string;
   issuerId: string;
   issuerName: string;
   takerName: string;
@@ -75,7 +75,7 @@ export const CLIENT_NFSE_EXCLUSION_LABELS: Record<ClientNfseExclusionReason, str
 };
 
 export interface ClientNfseBatchItem {
-  itemId: string;
+  modelId: string;
   issuerId: string;
   issuerName: string;
   takerName: string;
@@ -86,7 +86,7 @@ export interface ClientNfseBatchItem {
 }
 
 export interface ClientNfseBatchExclusion {
-  itemId: string;
+  modelId: string;
   issuerName: string;
   takerName: string;
   reason: ClientNfseExclusionReason;
@@ -121,7 +121,7 @@ export function selectClientNfseBatch(candidates: readonly ClientNfseCandidate[]
                 : null;
     if (reason) {
       excluded.push({
-        itemId: candidate.itemId,
+        modelId: candidate.modelId,
         issuerName: candidate.issuerName,
         takerName: candidate.takerName,
         reason,
@@ -130,7 +130,7 @@ export function selectClientNfseBatch(candidates: readonly ClientNfseCandidate[]
       continue;
     }
     items.push({
-      itemId: candidate.itemId,
+      modelId: candidate.modelId,
       issuerId: candidate.issuerId,
       issuerName: candidate.issuerName,
       takerName: candidate.takerName,
