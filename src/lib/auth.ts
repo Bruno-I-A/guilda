@@ -14,6 +14,7 @@ import {
   prepareOrganizationMemberRemoval,
 } from "@/lib/clans/bootstrap";
 import { organizationRoleIncludesOwner } from "@/lib/clans/rules";
+import { retireUserIfOrphaned } from "@/lib/auth-orphan";
 
 export const auth = betterAuth({
   appName: "Guilda",
@@ -126,6 +127,10 @@ export const auth = betterAuth({
             member.organizationId,
             member.userId,
           );
+          // A linha de user permanece para preservar autoria, XP e auditoria.
+          // Sem outro vínculo organizacional, as credenciais são revogadas e o
+          // e-mail fica livre para uma nova pessoa.
+          await retireUserIfOrphaned(member.userId);
         },
       },
     }),
