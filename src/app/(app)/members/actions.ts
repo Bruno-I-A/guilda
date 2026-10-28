@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { auth } from "@/lib/auth";
 import { createUserWithPassword } from "@/lib/auth-admin";
+import { withAuthEmailLock } from "@/lib/auth-orphan";
 import { err, requireMemberContext } from "@/lib/action-context";
 import type { ActionResult } from "@/lib/action-context";
 
@@ -45,30 +46,46 @@ export async function createMemberWithTempPassword(
   const data = parsed.data;
   const email = data.email.toLowerCase();
 
-  const criado = await createUserWithPassword({
-    name: data.name,
-    email,
-    password: data.tempPassword,
-    // Quem escolheu a senha foi o admin, não a pessoa: trocar é obrigatório.
-    mustChangePassword: true,
-  });
-  if (!criado.ok) {
-    return err(
-      criado.reason === "email_taken"
-        ? "Já existe uma conta com este e-mail."
-        : "Não foi possível criar o usuário.",
-    );
-  }
-  const newUser = { id: criado.userId };
-
-  try {
-    await auth.api.addMember({
-      body: { userId: newUser.id, organizationId: ctx.orgId, role: data.role },
+  const result = await withAuthEmailLock(email, async (): Promise<ActionResult> => {
+    const criado = await createUserWithPassword({
+      name: data.name,
+      email,
+      password: data.tempPassword,
+      // Quem escolheu a senha foi o admin, não a pessoa: trocar é obrigatório.
+      mustChangePassword: true,
     });
-  } catch {
-    return err("Usuário criado, mas não foi possível adicioná-lo à organização.");
-  }
+    if (!criado.ok) {
+      return err(
+        criado.reason === "email_taken"
+          ? "Já existe uma conta ativa com este e-mail."
+          : "Não foi possível criar o usuário.",
+      );
+    }
+
+    try {
+      await auth.api.addMember({
+        body: {
+          userId: criado.userId,
+          organizationId: ctx.orgId,
+          role: data.role,
+        },
+      });
+    } catch {
+      // Sem member e sem histórico, a conta recém-criada pode ser removida por
+      // inteiro. Assim uma falha parcial não reserva o e-mail para a tentativa
+      // seguinte.
+      const authContext = await auth.$context;
+      await authContext.internalAdapter
+        .deleteUser(criado.userId)
+        .catch(() => undefined);
+      return err("Não foi possível adicionar o usuário à organização.");
+    }
+
+    return { ok: true };
+  });
+
+  if (!result.ok) return result;
 
   revalidatePath("/members");
-  return { ok: true };
+  return result;
 }
