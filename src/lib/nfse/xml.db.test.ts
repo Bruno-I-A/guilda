@@ -260,7 +260,7 @@ test("aba XML: empresas com certificado, notas do mês e leitura; download do m�
   // Com o código da Domínio, a pasta sai no formato que a importação de lá exige.
   await withOrgTx(ORG, (tx) => tx.update(schema.clients).set({ dominioCode: "42" }).where(eq(schema.clients.cnpj, "55000167000103")));
   const withCode = await withOrgTx(ORG, (tx) => loadXmlArchiveInput(tx, { orgId: ORG, year: 2026, month: 9, now }));
-  expect(withCode.companies.map((company) => company.folder)).toContain("42-Oficina");
+  expect(withCode.companies.map((company) => company.folder)).toContain("42-Oficina 09-2026");
   expect((await withOrgTx(ORG, (tx) => loadXmlCompanies(tx, { orgId: ORG, year: 2026, month: 9 }))).find((company) => company.name === "Oficina")?.dominioCode).toBe("42");
   // O código é único na organização e só aceita número.
   await expect(withOrgTx(ORG, (tx) => tx.update(schema.clients).set({ dominioCode: "42" }).where(eq(schema.clients.name, "Padaria")))).rejects.toMatchObject({ cause: { code: "23505" } });

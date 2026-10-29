@@ -399,7 +399,7 @@ export function XmlNotesBoard({
             <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
             <p className="min-w-0 flex-1">
               {serviceWithoutCode} empresa(s) de serviço sem o código da Domínio. A pasta delas no arquivo sai sem o formato
-              &quot;código-razão social&quot; e a Domínio recusa a importação. Informe na linha ou importe a lista da Domínio.
+              &quot;código-razão social mês-ano&quot; e a Domínio recusa a importação. Informe na linha ou importe a lista da Domínio.
             </p>
             <Button type="button" size="sm" variant="outline" onClick={() => { setScope("service"); setFilter("nocode"); }}>
               Ver quais

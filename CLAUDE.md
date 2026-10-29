@@ -39,7 +39,8 @@ só aceita a pasta `<código>-<nome>`. O código da empresa na Domínio mora em
 `clients.dominio_code` (só número, sem zeros à esquerda, único na org) e se
 informa no cadastro da empresa, na linha da aba XML ou pela lista exportada da
 Domínio (Código + CNPJ, casada pelo CNPJ, com prévia antes de gravar). Com
-código, a pasta do .zip sai `125-Razao Social Ltda`; sem código, continua
+código, a pasta do .zip sai `125-Razao Social Ltda 10-2026` (mês com hífen: `/` abriria
+subpasta no .zip); sem código, continua
 `slug-raizCNPJ` e a aba avisa quantas empresas de serviço estão sem.
 
 Plataforma multi-tenant de gestão de tarefas com sistema de recompensa (XP e níveis).

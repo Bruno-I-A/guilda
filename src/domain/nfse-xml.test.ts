@@ -149,6 +149,9 @@ describe("nomes no arquivo", () => {
     expect(xmlCompanyFolder("Padaria Pão & Cia Ltda", "33000167000101", "123")).toBe("123-Padaria Pao E Cia Ltda");
     expect(xmlCompanyFolder("ABC / Serviços: \"Médicos\" S.A.", null, "7")).toBe("7-ABC Servicos Medicos S.A");
     expect(xmlCompanyFolder("  ", null, "7")).toBe("7-EMPRESA");
+    // Com o mês: "1084-ACADEMIA 10-2026" (hífen, porque "/" abriria outra pasta no .zip).
+    expect(xmlCompanyFolder("ACADEMIA", null, "1084", { year: 2026, month: 10 })).toBe("1084-ACADEMIA 10-2026");
+    expect(xmlCompanyFolder("Padaria", "33000167000101", null, { year: 2026, month: 3 })).toBe("padaria-33000167");
     // Código fora do formato não entra: cai no nome de sempre.
     expect(xmlCompanyFolder("Padaria", "33000167000101", "12a")).toBe("padaria-33000167");
     expect(xmlCompanyFolder("Padaria", "33000167000101", null)).toBe("padaria-33000167");
