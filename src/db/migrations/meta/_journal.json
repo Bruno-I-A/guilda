@@ -617,6 +617,13 @@
       "when": 1792697719030,
       "tag": "0087_client-nfse",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1793281821567,
+      "tag": "0088_client-dominio-code",
+      "breakpoints": true
     }
   ]
 }

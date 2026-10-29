@@ -691,11 +691,20 @@ export const clients = pgTable(
     pendingFiscalAssignment: boolean("pending_fiscal_assignment")
       .notNull()
       .default(false),
+    /**
+     * Código da empresa no sistema contábil Domínio. A importação de XML de lá
+     * espera a pasta "<código>-<nome>"; sem ele, a Domínio recusa a pasta.
+     */
+    dominioCode: varchar("dominio_code", { length: 10 }),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("clients_org_active_idx").on(t.orgId, t.active),
+    uniqueIndex("clients_org_dominio_code_uidx")
+      .on(t.orgId, t.dominioCode)
+      .where(sql`dominio_code IS NOT NULL`),
+    check("clients_dominio_code_check", sql`${t.dominioCode} IS NULL OR ${t.dominioCode} ~ '^[0-9]{1,10}$'`),
     // Permite FKs compostas nas tabelas novas, impedindo que um registro de
     // uma organização aponte por engano para um cliente de outra organização.
     uniqueIndex("clients_org_id_uidx").on(t.orgId, t.id),

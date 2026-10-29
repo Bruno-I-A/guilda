@@ -121,12 +121,32 @@ function slug(value: string): string {
     .replace(/-+$/, "");
 }
 
+/** Razão social como pasta: sem acento e sem o que o Windows recusa em nome de arquivo. */
+function folderName(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/&/g, " E ")
+    .replace(/[^A-Za-z0-9 .,()-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80)
+    // Windows não aceita pasta terminada em ponto ou espaço.
+    .replace(/[ .]+$/, "");
+}
+
 /**
- * Pasta da empresa no .zip: nome sem acento + raiz do CNPJ (desempata nomes
- * iguais). Filial ganha também a ordem: matriz e filial têm a mesma raiz e
- * muitas vezes o mesmo nome, e as notas de uma sobrescreveriam as da outra.
+ * Pasta da empresa no .zip. Com o código da Domínio, "<código>-<razão
+ * social>", o nome que a importação de XML de lá exige (ela lê o código antes
+ * do hífen; o código é único na organização, então não há colisão). Sem
+ * código: nome sem acento + raiz do CNPJ (desempata nomes iguais). Filial
+ * ganha também a ordem: matriz e filial têm a mesma raiz e muitas vezes o
+ * mesmo nome, e as notas de uma sobrescreveriam as da outra.
  */
-export function xmlCompanyFolder(name: string, cnpj: string | null): string {
+export function xmlCompanyFolder(name: string, cnpj: string | null, dominioCode: string | null = null): string {
+  if (dominioCode && /^\d{1,10}$/.test(dominioCode)) {
+    return `${dominioCode}-${folderName(name) || "EMPRESA"}`;
+  }
   const base = slug(name) || "empresa";
   if (!cnpj || !/^\d{14}$/.test(cnpj)) return base;
   const root = cnpj.slice(0, 8);

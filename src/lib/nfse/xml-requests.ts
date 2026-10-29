@@ -118,6 +118,8 @@ export interface XmlCompanyView {
   clientId: string;
   name: string;
   cnpj: string | null;
+  /** Código na Domínio: dá o nome "<código>-<razão social>" à pasta do .zip. */
+  dominioCode: string | null;
   /** Emite NFS-e: a Ficha Fiscal manda; sem marcação, o CNAE principal sugere. */
   service: { issues: boolean | null; source: NfseIssuerSource };
   certificate: ClientCertificateView | null;
@@ -142,7 +144,7 @@ export async function loadXmlCompanies(
   const c = schema.nfseClientCertificates;
   const fp = schema.fiscalClientProfiles;
   const rows = await tx
-    .select({ clientId: cl.id, name: cl.name, cnpj: cl.cnpj, cnaeCode: cl.cnaeCode, issuer: fp.nfseIssuerApplicability })
+    .select({ clientId: cl.id, name: cl.name, cnpj: cl.cnpj, dominioCode: cl.dominioCode, cnaeCode: cl.cnaeCode, issuer: fp.nfseIssuerApplicability })
     .from(cl)
     .leftJoin(c, and(eq(c.orgId, cl.orgId), eq(c.clientId, cl.id)))
     .leftJoin(fp, and(eq(fp.orgId, cl.orgId), eq(fp.clientId, cl.id)))
@@ -225,13 +227,13 @@ export async function loadXmlArchiveInput(
   const cl = schema.clients;
   // Uma empresa (pasta dela, ou a linha do controle): direto do cadastro, esteja
   // ou não no controle daquele mês. O mês inteiro: as empresas do controle.
-  const controlRows: { clientId: string; name: string; cnpj: string | null; nfsApplicability: string | null }[] = input.clientId
+  const controlRows: { clientId: string; name: string; cnpj: string | null; dominioCode: string | null; nfsApplicability: string | null }[] = input.clientId
     ? await tx
-        .select({ clientId: cl.id, name: cl.name, cnpj: cl.cnpj, nfsApplicability: sql<string | null>`NULL` })
+        .select({ clientId: cl.id, name: cl.name, cnpj: cl.cnpj, dominioCode: cl.dominioCode, nfsApplicability: sql<string | null>`NULL` })
         .from(cl)
         .where(and(eq(cl.orgId, input.orgId), eq(cl.id, input.clientId)))
     : await tx
-        .select({ clientId: fcp.clientId, name: cl.name, cnpj: cl.cnpj, nfsApplicability: schema.fiscalClientProfiles.nfsApplicability })
+        .select({ clientId: fcp.clientId, name: cl.name, cnpj: cl.cnpj, dominioCode: cl.dominioCode, nfsApplicability: schema.fiscalClientProfiles.nfsApplicability })
         .from(fcp)
         .innerJoin(cl, and(eq(cl.orgId, fcp.orgId), eq(cl.id, fcp.clientId)))
         .leftJoin(schema.fiscalClientProfiles, and(eq(schema.fiscalClientProfiles.orgId, fcp.orgId), eq(schema.fiscalClientProfiles.id, fcp.profileId)))
@@ -244,7 +246,7 @@ export async function loadXmlArchiveInput(
     // no Controle mensal: a aba XML das notas baixa qualquer mês.
     const known = new Set(controlRows.map((row) => row.clientId));
     const withNotes = await tx
-      .selectDistinct({ clientId: cl.id, name: cl.name, cnpj: cl.cnpj })
+      .selectDistinct({ clientId: cl.id, name: cl.name, cnpj: cl.cnpj, dominioCode: cl.dominioCode })
       .from(n)
       .innerJoin(cl, and(eq(cl.orgId, n.orgId), eq(cl.id, n.clientId)))
       .where(and(eq(n.orgId, input.orgId), ne(cl.taxRegime, "mei"), gte(n.issuedAt, start), lt(n.issuedAt, end)));
@@ -275,7 +277,7 @@ export async function loadXmlArchiveInput(
     const mine = notes.filter((note) => note.clientId === row.clientId);
     if (mine.length > 0) {
       companies.push({
-        folder: xmlCompanyFolder(row.name, row.cnpj),
+        folder: xmlCompanyFolder(row.name, row.cnpj, row.dominioCode),
         notes: mine.map((note) => ({
           // A numeracao pode se repetir em anos/series diferentes no mesmo mes.
           fileName: mine.filter((other) => xmlNoteFileName(other.nfseNumber, other.nsu) === xmlNoteFileName(note.nfseNumber, note.nsu)).length > 1

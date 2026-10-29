@@ -145,6 +145,15 @@ describe("nomes no arquivo", () => {
     expect(xmlCompanyFolder("Padaria", "330001")).toBe("padaria");
   });
 
+  test("com o código da Domínio: <código>-<razão social>, o formato que ela importa", () => {
+    expect(xmlCompanyFolder("Padaria Pão & Cia Ltda", "33000167000101", "123")).toBe("123-Padaria Pao E Cia Ltda");
+    expect(xmlCompanyFolder("ABC / Serviços: \"Médicos\" S.A.", null, "7")).toBe("7-ABC Servicos Medicos S.A");
+    expect(xmlCompanyFolder("  ", null, "7")).toBe("7-EMPRESA");
+    // Código fora do formato não entra: cai no nome de sempre.
+    expect(xmlCompanyFolder("Padaria", "33000167000101", "12a")).toBe("padaria-33000167");
+    expect(xmlCompanyFolder("Padaria", "33000167000101", null)).toBe("padaria-33000167");
+  });
+
   test("nome longo cortado logo depois de um separador não deixa hífen duplo", () => {
     // 59 letras + separador + mais texto: o corte em 60 cai exatamente no hífen.
     const name = `${"a".repeat(59)} bbb`;

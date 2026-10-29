@@ -73,6 +73,7 @@ function ClientFormDialog({
     name: string;
     taxRegime: TaxRegime;
     cnpj: string;
+    dominioCode: string;
     operationalEmail: string;
     operationalPhone: string;
   }) => void;
@@ -128,6 +129,7 @@ function ClientFormDialog({
               name: String(form.get("name") ?? ""),
               taxRegime,
               cnpj,
+              dominioCode: String(form.get("dominioCode") ?? ""),
               operationalEmail: String(form.get("operationalEmail") ?? ""),
               operationalPhone: String(form.get("operationalPhone") ?? ""),
             });
@@ -219,6 +221,21 @@ function ClientFormDialog({
               </p>
             </section>
           ) : null}
+          <div className="grid gap-2">
+            <Label htmlFor="client-dominio">Código na Domínio (opcional)</Label>
+            <Input
+              id="client-dominio"
+              name="dominioCode"
+              defaultValue={initial?.dominioCode ?? ""}
+              placeholder="Ex.: 125"
+              inputMode="numeric"
+              maxLength={10}
+              className="max-w-40 font-mono"
+            />
+            <p className="text-xs text-muted-foreground">
+              O número da empresa no sistema Domínio. Dá nome à pasta dos XML que a Domínio importa.
+            </p>
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-2">
               <Label htmlFor="client-email">E-mail operacional</Label>
