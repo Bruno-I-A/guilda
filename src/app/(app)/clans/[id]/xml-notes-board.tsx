@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 import { ClientCertificateDialog } from "./client-certificate-dialog";
 import { setClientNfseIssuer } from "./nfse-xml-actions";
+import { DominioCodeField, ImportDominioCodesDialog } from "./xml-dominio-code";
 import {
   RunXmlRoutineButton,
   useXmlAutoRefresh,
@@ -27,7 +28,7 @@ import {
 
 const MONTHS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"] as const;
 
-type Filter = "all" | "missing" | "problem" | "notes";
+type Filter = "all" | "missing" | "problem" | "notes" | "nocode";
 
 function adjacentPeriod(year: number, month: number, delta: number) {
   const date = new Date(Date.UTC(year, month - 1 + delta, 1));
@@ -249,7 +250,9 @@ export function XmlNotesBoard({
     missing: scoped.filter((company) => !company.certificate).length,
     problem: scoped.filter((company) => problemIds.has(company.clientId)).length,
     notes: scoped.filter((company) => company.notes.total > 0).length,
+    nocode: scoped.filter((company) => !company.dominioCode).length,
   };
+  const serviceWithoutCode = serviceCompanies.filter((company) => !company.dominioCode).length;
 
   const steps = [
     {
@@ -277,10 +280,11 @@ export function XmlNotesBoard({
     const needle = normalize(query.trim());
     const digits = query.replace(/\D/g, "");
     return scoped.filter((company) => {
-      if (needle && !normalize(company.name).includes(needle) && !(digits && company.cnpj?.includes(digits))) return false;
+      if (needle && !normalize(company.name).includes(needle) && !(digits && (company.cnpj?.includes(digits) || company.dominioCode === digits))) return false;
       if (filter === "missing") return !company.certificate;
       if (filter === "problem") return problemIds.has(company.clientId);
       if (filter === "notes") return company.notes.total > 0;
+      if (filter === "nocode") return !company.dominioCode;
       return true;
     });
   }, [scoped, filter, problemIds, query]);
@@ -290,6 +294,7 @@ export function XmlNotesBoard({
     { key: "missing", label: "Sem certificado" },
     { key: "problem", label: "Com problema" },
     { key: "notes", label: `Com notas em ${monthName}` },
+    { key: "nocode", label: "Sem código Domínio" },
   ];
 
   return (
@@ -385,7 +390,22 @@ export function XmlNotesBoard({
       </section>
 
       <section className="grid min-w-0 gap-3">
-        <h2>Empresas</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2>Empresas</h2>
+          {canManage ? <ImportDominioCodesDialog clanId={clanId} /> : null}
+        </div>
+        {serviceWithoutCode > 0 ? (
+          <div className="flex flex-wrap items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning" role="status">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <p className="min-w-0 flex-1">
+              {serviceWithoutCode} empresa(s) de serviço sem o código da Domínio. A pasta delas no arquivo sai sem o formato
+              &quot;código-razão social&quot; e a Domínio recusa a importação. Informe na linha ou importe a lista da Domínio.
+            </p>
+            <Button type="button" size="sm" variant="outline" onClick={() => { setScope("service"); setFilter("nocode"); }}>
+              Ver quais
+            </Button>
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex flex-wrap gap-2" role="group" aria-label="Quais empresas mostrar">
             <Button type="button" size="sm" variant={scope === "service" ? "default" : "outline"} aria-pressed={scope === "service"} onClick={() => setScope("service")}>
@@ -413,7 +433,7 @@ export function XmlNotesBoard({
             />
           </div>
         </div>
-        <ul className="grid grid-cols-2 gap-px border border-border/70 bg-border/40 sm:grid-cols-4" aria-label="Filtrar empresas">
+        <ul className="grid grid-cols-2 gap-px border border-border/70 bg-border/40 sm:grid-cols-5" aria-label="Filtrar empresas">
           {filters.map((item) => {
             const selected = filter === item.key;
             return (
@@ -468,6 +488,7 @@ export function XmlNotesBoard({
                   <span><CertificateStatus certificate={company.certificate} now={now} /></span>
                   <span className="text-xs"><SyncStatus company={company} now={now} /></span>
                   <ServiceToggle clanId={clanId} company={company} canManage={canManage} />
+                  <DominioCodeField key={company.dominioCode ?? ""} clanId={clanId} company={company} canManage={canManage} />
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                   <span className="font-mono text-xs tabular-nums text-muted-foreground">

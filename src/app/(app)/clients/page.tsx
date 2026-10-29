@@ -164,6 +164,9 @@ export default async function ClientsPage({
                   {client.cnpj ? (
                     <span className="font-mono">{formatCnpj(client.cnpj)}</span>
                   ) : null}
+                  {client.dominioCode ? (
+                    <span className="font-mono" title="Código na Domínio">Domínio {client.dominioCode}</span>
+                  ) : null}
                   {client.operationalEmail ? <span>{client.operationalEmail}</span> : null}
                   {client.operationalPhone ? <span>{client.operationalPhone}</span> : null}
                   {client.cnaeDescription ? (
@@ -184,6 +187,7 @@ export default async function ClientsPage({
                   name: client.name,
                   taxRegime: client.taxRegime,
                   cnpj: client.cnpj,
+                  dominioCode: client.dominioCode,
                   active: client.active,
                   tradeName: client.tradeName,
                   operationalEmail: client.operationalEmail,

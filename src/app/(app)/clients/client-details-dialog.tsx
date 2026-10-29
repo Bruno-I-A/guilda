@@ -48,6 +48,7 @@ export interface ClientDetailsView {
   name: string;
   taxRegime: TaxRegime;
   cnpj: string | null;
+  dominioCode: string | null;
   active: boolean;
   tradeName: string | null;
   operationalEmail: string | null;

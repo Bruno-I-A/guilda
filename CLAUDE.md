@@ -34,6 +34,14 @@ Fiscal corrige as exceções, como comércio que também presta serviço. "Todas
 mostra o resto para marcar. MEI nunca aparece nem é lido, nem com certificado (aba MEI). A rotina lê
 toda empresa com certificado válido, marcada ou não.
 
+**Pasta no formato da Domínio (2026-10-29)**: a importação de XML da Domínio
+só aceita a pasta `<código>-<nome>`. O código da empresa na Domínio mora em
+`clients.dominio_code` (só número, sem zeros à esquerda, único na org) e se
+informa no cadastro da empresa, na linha da aba XML ou pela lista exportada da
+Domínio (Código + CNPJ, casada pelo CNPJ, com prévia antes de gravar). Com
+código, a pasta do .zip sai `125-Razao Social Ltda`; sem código, continua
+`slug-raizCNPJ` e a aba avisa quantas empresas de serviço estão sem.
+
 Plataforma multi-tenant de gestão de tarefas com sistema de recompensa (XP e níveis).
 Cada empresa (organização/tenant) tem seus usuários, tarefas e leaderboard isolados.
 Projeto de portfólio: qualidade de código e segurança são requisitos, não opcionais.

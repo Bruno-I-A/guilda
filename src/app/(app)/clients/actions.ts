@@ -8,6 +8,7 @@ import { z } from "zod";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { normalizeCnpj, validateCnpj } from "@/domain/cnpj";
+import { normalizeDominioCode } from "@/domain/dominio-code";
 import { inferTaxRegimeFromCnpj } from "@/domain/client-tax-regime";
 import {
   err,
@@ -60,11 +61,26 @@ const clientFieldsSchema = z.object({
       (value) => !value || /^\d{10,11}$/.test(value),
       "Celular deve ter 10 ou 11 dígitos.",
     ),
+  // Ausente = não mexe; vazio = tira o código.
+  dominioCode: z
+    .string()
+    .optional()
+    .refine(
+      (value) => value === undefined || normalizeDominioCode(value) !== undefined,
+      "O código da Domínio é só número, com até 10 dígitos.",
+    ),
 });
 
 function isUniqueViolation(error: unknown): boolean {
   const cause = (error as { cause?: { code?: string } })?.cause;
   return cause?.code === "23505";
+}
+
+function uniqueViolationMessage(error: unknown): string {
+  const cause = (error as { cause?: { constraint?: string } })?.cause;
+  return cause?.constraint === "clients_org_dominio_code_uidx"
+    ? "Este código da Domínio já é de outra empresa."
+    : "Já existe uma empresa com este CNPJ na organização.";
 }
 
 export interface ImportClientsResult {
@@ -220,6 +236,7 @@ export async function createClient(
         cnpj: data.cnpj ?? null,
         operationalEmail: data.operationalEmail || null,
         operationalPhone: data.operationalPhone ?? null,
+        dominioCode: data.dominioCode === undefined ? null : normalizeDominioCode(data.dominioCode),
         tradeName: official?.tradeName ?? null,
         revenueEmail: official?.email ?? null,
         revenuePhones: official?.phones ?? [],
@@ -244,7 +261,7 @@ export async function createClient(
     );
   } catch (error) {
     if (isUniqueViolation(error)) {
-      return err("Já existe uma empresa com este CNPJ na organização.");
+      return err(uniqueViolationMessage(error));
     }
     throw error;
   }
@@ -333,6 +350,7 @@ export async function updateClient(
           cnpj: data.cnpj ?? null,
           operationalEmail: data.operationalEmail || null,
           operationalPhone: data.operationalPhone ?? null,
+          ...(data.dominioCode === undefined ? {} : { dominioCode: normalizeDominioCode(data.dominioCode) }),
         })
         .where(
           and(
@@ -345,7 +363,7 @@ export async function updateClient(
     if (updated.length === 0) return err("Empresa não encontrada.");
   } catch (error) {
     if (isUniqueViolation(error)) {
-      return err("Já existe uma empresa com este CNPJ na organização.");
+      return err(uniqueViolationMessage(error));
     }
     throw error;
   }
