@@ -1,6 +1,7 @@
 import "server-only";
 
 import { auth } from "@/lib/auth";
+import { releaseOrphanedUserEmail } from "@/lib/auth-orphan";
 
 /**
  * Criação de conta pelo caminho administrativo — o único que existe.
@@ -39,7 +40,14 @@ export async function createUserWithPassword(
   const ctx = await auth.$context;
 
   const existing = await ctx.internalAdapter.findUserByEmail(email);
-  if (existing) return { ok: false, reason: "email_taken" };
+  if (existing) {
+    // Remover alguém da organização preserva seu userId porque missões, XP e
+    // auditoria continuam apontando para ele. Se esse era o último vínculo,
+    // libera apenas o e-mail e cria uma identidade nova abaixo. Reaproveitar o
+    // mesmo userId misturaria o histórico da pessoa antiga com a nova.
+    const released = await releaseOrphanedUserEmail(email);
+    if (!released) return { ok: false, reason: "email_taken" };
+  }
 
   const hash = await ctx.password.hash(input.password);
 
@@ -55,13 +63,20 @@ export async function createUserWithPassword(
     return { ok: false, reason: "create_failed" };
   }
 
-  // Sem a conta de credencial a pessoa existe mas não consegue entrar.
-  await ctx.internalAdapter.linkAccount({
-    userId: user.id,
-    providerId: "credential",
-    accountId: user.id,
-    password: hash,
-  });
+  try {
+    // Sem a conta de credencial a pessoa existe mas não consegue entrar.
+    await ctx.internalAdapter.linkAccount({
+      userId: user.id,
+      providerId: "credential",
+      accountId: user.id,
+      password: hash,
+    });
+  } catch {
+    // A criação administrativa ainda não gerou histórico. Remover a conta
+    // incompleta evita reservar o e-mail depois de uma falha parcial.
+    await ctx.internalAdapter.deleteUser(user.id).catch(() => undefined);
+    return { ok: false, reason: "create_failed" };
+  }
 
   return { ok: true, userId: user.id };
 }
