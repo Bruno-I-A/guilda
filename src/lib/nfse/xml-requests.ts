@@ -277,7 +277,7 @@ export async function loadXmlArchiveInput(
     const mine = notes.filter((note) => note.clientId === row.clientId);
     if (mine.length > 0) {
       companies.push({
-        folder: xmlCompanyFolder(row.name, row.cnpj, row.dominioCode),
+        folder: xmlCompanyFolder(row.name, row.cnpj, row.dominioCode, { year: input.year, month: input.month }),
         notes: mine.map((note) => ({
           // A numeracao pode se repetir em anos/series diferentes no mesmo mes.
           fileName: mine.filter((other) => xmlNoteFileName(other.nfseNumber, other.nsu) === xmlNoteFileName(note.nfseNumber, note.nsu)).length > 1

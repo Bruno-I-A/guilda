@@ -137,15 +137,22 @@ function folderName(value: string): string {
 
 /**
  * Pasta da empresa no .zip. Com o código da Domínio, "<código>-<razão
- * social>", o nome que a importação de XML de lá exige (ela lê o código antes
- * do hífen; o código é único na organização, então não há colisão). Sem
+ * social> <MM-AAAA>", o nome que a importação de XML de lá exige (ela lê o
+ * código antes do hífen; o código é único na organização, então não há
+ * colisão). O mês vai com hífen porque "/" separaria pastas no .zip. Sem
  * código: nome sem acento + raiz do CNPJ (desempata nomes iguais). Filial
  * ganha também a ordem: matriz e filial têm a mesma raiz e muitas vezes o
  * mesmo nome, e as notas de uma sobrescreveriam as da outra.
  */
-export function xmlCompanyFolder(name: string, cnpj: string | null, dominioCode: string | null = null): string {
+export function xmlCompanyFolder(
+  name: string,
+  cnpj: string | null,
+  dominioCode: string | null = null,
+  period: { year: number; month: number } | null = null,
+): string {
   if (dominioCode && /^\d{1,10}$/.test(dominioCode)) {
-    return `${dominioCode}-${folderName(name) || "EMPRESA"}`;
+    const month = period ? ` ${String(period.month).padStart(2, "0")}-${period.year}` : "";
+    return `${dominioCode}-${folderName(name) || "EMPRESA"}${month}`;
   }
   const base = slug(name) || "empresa";
   if (!cnpj || !/^\d{14}$/.test(cnpj)) return base;
