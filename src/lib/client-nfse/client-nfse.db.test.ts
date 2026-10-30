@@ -190,6 +190,25 @@ test("serviço fiscal: sem certificado que abra, a nota falha com o motivo; sér
   expect(renumbered.dpsId.slice(-20)).toBe("00901000000000000003");
 }, 60_000);
 
+test("série ocupada por outro sistema: a empresa passa sozinha para a série seguinte e a nota volta à fila", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const { claimClientNfseJob, moveToNextSeries } = await import("./service");
+
+  const claim = await claimClientNfseJob(ORG);
+  expect(claim).toMatchObject({ dpsSeries: "901", dpsNumber: 3 });
+  expect(await moveToNextSeries(ORG, claim!)).toEqual({ from: "901", to: "902", number: 1 });
+  const [invoice] = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseInvoices).where(eq(schema.clientNfseInvoices.id, claim!.id)));
+  expect(invoice).toMatchObject({ status: "queued", dpsSeries: "902", dpsNumber: 1, lockToken: null, lastError: null });
+  expect(invoice.dpsId.slice(-20)).toBe("00902000000000000001");
+  const [issuer] = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseIssuers).where(eq(schema.clientNfseIssuers.id, claim!.issuerId)));
+  expect(issuer).toMatchObject({ dpsSeries: "902", nextDpsNumber: 2 });
+  const events = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseInvoiceEvents).where(eq(schema.clientNfseInvoiceEvents.invoiceId, claim!.id)));
+  expect(events).toContainEqual(expect.objectContaining({ eventType: "retried", actorId: null, detail: expect.objectContaining({ previousSeries: "901", dpsSeries: "902" }) }));
+
+  // Sem o lease (outra passada pegou a nota), não mexe em nada.
+  expect(await moveToNextSeries(ORG, { ...claim!, lockToken: "00000000-0000-4000-8000-0000000000ff" })).toBeNull();
+}, 60_000);
+
 test("sugestão pelas notas guardadas da empresa e importação das notas padrão marcadas", async () => {
   const { withOrgTx } = await import("@/db/org-tx");
   const { gzipSync } = await import("node:zlib");
@@ -204,6 +223,8 @@ test("sugestão pelas notas guardadas da empresa e importação das notas padrã
     { at: "2026-10-09T10:00:00-03:00", series: "901", cpf: "65029267034", name: "Maria Oliveira", cents: 5000, text: "AVALIAÇÃO" },
     // Antiga, fora da janela: só conta para a série já usada.
     { at: "2025-03-10T10:00:00-03:00", series: "900", cpf: "65029267034", name: "Maria Oliveira", cents: 5000, text: "AVALIAÇÃO" },
+    // Cancelada: não vira nota padrão, mas a DPS dela continua ocupada no Sistema Nacional.
+    { at: "2026-10-10T10:00:00-03:00", series: "902", cpf: "65029267034", name: "Maria Oliveira", cents: 7000, text: "CONSULTA", cancelled: true },
   ];
   await withOrgTx(ORG, (tx) =>
     tx.insert(schema.nfseIssuedNotes).values(
@@ -216,6 +237,7 @@ test("sugestão pelas notas guardadas da empresa e importação das notas padrã
           accessKey: String(index + 1).padStart(50, "7"),
           nsu: index + 1,
           issuedAt: new Date(row.at),
+          ...("cancelled" in row ? { cancelledAt: new Date(row.at), cancelNsu: 100 + index, cancelXmlGz: new Uint8Array(gzipSync(Buffer.from("<evento/>", "utf8"))) } : {}),
           xmlGz: new Uint8Array(gzipSync(Buffer.from(xml, "utf8"))),
         };
       }),
@@ -223,7 +245,7 @@ test("sugestão pelas notas guardadas da empresa e importação das notas padrã
   );
   const [issuer] = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseIssuers).where(eq(schema.clientNfseIssuers.clientId, MERCADO)));
   const suggestion = await withOrgTx(ORG, (tx) => loadIssuerSuggestion(tx, { orgId: ORG, clientId: MERCADO, issuerId: issuer.id, now: NOW }));
-  expect(suggestion.dpsSeries).toBe("902");
+  expect(suggestion.dpsSeries).toBe("903");
   expect(suggestion.template?.service.nationalTaxCode).toBe("171901");
   expect(suggestion.models.map((model) => [model.takerName, model.description, model.recurring])).toEqual([
     ["João da Silva", "MENSALIDADE REFERENTE A {mes}", true],

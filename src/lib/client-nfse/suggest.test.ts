@@ -4,7 +4,7 @@ import { nfseIssuerTemplateRulesSchema } from "@/lib/nfse/template";
 import { testNfseXml } from "@/lib/nfse/testing/nfse-xml";
 
 import { readIssuedNoteFacts } from "./from-xml";
-import { freeDpsSeries, suggestFromIssuedNotes, templateDescription } from "./suggest";
+import { freeDpsSeries, nextDpsSeriesAfter, suggestFromIssuedNotes, templateDescription } from "./suggest";
 
 const ACADEMIA = "33000167000101";
 
@@ -75,5 +75,13 @@ describe("sugestões para o cadastro", () => {
     const notes = [note("2026-10-10T10:00:00-03:00")];
     expect(suggestFromIssuedNotes(notes, { models: [{ takerDocument: "40503119091", description: "MENSALIDADE REFERENTE A {mes}" }] }).models).toEqual([]);
     expect(suggestFromIssuedNotes([])).toMatchObject({ template: null, dpsSeries: "900", models: [] });
+  });
+});
+
+describe("série seguinte depois de uma colisão", () => {
+  test("pula as séries já usadas e para no fim da faixa", () => {
+    expect(nextDpsSeriesAfter("900", [])).toBe("901");
+    expect(nextDpsSeriesAfter("900", ["901", "0902", null])).toBe("903");
+    expect(nextDpsSeriesAfter("49999", [])).toBeNull();
   });
 });

@@ -57,6 +57,19 @@ export function freeDpsSeries(used: Iterable<string | null>): string {
   return String(FIRST_SERIES);
 }
 
+/**
+ * A série seguinte à que colidiu com outro sistema da empresa: a primeira
+ * acima dela que nenhuma nota guardada nem pedida usa. Null quando acabou a
+ * faixa da Guilda (até 49999; o Emissor Web usa 70000+).
+ */
+export function nextDpsSeriesAfter(current: string, used: Iterable<string | null>): string | null {
+  const taken = new Set([...used].filter((value): value is string => Boolean(value)).map((value) => String(Number(value))));
+  for (let series = Number(current) + 1; series <= 49_999; series++) {
+    if (!taken.has(String(series))) return String(series);
+  }
+  return null;
+}
+
 export interface ModelSuggestion {
   key: string;
   takerDocument: string;
