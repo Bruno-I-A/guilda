@@ -30,7 +30,8 @@ export interface NfseJob {
 }
 
 export type NfseJobOutcome =
-  | { kind: "issued"; accessKey: string; nfseNumber: string | null; environment: 1 | 2 }
+  /** `foundByDps`: a nota já existia e foi achada pela consulta da DPS, não emitida agora. */
+  | { kind: "issued"; accessKey: string; nfseNumber: string | null; environment: 1 | 2; foundByDps?: true }
   | { kind: "failed"; message: string; errors: NfseApiError[] }
   | { kind: "retry"; message: string; delayMinutes: number }
   | { kind: "cancelled" }
@@ -61,7 +62,7 @@ async function issue(job: NfseJob, deps: NfseJobDeps): Promise<NfseJobOutcome> {
   // a nota já existe e só precisa ser recuperada.
   const existing = await deps.client.findAccessKeyByDps(job.dpsId);
   if (existing) {
-    return { kind: "issued", accessKey: existing, nfseNumber: await deps.client.getNfseNumber(existing), environment: deps.environment };
+    return { kind: "issued", accessKey: existing, nfseNumber: await deps.client.getNfseNumber(existing), environment: deps.environment, foundByDps: true };
   }
   const { id, xml } = buildDpsXml({
     environment: deps.environment,
@@ -87,7 +88,7 @@ async function issue(job: NfseJob, deps: NfseJobDeps): Promise<NfseJobOutcome> {
   if (result.errors.some((error) => error.code === "E0014")) {
     const recovered = await deps.client.findAccessKeyByDps(job.dpsId);
     if (recovered) {
-      return { kind: "issued", accessKey: recovered, nfseNumber: await deps.client.getNfseNumber(recovered), environment: deps.environment };
+      return { kind: "issued", accessKey: recovered, nfseNumber: await deps.client.getNfseNumber(recovered), environment: deps.environment, foundByDps: true };
     }
   }
   return { kind: "failed", message: formatNfseErrors(result.errors), errors: result.errors };
