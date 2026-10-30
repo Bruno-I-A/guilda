@@ -190,6 +190,25 @@ test("serviço fiscal: sem certificado que abra, a nota falha com o motivo; sér
   expect(renumbered.dpsId.slice(-20)).toBe("00901000000000000003");
 }, 60_000);
 
+test("série ocupada por outro sistema: a empresa passa sozinha para a série seguinte e a nota volta à fila", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const { claimClientNfseJob, moveToNextSeries } = await import("./service");
+
+  const claim = await claimClientNfseJob(ORG);
+  expect(claim).toMatchObject({ dpsSeries: "901", dpsNumber: 3 });
+  expect(await moveToNextSeries(ORG, claim!)).toEqual({ from: "901", to: "902", number: 1 });
+  const [invoice] = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseInvoices).where(eq(schema.clientNfseInvoices.id, claim!.id)));
+  expect(invoice).toMatchObject({ status: "queued", dpsSeries: "902", dpsNumber: 1, lockToken: null, lastError: null });
+  expect(invoice.dpsId.slice(-20)).toBe("00902000000000000001");
+  const [issuer] = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseIssuers).where(eq(schema.clientNfseIssuers.id, claim!.issuerId)));
+  expect(issuer).toMatchObject({ dpsSeries: "902", nextDpsNumber: 2 });
+  const events = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseInvoiceEvents).where(eq(schema.clientNfseInvoiceEvents.invoiceId, claim!.id)));
+  expect(events).toContainEqual(expect.objectContaining({ eventType: "retried", actorId: null, detail: expect.objectContaining({ previousSeries: "901", dpsSeries: "902" }) }));
+
+  // Sem o lease (outra passada pegou a nota), não mexe em nada.
+  expect(await moveToNextSeries(ORG, { ...claim!, lockToken: "00000000-0000-4000-8000-0000000000ff" })).toBeNull();
+}, 60_000);
+
 test("sugestão pelas notas guardadas da empresa e importação das notas padrão marcadas", async () => {
   const { withOrgTx } = await import("@/db/org-tx");
   const { gzipSync } = await import("node:zlib");

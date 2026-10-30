@@ -1,13 +1,13 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 import { and, asc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
-import { amountToCents, type NfseCancelReasonCode } from "@/domain/nfse";
+import { amountToCents, buildDpsId, type NfseCancelReasonCode } from "@/domain/nfse";
 import { loadNfseCertificate, NfseCertificateError } from "@/lib/nfse/certificate";
 import { runNfseJob, type NfseJob, type NfseJobOutcome } from "@/lib/nfse/processor";
 import {
@@ -20,7 +20,9 @@ import {
 import type { NfseSigningKey } from "@/lib/nfse/sign";
 import { parseNfseIssuerTemplate, type NfseIssuerTemplate } from "@/lib/nfse/template";
 import { vaultEnvelopeSchema, VaultError, type VaultKey } from "@/lib/nfse/vault";
+import { firstElementText } from "@/lib/nfse/xml";
 
+import { nextDpsSeriesAfter } from "./suggest";
 import { dpsConflictMessage, nfseXmlMismatch } from "./verify";
 
 /**
@@ -205,6 +207,7 @@ async function openIssuer(
 export async function runClientNfseQueue(orgId: string, vault: VaultKey, environment: NfseEnvironmentName): Promise<void> {
   const tpAmb = NFSE_ENDPOINTS[environment].tpAmb;
   const connections = new Map<string, IssuerConnection | string>();
+  const seriesMoves = new Map<string, number>();
   for (let claim = await claimClientNfseJob(orgId); claim; claim = await claimClientNfseJob(orgId)) {
     let connection = connections.get(claim.issuerId);
     if (!connection) {
@@ -241,6 +244,15 @@ export async function runClientNfseQueue(orgId: string, vault: VaultKey, environ
         // real, e trocar a série emitiria outra igual.
         const request = { providerCnpj: claim.providerCnpj, takerDocument: claim.takerCnpj, amountCents: claim.amountCents };
         const found = xml && outcome.foundByDps ? nfseXmlMismatch(xml, request) : null;
+        const moves = seriesMoves.get(claim.issuerId) ?? 0;
+        if (found && moves < MAX_SERIES_MOVES) {
+          const moved = await moveToNextSeries(orgId, claim);
+          if (moved) {
+            seriesMoves.set(claim.issuerId, moves + 1);
+            console.log(`Nota de cliente ${claim.id}: DPS ${moved.from}/${claim.dpsNumber} ocupada por outro sistema, renumerada para ${moved.to}/${moved.number}.`);
+            continue;
+          }
+        }
         if (found) {
           outcome = {
             kind: "failed",
@@ -254,4 +266,70 @@ export async function runClientNfseQueue(orgId: string, vault: VaultKey, environ
     const finished = await finishClientNfseJob(orgId, claim, outcome, xml);
     console.log(`Nota de cliente ${claim.id}: ${outcome.kind}${finished ? "" : " (lease vencido, descartado)"}.`);
   }
+}
+
+/** Quantas vezes uma empresa troca de série sozinha numa passada da fila. */
+const MAX_SERIES_MOVES = 5;
+
+/**
+ * A DPS desta nota é de outro sistema da empresa — e a nota NÃO foi emitida:
+ * a consulta achou a DPS ocupada antes de enviar. Passa a empresa para a
+ * série seguinte que nenhuma nota guardada nem pedida usa e põe a nota de
+ * volta na fila com número novo, sem ninguém trocar a série no cadastro. Se
+ * outra nota já moveu a empresa, só renumera na série nova.
+ */
+export async function moveToNextSeries(orgId: string, claim: ClientNfseClaim): Promise<{ from: string; to: string; number: number } | null> {
+  if (!claim.template) return null;
+  const template = claim.template;
+  return withOrgTx(orgId, async (tx) => {
+    const issuers = schema.clientNfseIssuers;
+    const t = schema.clientNfseInvoices;
+    const [issuer] = await tx
+      .select({ dpsSeries: issuers.dpsSeries, nextDpsNumber: issuers.nextDpsNumber })
+      .from(issuers)
+      .where(and(eq(issuers.orgId, orgId), eq(issuers.id, claim.issuerId)))
+      .for("update");
+    if (!issuer) return null;
+    let series = issuer.dpsSeries;
+    let number = issuer.nextDpsNumber;
+    if (series === claim.dpsSeries) {
+      const n = schema.nfseIssuedNotes;
+      const stored = await tx.select({ xmlGz: n.xmlGz }).from(n).where(and(eq(n.orgId, orgId), eq(n.clientId, claim.clientId))).limit(20_000);
+      const ours = await tx.selectDistinct({ series: t.dpsSeries }).from(t).where(and(eq(t.orgId, orgId), eq(t.issuerId, claim.issuerId)));
+      const moved = nextDpsSeriesAfter(series, [
+        ...stored.map((row) => firstElementText(gunzipSync(Buffer.from(row.xmlGz)).toString("utf8"), "serie")),
+        ...ours.map((row) => row.series),
+      ]);
+      if (!moved) return null;
+      series = moved;
+      number = 1;
+    }
+    const now = new Date();
+    const [renumbered] = await tx
+      .update(t)
+      .set({
+        dpsSeries: series,
+        dpsNumber: number,
+        dpsId: buildDpsId({ cityCode: template.cityCode, cnpj: claim.providerCnpj, series, number }),
+        status: "queued",
+        attemptCount: 0,
+        nextAttemptAt: now,
+        lastError: null,
+        lockedAt: null,
+        lockToken: null,
+        updatedAt: now,
+      })
+      .where(and(eq(t.orgId, orgId), eq(t.id, claim.id), eq(t.lockToken, claim.lockToken)))
+      .returning({ id: t.id });
+    if (!renumbered) return null;
+    await tx.update(issuers).set({ dpsSeries: series, nextDpsNumber: number + 1 }).where(and(eq(issuers.orgId, orgId), eq(issuers.id, claim.issuerId)));
+    await tx.insert(schema.clientNfseInvoiceEvents).values({
+      orgId,
+      invoiceId: claim.id,
+      eventType: "retried",
+      actorId: null,
+      detail: { dpsSeries: series, dpsNumber: number, previousSeries: claim.dpsSeries, reason: "dps_taken_by_other_system" },
+    });
+    return { from: claim.dpsSeries, to: series, number };
+  });
 }

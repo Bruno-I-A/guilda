@@ -334,8 +334,12 @@ que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
   o banco recusa apagar o cadastro (a action dá a mensagem antes).
 - **Série colidindo com outro sistema da empresa**: a consulta "a DPS já
   existe?" devolveria a nota de lá. O serviço confere prestador, tomador e
-  valor (`verify.ts`) e, se não bater, falha pedindo outra série; o "Tentar de
-  novo" com série nova renumera a nota.
+  valor (`verify.ts`) — só na nota ACHADA pela consulta, nunca na recém-emitida.
+  **Troca de série automática (2026-10-30, pedido do Bruno)**: se não bater,
+  a nota não foi emitida, então `moveToNextSeries` passa a empresa para a
+  próxima série que nenhuma nota guardada (inclusive cancelada) nem pedida usa,
+  renumera a nota a partir de 1 e a devolve à fila, até 5 vezes por passada.
+  Só depois disso falha com a mensagem do que há na outra nota.
 - O PDF sai no app, do XML guardado na emissão (o certificado do escritório
   não busca nota de cliente). Sem retenções, sem e-mail ao tomador e sem MEI
   na v1.
