@@ -204,6 +204,8 @@ test("sugestão pelas notas guardadas da empresa e importação das notas padrã
     { at: "2026-10-09T10:00:00-03:00", series: "901", cpf: "65029267034", name: "Maria Oliveira", cents: 5000, text: "AVALIAÇÃO" },
     // Antiga, fora da janela: só conta para a série já usada.
     { at: "2025-03-10T10:00:00-03:00", series: "900", cpf: "65029267034", name: "Maria Oliveira", cents: 5000, text: "AVALIAÇÃO" },
+    // Cancelada: não vira nota padrão, mas a DPS dela continua ocupada no Sistema Nacional.
+    { at: "2026-10-10T10:00:00-03:00", series: "902", cpf: "65029267034", name: "Maria Oliveira", cents: 7000, text: "CONSULTA", cancelled: true },
   ];
   await withOrgTx(ORG, (tx) =>
     tx.insert(schema.nfseIssuedNotes).values(
@@ -216,6 +218,7 @@ test("sugestão pelas notas guardadas da empresa e importação das notas padrã
           accessKey: String(index + 1).padStart(50, "7"),
           nsu: index + 1,
           issuedAt: new Date(row.at),
+          ...("cancelled" in row ? { cancelledAt: new Date(row.at), cancelNsu: 100 + index, cancelXmlGz: new Uint8Array(gzipSync(Buffer.from("<evento/>", "utf8"))) } : {}),
           xmlGz: new Uint8Array(gzipSync(Buffer.from(xml, "utf8"))),
         };
       }),
@@ -223,7 +226,7 @@ test("sugestão pelas notas guardadas da empresa e importação das notas padrã
   );
   const [issuer] = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseIssuers).where(eq(schema.clientNfseIssuers.clientId, MERCADO)));
   const suggestion = await withOrgTx(ORG, (tx) => loadIssuerSuggestion(tx, { orgId: ORG, clientId: MERCADO, issuerId: issuer.id, now: NOW }));
-  expect(suggestion.dpsSeries).toBe("902");
+  expect(suggestion.dpsSeries).toBe("903");
   expect(suggestion.template?.service.nationalTaxCode).toBe("171901");
   expect(suggestion.models.map((model) => [model.takerName, model.description, model.recurring])).toEqual([
     ["João da Silva", "MENSALIDADE REFERENTE A {mes}", true],

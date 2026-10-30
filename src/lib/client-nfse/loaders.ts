@@ -2,13 +2,14 @@ import "server-only";
 
 import { gunzipSync } from "node:zlib";
 
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { CLIENT_NFSE_EXCLUSION_LABELS, selectClientNfseBatch, type ClientNfseReference } from "@/domain/client-nfse";
 import { danfseFileName, type NfseClientAddress, type NfseInvoiceStatus } from "@/domain/nfse";
 import { ibgeCity, ibgeCityCode } from "@/lib/nfse/municipios";
+import { firstElementText } from "@/lib/nfse/xml";
 import { parseNfseIssuerTemplate, type NfseIssuerTemplate } from "@/lib/nfse/template";
 
 import { readIssuedNoteFacts, type IssuedNoteFacts } from "./from-xml";
@@ -258,8 +259,9 @@ const SUGGESTION_WINDOW_DAYS = 75;
 
 /**
  * Sugestão do cadastro a partir das notas que a rotina da aba XML já guardou
- * desta empresa. As recentes dão o modelo fiscal e as notas padrão; uma nota
- * por mês do histórico inteiro diz que séries de DPS ela já usou.
+ * desta empresa. As recentes dão o modelo fiscal e as notas padrão; o
+ * histórico inteiro, inclusive as canceladas (a nota cancelada continua
+ * ocupando o número da DPS), diz que séries de DPS ela já usou.
  */
 export type IssuerSuggestionView = IssuerSuggestion & { cityLabel: string | null };
 
@@ -275,15 +277,11 @@ export async function loadIssuerSuggestion(
     .where(and(eq(n.orgId, input.orgId), eq(n.clientId, input.clientId), isNull(n.cancelledAt), gte(n.issuedAt, since)))
     .orderBy(desc(n.issuedAt))
     .limit(600);
-  const monthly = await tx.execute<{ xml_gz: Uint8Array }>(sql`
-    SELECT DISTINCT ON (date_trunc('month', issued_at)) xml_gz
-      FROM nfse_issued_notes
-     WHERE org_id = ${input.orgId} AND client_id = ${input.clientId} AND issued_at < ${since.toISOString()}::timestamptz
-     ORDER BY date_trunc('month', issued_at), issued_at DESC
-  `);
+  // Só a série de cada nota: basta achar o <serie> da DPS, sem ler a nota toda.
+  const history = await tx.select({ xmlGz: n.xmlGz }).from(n).where(and(eq(n.orgId, input.orgId), eq(n.clientId, input.clientId))).limit(20_000);
   const read = (gz: Uint8Array) => readIssuedNoteFacts(gunzipSync(Buffer.from(gz)).toString("utf8"));
   const facts = recent.map((row) => read(row.xmlGz)).filter((fact): fact is IssuedNoteFacts => Boolean(fact));
-  const olderSeries = monthly.rows.map((row) => read(row.xml_gz)?.series ?? null);
+  const usedSeries = history.map((row) => firstElementText(gunzipSync(Buffer.from(row.xmlGz)).toString("utf8"), "serie"));
   let existing: { takerDocument: string; description: string }[] = [];
   if (input.issuerId) {
     existing = await tx
@@ -295,7 +293,7 @@ export async function loadIssuerSuggestion(
   const suggestion = suggestFromIssuedNotes(facts, { models: existing });
   return {
     ...suggestion,
-    dpsSeries: freeDpsSeries([...facts.map((fact) => fact.series), ...olderSeries]),
+    dpsSeries: freeDpsSeries(usedSeries),
     cityLabel: cityLabelOf(suggestion.template?.cityCode),
   };
 }
