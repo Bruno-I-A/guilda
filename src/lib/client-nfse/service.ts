@@ -21,7 +21,7 @@ import type { NfseSigningKey } from "@/lib/nfse/sign";
 import { parseNfseIssuerTemplate, type NfseIssuerTemplate } from "@/lib/nfse/template";
 import { vaultEnvelopeSchema, VaultError, type VaultKey } from "@/lib/nfse/vault";
 
-import { nfseXmlMatchesRequest } from "./verify";
+import { dpsConflictMessage, nfseXmlMismatch } from "./verify";
 
 /**
  * O lado do serviço fiscal das notas dos clientes: reivindica uma nota da
@@ -236,10 +236,15 @@ export async function runClientNfseQueue(orgId: string, vault: VaultKey, environ
           // Sem o XML agora: a nota está emitida; o PDF usa o que a rotina de XML guardar.
           xml = null;
         }
-        if (xml && !nfseXmlMatchesRequest(xml, { providerCnpj: claim.providerCnpj, takerDocument: claim.takerCnpj, amountCents: claim.amountCents })) {
+        // Só a nota ACHADA pela DPS pode ser de outro sistema. A que a Guilda
+        // acabou de emitir é nossa: marcá-la como erro esconderia uma nota
+        // real, e trocar a série emitiria outra igual.
+        const request = { providerCnpj: claim.providerCnpj, takerDocument: claim.takerCnpj, amountCents: claim.amountCents };
+        const found = xml && outcome.foundByDps ? nfseXmlMismatch(xml, request) : null;
+        if (found) {
           outcome = {
             kind: "failed",
-            message: `A DPS ${claim.dpsSeries}/${claim.dpsNumber} já existe no Sistema Nacional com outra nota (série usada por outro sistema da empresa). Troque a série da DPS no cadastro da empresa e clique em Tentar de novo.`,
+            message: dpsConflictMessage({ dpsSeries: claim.dpsSeries, dpsNumber: claim.dpsNumber, request, found }),
             errors: [],
           };
           xml = null;

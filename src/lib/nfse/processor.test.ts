@@ -72,7 +72,7 @@ describe("emissão", () => {
       findAccessKeyByDps: async () => KEY,
       emit: async () => { emitCalls += 1; return { kind: "issued", accessKey: KEY, nfseNumber: null }; },
     })));
-    expect(outcome).toEqual({ kind: "issued", accessKey: KEY, nfseNumber: "77", environment: 2 });
+    expect(outcome).toEqual({ kind: "issued", accessKey: KEY, nfseNumber: "77", environment: 2, foundByDps: true });
     expect(emitCalls).toBe(0);
   });
 
