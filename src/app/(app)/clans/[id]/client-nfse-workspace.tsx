@@ -266,10 +266,15 @@ function IssuerPanel({
 
       {canManage ? (
         <>
-          <ClientNfseIssuerDialog clanId={clanId} issuer={issuer} open={fiscalOpen} onOpenChange={setFiscalOpen} />
+          {/* Os formulários nascem a cada abertura, já com o que está gravado: um
+              formulário reaproveitado abria vazio (nota padrão) ou com dados
+              velhos (a série que a fila trocou sozinha voltaria ao salvar). */}
+          {fiscalOpen ? <ClientNfseIssuerDialog clanId={clanId} issuer={issuer} open onOpenChange={setFiscalOpen} /> : null}
           <ClientNfseSuggestionsDialog clanId={clanId} issuer={issuer} open={suggestOpen} onOpenChange={setSuggestOpen} />
-          <ClientNfseNoteDialog clanId={clanId} issuer={issuer} note={null} period={period} open={noteOpen} onOpenChange={setNoteOpen} />
-          <ClientNfseNoteDialog clanId={clanId} issuer={issuer} note={editing} period={period} open={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null); }} />
+          {noteOpen ? <ClientNfseNoteDialog clanId={clanId} issuer={issuer} note={null} period={period} open onOpenChange={setNoteOpen} /> : null}
+          {editing ? (
+            <ClientNfseNoteDialog key={editing.modelId} clanId={clanId} issuer={issuer} note={editing} period={period} open onOpenChange={(open) => { if (!open) setEditing(null); }} />
+          ) : null}
         </>
       ) : null}
     </section>

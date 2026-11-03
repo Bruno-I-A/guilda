@@ -65,39 +65,25 @@ export function ClientNfseNoteDialog({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [looking, startLooking] = useTransition();
-  const [document, setDocument] = useState("");
-  const [name, setName] = useState("");
-  const [address, setAddress] = useState<Address>(addressForm(null));
-  const [amount, setAmount] = useState("");
-  const [text, setText] = useState("");
-  const [reference, setReference] = useState<ClientNfseReference>("previous");
+  // O formulário nasce a cada abertura (a área monta o diálogo só quando
+  // abre), então o estado inicial já é o que está gravado.
+  const [document, setDocument] = useState(note ? formatCnpj(note.takerDocument) : "");
+  const [name, setName] = useState(note?.takerName ?? "");
+  const [address, setAddress] = useState<Address>(() => addressForm(note?.takerAddress ?? null));
+  const [amount, setAmount] = useState(note?.model.amount ?? "");
+  const [text, setText] = useState(note?.model.description ?? "");
+  const [reference, setReference] = useState<ClientNfseReference>(note?.model.reference ?? "previous");
   const [more, setMore] = useState(false);
-  const [ownService, setOwnService] = useState(false);
-  const [service, setService] = useState({ nationalTaxCode: "", municipalTaxCode: "", nbsCode: "" });
-  const [active, setActive] = useState(true);
+  const [ownService, setOwnService] = useState(Boolean(note?.model.service));
+  const [service, setService] = useState(() => ({
+    nationalTaxCode: note?.model.service?.nationalTaxCode ?? issuer.template?.service.nationalTaxCode ?? "",
+    municipalTaxCode: note?.model.service?.municipalTaxCode ?? issuer.template?.service.municipalTaxCode ?? "",
+    nbsCode: note?.model.service?.nbsCode ?? issuer.template?.service.nbsCode ?? "",
+  }));
+  const [active, setActive] = useState(note?.model.active ?? true);
   const digits = normalizeCnpj(document);
   const documentOk = validateTaxDocument(digits);
   const known = new Map(issuer.notes.map((item) => [item.takerDocument, item]));
-
-  function changeOpen(next: boolean) {
-    if (next) {
-      setDocument(note ? formatCnpj(note.takerDocument) : "");
-      setName(note?.takerName ?? "");
-      setAddress(addressForm(note?.takerAddress ?? null));
-      setAmount(note?.model.amount ?? "");
-      setText(note?.model.description ?? "");
-      setReference(note?.model.reference ?? "previous");
-      setOwnService(Boolean(note?.model.service));
-      setService({
-        nationalTaxCode: note?.model.service?.nationalTaxCode ?? issuer.template?.service.nationalTaxCode ?? "",
-        municipalTaxCode: note?.model.service?.municipalTaxCode ?? issuer.template?.service.municipalTaxCode ?? "",
-        nbsCode: note?.model.service?.nbsCode ?? issuer.template?.service.nbsCode ?? "",
-      });
-      setActive(note?.model.active ?? true);
-      setMore(false);
-    }
-    onOpenChange(next);
-  }
 
   /** CPF/CNPJ de quem já recebe nota desta empresa: traz nome e endereço. */
   function onDocumentBlur() {
@@ -142,7 +128,7 @@ export function ClientNfseNoteDialog({
   const id = note?.modelId ?? `new-${issuer.id}`;
 
   return (
-    <Dialog open={open} onOpenChange={changeOpen}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{note ? "Nota padrão" : "Nova nota"} · {issuer.name}</DialogTitle>
