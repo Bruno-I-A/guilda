@@ -61,9 +61,13 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
     `${element("xDescServ", input.description)}` +
     `${element("cNBS", t.service.nbsCode)}</cServ>`;
   const serv = `<serv><locPrest>${element("cLocPrestacao", t.cityCode)}</locPrest>${cServ}</serv>`;
+  // E0625: ME/EPP que apura o ISS pelo Simples, sem retenção, não informa
+  // alíquota (ela está no DAS). O modelo copiado de uma nota com retenção
+  // traz a alíquota; aqui ela fica de fora.
+  const issInSimples = t.taxRegime.opSimpNac === "3" && t.taxRegime.regApTribSN === "1" && t.issqn.withholding === "1";
   const tribMun =
     `<tribMun>${element("tribISSQN", t.issqn.taxation)}` +
-    `${element("tpRetISSQN", t.issqn.withholding)}${element("pAliq", t.issqn.rate)}</tribMun>`;
+    `${element("tpRetISSQN", t.issqn.withholding)}${issInSimples ? "" : element("pAliq", t.issqn.rate)}</tribMun>`;
   const totTrib =
     t.totalTaxes.kind === "simples"
       ? `<totTrib>${element("pTotTribSN", t.totalTaxes.percent)}</totTrib>`
