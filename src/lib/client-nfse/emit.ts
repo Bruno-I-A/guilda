@@ -9,7 +9,9 @@ import { amountToCents, buildDpsId, buildNfseTakerAddress, centsToNfseAmount, ty
 import { err, type ActionResult } from "@/lib/action-context";
 import { ibgeCityCode } from "@/lib/nfse/municipios";
 
-import { issuerTemplateFor, loadIssuerReadiness } from "./month";
+import { hasNfseRetentions, type NfseRetentions } from "@/domain/nfse-retentions";
+
+import { issuerTemplateFor, loadIssuerReadiness, withRetentions } from "./month";
 import { saveClientNfseTaker, type AddressInput, type ServiceOverride } from "./registry";
 
 type Actor = { orgId: string; actorId: string };
@@ -33,6 +35,12 @@ export async function emitClientNfseNote(
     description: string;
     reference: ClientNfseReference;
     service: ServiceOverride | null;
+    /**
+     * Retenções desta nota (nulo = nenhuma). Ausente: valem as gravadas no
+     * tomador. `rememberRetentions` grava as desta nota como as do tomador.
+     */
+    retentions?: NfseRetentions | null;
+    rememberRetentions?: boolean;
     /** O mês da nota (o da emissão, em Brasília). */
     period: { year: number; month: number };
     now: Date;
@@ -81,10 +89,20 @@ export async function emitClientNfseNote(
   if (!taker.ok) return taker;
   const takerId = taker.data!.takerId;
   const [stored] = await tx
-    .select({ name: schema.clientNfseTakers.name, address: schema.clientNfseTakers.address })
+    .select({ name: schema.clientNfseTakers.name, address: schema.clientNfseTakers.address, retentions: schema.clientNfseTakers.retentions })
     .from(schema.clientNfseTakers)
     .where(and(eq(schema.clientNfseTakers.orgId, input.orgId), eq(schema.clientNfseTakers.id, takerId)));
-  const template = issuerTemplateFor(issuer.template, input.service);
+  const retentions = input.retentions === undefined ? (stored?.retentions ?? null) : input.retentions;
+  if (input.rememberRetentions && input.retentions !== undefined) {
+    await tx
+      .update(schema.clientNfseTakers)
+      .set({ retentions: hasNfseRetentions(retentions) ? retentions : null, updatedBy: input.actorId, updatedAt: input.now })
+      .where(and(eq(schema.clientNfseTakers.orgId, input.orgId), eq(schema.clientNfseTakers.id, takerId)));
+  }
+  const template = withRetentions(issuerTemplateFor(issuer.template, input.service), hasNfseRetentions(retentions) ? retentions : null, cents);
+  if (template.issqn.withholding === "2" && !template.issqn.rate) {
+    return err("Com ISS retido, informe a alíquota do ISS.");
+  }
   const takerAddress = buildNfseTakerAddress((stored?.address ?? null) as NfseClientAddress | null, ibgeCityCode);
   if (template.ibsCbs && !takerAddress) {
     return err("O endereço do tomador está incompleto (rua, bairro, CEP e cidade). Complete e emita de novo.");

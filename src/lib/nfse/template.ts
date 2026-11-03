@@ -53,6 +53,28 @@ export const nfseIssuerTemplateSchema = z.object({
       classification: digits(6, "A classificação tributária"),
     })
     .optional(),
+  /**
+   * Retenções federais já calculadas para ESTA nota (tribFed). Só existe no
+   * modelo congelado no pedido; o modelo da empresa não leva valores.
+   */
+  federal: z
+    .object({
+      cpCents: z.number().int().positive().optional(),
+      irrfCents: z.number().int().positive().optional(),
+      csllCents: z.number().int().positive().optional(),
+      pisCofins: z
+        .object({
+          cst: digits(2, "O CST do PIS/COFINS"),
+          baseCents: z.number().int().positive(),
+          pisPercent: z.string(),
+          cofinsPercent: z.string(),
+          pisCents: z.number().int().nonnegative(),
+          cofinsCents: z.number().int().nonnegative(),
+          retention: z.enum(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]),
+        })
+        .optional(),
+    })
+    .optional(),
 });
 
 /** O modelo da nota de honorário do escritório: o fiscal mais as descrições. */
