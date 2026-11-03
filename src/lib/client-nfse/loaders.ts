@@ -8,6 +8,7 @@ import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { CLIENT_NFSE_EXCLUSION_LABELS, selectClientNfseBatch, type ClientNfseReference } from "@/domain/client-nfse";
 import { danfseFileName, type NfseClientAddress, type NfseInvoiceStatus } from "@/domain/nfse";
+import type { NfseRetentions } from "@/domain/nfse-retentions";
 import { ibgeCity, ibgeCityCode } from "@/lib/nfse/municipios";
 import { firstElementText } from "@/lib/nfse/xml";
 import { parseNfseIssuerTemplate, type NfseIssuerTemplate } from "@/lib/nfse/template";
@@ -73,6 +74,8 @@ export interface ClientNfseTakerView {
   address: NfseClientAddress | null;
   lastAmount: string | null;
   lastDescription: string | null;
+  /** O que as notas deste tomador retêm (o Fiscal configura). */
+  retentions: NfseRetentions | null;
 }
 
 export interface ClientNfseIssuerView {
@@ -229,7 +232,7 @@ export async function loadClientNfseWorkspace(
     freeByIssuer.set(row.issuerId, list);
   }
   const allTakers = await tx
-    .select({ id: tk.id, issuerId: tk.issuerId, name: tk.name, document: tk.document, address: tk.address })
+    .select({ id: tk.id, issuerId: tk.issuerId, name: tk.name, document: tk.document, address: tk.address, retentions: tk.retentions })
     .from(tk)
     .where(and(eq(tk.orgId, input.orgId), eq(tk.active, true)))
     .orderBy(asc(tk.name));
@@ -245,7 +248,7 @@ export async function loadClientNfseWorkspace(
   for (const row of allTakers) {
     const list = takersByIssuer.get(row.issuerId) ?? [];
     const last = lastByTaker.get(row.id);
-    list.push({ id: row.id, name: row.name, document: row.document, address: (row.address as NfseClientAddress | null) ?? null, lastAmount: last?.amount ?? null, lastDescription: last?.description ?? null });
+    list.push({ id: row.id, name: row.name, document: row.document, address: (row.address as NfseClientAddress | null) ?? null, lastAmount: last?.amount ?? null, lastDescription: last?.description ?? null, retentions: row.retentions ?? null });
     takersByIssuer.set(row.issuerId, list);
   }
 

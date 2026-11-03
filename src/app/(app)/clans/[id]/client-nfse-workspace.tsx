@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Plus,
   Repeat,
+  Search,
   Send,
   Settings2,
   Trash2,
@@ -20,10 +21,12 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { issuerMonthNotes, matchesIssuer, matchesNoteFilter, NOTE_FILTERS, summarizeNotes, type NoteFilter } from "@/lib/client-nfse/presentation";
 import {
   Dialog,
   DialogContent,
@@ -107,7 +110,7 @@ function EmitConfirm({ clanId, period, items, onDone, onOpenChange }: { clanId: 
   }
 
   return (
-    <Dialog open={items !== null} onOpenChange={onOpenChange}>
+    <Dialog open={items !== null} onOpenChange={(open) => { if (!sending) onOpenChange(open); }}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{single ? `Emitir a nota de ${single.note.takerName}?` : `Emitir ${list.length} notas?`}</DialogTitle>
@@ -133,7 +136,7 @@ function EmitConfirm({ clanId, period, items, onDone, onOpenChange }: { clanId: 
           </ul>
         )}
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Voltar</Button>
+          <Button type="button" variant="outline" disabled={sending} onClick={() => onOpenChange(false)}>Voltar</Button>
           <Button type="button" disabled={sending || list.length === 0} onClick={emit}>
             {sending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Send aria-hidden />}
             Emitir {list.length === 1 ? "a nota" : `${list.length} notas`} · <span className="font-mono tabular-nums">{money(total)}</span>
@@ -181,20 +184,20 @@ function FreeNoteRow({
         <button
           type="button"
           onClick={() => show(false)}
-          className={cn("inline-flex min-h-8 items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-xs tabular-nums transition-colors hover:brightness-125", STATUS_CLASSES[invoice.status])}
+          className={cn("touch-target inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs tabular-nums transition-colors hover:brightness-125", STATUS_CLASSES[invoice.status])}
           aria-label={`Nota de ${note.takerName}: ${STATUS_LABELS[invoice.status]}. Abrir detalhes.`}
         >
           {working ? <LoaderCircle className="size-3 animate-spin" aria-hidden /> : null}
-          {invoice.status === "issued" && invoice.nfseNumber ? `Nº ${invoice.nfseNumber}` : STATUS_LABELS[invoice.status]}
+          {invoice.status === "issued" && invoice.nfseNumber ? `Emitida · Nº ${invoice.nfseNumber}` : invoice.status === "failed" ? "Ver erro e resolver" : STATUS_LABELS[invoice.status]}
         </button>
         {invoice.status === "issued" ? (
-          <Button asChild size="icon-sm" variant="ghost" className="touch-target" aria-label={`Baixar o PDF da nota de ${note.takerName}`}>
-            <a href={clientNfsePdfHref(clanId, period.year, period.month, { invoiceId: invoice.id })}><Download aria-hidden /></a>
+          <Button asChild size="sm" variant="outline" className="touch-target" aria-label={`Baixar o PDF da nota de ${note.takerName}`}>
+            <a href={clientNfsePdfHref(clanId, period.year, period.month, { invoiceId: invoice.id })}><Download aria-hidden /> PDF</a>
           </Button>
         ) : null}
-        {canManage ? (
+        {canManage && (invoice.status === "issued" || invoice.status === "cancelled") ? (
           <Button type="button" size="sm" variant="outline" onClick={onRepeat}>
-            <Repeat aria-hidden /> Repetir
+            <Repeat aria-hidden /> Nova igual
           </Button>
         ) : null}
         {canManage && invoice.status === "issued" ? (
@@ -203,7 +206,7 @@ function FreeNoteRow({
           </Button>
         ) : null}
       </div>
-      <ClientNfseInvoiceDialog
+      {open ? <ClientNfseInvoiceDialog
         clanId={clanId}
         period={period}
         takerName={note.takerName}
@@ -212,7 +215,8 @@ function FreeNoteRow({
         open={open}
         onOpenChange={setOpen}
         startCancelling={cancelFirst}
-      />
+        canManage={canManage}
+      /> : null}
     </li>
   );
 }
@@ -225,6 +229,8 @@ function IssuerPanel({
   selected,
   onToggle,
   onEmit,
+  filter,
+  serviceReady,
 }: {
   clanId: string;
   period: Period;
@@ -233,6 +239,8 @@ function IssuerPanel({
   selected: ReadonlySet<string>;
   onToggle: (ids: readonly string[], on: boolean) => void;
   onEmit: (items: ToEmit[]) => void;
+  filter: NoteFilter;
+  serviceReady: boolean;
 }) {
   const router = useRouter();
   const [fiscalOpen, setFiscalOpen] = useState(false);
@@ -243,16 +251,16 @@ function IssuerPanel({
   const [emitting, setEmitting] = useState<{ key: string; prefill: EmitPrefill | null } | null>(null);
   const [editing, setEditing] = useState<ClientNfseNoteView | null>(null);
   const [removing, startRemoving] = useTransition();
-  const canEmit = canManage && issuer.active && !issuer.problem;
+  const canEmit = canManage && serviceReady && issuer.active && !issuer.problem;
   const emissible = (note: ClientNfseNoteView) => canEmit && !note.blocked && noteIsOpen(note);
   const fixed = issuer.usesStandardNotes || issuer.notes.some((note) => note.invoice);
-  const ready = fixed ? issuer.notes.filter(emissible) : [];
+  const ready = fixed ? issuer.notes.filter((note) => emissible(note) && matchesNoteFilter(note, filter)) : [];
   const readyIds = ready.map((note) => note.modelId);
   const allChosen = readyIds.length > 0 && readyIds.every((id) => selected.has(id));
-  const freeActive = issuer.freeNotes.filter((note) => note.invoice.status !== "cancelled");
-  const freeTotal = freeActive.reduce((sum, note) => sum + cents(note.amount), 0);
-  const fixedIssued = issuer.notes.filter((note) => note.invoice?.status === "issued").length;
-  const issued = freeActive.filter((note) => note.invoice.status === "issued").length + fixedIssued;
+  const summary = summarizeNotes(issuerMonthNotes(issuer));
+  const issued = summary.issued;
+  const visibleFree = issuer.freeNotes.filter((note) => matchesNoteFilter(note, filter));
+  const visibleFixed = issuer.notes.filter((note) => matchesNoteFilter(note, filter));
 
   function remove() {
     if (!window.confirm(`Tirar ${issuer.name} das Notas dos clientes? As notas padrão saem junto. Com nota já pedida, desative nos dados fiscais.`)) return;
@@ -280,7 +288,7 @@ function IssuerPanel({
             <span className="truncate">{issuer.name}</span>
             <span className="font-mono text-xs font-normal text-muted-foreground">{issuer.cnpj ? formatCnpj(issuer.cnpj) : ""}</span>
           </h3>
-          {issuer.problem ? (
+          {!issuer.active ? <span className="text-xs text-muted-foreground">Empresa desativada</span> : issuer.problem ? (
             <span className="flex items-start gap-1.5 text-xs text-warning"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden /> {issuer.problem}</span>
           ) : (
             <span className="flex items-center gap-1.5 text-xs text-success"><CheckCircle2 className="size-3.5" aria-hidden /> Pronta para emitir</span>
@@ -288,8 +296,8 @@ function IssuerPanel({
         </div>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <span className="font-mono text-xs tabular-nums text-muted-foreground">
-            {freeActive.length} nota(s) em {MONTHS[period.month - 1]} · {money(freeTotal)}
-            {issued > 0 ? ` · ${issued} emitida(s)` : ""}
+            {issued} emitida(s) · {money(summary.issuedCents)}
+            {summary.pending > 0 ? ` · ${summary.pending} a emitir` : ""}
           </span>
           {issued > 1 ? (
             <Button asChild size="sm" variant="ghost">
@@ -298,7 +306,7 @@ function IssuerPanel({
           ) : null}
           {canEmit ? (
             <Button type="button" size="sm" onClick={() => emitFrom(null)}>
-              <Plus aria-hidden /> Emitir nota
+              <Plus aria-hidden /> Nova nota
             </Button>
           ) : null}
           {canManage ? (
@@ -320,13 +328,21 @@ function IssuerPanel({
         </div>
       </header>
 
-      {issuer.freeNotes.length === 0 ? (
+      {canManage && ready.length > 0 ? <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2">
+        <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" className="size-4 accent-primary" checked={allChosen} onChange={(event) => onToggle(readyIds, event.target.checked)} />Selecionar {ready.length} recorrente(s) a emitir</label>
+        <Button type="button" variant="outline" size="sm" onClick={() => onEmit(ready.map((note) => ({ note, issuerName: issuer.name })))}>Conferir pendentes</Button>
+      </div> : null}
+
+      {visibleFree.length === 0 && visibleFixed.length === 0 ? (
         <p className="px-4 py-3 text-sm text-muted-foreground">
-          Nenhuma nota em {MONTHS[period.month - 1]}.{canEmit ? " Clique em + Emitir nota." : ""}
+          {filter === "all" ? `Nenhuma nota em ${MONTHS[period.month - 1]}. Use Nova nota para começar.` : "Nenhuma nota nesta situação. Escolha outro filtro para ver as demais."}
         </p>
       ) : (
         <ul className="grid min-w-0 divide-y divide-border/60" aria-label={`Notas de ${issuer.name} em ${MONTHS[period.month - 1]}`}>
-          {issuer.freeNotes.map((note) => (
+          {visibleFixed.map((note) => (
+            <ClientNfseNoteRow key={note.modelId} clanId={clanId} period={period} note={note} canManage={canManage} emissible={emissible(note)} selected={selected.has(note.modelId)} onToggle={() => onToggle([note.modelId], !selected.has(note.modelId))} onEmit={() => onEmit([{ note, issuerName: issuer.name }])} onEditStandard={() => setEditing(note)} />
+          ))}
+          {visibleFree.map((note) => (
             <FreeNoteRow
               key={note.invoice.id}
               clanId={clanId}
@@ -335,69 +351,20 @@ function IssuerPanel({
               canManage={canEmit}
               onRepeat={() => {
                 const taker = issuer.takers.find((row) => row.id === note.takerId);
-                emitFrom({ document: note.takerDocument, name: note.takerName, address: taker?.address ?? null, amount: note.amount, description: note.description });
+                emitFrom({ document: note.takerDocument, name: note.takerName, address: taker?.address ?? null, amount: note.amount, description: note.description, retentions: taker?.retentions ?? null });
               }}
             />
           ))}
         </ul>
       )}
 
-      {fixed ? (
-        <div className="border-t border-border/70">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2">
-            <input
-              type="checkbox"
-              className="size-4 accent-primary disabled:opacity-30"
-              checked={allChosen}
-              disabled={readyIds.length === 0}
-              onChange={(event) => onToggle(readyIds, event.target.checked)}
-              aria-label={`Escolher as notas fixas de ${issuer.name}`}
-            />
-            <h4 className="flex-1">Notas fixas do mês</h4>
-            {ready.length > 0 ? (
-              <Button type="button" size="sm" variant="outline" onClick={() => onEmit(ready.map((note) => ({ note, issuerName: issuer.name })))}>
-                <Send aria-hidden /> Emitir {ready.length === 1 ? "a fixa" : `as ${ready.length} fixas`}
-              </Button>
-            ) : null}
-            {canManage ? (
-              <Button type="button" variant="ghost" size="sm" onClick={() => setNoteOpen(true)}>
-                <Plus aria-hidden /> Nova nota fixa
-              </Button>
-            ) : null}
-          </div>
-          {issuer.notes.length === 0 ? (
-            <p className="px-4 pb-3 text-sm text-muted-foreground">Nenhuma nota fixa. Elas aparecem sozinhas todo mês.</p>
-          ) : (
-            <ul className="grid min-w-0 divide-y divide-border/60">
-              {issuer.notes.map((note) => (
-                <ClientNfseNoteRow
-                  key={note.modelId}
-                  clanId={clanId}
-                  period={period}
-                  note={note}
-                  canManage={canManage}
-                  emissible={emissible(note)}
-                  selected={selected.has(note.modelId)}
-                  onToggle={() => onToggle([note.modelId], !selected.has(note.modelId))}
-                  onEmit={() => onEmit([{ note, issuerName: issuer.name }])}
-                  onEditStandard={() => setEditing(note)}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-      ) : null}
-
       {canManage ? (
         <footer className="flex flex-wrap gap-1 border-t border-border/70 px-2 py-1.5">
-          {canEmit ? (
-            <Button type="button" variant="ghost" size="sm" onClick={() => emitFrom(null)}>
-              <Plus aria-hidden /> Emitir nota
-            </Button>
-          ) : null}
           <Button type="button" variant="ghost" size="sm" onClick={() => setTakersOpen(true)}>
-            <Users aria-hidden /> Tomadores ({issuer.takers.length})
+            <Users aria-hidden /> Clientes / tomadores ({issuer.takers.length})
           </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setFiscalOpen(true)}><Settings2 aria-hidden /> Configurar empresa</Button>
+          {issuer.usesStandardNotes ? <Button type="button" variant="ghost" size="sm" onClick={() => setNoteOpen(true)}><Plus aria-hidden /> Nova recorrente</Button> : null}
         </footer>
       ) : null}
 
@@ -445,12 +412,17 @@ export function ClientNfseWorkspace({
   const router = useRouter();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [toEmit, setToEmit] = useState<ToEmit[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<NoteFilter>("all");
   const monthName = MONTHS[period.month - 1];
   const title = `${monthName.charAt(0).toUpperCase()}${monthName.slice(1)} de ${period.year}`;
-  const notes = issuers.flatMap((issuer) => issuer.notes.map((note) => ({ note, issuerName: issuer.name })));
-  const issued = notes.filter((item) => item.note.invoice?.status === "issued").length;
-  const working = notes.some((item) => item.note.invoice?.status === "queued" || item.note.invoice?.status === "cancel_requested");
-  const chosen = useMemo(() => notes.filter((item) => selected.has(item.note.modelId)), [notes, selected]);
+  const allNotes = issuers.flatMap(issuerMonthNotes);
+  const summary = summarizeNotes(allNotes);
+  const { issued, working } = summary;
+  const visibleIssuers = issuers.filter((issuer) => matchesIssuer(issuer, query) && (filter === "all" || issuerMonthNotes(issuer).some((note) => matchesNoteFilter(note, filter))));
+  const notes = visibleIssuers.filter((issuer) => canManage && serviceReady && issuer.active && !issuer.problem)
+    .flatMap((issuer) => issuer.notes.filter((note) => !note.blocked && noteIsOpen(note) && matchesNoteFilter(note, filter)).map((note) => ({ note, issuerName: issuer.name })));
+  const chosen = notes.filter((item) => selected.has(item.note.modelId));
   const chosenTotal = chosen.reduce((sum, item) => sum + cents(item.note.amount), 0);
 
   useEffect(() => {
@@ -474,11 +446,11 @@ export function ClientNfseWorkspace({
     <div className="grid min-w-0 grid-cols-1 gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1">
-          <Button asChild variant="outline" size="icon-sm">
+          <Button asChild variant="outline" size="icon-sm" className="touch-target">
             <Link href={monthHref(clanId, adjacent(period, -1))} aria-label="Mês anterior"><ChevronLeft aria-hidden /></Link>
           </Button>
           <h2 className="px-2">{title}</h2>
-          <Button asChild variant="outline" size="icon-sm">
+          <Button asChild variant="outline" size="icon-sm" className="touch-target">
             <Link href={monthHref(clanId, adjacent(period, 1))} aria-label="Próximo mês"><ChevronRight aria-hidden /></Link>
           </Button>
         </div>
@@ -495,9 +467,24 @@ export function ClientNfseWorkspace({
       {!serviceReady ? (
         <p className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning" role="status">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-          O serviço fiscal ainda não publicou a chave do cofre. Sem ela, o certificado das empresas não abre e nenhuma nota sai.
+          Emissão indisponível. Peça ao administrador para ativar o serviço fiscal e conferir os certificados das empresas.
         </p>
       ) : null}
+
+      {issuers.length > 0 ? <>
+        <div className="grid grid-cols-3 gap-3 rounded-md border bg-card p-4" aria-label="Resumo do mês">
+          <div><p className="text-xs text-muted-foreground">A emitir</p><p className="font-mono tabular-nums">{summary.pending}</p></div>
+          <div><p className="text-xs text-muted-foreground">Com erro</p><p className={cn("font-mono tabular-nums", summary.failed > 0 && "text-destructive")}>{summary.failed}</p></div>
+          <div><p className="text-xs text-muted-foreground">Total emitido · {issued} nota(s)</p><p className="font-mono tabular-nums">{money(summary.issuedCents)}</p></div>
+        </div>
+        <div className="grid gap-3">
+          <div className="relative"><Search className="absolute left-3 top-3 size-4 text-muted-foreground" aria-hidden /><Input className="pl-9" aria-label="Buscar empresa por nome ou CNPJ" placeholder="Buscar empresa por nome ou CNPJ" value={query} onChange={(event) => { setQuery(event.target.value); setSelected(new Set()); }} /></div>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Filtrar notas por situação">
+            {NOTE_FILTERS.map(([value, label]) => <Button key={value} type="button" size="sm" className="touch-target" variant={filter === value ? "default" : "outline"} aria-pressed={filter === value} onClick={() => { setFilter(value); setSelected(new Set()); }}>{label} <span className="font-mono tabular-nums">{allNotes.filter((note) => matchesNoteFilter(note, value)).length}</span></Button>)}
+          </div>
+          {working ? <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" aria-hidden /> Acompanhando a emissão. A situação e o PDF aparecem aqui automaticamente.</p> : null}
+        </div>
+      </> : null}
 
       {issuers.length === 0 ? (
         <div className="grid justify-items-center gap-2 rounded-lg border border-dashed p-8 text-center text-sm">
@@ -508,13 +495,16 @@ export function ClientNfseWorkspace({
         </div>
       ) : (
         <div className="grid gap-4" aria-live="polite">
-          {issuers.map((issuer) => (
+          {visibleIssuers.length === 0 ? <div className="rounded-md border border-dashed p-6 text-center"><p className="text-sm text-muted-foreground">Nenhuma empresa encontrada com esta busca e situação.</p><Button type="button" variant="ghost" onClick={() => { setQuery(""); setFilter("all"); }}>Limpar filtros</Button></div> : null}
+          {visibleIssuers.map((issuer) => (
             <IssuerPanel
-              key={issuer.id}
+              key={`${issuer.id}-${period.year}-${period.month}`}
               clanId={clanId}
               period={period}
               issuer={issuer}
               canManage={canManage}
+              serviceReady={serviceReady}
+              filter={filter}
               selected={selected}
               onToggle={toggle}
               onEmit={setToEmit}

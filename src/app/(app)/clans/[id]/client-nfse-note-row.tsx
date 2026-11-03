@@ -79,6 +79,7 @@ export function ClientNfseInvoiceDialog({
   open,
   onOpenChange,
   startCancelling,
+  canManage,
 }: {
   clanId: string;
   period: { year: number; month: number };
@@ -88,6 +89,7 @@ export function ClientNfseInvoiceDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   startCancelling: boolean;
+  canManage: boolean;
 }) {
   const router = useRouter();
   const [cancelling, setCancelling] = useState(startCancelling);
@@ -110,7 +112,7 @@ export function ClientNfseInvoiceDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (next) setCancelling(startCancelling); onOpenChange(next); }}>
+    <Dialog open={open} onOpenChange={(next) => { if (!pending) onOpenChange(next); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Nota para {takerName}</DialogTitle>
@@ -121,7 +123,7 @@ export function ClientNfseInvoiceDialog({
           </DialogDescription>
         </DialogHeader>
         {invoice.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{invoice.lastError}</p> : null}
-        {cancelling ? (
+        {cancelling && canManage ? (
           <div className="grid gap-3">
             <div className="grid gap-1.5">
               <Label htmlFor={`cn-cancel-reason-${invoice.id}`}>Motivo do cancelamento</Label>
@@ -142,9 +144,9 @@ export function ClientNfseInvoiceDialog({
           </div>
         ) : null}
         <DialogFooter>
-          {cancelling ? (
+          {cancelling && canManage ? (
             <>
-              <Button type="button" variant="outline" onClick={() => setCancelling(false)}>Voltar</Button>
+              <Button type="button" variant="outline" disabled={pending} onClick={() => setCancelling(false)}>Voltar</Button>
               <Button
                 type="button"
                 variant="destructive"
@@ -156,14 +158,14 @@ export function ClientNfseInvoiceDialog({
             </>
           ) : (
             <>
-              {invoice.status === "failed" ? (
+              {canManage && invoice.status === "failed" ? (
                 <Button type="button" disabled={pending} onClick={() => run(() => retryInvoice({ clanId, id: invoice.id }), "Nota de volta à fila.")}>
                   {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <RotateCcw aria-hidden />} Tentar de novo
                 </Button>
               ) : null}
               {invoice.status === "issued" ? (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setCancelling(true)}><XCircle aria-hidden /> Cancelar a nota</Button>
+                  {canManage ? <Button type="button" variant="outline" onClick={() => setCancelling(true)}><XCircle aria-hidden /> Cancelar a nota</Button> : null}
                   <Button asChild><a href={clientNfsePdfHref(clanId, period.year, period.month, { invoiceId: invoice.id })}><Download aria-hidden /> Baixar PDF</a></Button>
                 </>
               ) : null}
@@ -269,6 +271,7 @@ export function ClientNfseNoteRow({
             <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
               <span className="truncate font-medium">{note.takerName}</span>
               <span className="font-mono text-xs text-muted-foreground">{formatCnpj(note.takerDocument)}</span>
+              <Badge variant="outline">Recorrente</Badge>
               {adjusted ? <Badge variant="outline" className="text-xs">ajustada neste mês</Badge> : null}
               {!note.model.active ? <Badge variant="outline" className="text-xs">pausada</Badge> : null}
             </span>
@@ -292,11 +295,11 @@ export function ClientNfseNoteRow({
               <button
                 type="button"
                 onClick={() => showInvoice(false)}
-                className={cn("inline-flex min-h-8 items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-xs tabular-nums transition-colors hover:brightness-125", STATUS_CLASSES[invoice.status])}
+                className={cn("touch-target inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs tabular-nums transition-colors hover:brightness-125", STATUS_CLASSES[invoice.status])}
                 aria-label={`Nota de ${note.takerName}: ${STATUS_LABELS[invoice.status]}. Abrir detalhes.`}
               >
                 {working ? <LoaderCircle className="size-3 animate-spin" aria-hidden /> : null}
-                {invoice.status === "issued" && invoice.nfseNumber ? `Nº ${invoice.nfseNumber}` : STATUS_LABELS[invoice.status]}
+                {invoice.status === "issued" && invoice.nfseNumber ? `Emitida · Nº ${invoice.nfseNumber}` : invoice.status === "failed" ? "Ver erro e resolver" : STATUS_LABELS[invoice.status]}
               </button>
             ) : note.blocked ? (
               <span className="flex max-w-56 items-start gap-1 text-xs text-warning" title={note.blocked}>
@@ -308,6 +311,8 @@ export function ClientNfseNoteRow({
               </Button>
             ) : null}
             {invoice?.status === "cancelled" ? <span className="text-xs text-muted-foreground">anterior cancelada</span> : null}
+            {editable ? <Button type="button" size="sm" variant="ghost" onClick={startEditing}><Pencil aria-hidden /> Ajustar</Button> : null}
+            {invoice?.status === "issued" ? <Button asChild size="sm" variant="outline"><a href={clientNfsePdfHref(clanId, period.year, period.month, { invoiceId: invoice.id })}><Download aria-hidden /> PDF</a></Button> : null}
             {canManage ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -334,7 +339,7 @@ export function ClientNfseNoteRow({
           </div>
         </>
       )}
-      {invoice && invoice.status !== "cancelled" ? (
+      {invoice && invoice.status !== "cancelled" && invoiceOpen ? (
         <ClientNfseInvoiceDialog
           clanId={clanId}
           period={period}
@@ -344,6 +349,7 @@ export function ClientNfseNoteRow({
           open={invoiceOpen}
           onOpenChange={setInvoiceOpen}
           startCancelling={cancelFirst}
+          canManage={canManage}
         />
       ) : null}
     </li>

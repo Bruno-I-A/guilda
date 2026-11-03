@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, History, LoaderCircle, Search, Send, UserPlus } from "lucide-react";
+import { CheckCircle2, History, LoaderCircle, Percent, Search, Send, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -15,6 +15,7 @@ import { formatBRLCurrency } from "@/lib/currency";
 
 import { importTakers, listIssuerCustomers, readIssuerHistory } from "./client-nfse-actions";
 import type { EmitPrefill } from "./client-nfse-emit-dialog";
+import { retentionLabel, TakerRetentionsDialog } from "./client-nfse-retentions";
 
 function normalize(value: string): string {
   return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -36,18 +37,27 @@ export function matchCustomers(customers: readonly IssuerCustomer[], query: stri
 export function useIssuerCustomers(clanId: string, issuerId: string, enabled: boolean, reload = 0) {
   const [view, setView] = useState<IssuerCustomersView | null>(null);
   const [loading, startLoading] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (!enabled) return;
+    let active = true;
     startLoading(async () => {
+      setError(null);
+      try {
       const result = await listIssuerCustomers({ clanId, issuerId });
+      if (!active) return;
       if (!result.ok || !result.data) {
-        toast.error(result.ok ? "Não consegui ler os clientes." : result.error);
+        setError(result.ok ? "Não consegui ler os clientes." : result.error);
         return;
       }
       setView(result.data);
+      } catch {
+        if (active) setError("Não foi possível carregar os clientes. Tente novamente.");
+      }
     });
+    return () => { active = false; };
   }, [clanId, issuerId, enabled, reload]);
-  return { view, loading };
+  return { view, loading, error };
 }
 
 export function customerPrefill(customer: IssuerCustomer): EmitPrefill {
@@ -73,7 +83,12 @@ export function ClientNfseTakersDialog({
 }) {
   const router = useRouter();
   const [reload, setReload] = useState(0);
-  const { view, loading } = useIssuerCustomers(clanId, issuer.id, true, reload);
+  const { view, loading, error } = useIssuerCustomers(clanId, issuer.id, true, reload);
+  useEffect(() => {
+    if (!view?.historyReading) return;
+    const timer = setInterval(() => setReload((value) => value + 1), 5000);
+    return () => clearInterval(timer);
+  }, [view?.historyReading]);
   const [query, setQuery] = useState("");
   const [unchecked, setUnchecked] = useState<ReadonlySet<string>>(new Set());
   const [saving, startSaving] = useTransition();
@@ -82,6 +97,13 @@ export function ClientNfseTakersDialog({
   const visible = useMemo(() => matchCustomers(customers, query), [customers, query]);
   const newOnes = customers.filter((customer) => !customer.registered);
   const chosen = newOnes.filter((customer) => !unchecked.has(customer.takerDocument));
+  // Os já cadastrados, com as retenções de cada um (inclusive quem não veio das notas do Portal).
+  const [editingRetentions, setEditingRetentions] = useState<ClientNfseIssuerView["takers"][number] | null>(null);
+  const takerByDocument = useMemo(() => new Map(issuer.takers.map((taker) => [taker.document, taker])), [issuer.takers]);
+  const visibleTakers = useMemo(() => {
+    const documents = new Set(matchCustomers(issuer.takers.map((taker) => ({ takerDocument: taker.document, takerName: taker.name } as IssuerCustomer)), query).map((row) => row.takerDocument));
+    return issuer.takers.filter((taker) => documents.has(taker.document));
+  }, [issuer.takers, query]);
 
   function toggle(document: string) {
     setUnchecked((current) => {
@@ -112,7 +134,7 @@ export function ClientNfseTakersDialog({
         toast.error(result.error);
         return;
       }
-      toast.success("Pedido feito. A rotina lê as notas antigas no Portal; reabra esta lista em alguns minutos.");
+      toast.success("Busca iniciada. A lista será atualizada automaticamente.");
       setReload((value) => value + 1);
     });
   }
@@ -121,17 +143,16 @@ export function ClientNfseTakersDialog({
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-3xl" aria-busy={loading || saving}>
         <DialogHeader>
-          <DialogTitle>Tomadores · {issuer.name}</DialogTitle>
+          <DialogTitle>Clientes / tomadores · {issuer.name}</DialogTitle>
           <DialogDescription>
-            Os clientes das notas que esta empresa emitiu no Sistema Nacional (lidos pela aba XML). Os novos vêm marcados: cadastre
-            todos de uma vez e eles aparecem no &quot;+ Emitir nota&quot;.
+            Clientes encontrados nas notas anteriores desta empresa. Você pode emitir direto para eles ou salvar os selecionados no cadastro.
           </DialogDescription>
         </DialogHeader>
 
         {view?.historyReading ? (
           <p className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning" role="status">
             <LoaderCircle className="mt-0.5 size-4 shrink-0 animate-spin" aria-hidden />
-            Lendo as notas antigas desta empresa no Portal. Pode levar alguns minutos; reabra a lista depois.
+            Buscando as notas antigas. Pode levar alguns minutos; esta lista se atualiza sozinha.
           </p>
         ) : view?.canReadHistory ? (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 p-3 text-sm">
@@ -159,7 +180,41 @@ export function ClientNfseTakersDialog({
           />
         </div>
 
-        {view === null ? (
+        {issuer.takers.length > 0 ? (
+          <section className="grid gap-2" aria-label="Clientes cadastrados">
+            <h3>Cadastrados ({issuer.takers.length})</h3>
+            <ul className="grid divide-y rounded-md border">
+              {visibleTakers.map((taker) => (
+                <li key={taker.id} className="grid gap-2 px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                  <span className="grid min-w-0 gap-0.5">
+                    <span className="truncate font-medium">{taker.name}</span>
+                    <span className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                      <span className="font-mono tabular-nums">{formatCnpj(taker.document)}</span>
+                      <span className={taker.retentions ? "text-warning" : undefined}>{retentionLabel(taker.retentions)}</span>
+                    </span>
+                  </span>
+                  <span className="flex flex-wrap gap-1 sm:justify-end">
+                    <Button type="button" size="sm" variant="outline" onClick={() => setEditingRetentions(taker)}>
+                      <Percent aria-hidden /> Retenções
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onEmit({ document: taker.document, name: taker.name, address: taker.address, amount: taker.lastAmount, description: taker.lastDescription, retentions: taker.retentions })}
+                    >
+                      <Send aria-hidden /> Emitir
+                    </Button>
+                  </span>
+                </li>
+              ))}
+              {visibleTakers.length === 0 ? <li className="px-3 py-3 text-sm text-muted-foreground">Nenhum cadastrado com esse nome ou documento.</li> : null}
+            </ul>
+          </section>
+        ) : null}
+
+        <h3>Nas notas do Portal</h3>
+        {error ? <div role="alert" className="text-sm text-destructive"><p>{error}</p><Button type="button" variant="outline" onClick={() => setReload((value) => value + 1)}>Tentar novamente</Button></div> : view === null ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <LoaderCircle className="size-4 animate-spin" aria-hidden /> Lendo as notas guardadas…
           </p>
@@ -192,7 +247,7 @@ export function ClientNfseTakersDialog({
                       {customer.amount ? <span>{formatBRLCurrency(customer.amount)}</span> : null}
                     </span>
                   </span>
-                  <Button type="button" size="sm" variant="ghost" className="col-start-2 justify-self-start sm:col-start-3" onClick={() => onEmit(customerPrefill(customer))}>
+                  <Button type="button" size="sm" variant="ghost" className="col-start-2 justify-self-start sm:col-start-3" onClick={() => onEmit({ ...customerPrefill(customer), retentions: takerByDocument.get(customer.takerDocument)?.retentions ?? null })}>
                     <Send aria-hidden /> Emitir
                   </Button>
                 </li>
@@ -201,6 +256,8 @@ export function ClientNfseTakersDialog({
             </ul>
           </>
         )}
+
+        {editingRetentions ? <TakerRetentionsDialog clanId={clanId} taker={editingRetentions} onOpenChange={(open) => { if (!open) setEditingRetentions(null); }} /> : null}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Fechar</Button>
