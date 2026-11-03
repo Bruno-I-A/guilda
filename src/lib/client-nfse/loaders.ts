@@ -2,7 +2,7 @@ import "server-only";
 
 import { gunzipSync } from "node:zlib";
 
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, ne } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -109,6 +109,11 @@ export interface ClientNfseCandidateView {
   name: string;
   cnpj: string;
   certificate: "valid" | "pending" | "invalid" | "missing";
+  /**
+   * Por que não pode entrar (inativa, MEI, sem CNPJ); null = pode. A busca
+   * mostra a empresa mesmo assim, com o motivo, em vez de escondê-la.
+   */
+  blocked: string | null;
   /** Sugestão do modelo fiscal sem nota guardada: município pelo endereço e regime pelo da empresa. */
   suggestion: { cityCode: string | null; simples: boolean };
 }
@@ -254,10 +259,10 @@ export async function loadClientNfseWorkspace(
 
   const cert = schema.nfseClientCertificates;
   const candidates = await tx
-    .select({ clientId: c.id, name: c.name, cnpj: c.cnpj, taxRegime: c.taxRegime, address: c.address, certStatus: cert.status })
+    .select({ clientId: c.id, name: c.name, cnpj: c.cnpj, active: c.active, taxRegime: c.taxRegime, address: c.address, certStatus: cert.status })
     .from(c)
     .leftJoin(cert, and(eq(cert.orgId, c.orgId), eq(cert.clientId, c.id)))
-    .where(and(eq(c.orgId, input.orgId), eq(c.active, true), ne(c.taxRegime, "mei"), isNotNull(c.cnpj)))
+    .where(eq(c.orgId, input.orgId))
     .orderBy(asc(c.name));
   const taken = new Set(issuers.map((issuer) => issuer.clientId));
 
@@ -285,8 +290,15 @@ export async function loadClientNfseWorkspace(
         return {
           clientId: row.clientId,
           name: row.name,
-          cnpj: row.cnpj!,
+          cnpj: row.cnpj ?? "",
           certificate: row.certStatus ?? "missing",
+          blocked: !row.active
+            ? "Inativa no cadastro da empresa (Clientes)"
+            : row.taxRegime === "mei"
+              ? "MEI não emite por aqui (aba MEI)"
+              : !row.cnpj
+                ? "Sem CNPJ no cadastro da empresa (Clientes)"
+                : null,
           suggestion: {
             cityCode: address?.state && address.city ? ibgeCityCode(address.state, address.city) : null,
             simples: row.taxRegime === "simples",
