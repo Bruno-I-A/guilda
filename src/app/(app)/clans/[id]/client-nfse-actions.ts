@@ -7,7 +7,8 @@ import { normalizeCnpj, validateCnpj, validateTaxDocument } from "@/domain/cnpj"
 import { CLIENT_NFSE_REFERENCES } from "@/domain/client-nfse";
 import { NFSE_CANCEL_TEXT_MAX, NFSE_CANCEL_TEXT_MIN } from "@/domain/nfse";
 import { err, type ActionResult } from "@/lib/action-context";
-import { loadIssuerSuggestion, type IssuerSuggestionView } from "@/lib/client-nfse/loaders";
+import { loadIssuerCustomers, loadIssuerSuggestion, type IssuerSuggestionView } from "@/lib/client-nfse/loaders";
+import type { IssuerCustomer } from "@/lib/client-nfse/suggest";
 import {
   adjustClientNfseMonthNote,
   enqueueClientNfseBatch,
@@ -113,6 +114,19 @@ export async function suggestIssuerSetup(input: z.input<typeof suggestSchema>): 
     ok: true,
     data: await loadIssuerSuggestion(tx, { orgId: ctx.orgId, clientId: data.clientId, issuerId: data.issuerId, now: new Date() }),
   }));
+}
+
+const customersSchema = z.object({ clanId: clan, issuerId: z.uuid("Empresa inválida.") });
+
+/** Clientes já atendidos pela empresa, lidos das notas que a rotina da aba XML guardou. */
+export async function listIssuerCustomers(input: z.input<typeof customersSchema>): Promise<ActionResult<IssuerCustomer[]>> {
+  const parsed = customersSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Pedido inválido.");
+  const data = parsed.data;
+  return asFiscalOperator(data.clanId, async (tx, ctx) => {
+    const customers = await loadIssuerCustomers(tx, { orgId: ctx.orgId, issuerId: data.issuerId });
+    return customers ? { ok: true, data: customers } : err("Empresa emissora não encontrada.");
+  });
 }
 
 const importSchema = z.object({

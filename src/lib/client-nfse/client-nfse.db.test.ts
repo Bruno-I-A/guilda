@@ -265,6 +265,16 @@ test("sugestão pelas notas guardadas da empresa e importação das notas padrã
   const again = await withOrgTx(ORG, (tx) => loadIssuerSuggestion(tx, { orgId: ORG, clientId: MERCADO, issuerId: issuer.id, now: NOW }));
   expect(again.models).toEqual([]);
 
+  // Clientes já atendidos: o histórico inteiro, um por documento, sem a nota cancelada.
+  const { loadIssuerCustomers } = await import("./loaders");
+  const customers = await withOrgTx(ORG, (tx) => loadIssuerCustomers(tx, { orgId: ORG, issuerId: issuer.id }));
+  expect(customers?.map((customer) => [customer.takerName, customer.notes, customer.registered])).toEqual([
+    ["Maria Oliveira", 2, true],
+    ["João da Silva", 2, true],
+  ]);
+  expect(customers?.find((customer) => customer.takerName === "Maria Oliveira")?.description).toBe("AVALIAÇÃO");
+  expect(await withOrgTx(OTHER, (tx) => loadIssuerCustomers(tx, { orgId: OTHER, issuerId: issuer.id }))).toBeNull();
+
   // Nota com o tomador no mesmo formulário: o CPF de quem já recebe reaproveita o tomador.
   const note = await withOrgTx(ORG, (tx) =>
     registry.saveClientNfseNote(tx, {

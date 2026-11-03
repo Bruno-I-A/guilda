@@ -4,7 +4,7 @@ import { nfseIssuerTemplateRulesSchema } from "@/lib/nfse/template";
 import { testNfseXml } from "@/lib/nfse/testing/nfse-xml";
 
 import { readIssuedNoteFacts } from "./from-xml";
-import { freeDpsSeries, nextDpsSeriesAfter, suggestFromIssuedNotes, templateDescription } from "./suggest";
+import { customersFromIssuedNotes, freeDpsSeries, nextDpsSeriesAfter, suggestFromIssuedNotes, templateDescription } from "./suggest";
 
 const ACADEMIA = "33000167000101";
 
@@ -83,5 +83,30 @@ describe("série seguinte depois de uma colisão", () => {
     expect(nextDpsSeriesAfter("900", [])).toBe("901");
     expect(nextDpsSeriesAfter("900", ["901", "0902", null])).toBe("903");
     expect(nextDpsSeriesAfter("49999", [])).toBeNull();
+  });
+});
+
+describe("clientes já atendidos", () => {
+  test("um por CPF/CNPJ, com a nota mais recente pronta para virar nota padrão", () => {
+    const customers = customersFromIssuedNotes(
+      [
+        note("2026-03-10T10:00:00-03:00", { cpf: "65029267034", name: "Maria", cents: 5000, description: "AVALIAÇÃO" }),
+        note("2026-09-08T10:00:00-03:00", { description: "MENSALIDADE REFERENTE A 08/2026" }),
+        note("2026-10-08T10:00:00-03:00", { name: "João da Silva Souza", cents: 16000, description: "MENSALIDADE REFERENTE A 09/2026" }),
+      ],
+      new Set(["40503119091"]),
+    );
+    expect(customers).toEqual([
+      expect.objectContaining({
+        takerDocument: "40503119091",
+        takerName: "João da Silva Souza",
+        notes: 2,
+        amount: "160.00",
+        description: "MENSALIDADE REFERENTE A {mes}",
+        reference: "previous",
+        registered: true,
+      }),
+      expect.objectContaining({ takerDocument: "65029267034", takerName: "Maria", notes: 1, amount: "50.00", description: "AVALIAÇÃO", registered: false }),
+    ]);
   });
 });

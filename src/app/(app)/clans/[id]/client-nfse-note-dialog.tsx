@@ -2,7 +2,7 @@
 
 import { ChevronDown, LoaderCircle, Search, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -21,9 +21,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatCnpj, normalizeCnpj, validateTaxDocument } from "@/domain/cnpj";
 import { clientNfseMonthDescription, type ClientNfseReference } from "@/domain/client-nfse";
 import type { ClientNfseIssuerView, ClientNfseNoteView } from "@/lib/client-nfse/loaders";
+import type { IssuerCustomer } from "@/lib/client-nfse/suggest";
+import { formatBRLCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
 import { deleteModel, lookupTakerCnpj, saveNote } from "./client-nfse-actions";
+import { matchCustomers, useIssuerCustomers } from "./client-nfse-customers";
 import { Choice, Field } from "./nfse-settings-dialog";
 
 const MONTHS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"] as const;
@@ -46,11 +49,14 @@ function addressForm(address: ClientNfseNoteView["takerAddress"]): Address {
 /**
  * A nota padrão com o tomador no mesmo formulário. Digitar o CPF/CNPJ de quem
  * já recebe nota desta empresa reaproveita o tomador; CNPJ novo se consulta.
+ * Nota nova pode partir de um cliente já atendido (`prefill`, ou a busca no
+ * topo do formulário): tomador, valor e descrição da última nota dele.
  */
 export function ClientNfseNoteDialog({
   clanId,
   issuer,
   note,
+  prefill = null,
   period,
   open,
   onOpenChange,
@@ -58,6 +64,7 @@ export function ClientNfseNoteDialog({
   clanId: string;
   issuer: ClientNfseIssuerView;
   note: ClientNfseNoteView | null;
+  prefill?: IssuerCustomer | null;
   period: { year: number; month: number };
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -67,12 +74,19 @@ export function ClientNfseNoteDialog({
   const [looking, startLooking] = useTransition();
   // O formulário nasce a cada abertura (a área monta o diálogo só quando
   // abre), então o estado inicial já é o que está gravado.
-  const [document, setDocument] = useState(note ? formatCnpj(note.takerDocument) : "");
-  const [name, setName] = useState(note?.takerName ?? "");
-  const [address, setAddress] = useState<Address>(() => addressForm(note?.takerAddress ?? null));
-  const [amount, setAmount] = useState(note?.model.amount ?? "");
-  const [text, setText] = useState(note?.model.description ?? "");
-  const [reference, setReference] = useState<ClientNfseReference>(note?.model.reference ?? "previous");
+  const [document, setDocument] = useState(note ? formatCnpj(note.takerDocument) : prefill ? formatCnpj(prefill.takerDocument) : "");
+  const [name, setName] = useState(note?.takerName ?? prefill?.takerName ?? "");
+  const [address, setAddress] = useState<Address>(() => addressForm(note ? note.takerAddress : (prefill?.address ?? null)));
+  const [amount, setAmount] = useState(note?.model.amount ?? prefill?.amount ?? "");
+  const [text, setText] = useState(note?.model.description ?? prefill?.description ?? "");
+  const [reference, setReference] = useState<ClientNfseReference>(note?.model.reference ?? prefill?.reference ?? "previous");
+  const [customerQuery, setCustomerQuery] = useState("");
+  // Só a nota nova busca nos clientes já atendidos; quem veio de lá já está preenchido.
+  const { customers } = useIssuerCustomers(clanId, issuer.id, !note && !prefill);
+  const customerMatches = useMemo(
+    () => (customerQuery.trim().length >= 2 ? matchCustomers(customers ?? [], customerQuery).slice(0, 6) : []),
+    [customers, customerQuery],
+  );
   const [more, setMore] = useState(false);
   const [ownService, setOwnService] = useState(Boolean(note?.model.service));
   const [service, setService] = useState(() => ({
@@ -94,6 +108,17 @@ export function ClientNfseNoteDialog({
       setName(taker.takerName);
       setAddress(addressForm(taker.takerAddress));
     }
+  }
+
+  /** Cliente já atendido escolhido na busca: preenche com a última nota dele. */
+  function pick(customer: IssuerCustomer) {
+    setDocument(formatCnpj(customer.takerDocument));
+    setName(customer.takerName);
+    setAddress(addressForm(customer.address));
+    if (customer.amount) setAmount(customer.amount);
+    if (customer.description) setText(customer.description);
+    setReference(customer.reference);
+    setCustomerQuery("");
   }
 
   function lookup() {
@@ -135,6 +160,48 @@ export function ClientNfseNoteDialog({
           <DialogDescription>Sai todo mês. Valor e texto de um mês só se ajustam direto na linha.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
+          {!note && !prefill && customers && customers.length > 0 ? (
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${id}-customer`}>Cliente já atendido (opcional)</Label>
+              <Input
+                id={`${id}-customer`}
+                type="search"
+                autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
+                placeholder={`Buscar entre os ${customers.length} clientes das notas desta empresa`}
+                value={customerQuery}
+                onChange={(event) => setCustomerQuery(event.target.value)}
+              />
+              {customerMatches.length > 0 ? (
+                <ul className="grid divide-y rounded-md border bg-card" aria-label="Clientes encontrados">
+                  {customerMatches.map((customer) => (
+                    <li key={customer.takerDocument}>
+                      <button
+                        type="button"
+                        onClick={() => pick(customer)}
+                        className="grid w-full gap-0.5 px-3 py-2 text-left text-sm transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                      >
+                        <span className="truncate">{customer.takerName}</span>
+                        <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                          {formatCnpj(customer.takerDocument)}
+                          {customer.amount ? ` · ${formatBRLCurrency(customer.amount)}` : ""}
+                          {customer.registered ? " · já tem nota padrão" : ""}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : customerQuery.trim().length >= 2 ? (
+                <p className="text-xs text-muted-foreground">Nenhum cliente com esse nome ou documento. Preencha abaixo.</p>
+              ) : null}
+            </div>
+          ) : null}
+          {prefill ? (
+            <p className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              Preenchido pela última nota para {prefill.takerName}. Confira valor e descrição antes de salvar.
+            </p>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
             <Field id={`${id}-doc`} label="CPF ou CNPJ do tomador">
               <Input id={`${id}-doc`} value={document} inputMode="numeric" autoComplete="off" data-1p-ignore data-lpignore="true" onChange={(event) => setDocument(event.target.value)} onBlur={onDocumentBlur} />
