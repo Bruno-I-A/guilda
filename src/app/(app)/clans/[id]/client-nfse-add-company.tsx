@@ -65,7 +65,10 @@ export function ClientNfseAddCompany({ clanId, candidates }: { clanId: string; c
   const visible = useMemo(() => {
     const needle = normalize(query.trim());
     const digits = query.replace(/\D/g, "");
-    return candidates.filter((item) => !needle || normalize(item.name).includes(needle) || (digits.length > 2 && item.cnpj.includes(digits)));
+    // Quem não pode entrar só aparece buscando, por último e com o motivo.
+    return candidates
+      .filter((item) => (needle ? normalize(item.name).includes(needle) || (digits.length > 2 && item.cnpj.includes(digits)) : !item.blocked))
+      .sort((a, b) => Number(Boolean(a.blocked)) - Number(Boolean(b.blocked)));
   }, [candidates, query]);
 
   function reset() {
@@ -179,6 +182,15 @@ export function ClientNfseAddCompany({ clanId, candidates }: { clanId: string; c
               <ul className="max-h-60 divide-y overflow-auto rounded-md border">
                 {visible.slice(0, 80).map((item) => (
                   <li key={item.clientId}>
+                    {item.blocked ? (
+                      <div className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-sm text-muted-foreground" aria-disabled="true">
+                        <span className="grid min-w-0">
+                          <span className="truncate">{item.name}</span>
+                          <span className="font-mono text-xs">{item.cnpj ? formatCnpj(item.cnpj) : "sem CNPJ"}</span>
+                        </span>
+                        <span className="shrink-0 text-right text-xs text-warning">{item.blocked}</span>
+                      </div>
+                    ) : (
                     <button type="button" className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none" onClick={() => pick(item)}>
                       <span className="grid min-w-0">
                         <span className="truncate">{item.name}</span>
@@ -186,9 +198,10 @@ export function ClientNfseAddCompany({ clanId, candidates }: { clanId: string; c
                       </span>
                       <Badge variant="outline" className={cn("shrink-0 text-xs", CERTIFICATE[item.certificate].className)}>{CERTIFICATE[item.certificate].label}</Badge>
                     </button>
+                    )}
                   </li>
                 ))}
-                {visible.length === 0 ? <li className="px-3 py-3 text-sm text-muted-foreground">Nenhuma empresa encontrada (só entram ativas, com CNPJ e fora do MEI).</li> : null}
+                {visible.length === 0 ? <li className="px-3 py-3 text-sm text-muted-foreground">Nenhuma empresa com esse nome ou CNPJ no cadastro (Clientes).</li> : null}
               </ul>
             </>
           )}

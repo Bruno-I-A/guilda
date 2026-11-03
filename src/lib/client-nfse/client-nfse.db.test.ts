@@ -374,3 +374,23 @@ test("sugestão pelas notas guardadas da empresa e importação das notas padrã
   expect(joaos).toHaveLength(1);
   expect(joaos[0].name).toBe("João da Silva Souza");
 }, 60_000);
+
+test("adicionar empresa: quem não pode entrar aparece com o motivo, não some", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const { loadClientNfseWorkspace } = await import("./loaders");
+  await withOrgTx(ORG, (tx) =>
+    tx.insert(schema.clients).values([
+      { orgId: ORG, name: "Sociedade Getuliense Inativa", taxRegime: "association", cnpj: "44000167000102", active: false },
+      { orgId: ORG, name: "Associacao Sem CNPJ", taxRegime: "association", cnpj: null },
+      { orgId: ORG, name: "Associacao Ativa", taxRegime: "association", cnpj: "11444777000161" },
+    ]),
+  );
+  const { candidates } = await withOrgTx(ORG, (tx) => loadClientNfseWorkspace(tx, { orgId: ORG, year: 2026, month: 11, now: NOW }));
+  const reason = (name: string) => candidates.find((item) => item.name === name)?.blocked;
+  expect(reason("Associacao Ativa")).toBeNull();
+  expect(reason("Sociedade Getuliense Inativa")).toMatch(/Inativa/);
+  expect(reason("Associacao Sem CNPJ")).toMatch(/Sem CNPJ/);
+  expect(reason("Eletricista MEI")).toMatch(/MEI/);
+  // Quem já emite pelas Notas dos clientes não volta como candidato.
+  expect(candidates.some((item) => item.name === "Academia")).toBe(false);
+}, 60_000);
