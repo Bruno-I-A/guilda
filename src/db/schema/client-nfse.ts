@@ -20,6 +20,8 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { organization, user } from "./auth";
+import type { NfseRetentions } from "../../domain/nfse-retentions";
+
 import { clients, nfseInvoiceEventType, nfseInvoiceStatus } from "./domain";
 
 // ---------------------------------------------------------------------------
@@ -99,6 +101,8 @@ export const clientNfseTakers = pgTable(
     /** CPF (11) ou CNPJ (14), só dígitos. */
     document: varchar("document", { length: 14 }).notNull(),
     address: jsonb("address").$type<AddressJson>(),
+    /** Retenções que as notas deste tomador levam (o Fiscal configura; ajusta na emissão). */
+    retentions: jsonb("retentions").$type<NfseRetentions>(),
     active: boolean("active").notNull().default(true),
     createdBy: text("created_by").references(() => user.id),
     updatedBy: text("updated_by").references(() => user.id),

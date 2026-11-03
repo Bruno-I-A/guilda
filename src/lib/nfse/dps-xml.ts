@@ -61,9 +61,26 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
     `${element("xDescServ", input.description)}` +
     `${element("cNBS", t.service.nbsCode)}</cServ>`;
   const serv = `<serv><locPrest>${element("cLocPrestacao", t.cityCode)}</locPrest>${cServ}</serv>`;
+  // E0625: ME/EPP que apura o ISS pelo Simples, sem retenção, não informa
+  // alíquota (ela está no DAS). O modelo copiado de uma nota com retenção
+  // traz a alíquota; aqui ela fica de fora.
+  const issInSimples = t.taxRegime.opSimpNac === "3" && t.taxRegime.regApTribSN === "1" && t.issqn.withholding === "1";
   const tribMun =
     `<tribMun>${element("tribISSQN", t.issqn.taxation)}` +
-    `${element("tpRetISSQN", t.issqn.withholding)}${element("pAliq", t.issqn.rate)}</tribMun>`;
+    `${element("tpRetISSQN", t.issqn.withholding)}${issInSimples ? "" : element("pAliq", t.issqn.rate)}</tribMun>`;
+  // Retenções federais da nota (já em centavos, calculadas ao pedir).
+  const fed = t.federal;
+  const money = (cents: number | undefined) => (cents ? centsToNfseAmount(cents) : undefined);
+  const pisCofins = fed?.pisCofins
+    ? `<piscofins>${element("CST", fed.pisCofins.cst)}${element("vBCPisCofins", centsToNfseAmount(fed.pisCofins.baseCents))}` +
+      `${element("pAliqPis", fed.pisCofins.pisPercent)}${element("pAliqCofins", fed.pisCofins.cofinsPercent)}` +
+      `${element("vPis", fed.pisCofins.pisCents ? centsToNfseAmount(fed.pisCofins.pisCents) : "0.00")}` +
+      `${element("vCofins", fed.pisCofins.cofinsCents ? centsToNfseAmount(fed.pisCofins.cofinsCents) : "0.00")}` +
+      `${element("tpRetPisCofins", fed.pisCofins.retention)}</piscofins>`
+    : "";
+  const tribFed = fed
+    ? `<tribFed>${pisCofins}${element("vRetCP", money(fed.cpCents))}${element("vRetIRRF", money(fed.irrfCents))}${element("vRetCSLL", money(fed.csllCents))}</tribFed>`
+    : "";
   const totTrib =
     t.totalTaxes.kind === "simples"
       ? `<totTrib>${element("pTotTribSN", t.totalTaxes.percent)}</totTrib>`
@@ -72,7 +89,7 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
         : `<totTrib>${element("indTotTrib", "0")}</totTrib>`;
   const valores =
     `<valores><vServPrest>${element("vServ", centsToNfseAmount(input.amountCents))}</vServPrest>` +
-    `<trib>${tribMun}${totTrib}</trib></valores>`;
+    `<trib>${tribMun}${tribFed}${totTrib}</trib></valores>`;
   // Ordem do TCRTCInfoIBSCBS: finNFSe, (indFinal), cIndOp, ..., indDest, ..., valores.
   // finNFSe 0 = NFS-e regular; indDest 0 = o tomador é o próprio destinatário.
   const ibsCbs = t.ibsCbs

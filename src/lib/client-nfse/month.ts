@@ -18,6 +18,7 @@ import {
   type NfseCancelReasonCode,
   type NfseClientAddress,
 } from "@/domain/nfse";
+import { nfseRetentionGroups, type NfseRetentions } from "@/domain/nfse-retentions";
 import { err, type ActionResult } from "@/lib/action-context";
 import { ibgeCityCode } from "@/lib/nfse/municipios";
 import { nfseIssuerTemplateRulesSchema, type NfseIssuerTemplate } from "@/lib/nfse/template";
@@ -30,6 +31,26 @@ type Period = { year: number; month: number };
 /** O serviço da nota padrão substitui o do modelo fiscal do emissor. */
 export function issuerTemplateFor(template: NfseIssuerTemplate, service: ServiceOverride | null): NfseIssuerTemplate {
   return service ? { ...template, service: { ...service } } : template;
+}
+
+/**
+ * As retenções da nota entram no modelo congelado do pedido: ISS retido pelo
+ * tomador (com a alíquota) no tribMun e os valores federais no tribFed. Sem
+ * retenção, o ISS fica "não retido" e nenhum valor federal vai.
+ */
+export function withRetentions(template: NfseIssuerTemplate, retentions: NfseRetentions | null, amountCents: number): NfseIssuerTemplate {
+  const { federal: _stale, ...base } = template;
+  void _stale;
+  if (!retentions) return { ...base, issqn: { ...base.issqn, withholding: "1" } };
+  const groups = nfseRetentionGroups(retentions, amountCents);
+  return {
+    ...base,
+    issqn: groups.issWithheld
+      ? { ...base.issqn, withholding: "2", rate: groups.issRate ?? base.issqn.rate }
+      : { ...base.issqn, withholding: "1" },
+    // O código de retenção vem da tabela do leiaute (pisCofinsRetentionCode).
+    ...(groups.federal ? { federal: groups.federal as NfseIssuerTemplate["federal"] } : {}),
+  };
 }
 
 export interface IssuerReadiness {
@@ -324,13 +345,23 @@ export async function enqueueClientNfseBatch(
   }
   const readiness = await loadIssuerReadiness(tx, { orgId: input.orgId, issuerIds, now: input.now });
   const rowByModel = new Map(fresh.map((row) => [row.modelId, row]));
+  // As retenções configuradas no tomador valem também para as notas fixas.
+  const takerIds = [...new Set(items.map((item) => rowByModel.get(item.modelId)!.takerId))];
+  const retentionsByTaker = new Map(
+    (
+      await tx
+        .select({ id: schema.clientNfseTakers.id, retentions: schema.clientNfseTakers.retentions })
+        .from(schema.clientNfseTakers)
+        .where(and(eq(schema.clientNfseTakers.orgId, input.orgId), inArray(schema.clientNfseTakers.id, takerIds)))
+    ).map((row) => [row.id, row.retentions ?? null]),
+  );
   const next = new Map(locked.map((row) => [row.id, row.nextDpsNumber]));
   const values = items.map((item) => {
     const issuer = readiness.get(item.issuerId)!;
     const row = rowByModel.get(item.modelId)!;
     const number = next.get(item.issuerId)!;
     next.set(item.issuerId, number + 1);
-    const template = issuerTemplateFor(issuer.template!, row.modelService);
+    const template = withRetentions(issuerTemplateFor(issuer.template!, row.modelService), retentionsByTaker.get(row.takerId) ?? null, item.amountCents);
     return {
       orgId: input.orgId,
       issuerId: item.issuerId,

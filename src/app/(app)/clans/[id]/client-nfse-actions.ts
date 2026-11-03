@@ -1,11 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
+import * as schema from "@/db/schema";
 import { normalizeCnpj, validateCnpj, validateTaxDocument } from "@/domain/cnpj";
 import { CLIENT_NFSE_REFERENCES } from "@/domain/client-nfse";
 import { NFSE_CANCEL_TEXT_MAX, NFSE_CANCEL_TEXT_MIN } from "@/domain/nfse";
+import { hasNfseRetentions, RETENTION_PERCENT_PATTERN } from "@/domain/nfse-retentions";
 import { err, type ActionResult } from "@/lib/action-context";
 import { emitClientNfseNote } from "@/lib/client-nfse/emit";
 import {
@@ -232,6 +235,24 @@ const noteSchema = z.object({
   active: z.boolean(),
 });
 
+const retentionPercent = z.string().trim().regex(RETENTION_PERCENT_PATTERN, "Percentual de retenção no formato 1.50.").nullable();
+const retentionsSchema = z
+  .object({
+    issWithheld: z.boolean(),
+    issRate: retentionPercent.refine((value) => value === null || Number(value) <= 5, "A alíquota do ISS vai até 5%."),
+    irrf: retentionPercent,
+    cp: retentionPercent,
+    pis: retentionPercent,
+    cofins: retentionPercent,
+    csll: retentionPercent,
+    pisCofinsCst: z.string().regex(/^[0-9]{2}$/, "O CST do PIS/COFINS tem 2 dígitos."),
+  })
+  .refine((value) => !value.issWithheld || (value.issRate !== null && Number(value.issRate) > 0), {
+    message: "Com ISS retido, informe a alíquota do ISS.",
+    path: ["issRate"],
+  })
+  .nullable();
+
 const emitNoteSchema = z.object({
   clanId: clan,
   issuerId: z.uuid("Empresa inválida."),
@@ -247,7 +268,30 @@ const emitNoteSchema = z.object({
       nbsCode: digits(9, "O código NBS").optional(),
     })
     .nullable(),
+  // Ausente: valem as retenções gravadas no tomador.
+  retentions: retentionsSchema.optional(),
+  rememberRetentions: z.boolean().optional(),
 });
+
+const takerRetentionsSchema = z.object({ clanId: clan, takerId: z.uuid("Tomador inválido."), retentions: retentionsSchema });
+
+/** Retenções que as notas do tomador passam a levar (fixas e avulsas). */
+export async function saveTakerRetentions(input: z.input<typeof takerRetentionsSchema>): Promise<ActionResult> {
+  const parsed = takerRetentionsSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Retenções inválidas.");
+  const data = parsed.data;
+  const result = await asFiscalOperator(data.clanId, async (tx, ctx): Promise<ActionResult> => {
+    const t = schema.clientNfseTakers;
+    const [updated] = await tx
+      .update(t)
+      .set({ retentions: hasNfseRetentions(data.retentions) ? data.retentions : null, updatedBy: ctx.userId, updatedAt: new Date() })
+      .where(and(eq(t.orgId, ctx.orgId), eq(t.id, data.takerId)))
+      .returning({ id: t.id });
+    return updated ? { ok: true } : err("Tomador não encontrado.");
+  });
+  if (result.ok) revalidateClan();
+  return result;
+}
 
 /** Nota avulsa: vai para a fila na hora, no mês da emissão. */
 export async function emitNote(input: z.input<typeof emitNoteSchema>): Promise<ActionResult<{ invoiceId: string; repeated: boolean }>> {

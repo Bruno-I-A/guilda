@@ -309,6 +309,8 @@ test("sugestão pelas notas guardadas da empresa e importação das notas padrã
         description: "REVISÃO DE {mes}",
         reference: "previous",
         service: null,
+        retentions: null,
+        rememberRetentions: false,
         period: { year: 2026, month: 11 },
         now: NOW,
       }),
@@ -320,6 +322,30 @@ test("sugestão pelas notas guardadas da empresa e importação das notas padrã
   expect(free).toMatchObject({ status: "queued", amount: "250.00", description: "REVISÃO DE 10/2026", takerName: "Oficina Nova", periodMonth: 11 });
   const [freeItem] = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseItems).where(eq(schema.clientNfseItems.id, free.itemId)));
   expect(freeItem.modelId).toBeNull();
+  // Com retenção: ISS retido pelo tomador e IR no modelo congelado; gravada como a do tomador.
+  const retained = await withOrgTx(ORG, (tx) =>
+    emitClientNfseNote(tx, {
+      ...ACTOR,
+      issuerId: issuer.id,
+      requestId: "00000000-0000-4000-8000-0000000000ab",
+      taker: { document: "11222333000181", name: "Oficina Nova", address: null },
+      amount: "1000.00",
+      description: "SERVIÇO",
+      reference: "previous",
+      service: null,
+      retentions: { issWithheld: true, issRate: "2.00", irrf: "1.50", cp: null, pis: null, cofins: null, csll: null, pisCofinsCst: "01" },
+      rememberRetentions: true,
+      period: { year: 2026, month: 11 },
+      now: NOW,
+    }),
+  );
+  if (!retained.ok) throw new Error(retained.error);
+  const [withTax] = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseInvoices).where(eq(schema.clientNfseInvoices.id, retained.data!.invoiceId)));
+  expect(withTax.template).toMatchObject({ issqn: { withholding: "2", rate: "2.00" }, federal: { irrfCents: 1500 } });
+  expect(free.template).toMatchObject({ issqn: { withholding: "1" } });
+  expect((free.template as { federal?: unknown }).federal).toBeUndefined();
+  const [oficina] = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseTakers).where(eq(schema.clientNfseTakers.document, "11222333000181")));
+  expect(oficina.retentions).toMatchObject({ issWithheld: true, irrf: "1.50" });
   // A avulsa não vira linha de nota fixa; e sem notas fixas, as padrão somem do mês.
   const monthModule = await import("./month");
   const rows = await withOrgTx(ORG, (tx) => monthModule.loadClientNfseMonthRows(tx, { orgId: ORG, year: 2026, month: 12, now: NOW }));

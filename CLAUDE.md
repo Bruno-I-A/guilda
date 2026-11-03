@@ -341,8 +341,14 @@ que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
   renumera a nota a partir de 1 e a devolve à fila, até 5 vezes por passada.
   Só depois disso falha com a mensagem do que há na outra nota.
 - O PDF sai no app, do XML guardado na emissão (o certificado do escritório
-  não busca nota de cliente). Sem retenções, sem e-mail ao tomador e sem MEI
-  na v1.
+  não busca nota de cliente). Sem e-mail ao tomador e sem MEI na v1.
+- **Retenções configuráveis (2026-11-03, pedido do Bruno)**: cada tomador
+  guarda as suas (`client_nfse_takers.retentions`): ISS retido pelo tomador
+  com a alíquota e percentuais de IR, INSS, PIS, COFINS e CSLL. Os valores
+  saem de `src/domain/nfse-retentions.ts` sobre o valor do serviço e ficam
+  congelados no modelo do pedido (`federal`, `withRetentions`); valem para a
+  nota avulsa e as fixas. Simples ME/EPP sem retenção não informa alíquota
+  do ISS (E0625).
 - **Cadastro pelas notas já emitidas (pedido do Bruno)**: ao adicionar a
   empresa, a Guilda lê o XML que a rotina da aba XML já guardou
   (`from-xml.ts`, `suggest.ts`) e preenche o modelo fiscal pela nota mais

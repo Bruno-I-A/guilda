@@ -43,6 +43,31 @@ describe("XML da DPS", () => {
     expect(await nfseXsdErrors(xml, "DPS_v1.01.xsd")).toEqual([]);
   });
 
+  test("retenções: ISS retido pelo tomador e federais (PIS/COFINS/CSLL, IR, INSS) passam no XSD", async () => {
+    const template: NfseTemplate = {
+      ...TEST_TEMPLATE,
+      issqn: { taxation: "1", withholding: "2", rate: "2.00" },
+      federal: {
+        cpCents: 11000,
+        irrfCents: 1500,
+        csllCents: 1000,
+        pisCofins: { cst: "01", baseCents: 100000, pisPercent: "0.65", cofinsPercent: "3.00", pisCents: 650, cofinsCents: 3000, retention: "3" },
+      },
+    };
+    const { xml } = buildDpsXml(input({ template, amountCents: 100000 }));
+    expect(xml).toContain("<tpRetISSQN>2</tpRetISSQN><pAliq>2.00</pAliq>");
+    expect(xml).toContain("<tribFed><piscofins><CST>01</CST><vBCPisCofins>1000.00</vBCPisCofins>");
+    expect(xml).toContain("<vRetCP>110.00</vRetCP><vRetIRRF>15.00</vRetIRRF><vRetCSLL>10.00</vRetCSLL></tribFed>");
+    expect(await nfseXsdErrors(xml, "DPS_v1.01.xsd")).toEqual([]);
+  });
+
+  test("E0625: Simples sem retenção não leva alíquota; com retenção, ou fora do Simples, leva", () => {
+    const withRate = (overrides: Partial<NfseTemplate>) => buildDpsXml(input({ template: { ...TEST_TEMPLATE, issqn: { taxation: "1", withholding: "1", rate: "2.00" }, ...overrides } })).xml;
+    expect(withRate({})).not.toContain("<pAliq>");
+    expect(withRate({ issqn: { taxation: "1", withholding: "2", rate: "2.00" } })).toContain("<pAliq>2.00</pAliq>");
+    expect(withRate({ taxRegime: { opSimpNac: "1", regEspTrib: "0" } })).toContain("<pAliq>2.00</pAliq>");
+  });
+
   test("tomador pessoa física (produtor rural) vai com CPF e passa no XSD", async () => {
     const { xml } = buildDpsXml(input({ taker: { cnpj: "40503119091", name: "Pedro Rodighiero" } }));
     expect(xml).toContain("<toma><CPF>40503119091</CPF><xNome>Pedro Rodighiero</xNome></toma>");
