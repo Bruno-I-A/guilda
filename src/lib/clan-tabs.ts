@@ -41,7 +41,7 @@ export const CLAN_TAB_DESCRIPTIONS: Record<ClanTab, string> = {
   mei: "Declarações anuais das empresas MEI.",
   installments: "Controle dos parcelamentos em andamento.",
   fees: "Controle mensal de honorários.",
-  "client-notes": "Notas de serviço que as empresas emitem todo mês: cadastro dos tomadores e das notas padrão, e a emissão em lote pelo CNPJ de cada empresa.",
+  "client-notes": "Emita notas pelas empresas, acompanhe o resultado e baixe os PDFs. Para começar, encontre a empresa e clique em Nova nota.",
   xml: "Certificados A1 das empresas, a rotina que guarda os XML das NFS-e que elas emitem e o download por mês.",
   closings: "Fechamentos contábeis de cada empresa.",
   flow: "Aberturas, alterações e baixas: do pedido do cliente ao Informativo.",

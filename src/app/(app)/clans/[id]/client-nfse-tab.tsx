@@ -45,6 +45,7 @@ export async function ClientNfseTab({
   }));
   return (
     <ClientNfseWorkspace
+      key={`${period.year}-${period.month}`}
       clanId={clanId}
       period={period}
       canManage={canManage}
