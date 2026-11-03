@@ -7,8 +7,14 @@ import { normalizeCnpj, validateCnpj, validateTaxDocument } from "@/domain/cnpj"
 import { CLIENT_NFSE_REFERENCES } from "@/domain/client-nfse";
 import { NFSE_CANCEL_TEXT_MAX, NFSE_CANCEL_TEXT_MIN } from "@/domain/nfse";
 import { err, type ActionResult } from "@/lib/action-context";
-import { loadIssuerCustomers, loadIssuerSuggestion, type IssuerSuggestionView } from "@/lib/client-nfse/loaders";
-import type { IssuerCustomer } from "@/lib/client-nfse/suggest";
+import { emitClientNfseNote } from "@/lib/client-nfse/emit";
+import {
+  loadIssuerCustomers,
+  loadIssuerSuggestion,
+  requestIssuerHistory,
+  type IssuerCustomersView,
+  type IssuerSuggestionView,
+} from "@/lib/client-nfse/loaders";
 import {
   adjustClientNfseMonthNote,
   enqueueClientNfseBatch,
@@ -19,6 +25,7 @@ import {
   deleteClientNfseIssuer,
   deleteClientNfseModel,
   importClientNfseSuggestions,
+  importIssuerTakers,
   saveClientNfseIssuer,
   saveClientNfseNote,
 } from "@/lib/client-nfse/registry";
@@ -70,6 +77,7 @@ const issuerSchema = z.object({
   template: nfseIssuerTemplateRulesSchema,
   dpsSeries: z.string().trim(),
   active: z.boolean(),
+  usesStandardNotes: z.boolean().optional(),
   /** Empresa nova: as notas padrão marcadas entre as tiradas das notas emitidas. */
   notes: z.array(suggestedNote).max(1000).default([]),
 });
@@ -81,7 +89,9 @@ export async function saveIssuer(
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados fiscais inválidos.");
   const { notes, ...data } = parsed.data;
   const result = await asFiscalOperator(data.clanId, async (tx, ctx) => {
-    const saved = await saveClientNfseIssuer(tx, { orgId: ctx.orgId, actorId: ctx.userId, ...data });
+    // Empresa nova que já traz notas padrão marcadas começa com as notas fixas ligadas.
+    const usesStandardNotes = data.usesStandardNotes ?? (data.issuerId ? undefined : notes.length > 0);
+    const saved = await saveClientNfseIssuer(tx, { orgId: ctx.orgId, actorId: ctx.userId, ...data, usesStandardNotes });
     if (!saved.ok) return saved;
     const issuerId = saved.data!.issuerId;
     if (data.issuerId || notes.length === 0) return { ok: true, data: { issuerId, notes: 0 } };
@@ -119,7 +129,7 @@ export async function suggestIssuerSetup(input: z.input<typeof suggestSchema>): 
 const customersSchema = z.object({ clanId: clan, issuerId: z.uuid("Empresa inválida.") });
 
 /** Clientes já atendidos pela empresa, lidos das notas que a rotina da aba XML guardou. */
-export async function listIssuerCustomers(input: z.input<typeof customersSchema>): Promise<ActionResult<IssuerCustomer[]>> {
+export async function listIssuerCustomers(input: z.input<typeof customersSchema>): Promise<ActionResult<IssuerCustomersView>> {
   const parsed = customersSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Pedido inválido.");
   const data = parsed.data;
@@ -127,6 +137,38 @@ export async function listIssuerCustomers(input: z.input<typeof customersSchema>
     const customers = await loadIssuerCustomers(tx, { orgId: ctx.orgId, issuerId: data.issuerId });
     return customers ? { ok: true, data: customers } : err("Empresa emissora não encontrada.");
   });
+}
+
+/** Pede a releitura do histórico da empresa no Portal (a rotina da aba XML faz). */
+export async function readIssuerHistory(input: z.input<typeof customersSchema>): Promise<ActionResult> {
+  const parsed = customersSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Pedido inválido.");
+  const data = parsed.data;
+  const result = await asFiscalOperator(data.clanId, async (tx, ctx): Promise<ActionResult> =>
+    (await requestIssuerHistory(tx, { orgId: ctx.orgId, issuerId: data.issuerId, now: new Date() }))
+      ? { ok: true }
+      : err("Empresa emissora não encontrada."),
+  );
+  if (result.ok) revalidateClan();
+  return result;
+}
+
+const importTakersSchema = z.object({
+  clanId: clan,
+  issuerId: z.uuid("Empresa inválida."),
+  documents: z.array(document).min(1, "Marque ao menos um cliente.").max(5000),
+});
+
+/** Cadastra de uma vez os clientes já atendidos que o Fiscal marcou. */
+export async function importTakers(input: z.input<typeof importTakersSchema>): Promise<ActionResult<{ created: number }>> {
+  const parsed = importTakersSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Pedido inválido.");
+  const data = parsed.data;
+  const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
+    importIssuerTakers(tx, { orgId: ctx.orgId, actorId: ctx.userId, issuerId: data.issuerId, documents: data.documents }),
+  );
+  if (result.ok) revalidateClan();
+  return result;
 }
 
 const importSchema = z.object({
@@ -189,6 +231,37 @@ const noteSchema = z.object({
     .nullable(),
   active: z.boolean(),
 });
+
+const emitNoteSchema = z.object({
+  clanId: clan,
+  issuerId: z.uuid("Empresa inválida."),
+  requestId: z.uuid("Recarregue a página e tente de novo."),
+  taker: z.object({ document, name: z.string().trim().min(1, "Informe o nome do tomador.").max(200, "Nome muito longo."), address }),
+  amount: money,
+  description,
+  reference: z.enum(CLIENT_NFSE_REFERENCES),
+  service: z
+    .object({
+      nationalTaxCode: digits(6, "O código de tributação nacional"),
+      municipalTaxCode: digits(3, "O código municipal").optional(),
+      nbsCode: digits(9, "O código NBS").optional(),
+    })
+    .nullable(),
+});
+
+/** Nota avulsa: vai para a fila na hora, no mês da emissão. */
+export async function emitNote(input: z.input<typeof emitNoteSchema>): Promise<ActionResult<{ invoiceId: string; repeated: boolean }>> {
+  const parsed = emitNoteSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Nota inválida.");
+  const data = parsed.data;
+  const now = new Date();
+  const [year, month] = nfseToday(now).split("-").map(Number);
+  const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
+    emitClientNfseNote(tx, { orgId: ctx.orgId, actorId: ctx.userId, ...data, period: { year, month }, now }),
+  );
+  if (result.ok) revalidateClan();
+  return result;
+}
 
 /** Nota padrão e tomador no mesmo formulário. */
 export async function saveNote(input: z.input<typeof noteSchema>): Promise<ActionResult<{ modelId: string }>> {

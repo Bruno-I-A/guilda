@@ -81,6 +81,19 @@ describe("rodada da rotina de XML", () => {
     expect(saved[0]).toMatchObject({ issued: [], lastNsu: 1 });
   });
 
+  test("releitura do histórico: volta ao NSU pedido e guarda até o que é anterior ao 'a partir de'", async () => {
+    const { saved, deps: d } = deps(
+      { a: [{ documents: [{ nsu: 1, xml: testNfseXml() }], done: false }, { documents: [], done: true }] },
+      { keepSince: new Date("2026-11-01T00:00:00-03:00") },
+    );
+    await runXmlRoutine([{ clientId: "a", cnpj: PRESTADOR, lastNsu: 40, historyFromNsu: 0 }], d);
+    expect(d.fetchBatch.mock.calls.map((call) => call[1])).toEqual([1, 2]);
+    expect(saved.map((p) => [p.issued.length, p.lastNsu, p.finished, p.history])).toEqual([
+      [1, 1, false, true],
+      [0, 1, true, true],
+    ]);
+  });
+
   test("uma empresa que falha não para as outras", async () => {
     const { errors, deps: d } = deps({ b: [{ documents: [], done: true }] });
     const results = await runXmlRoutine(

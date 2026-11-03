@@ -5,6 +5,11 @@ export interface XmlRoutineClient {
   clientId: string;
   cnpj: string;
   lastNsu: number;
+  /**
+   * Releitura do histórico pedida (Notas dos clientes): retoma deste NSU e
+   * guarda tudo, sem o "guardar a partir de". Nulo/ausente = leitura normal.
+   */
+  historyFromNsu?: number | null;
 }
 
 export interface IssuedToStore {
@@ -34,6 +39,8 @@ export interface ClientProgress {
   cancellations: CancellationToStore[];
   lastNsu: number;
   finished: boolean;
+  /** Lote da releitura do histórico: quem grava avança o cursor dela. */
+  history?: boolean;
 }
 
 export interface XmlRoutineDeps {
@@ -63,13 +70,16 @@ function clip(text: string, max: number): string {
 }
 
 async function syncClient(client: XmlRoutineClient, deps: XmlRoutineDeps): Promise<void> {
-  let lastNsu = client.lastNsu;
+  const history = client.historyFromNsu !== null && client.historyFromNsu !== undefined;
+  // A releitura guarda o histórico inteiro: o "a partir de" vale só para a leitura normal.
+  const keepSince = history ? null : deps.keepSince;
+  let lastNsu = history ? client.historyFromNsu! : client.lastNsu;
   for (let round = 0; round < (deps.maxBatchesPerClient ?? DEFAULT_MAX_BATCHES); round++) {
     const batch = await deps.fetchBatch(client, lastNsu + 1);
     // Lote sem documentos é o fim, mesmo que não venha marcado: Math.max de
     // lista vazia daria -Infinity.
     if (batch.done || batch.documents.length === 0) {
-      await deps.saveProgress({ clientId: client.clientId, issued: [], cancellations: [], lastNsu, finished: true });
+      await deps.saveProgress({ clientId: client.clientId, issued: [], cancellations: [], lastNsu, finished: true, ...(history ? { history } : {}) });
       return;
     }
     const highest = Math.max(...batch.documents.map((doc) => doc.nsu));
@@ -80,7 +90,7 @@ async function syncClient(client: XmlRoutineClient, deps: XmlRoutineDeps): Promi
     const cancellations: CancellationToStore[] = [];
     for (const doc of batch.documents) {
       const reading = readAdnDocument(doc.xml, client.cnpj);
-      if (reading.kind === "issued" && (!deps.keepSince || reading.issuedAt >= deps.keepSince)) {
+      if (reading.kind === "issued" && (!keepSince || reading.issuedAt >= keepSince)) {
         issued.push({
           accessKey: reading.accessKey,
           nsu: doc.nsu,
@@ -99,7 +109,7 @@ async function syncClient(client: XmlRoutineClient, deps: XmlRoutineDeps): Promi
       }
     }
     lastNsu = highest;
-    await deps.saveProgress({ clientId: client.clientId, issued, cancellations, lastNsu, finished: false });
+    await deps.saveProgress({ clientId: client.clientId, issued, cancellations, lastNsu, finished: false, ...(history ? { history } : {}) });
   }
 }
 

@@ -62,6 +62,11 @@ export const clientNfseIssuers = pgTable(
     template: jsonb("template").notNull(),
     dpsSeries: varchar("dps_series", { length: 5 }).notNull(),
     nextDpsNumber: bigint("next_dps_number", { mode: "number" }).notNull().default(1),
+    /**
+     * Notas fixas que aparecem sozinhas todo mês. A maioria das empresas emite
+     * nota avulsa ("+ Emitir nota"); o Fiscal liga isto só para quem repete.
+     */
+    usesStandardNotes: boolean("uses_standard_notes").notNull().default(false),
     active: boolean("active").notNull().default(true),
     createdBy: text("created_by").references(() => user.id),
     updatedBy: text("updated_by").references(() => user.id),
@@ -153,8 +158,10 @@ export const clientNfseModels = pgTable(
 );
 
 /**
- * A nota do mês: nasce da nota padrão ao abrir o mês, com valor e descrição
- * já resolvidos e editáveis só para este mês.
+ * A nota do mês: nasce da nota padrão (com valor e descrição resolvidos e
+ * editáveis só para este mês) ou é avulsa (`model_id` nulo), emitida pelo
+ * "+ Emitir nota". A avulsa traz a chave do formulário (`request_id`): o
+ * mesmo envio duas vezes não pede duas notas.
  */
 export const clientNfseItems = pgTable(
   "client_nfse_items",
@@ -163,7 +170,8 @@ export const clientNfseItems = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    modelId: uuid("model_id").notNull(),
+    modelId: uuid("model_id"),
+    requestId: uuid("request_id"),
     issuerId: uuid("issuer_id").notNull(),
     takerId: uuid("taker_id").notNull(),
     periodYear: smallint("period_year").notNull(),
@@ -188,6 +196,8 @@ export const clientNfseItems = pgTable(
     }).onDelete("cascade"),
     uniqueIndex("client_nfse_items_org_id_uidx").on(t.orgId, t.id),
     uniqueIndex("client_nfse_items_org_model_period_uidx").on(t.orgId, t.modelId, t.periodYear, t.periodMonth),
+    uniqueIndex("client_nfse_items_org_request_uidx").on(t.orgId, t.requestId).where(sql`request_id IS NOT NULL`),
+    check("client_nfse_items_origin_check", sql`${t.modelId} IS NOT NULL OR ${t.requestId} IS NOT NULL`),
     index("client_nfse_items_org_period_idx").on(t.orgId, t.periodYear, t.periodMonth),
     check("client_nfse_items_amount_check", sql`${t.amount} >= 0`),
     check("client_nfse_items_month_check", sql`${t.periodMonth} BETWEEN 1 AND 12`),

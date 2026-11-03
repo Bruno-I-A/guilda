@@ -120,8 +120,8 @@ type MonthRow = ClientNfseCandidate & {
 };
 
 /**
- * As notas do mês, sem "abrir o mês": toda nota padrão ativa (de emissor e
- * tomador ativos) aparece sozinha, com o valor e a descrição do padrão; a que
+ * As notas fixas do mês, sem "abrir o mês": toda nota padrão ativa (de
+ * emissor que usa notas fixas e tomador ativos) aparece sozinha, com o valor e a descrição do padrão; a que
  * já foi ajustada ou pedida neste mês vem da nota do mês guardada
  * (client_nfse_items), mesmo que o padrão tenha sido pausado depois.
  */
@@ -135,7 +135,8 @@ export async function loadClientNfseMonthRows(tx: OrgTx, input: { orgId: string;
   const stored = await tx
     .select({
       itemId: it.id,
-      modelId: it.modelId,
+      // O innerJoin com a nota padrão deixa a avulsa de fora: ela não é linha do mês.
+      modelId: md.id,
       issuerId: it.issuerId,
       takerId: it.takerId,
       amount: it.amount,
@@ -168,7 +169,8 @@ export async function loadClientNfseMonthRows(tx: OrgTx, input: { orgId: string;
       .from(md)
       .innerJoin(is, and(eq(is.orgId, md.orgId), eq(is.id, md.issuerId)))
       .innerJoin(tk, and(eq(tk.orgId, md.orgId), eq(tk.id, md.takerId)))
-      .where(and(eq(md.orgId, input.orgId), eq(md.active, true), eq(is.active, true), eq(tk.active, true)))
+      // Nota padrão só aparece sozinha na empresa que usa notas fixas.
+      .where(and(eq(md.orgId, input.orgId), eq(md.active, true), eq(is.active, true), eq(is.usesStandardNotes, true), eq(tk.active, true)))
   ).filter((row) => !withItem.has(row.modelId));
   const raw = [
     ...stored,

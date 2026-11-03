@@ -350,12 +350,22 @@ que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
   900, olhando o histórico) e sugere as notas do último mês como notas padrão
   — marcadas as que também saíram no mês anterior, com o "MM/AAAA" trocado
   por `{mes}`. Nada é gravado sem o Fiscal confirmar.
-- **Clientes já atendidos (2026-11-03, pedido do Bruno)**: no rodapé de cada
-  empresa, a lista de todo tomador do histórico de notas guardadas (sem as
-  canceladas), um por CPF/CNPJ, com quantas notas, a última e a marca de quem
-  já tem nota padrão (`customersFromIssuedNotes`, `loadIssuerCustomers`).
-  "Virar nota padrão" abre o formulário preenchido com a última nota; o
-  "+ Nova nota" tem a mesma busca no topo. Só lê o que a aba XML guardou.
+- **Emissão avulsa é o padrão (2026-11-03, pedido do Bruno)**: a maioria das
+  empresas não repete a mesma nota todo mês (uma emite uma nota só; a
+  fonoaudióloga emite 3–4 para a mesma pessoa no mês). O painel de cada empresa
+  é a lista das notas do mês (avulsas, `client_nfse_items.model_id` nulo) com
+  **"+ Emitir nota"** (`emitClientNfseNote`, em `emit.ts`) e **"Repetir"** em
+  cada nota. A nota avulsa leva a chave do formulário (`request_id`, único):
+  o mesmo envio repetido não pede duas notas. As **notas fixas** viraram opção
+  da empresa nos Dados fiscais (`uses_standard_notes`; a migração 0089 ligou
+  para quem já tinha nota padrão). Não voltar a exigir nota padrão para emitir.
+- **Tomadores pelas notas do Portal (2026-11-03)**: "Tomadores" lista todo
+  cliente do histórico guardado pela aba XML (`customersFromIssuedNotes`,
+  `loadIssuerCustomers`) e cadastra os marcados de uma vez
+  (`importIssuerTakers`). As notas antigas faltavam porque a rotina pula o que
+  é anterior ao "guardar a partir de"; **"Buscar notas antigas no Portal"**
+  (`requestIssuerHistory`) relê o histórico da empresa num cursor próprio
+  (`nfse_dfe_cursors.history_nsu`) que ignora essa data e some ao acabar.
 
 ## Estrutura por clã (decisões de 2026-08-18)
 

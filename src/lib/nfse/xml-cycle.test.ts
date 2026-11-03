@@ -151,8 +151,8 @@ describe("rodada da rotina de XML no serviço fiscal", () => {
 
   test("marca início e fim, abre o certificado uma vez por empresa e guarda a partir do dia de Brasília", async () => {
     vi.mocked(listRoutineClients).mockResolvedValue([
-      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, envelope: await seal() },
-      { clientId: "b", cnpj: "33000167000282", lastNsu: 10, envelope: await seal() },
+      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, envelope: await seal() },
+      { clientId: "b", cnpj: "33000167000282", lastNsu: 10, historyFromNsu: null, envelope: await seal() },
     ]);
 
     await runXmlRoutineCycle(ORG, vault, "producao");
@@ -191,8 +191,8 @@ describe("rodada da rotina de XML no serviço fiscal", () => {
 
   test("envelope de outra chave fica como erro da empresa e não para a outra", async () => {
     vi.mocked(listRoutineClients).mockResolvedValue([
-      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, envelope: await seal(otherVault) },
-      { clientId: "b", cnpj: "33000167000282", lastNsu: 10, envelope: await seal() },
+      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, envelope: await seal(otherVault) },
+      { clientId: "b", cnpj: "33000167000282", lastNsu: 10, historyFromNsu: null, envelope: await seal() },
     ]);
 
     await runXmlRoutineCycle(ORG, vault, "producao");
