@@ -284,7 +284,6 @@ export async function loadClientNfseWorkspace(
       notes: notesByIssuer.get(issuer.id) ?? [],
     })),
     candidates: candidates
-      .filter((row) => !taken.has(row.clientId))
       .map((row) => {
         const address = row.address as NfseClientAddress | null;
         return {
@@ -292,7 +291,10 @@ export async function loadClientNfseWorkspace(
           name: row.name,
           cnpj: row.cnpj ?? "",
           certificate: row.certStatus ?? "missing",
-          blocked: !row.active
+          // Já cadastrada aparece com o motivo: escondê-la fazia parecer que sumiu.
+          blocked: taken.has(row.clientId)
+            ? "Já está nas Notas dos clientes (busque no topo da tela)"
+            : !row.active
             ? "Inativa no cadastro da empresa (Clientes)"
             : row.taxRegime === "mei"
               ? "MEI não emite por aqui (aba MEI)"

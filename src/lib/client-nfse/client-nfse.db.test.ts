@@ -391,6 +391,6 @@ test("adicionar empresa: quem não pode entrar aparece com o motivo, não some",
   expect(reason("Sociedade Getuliense Inativa")).toMatch(/Inativa/);
   expect(reason("Associacao Sem CNPJ")).toMatch(/Sem CNPJ/);
   expect(reason("Eletricista MEI")).toMatch(/MEI/);
-  // Quem já emite pelas Notas dos clientes não volta como candidato.
-  expect(candidates.some((item) => item.name === "Academia")).toBe(false);
+  // Quem já emite pelas Notas dos clientes aparece, mas não pode entrar de novo.
+  expect(reason("Academia")).toMatch(/Já está nas Notas dos clientes/);
 }, 60_000);

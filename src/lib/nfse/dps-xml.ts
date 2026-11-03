@@ -61,13 +61,16 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
     `${element("xDescServ", input.description)}` +
     `${element("cNBS", t.service.nbsCode)}</cServ>`;
   const serv = `<serv><locPrest>${element("cLocPrestacao", t.cityCode)}</locPrest>${cServ}</serv>`;
-  // E0625: ME/EPP que apura o ISS pelo Simples, sem retenção, não informa
-  // alíquota (ela está no DAS). O modelo copiado de uma nota com retenção
-  // traz a alíquota; aqui ela fica de fora.
+  // A alíquota só vai quando o Sistema Nacional não a tira do cadastro do
+  // município. E0625: ME/EPP que apura o ISS pelo Simples, sem retenção (ela
+  // está no DAS). E0617: não optante do Simples, com o município ativo no
+  // Sistema Nacional (vale a do município). O modelo copiado de uma nota
+  // antiga pode trazer a alíquota; nesses casos ela fica de fora.
   const issInSimples = t.taxRegime.opSimpNac === "3" && t.taxRegime.regApTribSN === "1" && t.issqn.withholding === "1";
+  const notOptant = t.taxRegime.opSimpNac === "1";
   const tribMun =
     `<tribMun>${element("tribISSQN", t.issqn.taxation)}` +
-    `${element("tpRetISSQN", t.issqn.withholding)}${issInSimples ? "" : element("pAliq", t.issqn.rate)}</tribMun>`;
+    `${element("tpRetISSQN", t.issqn.withholding)}${issInSimples || notOptant ? "" : element("pAliq", t.issqn.rate)}</tribMun>`;
   // Retenções federais da nota (já em centavos, calculadas ao pedir).
   const fed = t.federal;
   const money = (cents: number | undefined) => (cents ? centsToNfseAmount(cents) : undefined);

@@ -61,11 +61,12 @@ describe("XML da DPS", () => {
     expect(await nfseXsdErrors(xml, "DPS_v1.01.xsd")).toEqual([]);
   });
 
-  test("E0625: Simples sem retenção não leva alíquota; com retenção, ou fora do Simples, leva", () => {
+  test("alíquota do ISS: só o Simples com retenção leva (E0625 sem retenção, E0617 não optante)", () => {
     const withRate = (overrides: Partial<NfseTemplate>) => buildDpsXml(input({ template: { ...TEST_TEMPLATE, issqn: { taxation: "1", withholding: "1", rate: "2.00" }, ...overrides } })).xml;
     expect(withRate({})).not.toContain("<pAliq>");
     expect(withRate({ issqn: { taxation: "1", withholding: "2", rate: "2.00" } })).toContain("<pAliq>2.00</pAliq>");
-    expect(withRate({ taxRegime: { opSimpNac: "1", regEspTrib: "0" } })).toContain("<pAliq>2.00</pAliq>");
+    expect(withRate({ taxRegime: { opSimpNac: "1", regEspTrib: "0" } })).not.toContain("<pAliq>");
+    expect(withRate({ taxRegime: { opSimpNac: "1", regEspTrib: "0" }, issqn: { taxation: "1", withholding: "2", rate: "2.00" } })).not.toContain("<pAliq>");
   });
 
   test("tomador pessoa física (produtor rural) vai com CPF e passa no XSD", async () => {
