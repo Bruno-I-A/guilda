@@ -55,7 +55,7 @@ test("certificado: pendente, conferido, listado para a rotina; chave pública pu
   const now = new Date("2026-10-19T12:00:00Z");
   await repo.saveCertificateCheck(ORG, { id: pending.id, wrappedKey: pending.envelope.wrappedKey, result: { status: "valid", cnpj: "33000167000101", validUntil: new Date("2027-03-19T00:00:00Z") }, now });
   expect(await repo.listPendingCertificates(ORG)).toEqual([]);
-  expect(await repo.listRoutineClients(ORG, now)).toEqual([{ clientId: CLIENT, cnpj: "33000167000101", lastNsu: 0, envelope: ENVELOPE }]);
+  expect(await repo.listRoutineClients(ORG, now)).toEqual([{ clientId: CLIENT, cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, envelope: ENVELOPE }]);
   // Vencido sai da rotina.
   expect(await repo.listRoutineClients(ORG, new Date("2027-04-01T00:00:00Z"))).toEqual([]);
   await repo.publishVaultKey(ORG, { keyId: "fedcba9876543210", publicKeySpki: "AAAA" });
@@ -320,4 +320,18 @@ test("MEI nunca aparece na aba, nem com certificado, e a rotina não o lê", asy
   expect(companies.map((company) => company.name)).not.toContain("Zé MEI");
   const routine = await repo.listRoutineClients(ORG, new Date("2026-10-20T12:00:00Z"));
   expect(routine.map((client) => client.clientId)).not.toContain(mei.id);
+});
+
+test("releitura do histórico: anda no cursor dela, não recua o normal e some ao acabar", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const repo = await import("./xml-repository");
+  const cur = schema.nfseDfeCursors;
+  const read = async () => (await withOrgTx(ORG, (tx) => tx.select({ lastNsu: cur.lastNsu, historyNsu: cur.historyNsu }).from(cur).where(eq(cur.clientId, CLIENT))))[0];
+  const before = await read();
+  await withOrgTx(ORG, (tx) => tx.update(cur).set({ historyNsu: 0 }).where(eq(cur.clientId, CLIENT)));
+  const now = new Date("2026-10-21T12:00:00Z");
+  await repo.saveAdnProgress(ORG, { clientId: CLIENT, issued: [], cancellations: [], lastNsu: 1, finished: false, history: true }, now);
+  expect(await read()).toEqual({ lastNsu: before.lastNsu, historyNsu: 1 });
+  await repo.saveAdnProgress(ORG, { clientId: CLIENT, issued: [], cancellations: [], lastNsu: 1, finished: true, history: true }, now);
+  expect(await read()).toEqual({ lastNsu: before.lastNsu, historyNsu: null });
 });

@@ -121,13 +121,13 @@ export async function markXmlRoutineRun(orgId: string, mark: { startedAt: Date }
 export async function listRoutineClients(
   orgId: string,
   now: Date,
-): Promise<{ clientId: string; cnpj: string; lastNsu: number; envelope: VaultEnvelope }[]> {
+): Promise<{ clientId: string; cnpj: string; lastNsu: number; historyFromNsu: number | null; envelope: VaultEnvelope }[]> {
   const c = schema.nfseClientCertificates;
   const cl = schema.clients;
   const cur = schema.nfseDfeCursors;
   const rows = await withOrgTx(orgId, (tx) =>
     tx
-      .select({ clientId: c.clientId, cnpj: cl.cnpj, lastNsu: cur.lastNsu, envelope: c.envelope })
+      .select({ clientId: c.clientId, cnpj: cl.cnpj, lastNsu: cur.lastNsu, historyFromNsu: cur.historyNsu, envelope: c.envelope })
       .from(c)
       .innerJoin(cl, and(eq(cl.orgId, c.orgId), eq(cl.id, c.clientId)))
       .leftJoin(cur, and(eq(cur.orgId, c.orgId), eq(cur.clientId, c.clientId)))
@@ -135,7 +135,7 @@ export async function listRoutineClients(
       .orderBy(cl.name),
   );
   // O filtro isNotNull garante o CNPJ; o tipo da coluna não sabe disso.
-  return rows.map((row) => ({ clientId: row.clientId, cnpj: row.cnpj as string, lastNsu: row.lastNsu ?? 0, envelope: row.envelope }));
+  return rows.map((row) => ({ clientId: row.clientId, cnpj: row.cnpj as string, lastNsu: row.lastNsu ?? 0, historyFromNsu: row.historyFromNsu ?? null, envelope: row.envelope }));
 }
 
 /**
@@ -176,6 +176,8 @@ export async function saveAdnProgress(orgId: string, progress: ClientProgress, n
     const finished = progress.finished
       ? { lastSyncedAt: now, initialSyncAt: sql`COALESCE(${cur.initialSyncAt}, ${now.toISOString()}::timestamptz)` }
       : {};
+    // A releitura do histórico anda no cursor dela; ao acabar, some (nulo).
+    const history = progress.history ? { historyNsu: progress.finished ? null : progress.lastNsu } : {};
     await tx
       .insert(cur)
       .values({
@@ -185,10 +187,11 @@ export async function saveAdnProgress(orgId: string, progress: ClientProgress, n
         lastError: null,
         updatedAt: now,
         ...(progress.finished ? { lastSyncedAt: now, initialSyncAt: now } : {}),
+        ...history,
       })
       .onConflictDoUpdate({
         target: [cur.orgId, cur.clientId],
-        set: { lastNsu: sql`GREATEST(${cur.lastNsu}, excluded.last_nsu)`, lastError: null, updatedAt: now, ...finished },
+        set: { lastNsu: sql`GREATEST(${cur.lastNsu}, excluded.last_nsu)`, lastError: null, updatedAt: now, ...finished, ...history },
       });
   });
 }

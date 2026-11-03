@@ -10,11 +10,13 @@ import {
   LoaderCircle,
   MoreHorizontal,
   Plus,
+  Repeat,
   Send,
   Settings2,
   Trash2,
   Users,
   X,
+  XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -38,17 +40,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatCnpj } from "@/domain/cnpj";
-import type { ClientNfseCandidateView, ClientNfseIssuerView, ClientNfseNoteView } from "@/lib/client-nfse/loaders";
-import type { IssuerCustomer } from "@/lib/client-nfse/suggest";
+import type { ClientNfseCandidateView, ClientNfseFreeNoteView, ClientNfseIssuerView, ClientNfseNoteView } from "@/lib/client-nfse/loaders";
 import { formatBRLCurrency } from "@/lib/currency";
+import { formatAppDate } from "@/lib/date-time";
 import { cn } from "@/lib/utils";
 
 import { deleteIssuer, emitBatch } from "./client-nfse-actions";
 import { ClientNfseAddCompany } from "./client-nfse-add-company";
-import { ClientNfseCustomersDialog } from "./client-nfse-customers";
+import { ClientNfseTakersDialog } from "./client-nfse-customers";
+import { ClientNfseEmitDialog, type EmitPrefill } from "./client-nfse-emit-dialog";
 import { ClientNfseIssuerDialog } from "./client-nfse-issuer-dialog";
 import { ClientNfseNoteDialog } from "./client-nfse-note-dialog";
-import { ClientNfseNoteRow, clientNfsePdfHref, noteIsOpen } from "./client-nfse-note-row";
+import { ClientNfseInvoiceDialog, ClientNfseNoteRow, clientNfsePdfHref, noteIsOpen, STATUS_CLASSES, STATUS_LABELS } from "./client-nfse-note-row";
 import { ClientNfseSuggestionsDialog } from "./client-nfse-suggestions";
 
 const MONTHS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"] as const;
@@ -141,6 +144,79 @@ function EmitConfirm({ clanId, period, items, onDone, onOpenChange }: { clanId: 
   );
 }
 
+/** Uma nota avulsa do mês: quem, o quê, quanto, a situação e "Repetir". */
+function FreeNoteRow({
+  clanId,
+  period,
+  note,
+  canManage,
+  onRepeat,
+}: {
+  clanId: string;
+  period: Period;
+  note: ClientNfseFreeNoteView;
+  canManage: boolean;
+  onRepeat: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [cancelFirst, setCancelFirst] = useState(false);
+  const { invoice } = note;
+  const working = invoice.status === "queued" || invoice.status === "cancel_requested";
+  const show = (cancel: boolean) => {
+    setCancelFirst(cancel);
+    setOpen(true);
+  };
+  return (
+    <li className="grid min-w-0 gap-x-3 gap-y-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+      <div className="grid min-w-0 gap-0.5 text-sm">
+        <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+          <span className="font-mono text-xs text-muted-foreground tabular-nums">{formatAppDate(note.requestedAt)}</span>
+          <span className={cn("truncate font-medium", invoice.status === "cancelled" && "line-through opacity-60")}>{note.takerName}</span>
+          <span className="font-mono text-xs text-muted-foreground">{formatCnpj(note.takerDocument)}</span>
+        </span>
+        <span className="line-clamp-2 text-xs text-muted-foreground">{note.description}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+        <span className="font-mono text-sm tabular-nums">{formatBRLCurrency(note.amount)}</span>
+        <button
+          type="button"
+          onClick={() => show(false)}
+          className={cn("inline-flex min-h-8 items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-xs tabular-nums transition-colors hover:brightness-125", STATUS_CLASSES[invoice.status])}
+          aria-label={`Nota de ${note.takerName}: ${STATUS_LABELS[invoice.status]}. Abrir detalhes.`}
+        >
+          {working ? <LoaderCircle className="size-3 animate-spin" aria-hidden /> : null}
+          {invoice.status === "issued" && invoice.nfseNumber ? `Nº ${invoice.nfseNumber}` : STATUS_LABELS[invoice.status]}
+        </button>
+        {invoice.status === "issued" ? (
+          <Button asChild size="icon-sm" variant="ghost" className="touch-target" aria-label={`Baixar o PDF da nota de ${note.takerName}`}>
+            <a href={clientNfsePdfHref(clanId, period.year, period.month, { invoiceId: invoice.id })}><Download aria-hidden /></a>
+          </Button>
+        ) : null}
+        {canManage ? (
+          <Button type="button" size="sm" variant="outline" onClick={onRepeat}>
+            <Repeat aria-hidden /> Repetir
+          </Button>
+        ) : null}
+        {canManage && invoice.status === "issued" ? (
+          <Button type="button" size="icon-sm" variant="ghost" className="touch-target" aria-label={`Cancelar a nota de ${note.takerName}`} onClick={() => show(true)}>
+            <XCircle aria-hidden />
+          </Button>
+        ) : null}
+      </div>
+      <ClientNfseInvoiceDialog
+        clanId={clanId}
+        period={period}
+        takerName={note.takerName}
+        amount={note.amount}
+        invoice={invoice}
+        open={open}
+        onOpenChange={setOpen}
+        startCancelling={cancelFirst}
+      />
+    </li>
+  );
+}
+
 function IssuerPanel({
   clanId,
   period,
@@ -162,16 +238,21 @@ function IssuerPanel({
   const [fiscalOpen, setFiscalOpen] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
-  const [customersOpen, setCustomersOpen] = useState(false);
-  const [fromCustomer, setFromCustomer] = useState<IssuerCustomer | null>(null);
+  const [takersOpen, setTakersOpen] = useState(false);
+  // O formulário de emissão: vazio ("+ Emitir nota") ou preenchido (Repetir, cliente das notas do Portal).
+  const [emitting, setEmitting] = useState<{ key: string; prefill: EmitPrefill | null } | null>(null);
   const [editing, setEditing] = useState<ClientNfseNoteView | null>(null);
   const [removing, startRemoving] = useTransition();
-  const emissible = (note: ClientNfseNoteView) => canManage && issuer.active && !issuer.problem && !note.blocked && noteIsOpen(note);
-  const ready = issuer.notes.filter(emissible);
+  const canEmit = canManage && issuer.active && !issuer.problem;
+  const emissible = (note: ClientNfseNoteView) => canEmit && !note.blocked && noteIsOpen(note);
+  const fixed = issuer.usesStandardNotes || issuer.notes.some((note) => note.invoice);
+  const ready = fixed ? issuer.notes.filter(emissible) : [];
   const readyIds = ready.map((note) => note.modelId);
   const allChosen = readyIds.length > 0 && readyIds.every((id) => selected.has(id));
-  const total = issuer.notes.reduce((sum, note) => sum + cents(note.amount), 0);
-  const issued = issuer.notes.filter((note) => note.invoice?.status === "issued").length;
+  const freeActive = issuer.freeNotes.filter((note) => note.invoice.status !== "cancelled");
+  const freeTotal = freeActive.reduce((sum, note) => sum + cents(note.amount), 0);
+  const fixedIssued = issuer.notes.filter((note) => note.invoice?.status === "issued").length;
+  const issued = freeActive.filter((note) => note.invoice.status === "issued").length + fixedIssued;
 
   function remove() {
     if (!window.confirm(`Tirar ${issuer.name} das Notas dos clientes? As notas padrão saem junto. Com nota já pedida, desative nos dados fiscais.`)) return;
@@ -186,17 +267,14 @@ function IssuerPanel({
     });
   }
 
+  function emitFrom(prefill: EmitPrefill | null) {
+    setTakersOpen(false);
+    setEmitting({ key: crypto.randomUUID(), prefill });
+  }
+
   return (
     <section className={cn("panel-cut grid min-w-0", !issuer.active && "opacity-70")} aria-labelledby={`issuer-${issuer.id}`}>
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/70 px-4 py-3">
-        <input
-          type="checkbox"
-          className="size-4 accent-primary disabled:opacity-30"
-          checked={allChosen}
-          disabled={readyIds.length === 0}
-          onChange={(event) => onToggle(readyIds, event.target.checked)}
-          aria-label={`Escolher as notas de ${issuer.name}`}
-        />
         <div className="grid min-w-[12rem] flex-1 gap-0.5">
           <h3 id={`issuer-${issuer.id}`} className="flex min-w-0 flex-wrap items-baseline gap-x-2">
             <span className="truncate">{issuer.name}</span>
@@ -209,66 +287,116 @@ function IssuerPanel({
           )}
         </div>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-        <span className="font-mono text-xs tabular-nums text-muted-foreground">
-          {issuer.notes.length} nota(s) · {money(total)}{issued > 0 ? ` · ${issued} emitida(s)` : ""}
-        </span>
-        {canManage && ready.length > 0 ? (
-          <Button type="button" size="sm" onClick={() => onEmit(ready.map((note) => ({ note, issuerName: issuer.name })))}>
-            <Send aria-hidden /> Emitir {ready.length === 1 ? "a nota" : `as ${ready.length}`}
-          </Button>
-        ) : null}
-        {issued > 1 ? (
-          <Button asChild size="sm" variant="ghost">
-            <a href={clientNfsePdfHref(clanId, period.year, period.month, { issuerId: issuer.id })}><Download aria-hidden /> PDFs</a>
-          </Button>
-        ) : null}
-        {canManage ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="ghost" size="icon-sm" className="touch-target" aria-label={`Mais ações de ${issuer.name}`}>
-                <MoreHorizontal aria-hidden />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => setFiscalOpen(true)}><Settings2 aria-hidden /> Dados fiscais</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setSuggestOpen(true)}><FileDown aria-hidden /> Trazer notas que ela emitiu</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setCustomersOpen(true)}><Users aria-hidden /> Clientes já atendidos</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem disabled={removing} onSelect={remove} className="text-destructive focus:text-destructive"><Trash2 aria-hidden /> Tirar empresa</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            {freeActive.length} nota(s) em {MONTHS[period.month - 1]} · {money(freeTotal)}
+            {issued > 0 ? ` · ${issued} emitida(s)` : ""}
+          </span>
+          {issued > 1 ? (
+            <Button asChild size="sm" variant="ghost">
+              <a href={clientNfsePdfHref(clanId, period.year, period.month, { issuerId: issuer.id })}><Download aria-hidden /> PDFs</a>
+            </Button>
+          ) : null}
+          {canEmit ? (
+            <Button type="button" size="sm" onClick={() => emitFrom(null)}>
+              <Plus aria-hidden /> Emitir nota
+            </Button>
+          ) : null}
+          {canManage ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="ghost" size="icon-sm" className="touch-target" aria-label={`Mais ações de ${issuer.name}`}>
+                  <MoreHorizontal aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setTakersOpen(true)}><Users aria-hidden /> Tomadores e notas do Portal</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setFiscalOpen(true)}><Settings2 aria-hidden /> Dados fiscais</DropdownMenuItem>
+                {fixed ? <DropdownMenuItem onSelect={() => setSuggestOpen(true)}><FileDown aria-hidden /> Trazer notas fixas das emitidas</DropdownMenuItem> : null}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled={removing} onSelect={remove} className="text-destructive focus:text-destructive"><Trash2 aria-hidden /> Tirar empresa</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
       </header>
 
-      {issuer.notes.length === 0 ? (
-        <p className="px-4 py-3 text-sm text-muted-foreground">Nenhuma nota ainda. Cadastre a primeira ou traga as que ela já emitiu (menu ⋯).</p>
+      {issuer.freeNotes.length === 0 ? (
+        <p className="px-4 py-3 text-sm text-muted-foreground">
+          Nenhuma nota em {MONTHS[period.month - 1]}.{canEmit ? " Clique em + Emitir nota." : ""}
+        </p>
       ) : (
-        <ul className="grid min-w-0 divide-y divide-border/60">
-          {issuer.notes.map((note) => (
-            <ClientNfseNoteRow
-              key={note.modelId}
+        <ul className="grid min-w-0 divide-y divide-border/60" aria-label={`Notas de ${issuer.name} em ${MONTHS[period.month - 1]}`}>
+          {issuer.freeNotes.map((note) => (
+            <FreeNoteRow
+              key={note.invoice.id}
               clanId={clanId}
               period={period}
               note={note}
-              canManage={canManage}
-              emissible={emissible(note)}
-              selected={selected.has(note.modelId)}
-              onToggle={() => onToggle([note.modelId], !selected.has(note.modelId))}
-              onEmit={() => onEmit([{ note, issuerName: issuer.name }])}
-              onEditStandard={() => setEditing(note)}
+              canManage={canEmit}
+              onRepeat={() => {
+                const taker = issuer.takers.find((row) => row.id === note.takerId);
+                emitFrom({ document: note.takerDocument, name: note.takerName, address: taker?.address ?? null, amount: note.amount, description: note.description });
+              }}
             />
           ))}
         </ul>
       )}
 
+      {fixed ? (
+        <div className="border-t border-border/70">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2">
+            <input
+              type="checkbox"
+              className="size-4 accent-primary disabled:opacity-30"
+              checked={allChosen}
+              disabled={readyIds.length === 0}
+              onChange={(event) => onToggle(readyIds, event.target.checked)}
+              aria-label={`Escolher as notas fixas de ${issuer.name}`}
+            />
+            <h4 className="flex-1">Notas fixas do mês</h4>
+            {ready.length > 0 ? (
+              <Button type="button" size="sm" variant="outline" onClick={() => onEmit(ready.map((note) => ({ note, issuerName: issuer.name })))}>
+                <Send aria-hidden /> Emitir {ready.length === 1 ? "a fixa" : `as ${ready.length} fixas`}
+              </Button>
+            ) : null}
+            {canManage ? (
+              <Button type="button" variant="ghost" size="sm" onClick={() => setNoteOpen(true)}>
+                <Plus aria-hidden /> Nova nota fixa
+              </Button>
+            ) : null}
+          </div>
+          {issuer.notes.length === 0 ? (
+            <p className="px-4 pb-3 text-sm text-muted-foreground">Nenhuma nota fixa. Elas aparecem sozinhas todo mês.</p>
+          ) : (
+            <ul className="grid min-w-0 divide-y divide-border/60">
+              {issuer.notes.map((note) => (
+                <ClientNfseNoteRow
+                  key={note.modelId}
+                  clanId={clanId}
+                  period={period}
+                  note={note}
+                  canManage={canManage}
+                  emissible={emissible(note)}
+                  selected={selected.has(note.modelId)}
+                  onToggle={() => onToggle([note.modelId], !selected.has(note.modelId))}
+                  onEmit={() => onEmit([{ note, issuerName: issuer.name }])}
+                  onEditStandard={() => setEditing(note)}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
+
       {canManage ? (
         <footer className="flex flex-wrap gap-1 border-t border-border/70 px-2 py-1.5">
-          <Button type="button" variant="ghost" size="sm" onClick={() => setNoteOpen(true)}>
-            <Plus aria-hidden /> Nova nota
-          </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={() => setCustomersOpen(true)}>
-            <Users aria-hidden /> Clientes já atendidos
+          {canEmit ? (
+            <Button type="button" variant="ghost" size="sm" onClick={() => emitFrom(null)}>
+              <Plus aria-hidden /> Emitir nota
+            </Button>
+          ) : null}
+          <Button type="button" variant="ghost" size="sm" onClick={() => setTakersOpen(true)}>
+            <Users aria-hidden /> Tomadores ({issuer.takers.length})
           </Button>
         </footer>
       ) : null}
@@ -278,32 +406,13 @@ function IssuerPanel({
           {/* Os formulários nascem a cada abertura, já com o que está gravado: um
               formulário reaproveitado abria vazio (nota padrão) ou com dados
               velhos (a série que a fila trocou sozinha voltaria ao salvar). */}
+          {emitting ? (
+            <ClientNfseEmitDialog key={emitting.key} clanId={clanId} issuer={issuer} prefill={emitting.prefill} onOpenChange={(open) => { if (!open) setEmitting(null); }} />
+          ) : null}
+          {takersOpen ? <ClientNfseTakersDialog clanId={clanId} issuer={issuer} onOpenChange={setTakersOpen} onEmit={emitFrom} /> : null}
           {fiscalOpen ? <ClientNfseIssuerDialog clanId={clanId} issuer={issuer} open onOpenChange={setFiscalOpen} /> : null}
           <ClientNfseSuggestionsDialog clanId={clanId} issuer={issuer} open={suggestOpen} onOpenChange={setSuggestOpen} />
           {noteOpen ? <ClientNfseNoteDialog clanId={clanId} issuer={issuer} note={null} period={period} open onOpenChange={setNoteOpen} /> : null}
-          {customersOpen ? (
-            <ClientNfseCustomersDialog
-              clanId={clanId}
-              issuer={issuer}
-              onOpenChange={setCustomersOpen}
-              onPick={(customer) => {
-                setCustomersOpen(false);
-                setFromCustomer(customer);
-              }}
-            />
-          ) : null}
-          {fromCustomer ? (
-            <ClientNfseNoteDialog
-              key={fromCustomer.takerDocument}
-              clanId={clanId}
-              issuer={issuer}
-              note={null}
-              prefill={fromCustomer}
-              period={period}
-              open
-              onOpenChange={(open) => { if (!open) setFromCustomer(null); }}
-            />
-          ) : null}
           {editing ? (
             <ClientNfseNoteDialog key={editing.modelId} clanId={clanId} issuer={issuer} note={editing} period={period} open onOpenChange={(open) => { if (!open) setEditing(null); }} />
           ) : null}

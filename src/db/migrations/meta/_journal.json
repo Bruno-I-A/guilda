@@ -624,6 +624,13 @@
       "when": 1793281821567,
       "tag": "0088_client-dominio-code",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1793709307804,
+      "tag": "0089_client-nfse-free-notes",
+      "breakpoints": true
     }
   ]
 }

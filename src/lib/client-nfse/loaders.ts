@@ -54,12 +54,37 @@ export interface ClientNfseNoteView {
   blocked: string | null;
 }
 
+/** Uma nota avulsa do mês ("+ Emitir nota"), na ordem em que foi pedida. */
+export interface ClientNfseFreeNoteView {
+  takerId: string;
+  takerName: string;
+  takerDocument: string;
+  amount: string;
+  description: string;
+  requestedAt: string;
+  invoice: ClientNfseInvoiceView;
+}
+
+/** Um tomador da empresa, com o valor e o texto da última nota dele (para emitir de novo). */
+export interface ClientNfseTakerView {
+  id: string;
+  name: string;
+  document: string;
+  address: NfseClientAddress | null;
+  lastAmount: string | null;
+  lastDescription: string | null;
+}
+
 export interface ClientNfseIssuerView {
   id: string;
   clientId: string;
   name: string;
   cnpj: string | null;
   active: boolean;
+  /** Notas fixas que aparecem sozinhas todo mês (opção do Fiscal). */
+  usesStandardNotes: boolean;
+  freeNotes: ClientNfseFreeNoteView[];
+  takers: ClientNfseTakerView[];
   dpsSeries: string;
   nextDpsNumber: number;
   /** O modelo guardado, mesmo incompleto, para editar. */
@@ -92,7 +117,7 @@ export async function loadClientNfseWorkspace(
   const i = schema.clientNfseIssuers;
   const c = schema.clients;
   const issuers = await tx
-    .select({ id: i.id, clientId: i.clientId, name: c.name, cnpj: c.cnpj, active: i.active, dpsSeries: i.dpsSeries, nextDpsNumber: i.nextDpsNumber, template: i.template })
+    .select({ id: i.id, clientId: i.clientId, name: c.name, cnpj: c.cnpj, active: i.active, usesStandardNotes: i.usesStandardNotes, dpsSeries: i.dpsSeries, nextDpsNumber: i.nextDpsNumber, template: i.template })
     .from(i)
     .innerJoin(c, and(eq(c.orgId, i.orgId), eq(c.id, i.clientId)))
     .where(eq(i.orgId, input.orgId))
@@ -158,6 +183,72 @@ export async function loadClientNfseWorkspace(
     notesByIssuer.set(row.issuerId, list);
   }
 
+  // Notas avulsas do mês e os tomadores de cada empresa, com a última nota de cada um.
+  const itemsTable = schema.clientNfseItems;
+  const free = await tx
+    .select({
+      id: n.id,
+      issuerId: n.issuerId,
+      takerId: n.takerId,
+      takerName: n.takerName,
+      takerDocument: n.takerDocument,
+      amount: n.amount,
+      description: n.description,
+      createdAt: n.createdAt,
+      status: n.status,
+      nfseNumber: n.nfseNumber,
+      issuedAt: n.issuedAt,
+      lastError: n.lastError,
+      dpsSeries: n.dpsSeries,
+      dpsNumber: n.dpsNumber,
+    })
+    .from(n)
+    .innerJoin(itemsTable, and(eq(itemsTable.orgId, n.orgId), eq(itemsTable.id, n.itemId)))
+    .where(and(eq(n.orgId, input.orgId), eq(n.periodYear, input.year), eq(n.periodMonth, input.month), isNull(itemsTable.modelId)))
+    .orderBy(desc(n.createdAt));
+  const freeByIssuer = new Map<string, ClientNfseFreeNoteView[]>();
+  for (const row of free) {
+    const list = freeByIssuer.get(row.issuerId) ?? [];
+    list.push({
+      takerId: row.takerId,
+      takerName: row.takerName,
+      takerDocument: row.takerDocument,
+      amount: row.amount,
+      description: row.description,
+      requestedAt: row.createdAt.toISOString(),
+      invoice: {
+        id: row.id,
+        status: row.status,
+        nfseNumber: row.nfseNumber,
+        issuedAt: row.issuedAt?.toISOString() ?? null,
+        lastError: row.lastError,
+        dpsSeries: row.dpsSeries,
+        dpsNumber: row.dpsNumber,
+      },
+    });
+    freeByIssuer.set(row.issuerId, list);
+  }
+  const allTakers = await tx
+    .select({ id: tk.id, issuerId: tk.issuerId, name: tk.name, document: tk.document, address: tk.address })
+    .from(tk)
+    .where(and(eq(tk.orgId, input.orgId), eq(tk.active, true)))
+    .orderBy(asc(tk.name));
+  const lastByTaker = new Map<string, { amount: string; description: string }>();
+  for (const row of await tx
+    .select({ takerId: n.takerId, amount: n.amount, description: n.description })
+    .from(n)
+    .where(and(eq(n.orgId, input.orgId), ne(n.status, "failed")))
+    .orderBy(desc(n.createdAt))) {
+    if (!lastByTaker.has(row.takerId)) lastByTaker.set(row.takerId, { amount: row.amount, description: row.description });
+  }
+  const takersByIssuer = new Map<string, ClientNfseTakerView[]>();
+  for (const row of allTakers) {
+    const list = takersByIssuer.get(row.issuerId) ?? [];
+    const last = lastByTaker.get(row.id);
+    list.push({ id: row.id, name: row.name, document: row.document, address: (row.address as NfseClientAddress | null) ?? null, lastAmount: last?.amount ?? null, lastDescription: last?.description ?? null });
+    takersByIssuer.set(row.issuerId, list);
+  }
+
   const cert = schema.nfseClientCertificates;
   const candidates = await tx
     .select({ clientId: c.id, name: c.name, cnpj: c.cnpj, taxRegime: c.taxRegime, address: c.address, certStatus: cert.status })
@@ -174,6 +265,9 @@ export async function loadClientNfseWorkspace(
       name: issuer.name,
       cnpj: issuer.cnpj,
       active: issuer.active,
+      usesStandardNotes: issuer.usesStandardNotes,
+      freeNotes: freeByIssuer.get(issuer.id) ?? [],
+      takers: takersByIssuer.get(issuer.id) ?? [],
       dpsSeries: issuer.dpsSeries,
       nextDpsNumber: issuer.nextDpsNumber,
       template: parseNfseIssuerTemplate(issuer.template),
@@ -303,10 +397,18 @@ export async function loadIssuerSuggestion(
  * guardou desta empresa, com a nota mais recente pronta para virar nota
  * padrão e a marca de quem já tem nota padrão aqui.
  */
+export interface IssuerCustomersView {
+  customers: IssuerCustomer[];
+  /** A releitura do histórico no Portal está pedida e ainda não acabou. */
+  historyReading: boolean;
+  /** A empresa tem certificado válido: sem ele, não há o que ler no Portal. */
+  canReadHistory: boolean;
+}
+
 export async function loadIssuerCustomers(
   tx: OrgTx,
   input: { orgId: string; issuerId: string },
-): Promise<IssuerCustomer[] | null> {
+): Promise<IssuerCustomersView | null> {
   const issuers = schema.clientNfseIssuers;
   const [issuer] = await tx
     .select({ clientId: issuers.clientId })
@@ -323,12 +425,48 @@ export async function loadIssuerCustomers(
   const facts = rows
     .map((row) => readIssuedNoteFacts(gunzipSync(Buffer.from(row.xmlGz)).toString("utf8")))
     .filter((fact): fact is IssuedNoteFacts => Boolean(fact));
-  const m = schema.clientNfseModels;
+  // "Já cadastrado" = já é tomador desta empresa (com ou sem nota fixa).
   const t = schema.clientNfseTakers;
   const registered = await tx
     .select({ document: t.document })
-    .from(m)
-    .innerJoin(t, and(eq(t.orgId, m.orgId), eq(t.id, m.takerId)))
-    .where(and(eq(m.orgId, input.orgId), eq(m.issuerId, input.issuerId)));
-  return customersFromIssuedNotes(facts, new Set(registered.map((row) => row.document)));
+    .from(t)
+    .where(and(eq(t.orgId, input.orgId), eq(t.issuerId, input.issuerId)));
+  const cur = schema.nfseDfeCursors;
+  const [cursor] = await tx
+    .select({ historyNsu: cur.historyNsu })
+    .from(cur)
+    .where(and(eq(cur.orgId, input.orgId), eq(cur.clientId, issuer.clientId)));
+  const cert = schema.nfseClientCertificates;
+  const [certificate] = await tx
+    .select({ status: cert.status })
+    .from(cert)
+    .where(and(eq(cert.orgId, input.orgId), eq(cert.clientId, issuer.clientId)));
+  return {
+    customers: customersFromIssuedNotes(facts, new Set(registered.map((row) => row.document))),
+    historyReading: cursor?.historyNsu !== null && cursor?.historyNsu !== undefined,
+    canReadHistory: certificate?.status === "valid",
+  };
+}
+
+/**
+ * Pede à rotina da aba XML que releia do começo as notas desta empresa no
+ * Portal, guardando também as anteriores ao "guardar a partir de" (é delas
+ * que saem os clientes antigos). Repetir o pedido no meio recomeça do zero;
+ * nota já guardada não duplica.
+ */
+export async function requestIssuerHistory(tx: OrgTx, input: { orgId: string; issuerId: string; now: Date }): Promise<boolean> {
+  const issuers = schema.clientNfseIssuers;
+  const [issuer] = await tx
+    .select({ clientId: issuers.clientId })
+    .from(issuers)
+    .where(and(eq(issuers.orgId, input.orgId), eq(issuers.id, input.issuerId)));
+  if (!issuer) return false;
+  const cur = schema.nfseDfeCursors;
+  await tx
+    .insert(cur)
+    .values({ orgId: input.orgId, clientId: issuer.clientId, historyNsu: 0, updatedAt: input.now })
+    .onConflictDoUpdate({ target: [cur.orgId, cur.clientId], set: { historyNsu: 0, updatedAt: input.now } });
+  const r = schema.nfseXmlRoutines;
+  await tx.insert(r).values({ orgId: input.orgId, runRequestedAt: input.now }).onConflictDoUpdate({ target: r.orgId, set: { runRequestedAt: input.now } });
+  return true;
 }

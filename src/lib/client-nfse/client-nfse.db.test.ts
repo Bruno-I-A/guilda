@@ -57,12 +57,12 @@ test("ciclo: cadastro, mês, prévia, fila com numeração por empresa, travas e
   // Cadastro: MEI fica fora; empresa vira emissora uma vez só.
   const mei = await withOrgTx(ORG, (tx) => registry.saveClientNfseIssuer(tx, { ...ACTOR, issuerId: null, clientId: MEI, template: TEMPLATE, dpsSeries: "900", active: true }));
   expect(mei.ok).toBe(false);
-  const created = await withOrgTx(ORG, (tx) => registry.saveClientNfseIssuer(tx, { ...ACTOR, issuerId: null, clientId: ACADEMIA, template: TEMPLATE, dpsSeries: "900", active: true }));
+  const created = await withOrgTx(ORG, (tx) => registry.saveClientNfseIssuer(tx, { ...ACTOR, issuerId: null, clientId: ACADEMIA, template: TEMPLATE, dpsSeries: "900", active: true, usesStandardNotes: true }));
   expect(created.ok).toBe(true);
   const issuerId = created.ok ? created.data!.issuerId : "";
   const again = await withOrgTx(ORG, (tx) => registry.saveClientNfseIssuer(tx, { ...ACTOR, issuerId: null, clientId: ACADEMIA, template: TEMPLATE, dpsSeries: "900", active: true }));
   expect(again.ok).toBe(false);
-  const mercado = await withOrgTx(ORG, (tx) => registry.saveClientNfseIssuer(tx, { ...ACTOR, issuerId: null, clientId: MERCADO, template: TEMPLATE, dpsSeries: "1", active: true }));
+  const mercado = await withOrgTx(ORG, (tx) => registry.saveClientNfseIssuer(tx, { ...ACTOR, issuerId: null, clientId: MERCADO, template: TEMPLATE, dpsSeries: "1", active: true, usesStandardNotes: true }));
   const mercadoId = mercado.ok ? mercado.data!.issuerId : "";
 
   // Tomadores: documento validado e único por empresa.
@@ -266,14 +266,68 @@ test("sugestão pelas notas guardadas da empresa e importação das notas padrã
   expect(again.models).toEqual([]);
 
   // Clientes já atendidos: o histórico inteiro, um por documento, sem a nota cancelada.
-  const { loadIssuerCustomers } = await import("./loaders");
-  const customers = await withOrgTx(ORG, (tx) => loadIssuerCustomers(tx, { orgId: ORG, issuerId: issuer.id }));
-  expect(customers?.map((customer) => [customer.takerName, customer.notes, customer.registered])).toEqual([
+  const { loadIssuerCustomers, requestIssuerHistory } = await import("./loaders");
+  const view = await withOrgTx(ORG, (tx) => loadIssuerCustomers(tx, { orgId: ORG, issuerId: issuer.id }));
+  expect(view?.customers.map((customer) => [customer.takerName, customer.notes, customer.registered])).toEqual([
     ["Maria Oliveira", 2, true],
     ["João da Silva", 2, true],
   ]);
-  expect(customers?.find((customer) => customer.takerName === "Maria Oliveira")?.description).toBe("AVALIAÇÃO");
+  expect(view?.customers.find((customer) => customer.takerName === "Maria Oliveira")?.description).toBe("AVALIAÇÃO");
+  expect(view).toMatchObject({ historyReading: false, canReadHistory: true });
   expect(await withOrgTx(OTHER, (tx) => loadIssuerCustomers(tx, { orgId: OTHER, issuerId: issuer.id }))).toBeNull();
+
+  // Cliente que ainda não é tomador: importação em lote cria só ele, com nome e endereço da nota.
+  const xml = testNfseXml({ providerCnpj: MERCADO_CNPJ, series: "1", taker: { cnpj: "11222333000181", name: "Oficina Nova", address: null }, amountCents: 30000, description: "REVISÃO" })
+    .replace(/<dhProc>[^<]+<\/dhProc>/, "<dhProc>2026-10-20T10:00:00-03:00</dhProc>");
+  await withOrgTx(ORG, (tx) =>
+    tx.insert(schema.nfseIssuedNotes).values({ orgId: ORG, clientId: MERCADO, accessKey: "9".repeat(50), nsu: 99, issuedAt: new Date("2026-10-20T13:00:00Z"), xmlGz: new Uint8Array(gzipSync(Buffer.from(xml, "utf8"))) }),
+  );
+  const takersBefore = (await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseTakers).where(eq(schema.clientNfseTakers.issuerId, issuer.id)))).length;
+  const bulk = await withOrgTx(ORG, (tx) => registry.importIssuerTakers(tx, { ...ACTOR, issuerId: issuer.id, documents: ["11222333000181", "40503119091"] }));
+  expect(bulk).toEqual({ ok: true, data: { created: 1 } });
+  const takersAfter = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseTakers).where(eq(schema.clientNfseTakers.issuerId, issuer.id)));
+  expect(takersAfter).toHaveLength(takersBefore + 1);
+  expect(takersAfter.find((row) => row.document === "11222333000181")?.name).toBe("Oficina Nova");
+
+  // Releitura do histórico: o cursor da empresa volta ao começo e a rotina é chamada.
+  expect(await withOrgTx(ORG, (tx) => requestIssuerHistory(tx, { orgId: ORG, issuerId: issuer.id, now: NOW }))).toBe(true);
+  expect((await withOrgTx(ORG, (tx) => loadIssuerCustomers(tx, { orgId: ORG, issuerId: issuer.id })))?.historyReading).toBe(true);
+  const [routine] = await withOrgTx(ORG, (tx) => tx.select().from(schema.nfseXmlRoutines));
+  expect(routine.runRequestedAt).toEqual(NOW);
+
+  // Nota avulsa: vai para a fila na hora; o mesmo envio repetido não pede outra.
+  const { emitClientNfseNote } = await import("./emit");
+  const requestId = "00000000-0000-4000-8000-0000000000aa";
+  const emit = () =>
+    withOrgTx(ORG, (tx) =>
+      emitClientNfseNote(tx, {
+        ...ACTOR,
+        issuerId: issuer.id,
+        requestId,
+        taker: { document: "11222333000181", name: "Oficina Nova", address: null },
+        amount: "250.00",
+        description: "REVISÃO DE {mes}",
+        reference: "previous",
+        service: null,
+        period: { year: 2026, month: 11 },
+        now: NOW,
+      }),
+    );
+  const first = await emit();
+  if (!first.ok) throw new Error(first.error);
+  expect(await emit()).toEqual({ ok: true, data: { invoiceId: first.data!.invoiceId, repeated: true } });
+  const [free] = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseInvoices).where(eq(schema.clientNfseInvoices.id, first.data!.invoiceId)));
+  expect(free).toMatchObject({ status: "queued", amount: "250.00", description: "REVISÃO DE 10/2026", takerName: "Oficina Nova", periodMonth: 11 });
+  const [freeItem] = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseItems).where(eq(schema.clientNfseItems.id, free.itemId)));
+  expect(freeItem.modelId).toBeNull();
+  // A avulsa não vira linha de nota fixa; e sem notas fixas, as padrão somem do mês.
+  const monthModule = await import("./month");
+  const rows = await withOrgTx(ORG, (tx) => monthModule.loadClientNfseMonthRows(tx, { orgId: ORG, year: 2026, month: 12, now: NOW }));
+  expect(rows.some((row) => row.issuerId === issuer.id)).toBe(true);
+  await withOrgTx(ORG, (tx) => tx.update(schema.clientNfseIssuers).set({ usesStandardNotes: false }).where(eq(schema.clientNfseIssuers.id, issuer.id)));
+  const withoutFixed = await withOrgTx(ORG, (tx) => monthModule.loadClientNfseMonthRows(tx, { orgId: ORG, year: 2026, month: 12, now: NOW }));
+  expect(withoutFixed.some((row) => row.issuerId === issuer.id)).toBe(false);
+  await withOrgTx(ORG, (tx) => tx.update(schema.clientNfseIssuers).set({ usesStandardNotes: true }).where(eq(schema.clientNfseIssuers.id, issuer.id)));
 
   // Nota com o tomador no mesmo formulário: o CPF de quem já recebe reaproveita o tomador.
   const note = await withOrgTx(ORG, (tx) =>

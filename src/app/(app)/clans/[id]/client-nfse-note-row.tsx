@@ -36,14 +36,14 @@ import {
   type NfseCancelReasonCode,
   type NfseInvoiceStatus,
 } from "@/domain/nfse";
-import type { ClientNfseNoteView } from "@/lib/client-nfse/loaders";
+import type { ClientNfseInvoiceView, ClientNfseNoteView } from "@/lib/client-nfse/loaders";
 import { formatBRLCurrency } from "@/lib/currency";
 import { formatAppDate } from "@/lib/date-time";
 import { cn } from "@/lib/utils";
 
 import { adjustNote, cancelInvoice, retryInvoice } from "./client-nfse-actions";
 
-const STATUS_LABELS: Record<NfseInvoiceStatus, string> = {
+export const STATUS_LABELS: Record<NfseInvoiceStatus, string> = {
   queued: "Na fila",
   issued: "Emitida",
   failed: "Com erro",
@@ -51,7 +51,7 @@ const STATUS_LABELS: Record<NfseInvoiceStatus, string> = {
   cancelled: "Cancelada",
 };
 
-const STATUS_CLASSES: Record<NfseInvoiceStatus, string> = {
+export const STATUS_CLASSES: Record<NfseInvoiceStatus, string> = {
   queued: "border-warning/40 bg-warning/10 text-warning",
   issued: "border-success/40 bg-success/10 text-success",
   failed: "border-destructive/50 bg-destructive/10 text-destructive",
@@ -69,24 +69,27 @@ export function noteIsOpen(note: ClientNfseNoteView): boolean {
   return !note.invoice || note.invoice.status === "cancelled";
 }
 
-/** A nota da linha: detalhes, PDF, cancelar e tentar de novo. */
-function InvoiceDialog({
+/** A nota pedida (fixa ou avulsa): detalhes, PDF, cancelar e tentar de novo. */
+export function ClientNfseInvoiceDialog({
   clanId,
   period,
-  note,
+  takerName,
+  amount,
+  invoice,
   open,
   onOpenChange,
   startCancelling,
 }: {
   clanId: string;
   period: { year: number; month: number };
-  note: ClientNfseNoteView;
+  takerName: string;
+  amount: string;
+  invoice: ClientNfseInvoiceView;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   startCancelling: boolean;
 }) {
   const router = useRouter();
-  const invoice = note.invoice!;
   const [cancelling, setCancelling] = useState(startCancelling);
   const [reason, setReason] = useState<NfseCancelReasonCode>(1);
   const [text, setText] = useState("");
@@ -110,9 +113,9 @@ function InvoiceDialog({
     <Dialog open={open} onOpenChange={(next) => { if (next) setCancelling(startCancelling); onOpenChange(next); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Nota para {note.takerName}</DialogTitle>
+          <DialogTitle>Nota para {takerName}</DialogTitle>
           <DialogDescription>
-            {STATUS_LABELS[invoice.status]} · {formatBRLCurrency(note.amount)}
+            {STATUS_LABELS[invoice.status]} · {formatBRLCurrency(amount)}
             {invoice.nfseNumber ? ` · nº ${invoice.nfseNumber}` : ""}
             {invoice.issuedAt ? ` · ${formatAppDate(invoice.issuedAt)}` : ""} · DPS {invoice.dpsSeries}/{invoice.dpsNumber}
           </DialogDescription>
@@ -332,7 +335,16 @@ export function ClientNfseNoteRow({
         </>
       )}
       {invoice && invoice.status !== "cancelled" ? (
-        <InvoiceDialog clanId={clanId} period={period} note={note} open={invoiceOpen} onOpenChange={setInvoiceOpen} startCancelling={cancelFirst} />
+        <ClientNfseInvoiceDialog
+          clanId={clanId}
+          period={period}
+          takerName={note.takerName}
+          amount={note.amount}
+          invoice={invoice}
+          open={invoiceOpen}
+          onOpenChange={setInvoiceOpen}
+          startCancelling={cancelFirst}
+        />
       ) : null}
     </li>
   );

@@ -3561,6 +3561,11 @@ export const nfseDfeCursors = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     clientId: uuid("client_id").notNull(),
     lastNsu: bigint("last_nsu", { mode: "number" }).notNull().default(0),
+    /**
+     * Releitura do histórico pedida pelo Fiscal (Notas dos clientes): de onde
+     * ela retoma, ignorando o "guardar a partir de". Nulo = nenhuma pedida.
+     */
+    historyNsu: bigint("history_nsu", { mode: "number" }),
     initialSyncAt: timestamp("initial_sync_at", { withTimezone: true }),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
     lastError: text("last_error"),

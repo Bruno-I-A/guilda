@@ -82,7 +82,8 @@ export function ClientNfseNoteDialog({
   const [reference, setReference] = useState<ClientNfseReference>(note?.model.reference ?? prefill?.reference ?? "previous");
   const [customerQuery, setCustomerQuery] = useState("");
   // Só a nota nova busca nos clientes já atendidos; quem veio de lá já está preenchido.
-  const { customers } = useIssuerCustomers(clanId, issuer.id, !note && !prefill);
+  const { view: customersView } = useIssuerCustomers(clanId, issuer.id, !note && !prefill);
+  const customers = customersView?.customers;
   const customerMatches = useMemo(
     () => (customerQuery.trim().length >= 2 ? matchCustomers(customers ?? [], customerQuery).slice(0, 6) : []),
     [customers, customerQuery],

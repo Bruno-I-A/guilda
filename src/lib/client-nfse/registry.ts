@@ -10,6 +10,8 @@ import { normalizeDpsSeries } from "@/domain/nfse";
 import { err, type ActionResult } from "@/lib/action-context";
 import type { NfseIssuerTemplate } from "@/lib/nfse/template";
 
+import { loadIssuerCustomers } from "./loaders";
+
 /**
  * Cadastro das notas dos clientes: a empresa emissora, os tomadores dela e as
  * notas padrão. Quem chama já conferiu sessão e permissão (asFiscalOperator).
@@ -70,6 +72,8 @@ export async function saveClientNfseIssuer(
     template: NfseIssuerTemplate;
     dpsSeries: string;
     active: boolean;
+    /** Notas fixas todo mês; ausente mantém o que está gravado. */
+    usesStandardNotes?: boolean;
   },
 ): Promise<ActionResult<{ issuerId: string }>> {
   let series: string;
@@ -78,7 +82,14 @@ export async function saveClientNfseIssuer(
   } catch (error) {
     return err(error instanceof Error ? error.message : "Série inválida.");
   }
-  const values = { template: input.template, dpsSeries: series, active: input.active, updatedBy: input.actorId, updatedAt: new Date() };
+  const values = {
+    template: input.template,
+    dpsSeries: series,
+    active: input.active,
+    ...(input.usesStandardNotes === undefined ? {} : { usesStandardNotes: input.usesStandardNotes }),
+    updatedBy: input.actorId,
+    updatedAt: new Date(),
+  };
   const t = schema.clientNfseIssuers;
   if (input.issuerId) {
     const [updated] = await tx
@@ -348,4 +359,37 @@ export async function saveClientNfseNote(
     service: input.service,
     active: input.active,
   });
+}
+
+/**
+ * Cadastra de uma vez os tomadores escolhidos entre os clientes já atendidos.
+ * Nome e endereço saem de novo das notas guardadas (o navegador só escolhe os
+ * documentos); quem já é tomador fica como está.
+ */
+export async function importIssuerTakers(
+  tx: OrgTx,
+  input: Actor & { issuerId: string; documents: readonly string[] },
+): Promise<ActionResult<{ created: number }>> {
+  const view = await loadIssuerCustomers(tx, { orgId: input.orgId, issuerId: input.issuerId });
+  if (!view) return err("Empresa emissora não encontrada.");
+  const wanted = new Set(input.documents);
+  const chosen = view.customers.filter((customer) => wanted.has(customer.takerDocument) && !customer.registered);
+  if (chosen.length === 0) return { ok: true, data: { created: 0 } };
+  const t = schema.clientNfseTakers;
+  const created = await tx
+    .insert(t)
+    .values(
+      chosen.map((customer) => ({
+        orgId: input.orgId,
+        issuerId: input.issuerId,
+        name: customer.takerName.replace(/\s+/g, " ").trim(),
+        document: customer.takerDocument,
+        address: cleanAddress(customer.address),
+        createdBy: input.actorId,
+        updatedBy: input.actorId,
+      })),
+    )
+    .onConflictDoNothing({ target: [t.orgId, t.issuerId, t.document] })
+    .returning({ id: t.id });
+  return { ok: true, data: { created: created.length } };
 }

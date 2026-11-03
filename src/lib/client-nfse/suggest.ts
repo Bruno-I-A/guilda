@@ -152,7 +152,7 @@ export interface IssuerCustomer {
   amount: string;
   description: string;
   reference: ClientNfseReference;
-  /** Já tem nota padrão nesta empresa. */
+  /** Já é tomador desta empresa. */
   registered: boolean;
 }
 
