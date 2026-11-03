@@ -15,7 +15,7 @@ import { parseNfseIssuerTemplate, type NfseIssuerTemplate } from "@/lib/nfse/tem
 import { readIssuedNoteFacts, type IssuedNoteFacts } from "./from-xml";
 import { loadClientNfseMonthRows, loadIssuerReadiness } from "./month";
 import type { ServiceOverride } from "./registry";
-import { freeDpsSeries, suggestFromIssuedNotes, type IssuerSuggestion } from "./suggest";
+import { customersFromIssuedNotes, freeDpsSeries, suggestFromIssuedNotes, type IssuerCustomer, type IssuerSuggestion } from "./suggest";
 
 /** Leituras da aba Notas dos clientes: uma tela só, empresas com as notas do mês. */
 
@@ -296,4 +296,39 @@ export async function loadIssuerSuggestion(
     dpsSeries: freeDpsSeries(usedSeries),
     cityLabel: cityLabelOf(suggestion.template?.cityCode),
   };
+}
+
+/**
+ * Clientes já atendidos: todo tomador das notas que a rotina da aba XML
+ * guardou desta empresa, com a nota mais recente pronta para virar nota
+ * padrão e a marca de quem já tem nota padrão aqui.
+ */
+export async function loadIssuerCustomers(
+  tx: OrgTx,
+  input: { orgId: string; issuerId: string },
+): Promise<IssuerCustomer[] | null> {
+  const issuers = schema.clientNfseIssuers;
+  const [issuer] = await tx
+    .select({ clientId: issuers.clientId })
+    .from(issuers)
+    .where(and(eq(issuers.orgId, input.orgId), eq(issuers.id, input.issuerId)));
+  if (!issuer) return null;
+  const n = schema.nfseIssuedNotes;
+  const rows = await tx
+    .select({ xmlGz: n.xmlGz })
+    .from(n)
+    .where(and(eq(n.orgId, input.orgId), eq(n.clientId, issuer.clientId), isNull(n.cancelledAt)))
+    .orderBy(desc(n.issuedAt))
+    .limit(5000);
+  const facts = rows
+    .map((row) => readIssuedNoteFacts(gunzipSync(Buffer.from(row.xmlGz)).toString("utf8")))
+    .filter((fact): fact is IssuedNoteFacts => Boolean(fact));
+  const m = schema.clientNfseModels;
+  const t = schema.clientNfseTakers;
+  const registered = await tx
+    .select({ document: t.document })
+    .from(m)
+    .innerJoin(t, and(eq(t.orgId, m.orgId), eq(t.id, m.takerId)))
+    .where(and(eq(m.orgId, input.orgId), eq(m.issuerId, input.issuerId)));
+  return customersFromIssuedNotes(facts, new Set(registered.map((row) => row.document)));
 }

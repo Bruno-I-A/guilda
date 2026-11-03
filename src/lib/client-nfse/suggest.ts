@@ -140,3 +140,55 @@ export function suggestFromIssuedNotes(
     models: [...models.values()].sort((a, b) => a.takerName.localeCompare(b.takerName, "pt-BR")),
   };
 }
+
+/** Um cliente que a empresa já atendeu, pelas notas que ela emitiu. */
+export interface IssuerCustomer {
+  takerDocument: string;
+  takerName: string;
+  address: AddressInput | null;
+  notes: number;
+  lastIssuedAt: string;
+  /** Da nota mais recente, prontos para virar nota padrão. */
+  amount: string;
+  description: string;
+  reference: ClientNfseReference;
+  /** Já tem nota padrão nesta empresa. */
+  registered: boolean;
+}
+
+/**
+ * Os clientes do histórico inteiro de notas da empresa, um por CPF/CNPJ, com
+ * nome, endereço, valor e descrição da nota mais recente (o mês trocado por
+ * {mes}). Nota cancelada não entra: não é cliente atendido.
+ */
+export function customersFromIssuedNotes(notes: readonly IssuedNoteFacts[], registeredDocuments: ReadonlySet<string>): IssuerCustomer[] {
+  type Dated = IssuedNoteFacts & { issuedAt: Date; taker: NonNullable<IssuedNoteFacts["taker"]> };
+  const byDocument = new Map<string, Dated[]>();
+  for (const note of notes) {
+    if (!note.taker || !note.issuedAt) continue;
+    byDocument.set(note.taker.document, [...(byDocument.get(note.taker.document) ?? []), note as Dated]);
+  }
+  return [...byDocument.entries()]
+    .map(([document, list]) => {
+      const sorted = [...list].sort((a, b) => b.issuedAt.getTime() - a.issuedAt.getTime());
+      const latest = sorted[0];
+      // Endereço da nota mais recente que tiver um.
+      const address = sorted.find((note) => note.taker.address)?.taker.address ?? null;
+      const count = sorted.length;
+      const shape = latest.description
+        ? templateDescription(latest.description, monthOf(latest.issuedAt))
+        : { description: "", reference: "previous" as const };
+      return {
+        takerDocument: document,
+        takerName: latest.taker.name,
+        address,
+        notes: count,
+        lastIssuedAt: latest.issuedAt.toISOString(),
+        amount: latest.amountCents === null ? "" : (latest.amountCents / 100).toFixed(2),
+        description: shape.description,
+        reference: shape.reference,
+        registered: registeredDocuments.has(document),
+      };
+    })
+    .sort((a, b) => b.lastIssuedAt.localeCompare(a.lastIssuedAt) || a.takerName.localeCompare(b.takerName, "pt-BR"));
+}

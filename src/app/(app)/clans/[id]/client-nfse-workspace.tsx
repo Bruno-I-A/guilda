@@ -13,6 +13,7 @@ import {
   Send,
   Settings2,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -38,11 +39,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { formatCnpj } from "@/domain/cnpj";
 import type { ClientNfseCandidateView, ClientNfseIssuerView, ClientNfseNoteView } from "@/lib/client-nfse/loaders";
+import type { IssuerCustomer } from "@/lib/client-nfse/suggest";
 import { formatBRLCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
 import { deleteIssuer, emitBatch } from "./client-nfse-actions";
 import { ClientNfseAddCompany } from "./client-nfse-add-company";
+import { ClientNfseCustomersDialog } from "./client-nfse-customers";
 import { ClientNfseIssuerDialog } from "./client-nfse-issuer-dialog";
 import { ClientNfseNoteDialog } from "./client-nfse-note-dialog";
 import { ClientNfseNoteRow, clientNfsePdfHref, noteIsOpen } from "./client-nfse-note-row";
@@ -159,6 +162,8 @@ function IssuerPanel({
   const [fiscalOpen, setFiscalOpen] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
+  const [customersOpen, setCustomersOpen] = useState(false);
+  const [fromCustomer, setFromCustomer] = useState<IssuerCustomer | null>(null);
   const [editing, setEditing] = useState<ClientNfseNoteView | null>(null);
   const [removing, startRemoving] = useTransition();
   const emissible = (note: ClientNfseNoteView) => canManage && issuer.active && !issuer.problem && !note.blocked && noteIsOpen(note);
@@ -227,6 +232,7 @@ function IssuerPanel({
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={() => setFiscalOpen(true)}><Settings2 aria-hidden /> Dados fiscais</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setSuggestOpen(true)}><FileDown aria-hidden /> Trazer notas que ela emitiu</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setCustomersOpen(true)}><Users aria-hidden /> Clientes já atendidos</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem disabled={removing} onSelect={remove} className="text-destructive focus:text-destructive"><Trash2 aria-hidden /> Tirar empresa</DropdownMenuItem>
             </DropdownMenuContent>
@@ -257,9 +263,12 @@ function IssuerPanel({
       )}
 
       {canManage ? (
-        <footer className="border-t border-border/70 px-2 py-1.5">
+        <footer className="flex flex-wrap gap-1 border-t border-border/70 px-2 py-1.5">
           <Button type="button" variant="ghost" size="sm" onClick={() => setNoteOpen(true)}>
             <Plus aria-hidden /> Nova nota
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setCustomersOpen(true)}>
+            <Users aria-hidden /> Clientes já atendidos
           </Button>
         </footer>
       ) : null}
@@ -272,6 +281,29 @@ function IssuerPanel({
           {fiscalOpen ? <ClientNfseIssuerDialog clanId={clanId} issuer={issuer} open onOpenChange={setFiscalOpen} /> : null}
           <ClientNfseSuggestionsDialog clanId={clanId} issuer={issuer} open={suggestOpen} onOpenChange={setSuggestOpen} />
           {noteOpen ? <ClientNfseNoteDialog clanId={clanId} issuer={issuer} note={null} period={period} open onOpenChange={setNoteOpen} /> : null}
+          {customersOpen ? (
+            <ClientNfseCustomersDialog
+              clanId={clanId}
+              issuer={issuer}
+              onOpenChange={setCustomersOpen}
+              onPick={(customer) => {
+                setCustomersOpen(false);
+                setFromCustomer(customer);
+              }}
+            />
+          ) : null}
+          {fromCustomer ? (
+            <ClientNfseNoteDialog
+              key={fromCustomer.takerDocument}
+              clanId={clanId}
+              issuer={issuer}
+              note={null}
+              prefill={fromCustomer}
+              period={period}
+              open
+              onOpenChange={(open) => { if (!open) setFromCustomer(null); }}
+            />
+          ) : null}
           {editing ? (
             <ClientNfseNoteDialog key={editing.modelId} clanId={clanId} issuer={issuer} note={editing} period={period} open onOpenChange={(open) => { if (!open) setEditing(null); }} />
           ) : null}

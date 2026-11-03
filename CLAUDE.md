@@ -350,6 +350,12 @@ que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
   900, olhando o histórico) e sugere as notas do último mês como notas padrão
   — marcadas as que também saíram no mês anterior, com o "MM/AAAA" trocado
   por `{mes}`. Nada é gravado sem o Fiscal confirmar.
+- **Clientes já atendidos (2026-11-03, pedido do Bruno)**: no rodapé de cada
+  empresa, a lista de todo tomador do histórico de notas guardadas (sem as
+  canceladas), um por CPF/CNPJ, com quantas notas, a última e a marca de quem
+  já tem nota padrão (`customersFromIssuedNotes`, `loadIssuerCustomers`).
+  "Virar nota padrão" abre o formulário preenchido com a última nota; o
+  "+ Nova nota" tem a mesma busca no topo. Só lê o que a aba XML guardou.
 
 ## Estrutura por clã (decisões de 2026-08-18)
 
