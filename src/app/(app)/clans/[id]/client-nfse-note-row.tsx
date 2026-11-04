@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Download, FilePenLine, LoaderCircle, MapPin, MoreHorizontal, Pencil, RotateCcw, Send, XCircle } from "lucide-react";
+import { AlertTriangle, ClipboardPen, Download, FilePenLine, LoaderCircle, MapPin, MoreHorizontal, Pencil, RotateCcw, Send, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -43,7 +43,7 @@ import { formatBRLCurrency } from "@/lib/currency";
 import { formatAppDate } from "@/lib/date-time";
 import { cn } from "@/lib/utils";
 
-import { adjustNote, cancelInvoice, fixInvoiceAddress, retryInvoice } from "./client-nfse-actions";
+import { adjustNote, cancelInvoice, fixInvoiceAddress, fixInvoiceService, retryInvoice } from "./client-nfse-actions";
 import { Field } from "./nfse-settings-dialog";
 
 export const STATUS_LABELS: Record<NfseInvoiceStatus, string> = {
@@ -114,6 +114,14 @@ export function ClientNfseInvoiceDialog({
     city: takerAddress?.city ?? "",
     state: takerAddress?.state ?? "",
   }));
+  // Erro que aponta o código do serviço já abre a correção dele.
+  const [fixingService, setFixingService] = useState(invoice.status === "failed" && canManage && !fixing && /E03\d\d|c[oó]digo de tributa|NBS/i.test(invoice.lastError ?? ""));
+  const [service, setService] = useState({
+    nationalTaxCode: invoice.service?.nationalTaxCode ?? "",
+    municipalTaxCode: invoice.service?.municipalTaxCode ?? "",
+    nbsCode: invoice.service?.nbsCode ?? "",
+  });
+  const [applyToIssuer, setApplyToIssuer] = useState(true);
   const field = (key: keyof typeof address) => (event: React.ChangeEvent<HTMLInputElement>) => setAddress((current) => ({ ...current, [key]: event.target.value }));
   const blank = (value: string) => value.trim() || null;
 
@@ -142,6 +150,20 @@ export function ClientNfseInvoiceDialog({
           </DialogDescription>
         </DialogHeader>
         {invoice.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{invoice.lastError}</p> : null}
+        {fixingService && !cancelling ? (
+          <fieldset className="grid gap-3 rounded-md border p-3">
+            <legend className="px-1 text-sm font-medium">Serviço desta nota</legend>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Field id={`${invoice.id}-ctrib`} label="Tributação nacional" hint="6 dígitos."><Input id={`${invoice.id}-ctrib`} inputMode="numeric" value={service.nationalTaxCode} onChange={(event) => setService((current) => ({ ...current, nationalTaxCode: event.target.value }))} /></Field>
+              <Field id={`${invoice.id}-cmun`} label="Código municipal" hint="3 dígitos ou em branco."><Input id={`${invoice.id}-cmun`} inputMode="numeric" value={service.municipalTaxCode} onChange={(event) => setService((current) => ({ ...current, municipalTaxCode: event.target.value }))} /></Field>
+              <Field id={`${invoice.id}-nbs`} label="NBS" hint="9 dígitos ou em branco."><Input id={`${invoice.id}-nbs`} inputMode="numeric" value={service.nbsCode} onChange={(event) => setService((current) => ({ ...current, nbsCode: event.target.value }))} /></Field>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" className="size-4 accent-primary" checked={applyToIssuer} onChange={(event) => setApplyToIssuer(event.target.checked)} />
+              Usar também nas próximas notas desta empresa
+            </label>
+          </fieldset>
+        ) : null}
         {fixing && !cancelling ? (
           <fieldset className="grid gap-3 rounded-md border p-3">
             <legend className="px-1 text-sm font-medium">Endereço de {takerName}</legend>
@@ -196,6 +218,33 @@ export function ClientNfseInvoiceDialog({
             </>
           ) : (
             <>
+              {invoice.status === "failed" && canManage && fixingService ? (
+                <>
+                  <Button type="button" variant="outline" disabled={pending} onClick={() => setFixingService(false)}>Voltar</Button>
+                  <Button
+                    type="button"
+                    disabled={pending}
+                    onClick={() =>
+                      run(
+                        () =>
+                          fixInvoiceService({
+                            clanId,
+                            id: invoice.id,
+                            service: {
+                              nationalTaxCode: service.nationalTaxCode.trim(),
+                              municipalTaxCode: service.municipalTaxCode.trim() || undefined,
+                              nbsCode: service.nbsCode.trim() || undefined,
+                            },
+                            applyToIssuer,
+                          }),
+                        "Serviço corrigido. A nota voltou à fila.",
+                      )
+                    }
+                  >
+                    {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <RotateCcw aria-hidden />} Salvar e tentar de novo
+                  </Button>
+                </>
+              ) : null}
               {invoice.status === "failed" && canManage && fixing ? (
                 <>
                   <Button type="button" variant="outline" disabled={pending} onClick={() => setFixing(false)}>Voltar</Button>
@@ -226,10 +275,13 @@ export function ClientNfseInvoiceDialog({
                   </Button>
                 </>
               ) : null}
-              {invoice.status === "failed" && canManage && !fixing ? (
+              {invoice.status === "failed" && canManage && !fixing && !fixingService ? (
+                <Button type="button" variant="outline" disabled={pending} onClick={() => setFixingService(true)}><ClipboardPen aria-hidden /> Corrigir serviço</Button>
+              ) : null}
+              {invoice.status === "failed" && canManage && !fixing && !fixingService ? (
                 <Button type="button" variant="outline" disabled={pending} onClick={() => setFixing(true)}><MapPin aria-hidden /> Corrigir endereço</Button>
               ) : null}
-              {canManage && invoice.status === "failed" && !fixing ? (
+              {canManage && invoice.status === "failed" && !fixing && !fixingService ? (
                 <Button type="button" disabled={pending} onClick={() => run(() => retryInvoice({ clanId, id: invoice.id }), "Nota de volta à fila.")}>
                   {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <RotateCcw aria-hidden />} Tentar de novo
                 </Button>

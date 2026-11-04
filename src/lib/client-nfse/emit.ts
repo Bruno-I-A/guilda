@@ -189,6 +189,45 @@ export async function retryClientNfseWithAddress(
   return requeueClientNfseInvoice(tx, { orgId: input.orgId, actorId: input.actorId, invoiceId: input.invoiceId });
 }
 
+/**
+ * Corrige o serviço de uma nota com erro (código que o município não tem, por
+ * exemplo) e a devolve à fila. "Tentar de novo" sozinho mantém o serviço do
+ * pedido; `applyToIssuer` grava também nos dados fiscais da empresa, para as
+ * próximas notas não repetirem o erro.
+ */
+export async function retryClientNfseWithService(
+  tx: OrgTx,
+  input: Actor & { invoiceId: string; service: ServiceOverride; applyToIssuer: boolean },
+): Promise<ActionResult> {
+  const n = schema.clientNfseInvoices;
+  const [invoice] = await tx
+    .select({ status: n.status, template: n.template, issuerId: n.issuerId })
+    .from(n)
+    .where(and(eq(n.orgId, input.orgId), eq(n.id, input.invoiceId)))
+    .for("update");
+  if (!invoice) return err("Nota não encontrada.");
+  if (invoice.status !== "failed") return err("Só uma nota com erro volta para a fila.");
+  await tx
+    .update(n)
+    .set({ template: { ...(invoice.template as object), service: input.service }, updatedAt: new Date() })
+    .where(and(eq(n.orgId, input.orgId), eq(n.id, input.invoiceId)));
+  if (input.applyToIssuer) {
+    const issuers = schema.clientNfseIssuers;
+    const [issuer] = await tx
+      .select({ template: issuers.template })
+      .from(issuers)
+      .where(and(eq(issuers.orgId, input.orgId), eq(issuers.id, invoice.issuerId)))
+      .for("update");
+    if (issuer) {
+      await tx
+        .update(issuers)
+        .set({ template: { ...(issuer.template as object), service: input.service }, updatedBy: input.actorId, updatedAt: new Date() })
+        .where(and(eq(issuers.orgId, input.orgId), eq(issuers.id, invoice.issuerId)));
+    }
+  }
+  return requeueClientNfseInvoice(tx, { orgId: input.orgId, actorId: input.actorId, invoiceId: input.invoiceId });
+}
+
 async function existingTakerId(tx: OrgTx, orgId: string, issuerId: string, document: string): Promise<string | null> {
   const t = schema.clientNfseTakers;
   const [row] = await tx

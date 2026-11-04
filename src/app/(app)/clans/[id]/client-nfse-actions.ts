@@ -10,7 +10,7 @@ import { CLIENT_NFSE_REFERENCES } from "@/domain/client-nfse";
 import { NFSE_CANCEL_TEXT_MAX, NFSE_CANCEL_TEXT_MIN } from "@/domain/nfse";
 import { hasNfseRetentions, RETENTION_PERCENT_PATTERN } from "@/domain/nfse-retentions";
 import { err, type ActionResult } from "@/lib/action-context";
-import { emitClientNfseNote, retryClientNfseWithAddress } from "@/lib/client-nfse/emit";
+import { emitClientNfseNote, retryClientNfseWithAddress, retryClientNfseWithService } from "@/lib/client-nfse/emit";
 import {
   loadIssuerCustomers,
   loadIssuerSuggestion,
@@ -399,6 +399,29 @@ export async function fixInvoiceAddress(input: z.input<typeof fixAddressSchema>)
   const data = parsed.data;
   const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
     retryClientNfseWithAddress(tx, { orgId: ctx.orgId, actorId: ctx.userId, invoiceId: data.id, address: data.address }),
+  );
+  if (result.ok) revalidateClan();
+  return result;
+}
+
+const fixServiceSchema = z.object({
+  clanId: clan,
+  id: z.uuid("Nota inválida."),
+  service: z.object({
+    nationalTaxCode: digits(6, "O código de tributação nacional"),
+    municipalTaxCode: digits(3, "O código municipal").optional(),
+    nbsCode: digits(9, "O código NBS").optional(),
+  }),
+  applyToIssuer: z.boolean(),
+});
+
+/** Corrige o serviço de uma nota com erro e a devolve à fila. */
+export async function fixInvoiceService(input: z.input<typeof fixServiceSchema>): Promise<ActionResult> {
+  const parsed = fixServiceSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Serviço inválido.");
+  const data = parsed.data;
+  const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
+    retryClientNfseWithService(tx, { orgId: ctx.orgId, actorId: ctx.userId, invoiceId: data.id, service: data.service, applyToIssuer: data.applyToIssuer }),
   );
   if (result.ok) revalidateClan();
   return result;

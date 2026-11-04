@@ -28,6 +28,8 @@ export interface ClientNfseInvoiceView {
   lastError: string | null;
   dpsSeries: string;
   dpsNumber: number;
+  /** O serviço congelado no pedido: dá para corrigir enquanto a nota está com erro. */
+  service: ServiceOverride | null;
 }
 
 /** Uma nota do mês: a nota padrão com o que este mês tem de próprio. */
@@ -151,7 +153,7 @@ export async function loadClientNfseWorkspace(
   const n = schema.clientNfseInvoices;
   const invoices = itemIds.length
     ? await tx
-        .select({ id: n.id, itemId: n.itemId, status: n.status, nfseNumber: n.nfseNumber, issuedAt: n.issuedAt, lastError: n.lastError, dpsSeries: n.dpsSeries, dpsNumber: n.dpsNumber })
+        .select({ id: n.id, itemId: n.itemId, status: n.status, nfseNumber: n.nfseNumber, issuedAt: n.issuedAt, lastError: n.lastError, dpsSeries: n.dpsSeries, dpsNumber: n.dpsNumber, template: n.template })
         .from(n)
         .where(and(eq(n.orgId, input.orgId), inArray(n.itemId, itemIds)))
         .orderBy(desc(n.createdAt))
@@ -184,6 +186,7 @@ export async function loadClientNfseWorkspace(
             lastError: invoice.lastError,
             dpsSeries: invoice.dpsSeries,
             dpsNumber: invoice.dpsNumber,
+            service: parseNfseIssuerTemplate(invoice.template)?.service ?? null,
           }
         : null,
       blocked: blocked.get(row.modelId) ?? null,
@@ -209,6 +212,7 @@ export async function loadClientNfseWorkspace(
       lastError: n.lastError,
       dpsSeries: n.dpsSeries,
       dpsNumber: n.dpsNumber,
+      template: n.template,
     })
     .from(n)
     .innerJoin(itemsTable, and(eq(itemsTable.orgId, n.orgId), eq(itemsTable.id, n.itemId)))
@@ -232,6 +236,7 @@ export async function loadClientNfseWorkspace(
         lastError: row.lastError,
         dpsSeries: row.dpsSeries,
         dpsNumber: row.dpsNumber,
+        service: parseNfseIssuerTemplate(row.template)?.service ?? null,
       },
     });
     freeByIssuer.set(row.issuerId, list);
