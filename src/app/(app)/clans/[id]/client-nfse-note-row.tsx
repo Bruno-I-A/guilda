@@ -159,6 +159,10 @@ export function ClientNfseInvoiceDialog({
         {fixingService && !cancelling && !discarding ? (
           <fieldset className="grid gap-3 rounded-md border p-3">
             <legend className="px-1 text-sm font-medium">Serviço desta nota</legend>
+            <p className="text-sm">
+              Município gravado nesta nota: <strong>{invoice.cityLabel ?? "não identificado"}</strong>
+              {invoice.cityCode ? <span className="font-mono text-xs text-muted-foreground"> · IBGE {invoice.cityCode}</span> : null}
+            </p>
             <div className="grid gap-3 sm:grid-cols-3">
               <Field id={`${invoice.id}-ctrib`} label="Tributação nacional" hint="6 dígitos."><Input id={`${invoice.id}-ctrib`} inputMode="numeric" value={service.nationalTaxCode} onChange={(event) => setService((current) => ({ ...current, nationalTaxCode: event.target.value }))} /></Field>
               <Field id={`${invoice.id}-cmun`} label="Código municipal" hint="3 dígitos ou em branco."><Input id={`${invoice.id}-cmun`} inputMode="numeric" value={service.municipalTaxCode} onChange={(event) => setService((current) => ({ ...current, municipalTaxCode: event.target.value }))} /></Field>

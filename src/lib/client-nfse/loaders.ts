@@ -30,6 +30,9 @@ export interface ClientNfseInvoiceView {
   dpsNumber: number;
   /** O serviço congelado no pedido: dá para corrigir enquanto a nota está com erro. */
   service: ServiceOverride | null;
+  /** O município congelado no pedido: é onde o Sistema Nacional procura o código municipal. */
+  cityCode: string | null;
+  cityLabel: string | null;
 }
 
 /** Uma nota do mês: a nota padrão com o que este mês tem de próprio. */
@@ -187,6 +190,8 @@ export async function loadClientNfseWorkspace(
             dpsSeries: invoice.dpsSeries,
             dpsNumber: invoice.dpsNumber,
             service: parseNfseIssuerTemplate(invoice.template)?.service ?? null,
+            cityCode: parseNfseIssuerTemplate(invoice.template)?.cityCode ?? null,
+            cityLabel: cityLabelOf(parseNfseIssuerTemplate(invoice.template)?.cityCode),
           }
         : null,
       blocked: blocked.get(row.modelId) ?? null,
@@ -237,6 +242,8 @@ export async function loadClientNfseWorkspace(
         dpsSeries: row.dpsSeries,
         dpsNumber: row.dpsNumber,
         service: parseNfseIssuerTemplate(row.template)?.service ?? null,
+        cityCode: parseNfseIssuerTemplate(row.template)?.cityCode ?? null,
+        cityLabel: cityLabelOf(parseNfseIssuerTemplate(row.template)?.cityCode),
       },
     });
     freeByIssuer.set(row.issuerId, list);
