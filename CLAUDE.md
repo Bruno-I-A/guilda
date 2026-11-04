@@ -361,6 +361,11 @@ que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
 - **Corrigir serviço na nota com erro (2026-11-04, E0314)**: como "Tentar de novo"
   mantém o serviço do pedido, a janela da nota edita os códigos
   (`retryClientNfseWithService`) e, marcado, grava também nos Dados fiscais.
+- **Nota achada pela DPS tem de ser desta emissão (2026-11-04)**: nota recorrente
+  repete prestador, tomador e valor, e a Guilda adotou uma nota de 2024 como se
+  fosse a de novembro (nada foi emitido; cancelar cancelaria a verdadeira). `verify.ts`
+  compara também a data com o pedido; `repairAdoptedClientNfse` devolve as adotadas
+  a "com erro" uma vez ao subir o serviço fiscal, sem reemitir sozinho.
 - **Cadastro pelas notas já emitidas (pedido do Bruno)**: ao adicionar a
   empresa, a Guilda lê o XML que a rotina da aba XML já guardou
   (`from-xml.ts`, `suggest.ts`) e preenche o modelo fiscal pela nota mais

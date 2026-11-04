@@ -22,7 +22,7 @@ describe("mensagem do conflito de DPS", () => {
     const xml = XML.replace("<infNFSe>", "<infNFSe><nNFSe>310</nNFSe>");
     const request = { providerCnpj: "33000167000101", takerDocument: "07412545000154", amountCents: 192000, requestedAt: REQUESTED };
     const found = nfseXmlMismatch(xml, request);
-    expect(found).toEqual({ nfseNumber: "310", providerCnpj: "33000167000101", takerDocument: "40503119091", amountCents: 15000, requestedAt: REQUESTED });
+    expect(found).toEqual({ nfseNumber: "310", providerCnpj: "33000167000101", takerDocument: "40503119091", amountCents: 15000, issuedAt: null });
     const message = dpsConflictMessage({ dpsSeries: "900", dpsNumber: 2, request, found: found! });
     expect(message).toContain("DPS 900/2");
     expect(message).toContain("NFS-e nº 310");
