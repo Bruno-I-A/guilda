@@ -207,3 +207,41 @@ test("a tela recebe a previsão junto das notas do mês", async () => {
   const past = await tx((t) => loadClientNfseWorkspace(t, { orgId: ORG, ...NOVEMBER, now: NOW }));
   expect(past.issuers.find((issuer) => issuer.id === issuerId)!.forecast.notes).toEqual([]);
 });
+
+test("a tela troca a nota padrão pela prevista da mesma pessoa, e a ajustada fica", async () => {
+  const registry = await import("./registry");
+  const { loadClientNfseWorkspace } = await import("./loaders");
+  const month = await import("./month");
+  await tx((t) => t.update(schema.clientNfseIssuers).set({ usesStandardNotes: true }).where(eq(schema.clientNfseIssuers.id, issuerId)));
+  const [maria] = await tx((t) => t.select().from(schema.clientNfseTakers).where(eq(schema.clientNfseTakers.document, MARIA)));
+  const coveredModel = await tx((t) => registry.saveClientNfseModel(t, { ...ACTOR, issuerId, modelId: null, takerId: maria.id, amount: "150.00", description: "Mensal {mes}", reference: "previous", service: null, active: true }));
+  if (!coveredModel.ok) throw new Error(coveredModel.error);
+  const workspace = () => tx((t) => loadClientNfseWorkspace(t, { orgId: ORG, ...DECEMBER, now: NOW }));
+  let academia = (await workspace()).issuers.find((issuer) => issuer.id === issuerId)!;
+  expect(academia.notes).toEqual([]);
+  expect(academia.forecast.notes.some((note) => note.takerDocument === MARIA)).toBe(true);
+  // Ajustada neste mês, a nota padrão volta à tela e ocupa o lugar da prevista.
+  const adjusted = await tx((t) => month.adjustClientNfseMonthNote(t, { ...ACTOR, ...DECEMBER, modelId: coveredModel.data!.modelId, amount: "175.00", description: "Mensal ajustada" }));
+  expect(adjusted.ok).toBe(true);
+  academia = (await workspace()).issuers.find((issuer) => issuer.id === issuerId)!;
+  expect(academia.notes.map((note) => note.amount)).toEqual(["175.00"]);
+  expect(academia.forecast.notes.some((note) => note.takerDocument === MARIA)).toBe(false);
+  await tx((t) => t.delete(schema.clientNfseItems).where(eq(schema.clientNfseItems.modelId, coveredModel.data!.modelId)));
+  await tx((t) => t.delete(schema.clientNfseModels).where(eq(schema.clientNfseModels.id, coveredModel.data!.modelId)));
+});
+
+test("o lote recalcula valor e texto no servidor e recusa o que mudou ou pede conferência", async () => {
+  const { prepareForecastEmission } = await import("./forecast-month");
+  const prepare = (items: { issuerId: string; sourceAccessKey: string; requestId: string }[], expectedTotalCents: number) =>
+    tx((t) => prepareForecastEmission(t, { orgId: ORG, now: NOW, period: DECEMBER, items, expectedTotalCents }));
+  const good = { issuerId, sourceAccessKey: key(1), requestId: uuid(50) };
+  const prepared = await prepare([good], 15000);
+  if (!prepared.ok) throw new Error(prepared.error);
+  expect(prepared.data![0]).toMatchObject({ amount: "150.00", description: "Atendimentos 11/2026", taker: { document: MARIA } });
+  // Total diferente do que a pessoa viu.
+  expect((await prepare([good], 99999)).ok).toBe(false);
+  // Nota que pede conferência do texto não sai pelo lote.
+  expect((await prepare([{ issuerId, sourceAccessKey: key(3), requestId: uuid(51) }], 5000)).ok).toBe(false);
+  // Nota que já não é prevista.
+  expect((await prepare([{ issuerId, sourceAccessKey: key(99), requestId: uuid(52) }], 5000)).ok).toBe(false);
+});

@@ -121,7 +121,7 @@ test("ciclo: cadastro, mês, prévia, fila com numeração por empresa, travas e
   const future = await withOrgTx(ORG, (tx) => month.enqueueClientNfseBatch(tx, { ...ACTOR, year: 2026, month: 12, selected, expectedCount: 3, expectedTotalCents: adjusted.totalCents, today: "2026-11-05", now: NOW }));
   expect(future.ok).toBe(false);
   const queued = await withOrgTx(ORG, (tx) => month.enqueueClientNfseBatch(tx, { ...ACTOR, year: 2026, month: 11, selected, expectedCount: 3, expectedTotalCents: adjusted.totalCents, today: "2026-11-05", now: NOW }));
-  expect(queued).toEqual({ ok: true, data: { queued: 3 } });
+  expect(queued).toEqual({ ok: true, data: { queued: 3, invoiceIds: expect.any(Array) } });
   const invoices = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseInvoices));
   const academia = invoices.filter((row) => row.issuerId === issuerId).sort((a, b) => a.dpsNumber - b.dpsNumber);
   expect(academia.map((row) => [row.dpsSeries, row.dpsNumber])).toEqual([["900", 1], ["900", 2]]);

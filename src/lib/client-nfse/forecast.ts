@@ -70,11 +70,35 @@ function toNote(source: ForecastSource, period: { year: number; month: number })
   };
 }
 
+/**
+ * A nota padrão ainda sem nota do mês sai da tela quando a previsão já cobre
+ * aquele cliente: a previsão traz o valor e o texto reais da última nota. Assim
+ * a nota padrão se aposenta sozinha, um mês depois da primeira emissão.
+ */
+export function modelRowsCoveredByForecast<T extends { itemId: string | null; issuerId: string; takerDocument: string }>(
+  rows: readonly T[],
+  forecastDocuments: readonly { issuerId: string; takerDocument: string }[],
+): T[] {
+  const left = new Map<string, number>();
+  for (const note of forecastDocuments) {
+    const key = `${note.issuerId}|${note.takerDocument}`;
+    left.set(key, (left.get(key) ?? 0) + 1);
+  }
+  return rows.filter((row) => {
+    if (row.itemId) return false;
+    const key = `${row.issuerId}|${row.takerDocument}`;
+    const count = left.get(key) ?? 0;
+    if (count === 0) return false;
+    left.set(key, count - 1);
+    return true;
+  });
+}
+
 export function buildMonthForecast(input: {
   period: { year: number; month: number };
   sources: readonly ForecastSource[];
   claims: readonly ForecastClaim[];
-  /** CPF/CNPJ de cada nota padrão ainda em aberto no mês: ela já ocupa o lugar da previsão. */
+  /** CPF/CNPJ de cada nota padrão ajustada neste mês e ainda não pedida: ela ocupa o lugar da previsão. */
   standing: readonly string[];
   skipped: ReadonlySet<string>;
 }): { notes: ForecastNote[]; skipped: ForecastNote[] } {

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, LoaderCircle, Search, Send } from "lucide-react";
+import { AlertTriangle, ChevronDown, LoaderCircle, Search, Send } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -15,6 +15,8 @@ import { formatCnpj, normalizeCnpj, validateTaxDocument } from "@/domain/cnpj";
 import { clientNfseMonthDescription, type ClientNfseReference } from "@/domain/client-nfse";
 import type { NfseRetentions } from "@/domain/nfse-retentions";
 import type { ClientNfseIssuerView } from "@/lib/client-nfse/loaders";
+import { portalReadIsStale } from "@/lib/client-nfse/presentation";
+import type { ServiceOverride } from "@/lib/client-nfse/registry";
 import { formatBRLCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +39,8 @@ export interface EmitPrefill {
   description: string | null;
   /** As retenções do tomador (cliente das notas do Portal ainda não tem). */
   retentions?: NfseRetentions | null;
+  /** Veio da previsão do mês: abre direto na conferência, com o serviço da nota de origem. */
+  forecast?: { sourceAccessKey: string; service: ServiceOverride | null; textNeedsReview: boolean; portalReadAt: string | null };
 }
 
 function addressForm(address: AddressValue | null): Address {
@@ -49,6 +53,10 @@ function addressForm(address: AddressValue | null): Address {
     city: address?.city ?? "",
     state: address?.state ?? "",
   };
+}
+
+function addressIsReady(address: Address): boolean {
+  return Boolean(address.street.trim() && address.district.trim() && address.city.trim() && address.state.trim() && address.zipCode.replace(/\D/g, "").length === 8);
 }
 
 function normalize(value: string): string {
@@ -90,13 +98,19 @@ export function ClientNfseEmitDialog({
   const [text, setText] = useState(prefill?.description ?? "");
   const [reference, setReference] = useState<ClientNfseReference>("previous");
   const [more, setMore] = useState(false);
-  const [ownService, setOwnService] = useState(false);
+  const forecast = prefill?.forecast ?? null;
+  // A nota de origem só vale enquanto o cliente for o dela: trocar o cliente faz uma nota nova.
+  const [sourceAccessKey, setSourceAccessKey] = useState(forecast?.sourceAccessKey);
+  const [ownService, setOwnService] = useState(Boolean(forecast?.service));
   const [service, setService] = useState({
-    nationalTaxCode: issuer.template?.service.nationalTaxCode ?? "",
-    municipalTaxCode: issuer.template?.service.municipalTaxCode ?? "",
-    nbsCode: issuer.template?.service.nbsCode ?? "",
+    nationalTaxCode: forecast?.service?.nationalTaxCode ?? issuer.template?.service.nationalTaxCode ?? "",
+    municipalTaxCode: forecast?.service?.municipalTaxCode ?? issuer.template?.service.municipalTaxCode ?? "",
+    nbsCode: forecast?.service?.nbsCode ?? issuer.template?.service.nbsCode ?? "",
   });
-  const [confirming, setConfirming] = useState(false);
+  // Prevista completa abre na conferência: é um olhar e um clique. Faltando algo, abre para preencher.
+  const [confirming, setConfirming] = useState(() =>
+    Boolean(forecast && !forecast.textNeedsReview && Number(prefill?.amount) > 0 && prefill?.description && (!issuer.template?.ibsCbs || addressIsReady(addressForm(prefill?.address ?? null)))),
+  );
   // Retenções: vêm do tomador; ajustar aqui vale para esta nota e, marcado, vira o padrão dele.
   const [retention, setRetention] = useState<RetentionForm>(() => retentionForm(prefill?.retentions));
   const [retentionOpen, setRetentionOpen] = useState(Boolean(prefill?.retentions));
@@ -105,7 +119,8 @@ export function ClientNfseEmitDialog({
   const [manual, setManual] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
-  const { view, loading, error: customersError } = useIssuerCustomers(clanId, issuer.id, true, reload);
+  // A lista de clientes lê as notas guardadas: só carrega quando a pessoa vai escolher um.
+  const { view, loading, error: customersError } = useIssuerCustomers(clanId, issuer.id, step === 0, reload);
   const digits = normalizeCnpj(document);
   const documentOk = validateTaxDocument(digits);
   const period = currentPeriod();
@@ -129,6 +144,7 @@ export function ClientNfseEmitDialog({
   }, [sources, query]);
 
   function pick(source: EmitPrefill) {
+    if (source.document !== prefill?.document) setSourceAccessKey(undefined);
     setDocument(formatCnpj(source.document));
     setName(source.name);
     setAddress(addressForm(source.address));
@@ -163,7 +179,7 @@ export function ClientNfseEmitDialog({
 
   const blank = (value: string) => value.trim() || null;
   const requiresAddress = Boolean(issuer.template?.ibsCbs);
-  const addressReady = !requiresAddress || Boolean(address.street.trim() && address.district.trim() && address.city.trim() && address.state.trim() && address.zipCode.replace(/\D/g, "").length === 8);
+  const addressReady = !requiresAddress || addressIsReady(address);
   const retentionError = retentionProblem(retention);
   const ready = documentOk && name.trim() && amount && Number(amount) > 0 && text.trim() && addressReady && !retentionError;
 
@@ -175,6 +191,7 @@ export function ClientNfseEmitDialog({
         clanId,
         issuerId: issuer.id,
         requestId,
+        sourceAccessKey,
         taker: {
           document: digits,
           name,
@@ -238,7 +255,14 @@ export function ClientNfseEmitDialog({
             <span>{finalText}</span>
             <span className="hud-label">Valor</span>
             <span className="font-mono text-lg tabular-nums">{formatBRLCurrency(amount)}</span>
+            {forecast && sourceAccessKey ? <span className="text-xs text-muted-foreground">Valor e texto vêm da nota do mês passado. Se mudou algo, use Voltar e ajustar.</span> : null}
             {formToRetentions(retention) ? <RetentionSummary form={retention} amount={amount} /> : <span className="text-xs text-muted-foreground">Sem retenções.</span>}
+            {forecast && sourceAccessKey && portalReadIsStale(forecast.portalReadAt, new Date()) ? (
+              <p role="status" className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2.5 text-sm">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+                As notas do Portal desta empresa não são lidas há mais de um dia. Se esta nota já foi feita lá, ainda não aparece aqui.
+              </p>
+            ) : null}
             <p className="border-t pt-2 text-xs text-muted-foreground">Ao confirmar, a nota será enviada ao Sistema Nacional. Depois de emitida, alterações exigem cancelamento.</p>
           </div>
         ) : (
@@ -286,7 +310,7 @@ export function ClientNfseEmitDialog({
                 ) : query.trim().length >= 2 ? (
                   <p className="text-sm text-muted-foreground">Cliente não encontrado. Use “Novo cliente” para preencher os dados.</p>
                 ) : null}
-                <Button type="button" variant="outline" className="mt-2 justify-self-start" onClick={() => { setDocument(""); setName(query); setAddress(addressForm(null)); setAmount(""); setText(""); setManual(true); }}>+ Novo cliente</Button>
+                <Button type="button" variant="outline" className="mt-2 justify-self-start" onClick={() => { setSourceAccessKey(undefined); setDocument(""); setName(query); setAddress(addressForm(null)); setAmount(""); setText(""); setManual(true); }}>+ Novo cliente</Button>
               </div>
             ) : null}
             {manual ? <>
@@ -304,6 +328,12 @@ export function ClientNfseEmitDialog({
             </> : null}
             </> : null}
             {step === 1 ? <>
+            {forecast?.textNeedsReview && sourceAccessKey ? (
+              <p role="status" className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2.5 text-sm">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+                O texto cita uma data que a Guilda não conseguiu trocar. Corrija antes de emitir.
+              </p>
+            ) : null}
             <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 p-3 text-sm"><div className="min-w-0"><p className="font-medium">{name}</p><p className="font-mono text-xs text-muted-foreground">{formatCnpj(digits)}</p></div><Button type="button" size="sm" variant="ghost" onClick={() => { setStep(0); setManual(false); }}>Trocar cliente</Button></div>
             <div className="grid gap-1.5 sm:max-w-56">
               <Label htmlFor={`${id}-amount`}>Valor</Label>

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { buildMonthForecast, forecastTextNeedsReview, type ForecastSource } from "./forecast";
+import { buildMonthForecast, forecastTextNeedsReview, modelRowsCoveredByForecast, type ForecastSource } from "./forecast";
 
 const DECEMBER = { year: 2026, month: 12 };
 const source = (accessKey: string, overrides: Partial<ForecastSource> = {}): ForecastSource => ({
@@ -82,5 +82,16 @@ describe("o que sai da previsão", () => {
     const { notes, skipped } = forecast([source("a"), source("b")], { skipped: new Set(["a"]), claims: [{ takerDocument: "40503119091", amountCents: 15000, sourceAccessKey: null }] });
     expect(notes).toEqual([]);
     expect(keys(skipped)).toEqual(["a"]);
+  });
+});
+
+describe("nota padrão coberta pela previsão", () => {
+  const row = (itemId: string | null, takerDocument = "40503119091", issuerId = "i") => ({ itemId, takerDocument, issuerId });
+  test("sai da tela uma nota padrão sem ajuste para cada prevista da pessoa", () => {
+    const rows = [row(null), row(null), row(null, "33000167000101")];
+    expect(modelRowsCoveredByForecast(rows, [{ issuerId: "i", takerDocument: "40503119091" }])).toEqual([rows[0]]);
+  });
+  test("a ajustada neste mês fica, e outra empresa não conta", () => {
+    expect(modelRowsCoveredByForecast([row("item"), row(null, "40503119091", "outra")], [{ issuerId: "i", takerDocument: "40503119091" }])).toEqual([]);
   });
 });

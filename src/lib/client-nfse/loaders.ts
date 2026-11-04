@@ -13,7 +13,8 @@ import { ibgeCity, ibgeCityCode } from "@/lib/nfse/municipios";
 import { firstElementText } from "@/lib/nfse/xml";
 import { parseNfseIssuerTemplate, type NfseIssuerTemplate } from "@/lib/nfse/template";
 
-import { loadClientNfseForecast, type IssuerForecast } from "./forecast-month";
+import { modelRowsCoveredByForecast } from "./forecast";
+import { adjustedModelRows, loadClientNfseForecast, type IssuerForecast } from "./forecast-month";
 import { readIssuedNoteFacts, type IssuedNoteFacts } from "./from-xml";
 import { loadClientNfseMonthRows, loadIssuerReadiness } from "./month";
 import type { ServiceOverride } from "./registry";
@@ -139,14 +140,21 @@ export async function loadClientNfseWorkspace(
     .where(eq(i.orgId, input.orgId))
     .orderBy(asc(c.name));
   const readiness = await loadIssuerReadiness(tx, { orgId: input.orgId, now: input.now });
-  const rows = await loadClientNfseMonthRows(tx, input);
+  const monthRows = await loadClientNfseMonthRows(tx, input);
   const forecasts = await loadClientNfseForecast(tx, {
     orgId: input.orgId,
     now: input.now,
     period: { year: input.year, month: input.month },
     issuers,
-    standing: rows.filter((row) => !row.hasActiveInvoice).map((row) => ({ issuerId: row.issuerId, takerDocument: row.takerDocument })),
+    standing: adjustedModelRows(monthRows),
   });
+  const covered = new Set(
+    modelRowsCoveredByForecast(
+      monthRows,
+      [...forecasts.entries()].flatMap(([issuerId, forecast]) => [...forecast.notes, ...forecast.skipped].map((note) => ({ issuerId, takerDocument: note.takerDocument }))),
+    ),
+  );
+  const rows = monthRows.filter((row) => !covered.has(row));
   const blocked = new Map(
     selectClientNfseBatch(rows).excluded
       .filter((item) => item.reason !== "already_active")

@@ -12,8 +12,9 @@ import { err, type ActionResult } from "@/lib/action-context";
 import { parseNfseIssuerTemplate } from "@/lib/nfse/template";
 
 import { sourceProblem } from "./emit";
+import { loadClientNfseMonthRows } from "./month";
 import { buildMonthForecast, type ForecastClaim, type ForecastNote, type ForecastSource } from "./forecast";
-import { readIssuedNoteFacts } from "./from-xml";
+import { readIssuedNoteFacts, type IssuedNoteFacts } from "./from-xml";
 import type { AddressInput, ServiceOverride } from "./registry";
 import { monthOf, previousMonth } from "./suggest";
 
@@ -56,6 +57,27 @@ function nextMonth(period: Period): Period {
 
 const samePeriod = (a: Period, b: Period) => a.year === b.year && a.month === b.month;
 
+/** O que a previsão usa de uma nota do Portal. */
+type PortalFacts = { taker: NonNullable<IssuedNoteFacts["taker"]>; amountCents: number; description: string | null; service: ServiceOverride | null };
+
+/**
+ * O XML de uma nota emitida não muda, e a aba recarrega a cada 5 segundos
+ * enquanto há nota na fila: cada nota só é aberta uma vez por processo.
+ */
+const PORTAL_FACTS_LIMIT = 5000;
+const portalFacts = new Map<string, PortalFacts | null>();
+
+function rememberPortalFacts(key: string, xmlGz: Uint8Array): void {
+  const facts = readIssuedNoteFacts(gunzipSync(Buffer.from(xmlGz)).toString("utf8"));
+  if (portalFacts.size >= PORTAL_FACTS_LIMIT) portalFacts.delete(portalFacts.keys().next().value!);
+  portalFacts.set(
+    key,
+    facts?.taker && facts.amountCents !== null
+      ? { taker: facts.taker, amountCents: facts.amountCents, description: facts.description, service: facts.template.service.nationalTaxCode ? facts.template.service : null }
+      : null,
+  );
+}
+
 /**
  * A previsão de cada empresa no mês corrente. Mês passado é só consulta e mês
  * futuro não emite, então nos outros meses não há previsão. A mesma nota pode
@@ -68,7 +90,7 @@ export async function loadClientNfseForecast(
     now: Date;
     period: Period;
     issuers: readonly { id: string; clientId: string; active: boolean }[];
-    /** Notas padrão ainda em aberto no mês, por empresa. */
+    /** Notas padrão ajustadas neste mês e ainda não pedidas, por empresa. */
     standing: readonly { issuerId: string; takerDocument: string }[];
   },
 ): Promise<Map<string, IssuerForecast>> {
@@ -130,13 +152,15 @@ export async function loadClientNfseForecast(
       : [],
   );
   const foreign = stored.filter((row) => !known.has(row.accessKey) && !row.cancelledAt);
-  const xmlRows = foreign.length
-    ? await tx
-        .select({ accessKey: portal.accessKey, xmlGz: portal.xmlGz })
-        .from(portal)
-        .where(and(eq(portal.orgId, input.orgId), inArray(portal.accessKey, foreign.map((row) => row.accessKey))))
-    : [];
-  const xmlByKey = new Map(xmlRows.map((row) => [row.accessKey, row.xmlGz]));
+  const factsKey = (accessKey: string) => `${input.orgId}|${accessKey}`;
+  const unread = foreign.filter((row) => !portalFacts.has(factsKey(row.accessKey))).map((row) => row.accessKey);
+  if (unread.length > 0) {
+    const xmlRows = await tx
+      .select({ accessKey: portal.accessKey, xmlGz: portal.xmlGz })
+      .from(portal)
+      .where(and(eq(portal.orgId, input.orgId), inArray(portal.accessKey, unread)));
+    for (const row of xmlRows) rememberPortalFacts(factsKey(row.accessKey), row.xmlGz);
+  }
 
   const sources = new Map<string, ForecastSource[]>();
   const claims = new Map<string, ForecastClaim[]>();
@@ -163,9 +187,8 @@ export async function loadClientNfseForecast(
   }
   for (const row of foreign) {
     const issuerId = issuerByClient.get(row.clientId)!;
-    const gz = xmlByKey.get(row.accessKey);
-    const facts = gz ? readIssuedNoteFacts(gunzipSync(Buffer.from(gz)).toString("utf8")) : null;
-    if (!facts?.taker || facts.amountCents === null) continue;
+    const facts = portalFacts.get(factsKey(row.accessKey));
+    if (!facts) continue;
     if (row.issuedAt >= thisStart) {
       push(claims, issuerId, { takerDocument: facts.taker.document, amountCents: facts.amountCents, sourceAccessKey: null });
     } else if (facts.description) {
@@ -177,7 +200,7 @@ export async function loadClientNfseForecast(
         amountCents: facts.amountCents,
         description: facts.description,
         issuedAt: row.issuedAt,
-        service: facts.template.service.nationalTaxCode ? facts.template.service : null,
+        service: facts.service,
       });
     }
   }
@@ -231,6 +254,59 @@ export async function loadClientNfseForecast(
     });
   }
   return result;
+}
+
+/** O que uma nota prevista leva para a emissão. */
+export interface ForecastEmission {
+  issuerId: string;
+  requestId: string;
+  sourceAccessKey: string;
+  taker: { document: string; name: string; address: AddressInput | null };
+  amount: string;
+  description: string;
+  service: ServiceOverride | null;
+}
+
+/**
+ * Recalcula no servidor as previstas escolhidas: o navegador só diz quais, nunca
+ * valor nem texto. Se algo mudou desde que a tela abriu, ou a nota pede
+ * conferência do texto, não segue.
+ */
+export async function prepareForecastEmission(
+  tx: OrgTx,
+  input: { orgId: string; now: Date; period: Period; items: readonly { issuerId: string; sourceAccessKey: string; requestId: string }[]; expectedTotalCents: number },
+): Promise<ActionResult<ForecastEmission[]>> {
+  const i = schema.clientNfseIssuers;
+  const issuers = await tx
+    .select({ id: i.id, clientId: i.clientId, active: i.active })
+    .from(i)
+    .where(and(eq(i.orgId, input.orgId), inArray(i.id, [...new Set(input.items.map((item) => item.issuerId))])));
+  const rows = await loadClientNfseMonthRows(tx, { orgId: input.orgId, now: input.now, ...input.period });
+  const forecasts = await loadClientNfseForecast(tx, { orgId: input.orgId, now: input.now, period: input.period, issuers, standing: adjustedModelRows(rows) });
+  const emissions: ForecastEmission[] = [];
+  let totalCents = 0;
+  for (const item of input.items) {
+    const note = forecasts.get(item.issuerId)?.notes.find((row) => row.sourceAccessKey === item.sourceAccessKey);
+    if (!note) return err("Uma nota mudou enquanto a tela estava aberta. Confira e tente de novo.");
+    if (note.textNeedsReview) return err(`Confira o texto da nota de ${note.takerName} antes de emitir.`);
+    totalCents += amountToCents(note.amount);
+    emissions.push({
+      issuerId: item.issuerId,
+      requestId: item.requestId,
+      sourceAccessKey: item.sourceAccessKey,
+      taker: { document: note.takerDocument, name: note.takerName, address: note.address as AddressInput | null },
+      amount: note.amount,
+      description: note.description,
+      service: note.service,
+    });
+  }
+  if (totalCents !== input.expectedTotalCents) return err("Uma nota mudou enquanto a tela estava aberta. Confira e tente de novo.");
+  return { ok: true, data: emissions };
+}
+
+/** A nota padrão ajustada neste mês e ainda não pedida ocupa o lugar da previsão. */
+export function adjustedModelRows(rows: readonly { itemId: string | null; hasActiveInvoice: boolean; issuerId: string; takerDocument: string }[]) {
+  return rows.filter((row) => row.itemId && !row.hasActiveInvoice).map((row) => ({ issuerId: row.issuerId, takerDocument: row.takerDocument }));
 }
 
 /** "Não emitir este mês": some da conta até desfazer. Sem nota, não há o que prever no mês seguinte. */
