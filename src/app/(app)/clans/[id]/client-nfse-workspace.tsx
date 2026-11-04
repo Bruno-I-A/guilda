@@ -155,6 +155,8 @@ function FreeNoteRow({
   note,
   takerAddress,
   canManage,
+  canEmit,
+  blockedReason,
   onRepeat,
 }: {
   clanId: string;
@@ -162,6 +164,8 @@ function FreeNoteRow({
   note: ClientNfseFreeNoteView;
   takerAddress: NfseClientAddress | null;
   canManage: boolean;
+  canEmit: boolean;
+  blockedReason: string | null;
   onRepeat: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -191,6 +195,7 @@ function FreeNoteRow({
           aria-label={`Nota de ${note.takerName}: ${STATUS_LABELS[invoice.status]}. Abrir detalhes.`}
         >
           {working ? <LoaderCircle className="size-3 animate-spin" aria-hidden /> : null}
+          {invoice.status === "failed" ? <AlertTriangle className="size-3 text-destructive" aria-hidden /> : null}
           {invoice.status === "issued" && invoice.nfseNumber ? `Emitida · Nº ${invoice.nfseNumber}` : invoice.status === "failed" ? "Ver erro e resolver" : STATUS_LABELS[invoice.status]}
         </button>
         {invoice.status === "issued" ? (
@@ -198,12 +203,12 @@ function FreeNoteRow({
             <a href={clientNfsePdfHref(clanId, period.year, period.month, { invoiceId: invoice.id })}><Download aria-hidden /> PDF</a>
           </Button>
         ) : null}
-        {canManage && (invoice.status === "issued" || invoice.status === "cancelled") ? (
+        {canEmit && (invoice.status === "issued" || invoice.status === "cancelled") ? (
           <Button type="button" size="sm" variant="outline" onClick={onRepeat}>
             <Repeat aria-hidden /> Nova igual
           </Button>
         ) : null}
-        {canManage && invoice.status === "issued" ? (
+        {canEmit && invoice.status === "issued" ? (
           <Button type="button" size="icon-sm" variant="ghost" className="touch-target" aria-label={`Cancelar a nota de ${note.takerName}`} onClick={() => show(true)}>
             <XCircle aria-hidden />
           </Button>
@@ -220,6 +225,7 @@ function FreeNoteRow({
         onOpenChange={setOpen}
         startCancelling={cancelFirst}
         canManage={canManage}
+        blockedReason={blockedReason}
       /> : null}
     </li>
   );
@@ -256,6 +262,7 @@ function IssuerPanel({
   const [editing, setEditing] = useState<ClientNfseNoteView | null>(null);
   const [removing, startRemoving] = useTransition();
   const canEmit = canManage && serviceReady && issuer.active && !issuer.problem;
+  const blockedReason = !serviceReady ? "O serviço fiscal está indisponível." : !issuer.active ? "A empresa está desativada." : issuer.problem;
   const emissible = (note: ClientNfseNoteView) => canEmit && !note.blocked && noteIsOpen(note);
   const fixed = issuer.usesStandardNotes || issuer.notes.some((note) => note.invoice);
   const ready = fixed ? issuer.notes.filter((note) => emissible(note) && matchesNoteFilter(note, filter)) : [];
@@ -344,7 +351,7 @@ function IssuerPanel({
       ) : (
         <ul className="grid min-w-0 divide-y divide-border/60" aria-label={`Notas de ${issuer.name} em ${MONTHS[period.month - 1]}`}>
           {visibleFixed.map((note) => (
-            <ClientNfseNoteRow key={note.modelId} clanId={clanId} period={period} note={note} canManage={canManage} emissible={emissible(note)} selected={selected.has(note.modelId)} onToggle={() => onToggle([note.modelId], !selected.has(note.modelId))} onEmit={() => onEmit([{ note, issuerName: issuer.name }])} onEditStandard={() => setEditing(note)} />
+            <ClientNfseNoteRow key={note.modelId} clanId={clanId} period={period} note={note} canManage={canManage} emissible={emissible(note)} selected={selected.has(note.modelId)} onToggle={() => onToggle([note.modelId], !selected.has(note.modelId))} onEmit={() => onEmit([{ note, issuerName: issuer.name }])} onEditStandard={() => setEditing(note)} blockedReason={blockedReason} />
           ))}
           {visibleFree.map((note) => (
             <FreeNoteRow
@@ -353,7 +360,9 @@ function IssuerPanel({
               period={period}
               note={note}
               takerAddress={issuer.takers.find((row) => row.id === note.takerId)?.address ?? null}
-              canManage={canEmit}
+              canManage={canManage}
+              canEmit={canEmit}
+              blockedReason={blockedReason}
               onRepeat={() => {
                 const taker = issuer.takers.find((row) => row.id === note.takerId);
                 emitFrom({ document: note.takerDocument, name: note.takerName, address: taker?.address ?? null, amount: note.amount, description: note.description, retentions: taker?.retentions ?? null });
@@ -479,7 +488,7 @@ export function ClientNfseWorkspace({
       {issuers.length > 0 ? <>
         <div className="grid grid-cols-3 gap-3 rounded-md border bg-card p-4" aria-label="Resumo do mês">
           <div><p className="text-xs text-muted-foreground">A emitir</p><p className="font-mono tabular-nums">{summary.pending}</p></div>
-          <div><p className="text-xs text-muted-foreground">Com erro</p><p className={cn("font-mono tabular-nums", summary.failed > 0 && "text-destructive")}>{summary.failed}</p></div>
+          <div><p className="text-xs text-muted-foreground">Com erro</p><p className="flex items-center gap-1.5 font-mono tabular-nums">{summary.failed > 0 ? <AlertTriangle className="size-4 text-destructive" aria-hidden /> : null}{summary.failed}</p></div>
           <div><p className="text-xs text-muted-foreground">Total emitido · {issued} nota(s)</p><p className="font-mono tabular-nums">{money(summary.issuedCents)}</p></div>
         </div>
         <div className="grid gap-3">
