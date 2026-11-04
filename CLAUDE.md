@@ -348,7 +348,11 @@ que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
   saem de `src/domain/nfse-retentions.ts` sobre o valor do serviço e ficam
   congelados no modelo do pedido (`federal`, `withRetentions`); valem para a
   nota avulsa e as fixas. Simples ME/EPP sem retenção não informa alíquota
-  do ISS (E0625).
+  do ISS (E0625). Não optante do Simples também não informa (E0617).
+- **Corrigir endereço na nota com erro (2026-11-04, pedido do Bruno)**: a janela
+  da nota com erro edita o endereço do tomador e devolve à fila
+  (`retryClientNfseWithAddress`). Grava no cadastro, então vale para as próximas
+  notas; valor e descrição continuam congelados no pedido.
 - **Cadastro pelas notas já emitidas (pedido do Bruno)**: ao adicionar a
   empresa, a Guilda lê o XML que a rotina da aba XML já guardou
   (`from-xml.ts`, `suggest.ts`) e preenche o modelo fiscal pela nota mais

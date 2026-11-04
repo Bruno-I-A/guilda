@@ -43,6 +43,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatCnpj } from "@/domain/cnpj";
+import type { NfseClientAddress } from "@/domain/nfse";
 import type { ClientNfseCandidateView, ClientNfseFreeNoteView, ClientNfseIssuerView, ClientNfseNoteView } from "@/lib/client-nfse/loaders";
 import { formatBRLCurrency } from "@/lib/currency";
 import { formatAppDate } from "@/lib/date-time";
@@ -152,12 +153,14 @@ function FreeNoteRow({
   clanId,
   period,
   note,
+  takerAddress,
   canManage,
   onRepeat,
 }: {
   clanId: string;
   period: Period;
   note: ClientNfseFreeNoteView;
+  takerAddress: NfseClientAddress | null;
   canManage: boolean;
   onRepeat: () => void;
 }) {
@@ -210,6 +213,7 @@ function FreeNoteRow({
         clanId={clanId}
         period={period}
         takerName={note.takerName}
+        takerAddress={takerAddress}
         amount={note.amount}
         invoice={invoice}
         open={open}
@@ -348,6 +352,7 @@ function IssuerPanel({
               clanId={clanId}
               period={period}
               note={note}
+              takerAddress={issuer.takers.find((row) => row.id === note.takerId)?.address ?? null}
               canManage={canEmit}
               onRepeat={() => {
                 const taker = issuer.takers.find((row) => row.id === note.takerId);

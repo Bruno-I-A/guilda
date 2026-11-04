@@ -10,7 +10,7 @@ import { CLIENT_NFSE_REFERENCES } from "@/domain/client-nfse";
 import { NFSE_CANCEL_TEXT_MAX, NFSE_CANCEL_TEXT_MIN } from "@/domain/nfse";
 import { hasNfseRetentions, RETENTION_PERCENT_PATTERN } from "@/domain/nfse-retentions";
 import { err, type ActionResult } from "@/lib/action-context";
-import { emitClientNfseNote } from "@/lib/client-nfse/emit";
+import { emitClientNfseNote, retryClientNfseWithAddress } from "@/lib/client-nfse/emit";
 import {
   loadIssuerCustomers,
   loadIssuerSuggestion,
@@ -385,6 +385,20 @@ export async function cancelInvoice(input: z.input<typeof cancelSchema>): Promis
   const data = parsed.data;
   const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
     requestClientNfseCancel(tx, { orgId: ctx.orgId, actorId: ctx.userId, invoiceId: data.invoiceId, reasonCode: data.reasonCode, reasonText: data.reasonText }),
+  );
+  if (result.ok) revalidateClan();
+  return result;
+}
+
+const fixAddressSchema = z.object({ clanId: clan, id: z.uuid("Nota inválida."), address: address.unwrap() });
+
+/** Corrige o endereço do tomador de uma nota com erro e a devolve à fila. */
+export async function fixInvoiceAddress(input: z.input<typeof fixAddressSchema>): Promise<ActionResult> {
+  const parsed = fixAddressSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Endereço inválido.");
+  const data = parsed.data;
+  const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
+    retryClientNfseWithAddress(tx, { orgId: ctx.orgId, actorId: ctx.userId, invoiceId: data.id, address: data.address }),
   );
   if (result.ok) revalidateClan();
   return result;
