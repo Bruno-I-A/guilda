@@ -21,7 +21,7 @@ import {
 import { nfseRetentionGroups, type NfseRetentions } from "@/domain/nfse-retentions";
 import { err, type ActionResult } from "@/lib/action-context";
 import { ibgeCityCode } from "@/lib/nfse/municipios";
-import { nfseIssuerTemplateRulesSchema, type NfseIssuerTemplate } from "@/lib/nfse/template";
+import { NFSE_OPERATION_TYPE_REQUIRED, nfseIssuerTemplateRulesSchema, nfseServiceRequiresOperationType, parseNfseIssuerTemplate, type NfseIssuerTemplate } from "@/lib/nfse/template";
 
 import type { ServiceOverride } from "./registry";
 
@@ -50,6 +50,22 @@ export function withRetentions(template: NfseIssuerTemplate, retentions: NfseRet
       : { ...base.issqn, withholding: "1" },
     // O código de retenção vem da tabela do leiaute (pisCofinsRetentionCode).
     ...(groups.federal ? { federal: groups.federal as NfseIssuerTemplate["federal"] } : {}),
+  };
+}
+
+/**
+ * "Tentar de novo" relê os dados fiscais da empresa: é neles que o Fiscal
+ * conserta a nota recusada. Fica o que é desta nota (serviço, ISS retido e
+ * retenções) e o município, que entra no número da DPS.
+ */
+export function refreshFiscalData(frozen: NfseIssuerTemplate, current: NfseIssuerTemplate | null): NfseIssuerTemplate {
+  if (!current) return frozen;
+  return {
+    ...frozen,
+    municipalRegistration: current.municipalRegistration,
+    taxRegime: current.taxRegime,
+    totalTaxes: current.totalTaxes,
+    ibsCbs: current.ibsCbs,
   };
 }
 
@@ -448,15 +464,19 @@ export async function requeueClientNfseInvoice(tx: OrgTx, input: Actor & { invoi
     .from(schema.clientNfseTakers)
     .where(and(eq(schema.clientNfseTakers.orgId, input.orgId), eq(schema.clientNfseTakers.id, invoice.takerId)));
   const takerAddress = buildNfseTakerAddress((taker?.address ?? null) as NfseClientAddress | null, ibgeCityCode);
-  if ((invoice.template as NfseIssuerTemplate).ibsCbs && !takerAddress) {
-    return err("O endereço do tomador está incompleto (rua, bairro, CEP e cidade). Complete no cadastro e tente de novo.");
-  }
   const issuers = schema.clientNfseIssuers;
   const [issuer] = await tx
-    .select({ dpsSeries: issuers.dpsSeries, nextDpsNumber: issuers.nextDpsNumber })
+    .select({ dpsSeries: issuers.dpsSeries, nextDpsNumber: issuers.nextDpsNumber, template: issuers.template })
     .from(issuers)
     .where(and(eq(issuers.orgId, input.orgId), eq(issuers.id, invoice.issuerId)))
     .for("update");
+  const template = refreshFiscalData(invoice.template as NfseIssuerTemplate, issuer ? parseNfseIssuerTemplate(issuer.template) : null);
+  if (template.ibsCbs && !takerAddress) {
+    return err("O endereço do tomador está incompleto (rua, bairro, CEP e cidade). Complete no cadastro e tente de novo.");
+  }
+  if (template.ibsCbs && !template.ibsCbs.operationType && nfseServiceRequiresOperationType(template.service.nationalTaxCode)) {
+    return err(NFSE_OPERATION_TYPE_REQUIRED);
+  }
   let renumber: { dpsSeries: string; dpsNumber: number; dpsId: string } | null = null;
   if (issuer && issuer.dpsSeries !== invoice.dpsSeries) {
     renumber = {
@@ -468,7 +488,7 @@ export async function requeueClientNfseInvoice(tx: OrgTx, input: Actor & { invoi
   }
   await tx
     .update(t)
-    .set({ status: "queued", attemptCount: 0, nextAttemptAt: new Date(), lastError: null, takerAddress, ...renumber, updatedAt: new Date() })
+    .set({ status: "queued", attemptCount: 0, nextAttemptAt: new Date(), lastError: null, takerAddress, template, ...renumber, updatedAt: new Date() })
     .where(and(eq(t.orgId, input.orgId), eq(t.id, invoice.id)));
   await tx.insert(schema.clientNfseInvoiceEvents).values({
     orgId: input.orgId,

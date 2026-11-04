@@ -51,6 +51,8 @@ export const nfseIssuerTemplateSchema = z.object({
       operationIndicator: digits(6, "O indicador de operação"),
       cst: digits(3, "O CST do IBS/CBS"),
       classification: digits(6, "A classificação tributária"),
+      /** tpOper: quando o pagamento ocorre em relação ao serviço (E0903). */
+      operationType: z.enum(["1", "2", "3", "4", "5"]).optional(),
     })
     .optional(),
   /**
@@ -85,6 +87,15 @@ export const nfseTemplateSchema = nfseIssuerTemplateSchema.extend({
   }),
 });
 
+/** Itens da LC 116 em que a nota com IBS/CBS precisa do tipo de operação (E0903). */
+const OPERATION_TYPE_SERVICES = new Set(["1005", "1509", "1712", "2505"]);
+
+export function nfseServiceRequiresOperationType(nationalTaxCode: string): boolean {
+  return OPERATION_TYPE_SERVICES.has(nationalTaxCode.slice(0, 4));
+}
+
+export const NFSE_OPERATION_TYPE_REQUIRED = "Este serviço exige o tipo de operação: informe nos dados fiscais da empresa, em Reforma tributária.";
+
 /**
  * Regras do leiaute que o tipo sozinho não pega e que o Sistema Nacional
  * recusa (Anexo I): ME/EPP não pode usar "não informar tributos" (E0712), MEI
@@ -92,6 +103,9 @@ export const nfseTemplateSchema = nfseIssuerTemplateSchema.extend({
  * tributos por esfera (E0713).
  */
 function checkTaxRules(template: z.infer<typeof nfseIssuerTemplateSchema>, ctx: z.RefinementCtx): void {
+  if (template.ibsCbs && !template.ibsCbs.operationType && nfseServiceRequiresOperationType(template.service.nationalTaxCode)) {
+    ctx.addIssue({ code: "custom", path: ["ibsCbs"], message: NFSE_OPERATION_TYPE_REQUIRED });
+  }
   const kind = template.totalTaxes.kind;
   if (template.taxRegime.opSimpNac === "3" && kind !== "simples") {
     ctx.addIssue({

@@ -353,6 +353,11 @@ que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
   da nota com erro edita o endereço do tomador e devolve à fila
   (`retryClientNfseWithAddress`). Grava no cadastro, então vale para as próximas
   notas; valor e descrição continuam congelados no pedido.
+- **Tipo de operação (2026-11-04, E0903)**: serviços 10.05, 15.09, 17.12 e 25.05
+  com IBS/CBS exigem `tpOper`, escolhido pelo Fiscal nos Dados fiscais (nunca
+  assumido pela Guilda). "Tentar de novo" relê os dados fiscais da empresa
+  (`refreshFiscalData`: inscrição, regime, tributos, IBS/CBS); serviço, retenções
+  e município ficam como no pedido.
 - **Cadastro pelas notas já emitidas (pedido do Bruno)**: ao adicionar a
   empresa, a Guilda lê o XML que a rotina da aba XML já guardou
   (`from-xml.ts`, `suggest.ts`) e preenche o modelo fiscal pela nota mais

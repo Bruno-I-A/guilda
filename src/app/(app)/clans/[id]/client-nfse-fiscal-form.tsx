@@ -15,6 +15,14 @@ import { Choice, Field, NONE, OPTIONS } from "./nfse-settings-dialog";
 export type FiscalForm = Record<string, string>;
 
 const REGIMES = [["3", "Optante do Simples (ME/EPP)"], ["1", "Não optante (Presumido ou Real)"]] as const;
+const OPERATION_TYPES = [
+  [NONE, "Não informar"],
+  ["1", "Fornecimento com pagamento posterior"],
+  ["2", "Recebimento do pagamento com fornecimento já realizado"],
+  ["3", "Fornecimento com pagamento já realizado"],
+  ["4", "Recebimento do pagamento com fornecimento posterior"],
+  ["5", "Fornecimento e pagamento ao mesmo tempo"],
+] as const;
 const TOTAL_TAXES = [["simples", "Percentual do Simples Nacional"], ["percent", "Percentuais por esfera"], ["none", "Não informar"]] as const;
 
 export function initialFiscalForm(template: NfseIssuerTemplate | null, fallback: { simples: boolean; cityCode: string | null } = { simples: true, cityCode: null }): FiscalForm {
@@ -40,6 +48,7 @@ export function initialFiscalForm(template: NfseIssuerTemplate | null, fallback:
     operationIndicator: t?.ibsCbs?.operationIndicator ?? "",
     cst: t?.ibsCbs?.cst ?? "",
     classification: t?.ibsCbs?.classification ?? "",
+    operationType: t?.ibsCbs?.operationType ?? NONE,
   };
 }
 
@@ -60,7 +69,7 @@ export function fiscalFormToTemplate(form: FiscalForm): NfseIssuerTemplate {
           : { kind: "none" },
     ibsCbs:
       form.ibsCbsEnabled === "yes"
-        ? { operationIndicator: form.operationIndicator.trim(), cst: form.cst.trim(), classification: form.classification.trim() }
+        ? { operationIndicator: form.operationIndicator.trim(), cst: form.cst.trim(), classification: form.classification.trim(), operationType: form.operationType === NONE ? undefined : form.operationType }
         : undefined,
   } as NfseIssuerTemplate;
 }
@@ -172,6 +181,7 @@ export function FiscalFields({
             <Field id="cn-indop" label="Indicador de operação" hint="6 dígitos."><Input id="cn-indop" inputMode="numeric" value={form.operationIndicator} onChange={text("operationIndicator")} /></Field>
             <Field id="cn-cst" label="CST" hint="3 dígitos."><Input id="cn-cst" inputMode="numeric" value={form.cst} onChange={text("cst")} /></Field>
             <Field id="cn-cclass" label="Classificação tributária" hint="6 dígitos."><Input id="cn-cclass" inputMode="numeric" value={form.classification} onChange={text("classification")} /></Field>
+            <Field id="cn-tpoper" label="Tipo de operação" hint="Obrigatório nos serviços 10.05, 15.09, 17.12 e 25.05."><Choice id="cn-tpoper" value={form.operationType ?? NONE} options={OPERATION_TYPES} onChange={set("operationType")} /></Field>
           </>
         ) : null}
       </Block>
