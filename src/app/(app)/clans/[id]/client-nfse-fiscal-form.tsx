@@ -181,7 +181,7 @@ export function FiscalFields({
             <Field id="cn-indop" label="Indicador de operação" hint="6 dígitos."><Input id="cn-indop" inputMode="numeric" value={form.operationIndicator} onChange={text("operationIndicator")} /></Field>
             <Field id="cn-cst" label="CST" hint="3 dígitos."><Input id="cn-cst" inputMode="numeric" value={form.cst} onChange={text("cst")} /></Field>
             <Field id="cn-cclass" label="Classificação tributária" hint="6 dígitos."><Input id="cn-cclass" inputMode="numeric" value={form.classification} onChange={text("classification")} /></Field>
-            <Field id="cn-tpoper" label="Tipo de operação" hint="Obrigatório nos serviços 10.05, 15.09, 17.12 e 25.05."><Choice id="cn-tpoper" value={form.operationType ?? NONE} options={OPERATION_TYPES} onChange={set("operationType")} /></Field>
+            <Field id="cn-tpoper" label="Tipo de operação" hint="Obrigatório nos serviços 10.05, 15.09, 17.12 e 25.05. Nos demais, não vai na nota."><Choice id="cn-tpoper" value={form.operationType ?? NONE} options={OPERATION_TYPES} onChange={set("operationType")} /></Field>
           </>
         ) : null}
       </Block>

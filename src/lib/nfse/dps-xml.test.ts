@@ -68,6 +68,14 @@ describe("XML da DPS", () => {
     expect(await nfseXsdErrors(xml, "DPS_v1.01.xsd")).toEqual([]);
   });
 
+  test("E0904: serviço fora da lista não leva o tipo de operação, mesmo com ele na empresa", async () => {
+    const template: NfseTemplate = { ...TEST_TEMPLATE, service: { nationalTaxCode: "171901" }, ibsCbs: { operationIndicator: "100301", cst: "200", classification: "200052", operationType: "5" } };
+    const { xml } = buildDpsXml(input({ template, taker: { cnpj: "33000167000101", name: "Tomador", address: { cityCode: "4308904", zipCode: "99900000", street: "Rua A", number: "1", complement: null, district: "Centro" } } }));
+    expect(xml).not.toContain("<tpOper>");
+    expect(xml).toContain("<cIndOp>100301</cIndOp><indDest>0</indDest>");
+    expect(await nfseXsdErrors(xml, "DPS_v1.01.xsd")).toEqual([]);
+  });
+
   test("alíquota do ISS: só o Simples com retenção leva (E0625 sem retenção, E0617 não optante)", () => {
     const withRate = (overrides: Partial<NfseTemplate>) => buildDpsXml(input({ template: { ...TEST_TEMPLATE, issqn: { taxation: "1", withholding: "1", rate: "2.00" }, ...overrides } })).xml;
     expect(withRate({})).not.toContain("<pAliq>");
