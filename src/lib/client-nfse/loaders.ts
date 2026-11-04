@@ -13,6 +13,7 @@ import { ibgeCity, ibgeCityCode } from "@/lib/nfse/municipios";
 import { firstElementText } from "@/lib/nfse/xml";
 import { parseNfseIssuerTemplate, type NfseIssuerTemplate } from "@/lib/nfse/template";
 
+import { loadClientNfseForecast, type IssuerForecast } from "./forecast-month";
 import { readIssuedNoteFacts, type IssuedNoteFacts } from "./from-xml";
 import { loadClientNfseMonthRows, loadIssuerReadiness } from "./month";
 import type { ServiceOverride } from "./registry";
@@ -101,6 +102,8 @@ export interface ClientNfseIssuerView {
   cityLabel: string | null;
   problem: string | null;
   notes: ClientNfseNoteView[];
+  /** O que costuma sair neste mês e ainda não saiu. Vazia fora do mês corrente. */
+  forecast: IssuerForecast;
 }
 
 /** Nome do município do código IBGE, para a tela não carregar a tabela inteira. */
@@ -137,6 +140,13 @@ export async function loadClientNfseWorkspace(
     .orderBy(asc(c.name));
   const readiness = await loadIssuerReadiness(tx, { orgId: input.orgId, now: input.now });
   const rows = await loadClientNfseMonthRows(tx, input);
+  const forecasts = await loadClientNfseForecast(tx, {
+    orgId: input.orgId,
+    now: input.now,
+    period: { year: input.year, month: input.month },
+    issuers,
+    standing: rows.filter((row) => !row.hasActiveInvoice).map((row) => ({ issuerId: row.issuerId, takerDocument: row.takerDocument })),
+  });
   const blocked = new Map(
     selectClientNfseBatch(rows).excluded
       .filter((item) => item.reason !== "already_active")
@@ -294,6 +304,7 @@ export async function loadClientNfseWorkspace(
       cityLabel: cityLabelOf(parseNfseIssuerTemplate(issuer.template)?.cityCode),
       problem: readiness.get(issuer.id)?.problem ?? null,
       notes: notesByIssuer.get(issuer.id) ?? [],
+      forecast: forecasts.get(issuer.id) ?? { notes: [], skipped: [], portalReadAt: null },
     })),
     candidates: candidates
       .map((row) => {

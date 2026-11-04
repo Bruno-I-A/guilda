@@ -11,6 +11,7 @@ import { NFSE_CANCEL_TEXT_MAX, NFSE_CANCEL_TEXT_MIN } from "@/domain/nfse";
 import { hasNfseRetentions, RETENTION_PERCENT_PATTERN } from "@/domain/nfse-retentions";
 import { err, type ActionResult } from "@/lib/action-context";
 import { emitClientNfseNote, retryClientNfseWithAddress, retryClientNfseWithService } from "@/lib/client-nfse/emit";
+import { restoreClientNfseForecast, skipClientNfseForecast } from "@/lib/client-nfse/forecast-month";
 import {
   loadIssuerCustomers,
   loadIssuerSuggestion,
@@ -254,10 +255,14 @@ const retentionsSchema = z
   })
   .nullable();
 
+const accessKey = z.string().regex(/^[0-9]{50}$/, "Nota de origem inválida.");
+
 const emitNoteSchema = z.object({
   clanId: clan,
   issuerId: z.uuid("Empresa inválida."),
   requestId: z.uuid("Recarregue a página e tente de novo."),
+  // Veio da previsão do mês: cada nota de origem sai uma vez por mês.
+  sourceAccessKey: accessKey.optional(),
   taker: z.object({ document, name: z.string().trim().min(1, "Informe o nome do tomador.").max(200, "Nome muito longo."), address }),
   amount: money,
   description,
@@ -303,6 +308,34 @@ export async function emitNote(input: z.input<typeof emitNoteSchema>): Promise<A
   const [year, month] = nfseToday(now).split("-").map(Number);
   const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
     emitClientNfseNote(tx, { orgId: ctx.orgId, actorId: ctx.userId, ...data, period: { year, month }, now }),
+  );
+  if (result.ok) revalidateClan();
+  return result;
+}
+
+const forecastSchema = z.object({ clanId: clan, issuerId: z.uuid("Empresa inválida."), sourceAccessKey: accessKey });
+
+/** "Não emitir este mês": a nota prevista sai da conta deste mês. */
+export async function skipForecast(input: z.input<typeof forecastSchema>): Promise<ActionResult> {
+  const parsed = forecastSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Nota inválida.");
+  const data = parsed.data;
+  const [year, month] = nfseToday(new Date()).split("-").map(Number);
+  const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
+    skipClientNfseForecast(tx, { orgId: ctx.orgId, actorId: ctx.userId, issuerId: data.issuerId, sourceAccessKey: data.sourceAccessKey, period: { year, month } }),
+  );
+  if (result.ok) revalidateClan();
+  return result;
+}
+
+/** Desfaz o "Não emitir este mês". */
+export async function restoreForecast(input: z.input<typeof forecastSchema>): Promise<ActionResult> {
+  const parsed = forecastSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Nota inválida.");
+  const data = parsed.data;
+  const [year, month] = nfseToday(new Date()).split("-").map(Number);
+  const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
+    restoreClientNfseForecast(tx, { orgId: ctx.orgId, issuerId: data.issuerId, sourceAccessKey: data.sourceAccessKey, period: { year, month } }),
   );
   if (result.ok) revalidateClan();
   return result;

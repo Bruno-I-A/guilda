@@ -11,6 +11,7 @@ import {
   numeric,
   pgEnum,
   pgTable,
+  primaryKey,
   smallint,
   text,
   timestamp,
@@ -210,6 +211,36 @@ export const clientNfseItems = pgTable(
     check("client_nfse_items_amount_check", sql`${t.amount} >= 0`),
     check("client_nfse_items_month_check", sql`${t.periodMonth} BETWEEN 1 AND 12`),
     check("client_nfse_items_description_check", sql`length(${t.description}) <= 2000`),
+  ],
+);
+
+/**
+ * "Não emitir este mês": a nota de origem sai da previsão só neste mês e o
+ * Fiscal pode desfazer. Fica fora de client_nfse_items porque o cliente da nota
+ * do Portal pode nem ser tomador cadastrado.
+ */
+export const clientNfseForecastSkips = pgTable(
+  "client_nfse_forecast_skips",
+  {
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    issuerId: uuid("issuer_id").notNull(),
+    sourceAccessKey: varchar("source_access_key", { length: 50 }).notNull(),
+    periodYear: smallint("period_year").notNull(),
+    periodMonth: smallint("period_month").notNull(),
+    createdBy: text("created_by").references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.issuerId, t.sourceAccessKey, t.periodYear, t.periodMonth] }),
+    foreignKey({
+      name: "client_nfse_forecast_skips_org_issuer_fk",
+      columns: [t.orgId, t.issuerId],
+      foreignColumns: [clientNfseIssuers.orgId, clientNfseIssuers.id],
+    }).onDelete("cascade"),
+    index("client_nfse_forecast_skips_org_period_idx").on(t.orgId, t.periodYear, t.periodMonth),
+    check("client_nfse_forecast_skips_month_check", sql`${t.periodMonth} BETWEEN 1 AND 12`),
   ],
 );
 

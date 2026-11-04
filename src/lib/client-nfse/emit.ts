@@ -262,7 +262,7 @@ export async function retryClientNfseWithService(
 }
 
 /** A nota de origem precisa ser desta empresa e não pode estar cancelada, na Guilda nem no Portal. */
-async function sourceProblem(tx: OrgTx, input: { orgId: string; issuerId: string; clientId: string; accessKey: string }): Promise<string | null> {
+export async function sourceProblem(tx: OrgTx, input: { orgId: string; issuerId: string; clientId: string; accessKey: string }): Promise<string | null> {
   const portal = schema.nfseIssuedNotes;
   const n = schema.clientNfseInvoices;
   const [stored] = await tx
