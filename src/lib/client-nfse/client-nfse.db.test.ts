@@ -454,3 +454,31 @@ test("tentar de novo relê os dados fiscais da empresa; o que é da nota continu
   expect(amountChange).toBe("recusou");
   await withOrgTx(ORG, (tx) => tx.update(issuers).set({ template: issuer.template }).where(eq(issuers.id, issuer.id)));
 }, 60_000);
+
+test("nota com erro: corrigir o serviço muda o pedido, opcionalmente a empresa, e devolve à fila", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const { retryClientNfseWithService } = await import("./emit");
+  const invoices = schema.clientNfseInvoices;
+  const issuers = schema.clientNfseIssuers;
+  const [invoice] = await withOrgTx(ORG, (tx) => tx.select().from(invoices).where(eq(invoices.dpsSeries, "1")).limit(1));
+  const [before] = await withOrgTx(ORG, (tx) => tx.select().from(issuers).where(eq(issuers.id, invoice.issuerId)));
+  const fix = (service: { nationalTaxCode: string; municipalTaxCode?: string }, applyToIssuer: boolean) =>
+    withOrgTx(ORG, (tx) => retryClientNfseWithService(tx, { ...ACTOR, invoiceId: invoice.id, service, applyToIssuer }));
+
+  await withOrgTx(ORG, (tx) => tx.update(invoices).set({ status: "queued" }).where(eq(invoices.id, invoice.id)));
+  expect(await fix({ nationalTaxCode: "010101" }, false)).toMatchObject({ ok: false });
+
+  await withOrgTx(ORG, (tx) => tx.update(invoices).set({ status: "failed", lastError: "E0314" }).where(eq(invoices.id, invoice.id)));
+  expect(await fix({ nationalTaxCode: "010101" }, false)).toEqual({ ok: true });
+  const [only] = await withOrgTx(ORG, (tx) => tx.select().from(invoices).where(eq(invoices.id, invoice.id)));
+  expect(only).toMatchObject({ status: "queued", lastError: null, amount: invoice.amount, dpsNumber: invoice.dpsNumber });
+  expect((only.template as { service: unknown }).service).toEqual({ nationalTaxCode: "010101" });
+  const [same] = await withOrgTx(ORG, (tx) => tx.select().from(issuers).where(eq(issuers.id, invoice.issuerId)));
+  expect(same.template).toEqual(before.template);
+
+  await withOrgTx(ORG, (tx) => tx.update(invoices).set({ status: "failed" }).where(eq(invoices.id, invoice.id)));
+  expect(await fix({ nationalTaxCode: "020202", municipalTaxCode: "001" }, true)).toEqual({ ok: true });
+  const [changed] = await withOrgTx(ORG, (tx) => tx.select().from(issuers).where(eq(issuers.id, invoice.issuerId)));
+  expect((changed.template as { service: unknown }).service).toEqual({ nationalTaxCode: "020202", municipalTaxCode: "001" });
+  await withOrgTx(ORG, (tx) => tx.update(issuers).set({ template: before.template }).where(eq(issuers.id, before.id)));
+}, 60_000);

@@ -358,6 +358,9 @@ que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
   assumido pela Guilda). "Tentar de novo" relê os dados fiscais da empresa
   (`refreshFiscalData`: inscrição, regime, tributos, IBS/CBS); serviço, retenções
   e município ficam como no pedido.
+- **Corrigir serviço na nota com erro (2026-11-04, E0314)**: como "Tentar de novo"
+  mantém o serviço do pedido, a janela da nota edita os códigos
+  (`retryClientNfseWithService`) e, marcado, grava também nos Dados fiscais.
 - **Cadastro pelas notas já emitidas (pedido do Bruno)**: ao adicionar a
   empresa, a Guilda lê o XML que a rotina da aba XML já guardou
   (`from-xml.ts`, `suggest.ts`) e preenche o modelo fiscal pela nota mais
