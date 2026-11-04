@@ -445,6 +445,35 @@ export async function requestClientNfseCancel(
 }
 
 /**
+ * Descarta uma nota com erro que não deve mais sair. Só com erro: ela nunca foi
+ * emitida, então não há o que cancelar no Sistema Nacional. O registro fica,
+ * fora da lista do mês; a nota fixa do mês volta a poder ser emitida.
+ */
+export async function discardClientNfseInvoice(tx: OrgTx, input: Actor & { invoiceId: string }): Promise<ActionResult> {
+  const t = schema.clientNfseInvoices;
+  const [invoice] = await tx
+    .select({ status: t.status, lastError: t.lastError })
+    .from(t)
+    .where(and(eq(t.orgId, input.orgId), eq(t.id, input.invoiceId)))
+    .for("update");
+  if (!invoice) return err("Nota não encontrada.");
+  if (invoice.status !== "failed") return err("Só uma nota com erro pode ser descartada.");
+  const now = new Date();
+  await tx
+    .update(t)
+    .set({ status: "cancelled", discardedAt: now, lockedAt: null, lockToken: null, updatedAt: now })
+    .where(and(eq(t.orgId, input.orgId), eq(t.id, input.invoiceId)));
+  await tx.insert(schema.clientNfseInvoiceEvents).values({
+    orgId: input.orgId,
+    invoiceId: input.invoiceId,
+    eventType: "cancelled",
+    actorId: input.actorId,
+    detail: { discarded: true, lastError: invoice.lastError },
+  });
+  return { ok: true };
+}
+
+/**
  * Recoloca na fila uma nota que falhou, com o endereço relido. Mantém o
  * número da DPS (é ele que impede nota duplicada) — salvo quando a série do
  * emissor mudou: é o conserto da série que colidiu com outro sistema da

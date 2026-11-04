@@ -366,6 +366,10 @@ que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
   fosse a de novembro (nada foi emitido; cancelar cancelaria a verdadeira). `verify.ts`
   compara também a data com o pedido; `repairAdoptedClientNfse` devolve as adotadas
   a "com erro" uma vez ao subir o serviço fiscal, sem reemitir sozinho.
+- **Descartar nota com erro (2026-11-04, pedido do Bruno)**: `discardClientNfseInvoice`
+  tira da lista a nota que não deve sair (`discarded_at`, status `cancelled` sem chave).
+  Não é cancelamento fiscal: só vale para nota com erro. A nota padrão que já gerou
+  pedido segue sem poder ser apagada; ela se pausa.
 - **Cadastro pelas notas já emitidas (pedido do Bruno)**: ao adicionar a
   empresa, a Guilda lê o XML que a rotina da aba XML já guardou
   (`from-xml.ts`, `suggest.ts`) e preenche o modelo fiscal pela nota mais

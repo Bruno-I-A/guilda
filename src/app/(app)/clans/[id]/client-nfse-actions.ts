@@ -22,6 +22,7 @@ import {
   adjustClientNfseMonthNote,
   enqueueClientNfseBatch,
   requestClientNfseCancel,
+  discardClientNfseInvoice,
   requeueClientNfseInvoice,
 } from "@/lib/client-nfse/month";
 import {
@@ -422,6 +423,17 @@ export async function fixInvoiceService(input: z.input<typeof fixServiceSchema>)
   const data = parsed.data;
   const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
     retryClientNfseWithService(tx, { orgId: ctx.orgId, actorId: ctx.userId, invoiceId: data.id, service: data.service, applyToIssuer: data.applyToIssuer }),
+  );
+  if (result.ok) revalidateClan();
+  return result;
+}
+
+/** Tira da lista uma nota com erro que não deve mais sair. */
+export async function discardInvoice(input: z.input<ReturnType<typeof idSchema>>): Promise<ActionResult> {
+  const parsed = idSchema("Nota inválida.").safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Pedido inválido.");
+  const result = await asFiscalOperator(parsed.data.clanId, (tx, ctx) =>
+    discardClientNfseInvoice(tx, { orgId: ctx.orgId, actorId: ctx.userId, invoiceId: parsed.data.id }),
   );
   if (result.ok) revalidateClan();
   return result;

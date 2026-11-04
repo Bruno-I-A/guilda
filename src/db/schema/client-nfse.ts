@@ -264,6 +264,8 @@ export const clientNfseInvoices = pgTable(
     cancelReasonCode: smallint("cancel_reason_code"),
     cancelReasonText: varchar("cancel_reason_text", { length: 255 }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    /** Descartada pelo Fiscal: tinha erro, nunca saiu, e deixa de contar (status cancelled, sem chave). */
+    discardedAt: timestamp("discarded_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -302,7 +304,7 @@ export const clientNfseInvoices = pgTable(
     check("client_nfse_invoices_environment_check", sql`${t.environment} IS NULL OR ${t.environment} IN (1, 2)`),
     check(
       "client_nfse_invoices_access_key_check",
-      sql`${t.status} NOT IN ('issued', 'cancel_requested', 'cancelled') OR ${t.accessKey} IS NOT NULL`,
+      sql`${t.status} NOT IN ('issued', 'cancel_requested', 'cancelled') OR ${t.accessKey} IS NOT NULL OR (${t.status} = 'cancelled' AND ${t.discardedAt} IS NOT NULL)`,
     ),
   ],
 );

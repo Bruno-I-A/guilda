@@ -515,3 +515,33 @@ test("reparo: nota antiga adotada volta para com erro; a emitida depois do pedid
   expect(events).toContainEqual(expect.objectContaining({ eventType: "failed", detail: expect.objectContaining({ adoptedNfseNumber: "1" }) }));
   expect(await repairAdoptedClientNfse(ORG)).toBe(0);
 }, 60_000);
+
+test("descartar: só nota com erro, sai da lista e a nota fixa volta a poder ser emitida", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const month = await import("./month");
+  const { loadClientNfseWorkspace } = await import("./loaders");
+  const invoices = schema.clientNfseInvoices;
+  const failed = (await withOrgTx(ORG, (tx) => tx.select().from(invoices).where(eq(invoices.status, "failed"))))[0];
+  expect(failed).toBeDefined();
+  const discard = (invoiceId: string) => withOrgTx(ORG, (tx) => month.discardClientNfseInvoice(tx, { ...ACTOR, invoiceId }));
+
+  const [issued] = await withOrgTx(ORG, (tx) => tx.select().from(invoices).where(eq(invoices.status, "issued")).limit(1));
+  expect(await discard(issued.id)).toMatchObject({ ok: false, error: expect.stringMatching(/com erro/) });
+  expect(await withOrgTx(OTHER, (tx) => month.discardClientNfseInvoice(tx, { orgId: OTHER, actorId: "u1", invoiceId: failed.id }))).toMatchObject({ ok: false });
+
+  expect(await discard(failed.id)).toEqual({ ok: true });
+  const [gone] = await withOrgTx(ORG, (tx) => tx.select().from(invoices).where(eq(invoices.id, failed.id)));
+  expect(gone).toMatchObject({ status: "cancelled", accessKey: null, amount: failed.amount, dpsNumber: failed.dpsNumber });
+  expect(gone.discardedAt).toBeInstanceOf(Date);
+  expect(gone.cancelledAt).toBeNull();
+  // Sumiu da tela do mês, nas avulsas e nas fixas.
+  const { issuers } = await withOrgTx(ORG, (tx) => loadClientNfseWorkspace(tx, { orgId: ORG, year: failed.periodYear, month: failed.periodMonth, now: NOW }));
+  const shown = issuers.flatMap((issuer) => [...issuer.freeNotes.map((note) => note.invoice.id), ...issuer.notes.flatMap((note) => (note.invoice ? [note.invoice.id] : []))]);
+  expect(shown).not.toContain(failed.id);
+  // Fica no histórico, e nada no banco deixa cancelar sem chave por outro caminho.
+  const events = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseInvoiceEvents).where(eq(schema.clientNfseInvoiceEvents.invoiceId, failed.id)));
+  expect(events).toContainEqual(expect.objectContaining({ eventType: "cancelled", detail: expect.objectContaining({ discarded: true }) }));
+  const [other] = await withOrgTx(ORG, (tx) => tx.select().from(invoices).where(eq(invoices.status, "queued")).limit(1));
+  const noKey = await withOrgTx(ORG, (tx) => tx.update(invoices).set({ status: "cancelled" }).where(eq(invoices.id, other.id))).then(() => "gravou", () => "recusou");
+  expect(noKey).toBe("recusou");
+}, 60_000);

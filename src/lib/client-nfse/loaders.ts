@@ -155,7 +155,7 @@ export async function loadClientNfseWorkspace(
     ? await tx
         .select({ id: n.id, itemId: n.itemId, status: n.status, nfseNumber: n.nfseNumber, issuedAt: n.issuedAt, lastError: n.lastError, dpsSeries: n.dpsSeries, dpsNumber: n.dpsNumber, template: n.template })
         .from(n)
-        .where(and(eq(n.orgId, input.orgId), inArray(n.itemId, itemIds)))
+        .where(and(eq(n.orgId, input.orgId), inArray(n.itemId, itemIds), isNull(n.discardedAt)))
         .orderBy(desc(n.createdAt))
     : [];
   const latest = new Map<string, (typeof invoices)[number]>();
@@ -216,7 +216,7 @@ export async function loadClientNfseWorkspace(
     })
     .from(n)
     .innerJoin(itemsTable, and(eq(itemsTable.orgId, n.orgId), eq(itemsTable.id, n.itemId)))
-    .where(and(eq(n.orgId, input.orgId), eq(n.periodYear, input.year), eq(n.periodMonth, input.month), isNull(itemsTable.modelId)))
+    .where(and(eq(n.orgId, input.orgId), eq(n.periodYear, input.year), eq(n.periodMonth, input.month), isNull(itemsTable.modelId), isNull(n.discardedAt)))
     .orderBy(desc(n.createdAt));
   const freeByIssuer = new Map<string, ClientNfseFreeNoteView[]>();
   for (const row of free) {
@@ -250,7 +250,7 @@ export async function loadClientNfseWorkspace(
   for (const row of await tx
     .select({ takerId: n.takerId, amount: n.amount, description: n.description })
     .from(n)
-    .where(and(eq(n.orgId, input.orgId), ne(n.status, "failed")))
+    .where(and(eq(n.orgId, input.orgId), ne(n.status, "failed"), isNull(n.discardedAt)))
     .orderBy(desc(n.createdAt))) {
     if (!lastByTaker.has(row.takerId)) lastByTaker.set(row.takerId, { amount: row.amount, description: row.description });
   }
