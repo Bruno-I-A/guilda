@@ -11,8 +11,8 @@ import { ibgeCityCode } from "@/lib/nfse/municipios";
 
 import { hasNfseRetentions, type NfseRetentions } from "@/domain/nfse-retentions";
 
-import { issuerTemplateFor, loadIssuerReadiness, withRetentions } from "./month";
-import { saveClientNfseTaker, type AddressInput, type ServiceOverride } from "./registry";
+import { issuerTemplateFor, loadIssuerReadiness, requeueClientNfseInvoice, withRetentions } from "./month";
+import { cleanAddress, saveClientNfseTaker, type AddressInput, type ServiceOverride } from "./registry";
 
 type Actor = { orgId: string; actorId: string };
 
@@ -152,6 +152,36 @@ export async function emitClientNfseNote(
     .returning({ id: n.id });
   await tx.insert(schema.clientNfseInvoiceEvents).values({ orgId: input.orgId, invoiceId: invoice.id, eventType: "requested", actorId: input.actorId });
   return { ok: true, data: { invoiceId: invoice.id, repeated: false } };
+}
+
+/**
+ * Corrige o endereço de uma nota com erro: grava no cadastro do tomador (as
+ * próximas notas dele já saem certas) e devolve a nota à fila, que relê o
+ * endereço e mantém o número da DPS. Valor e descrição seguem congelados.
+ */
+export async function retryClientNfseWithAddress(
+  tx: OrgTx,
+  input: Actor & { invoiceId: string; address: AddressInput },
+): Promise<ActionResult> {
+  const n = schema.clientNfseInvoices;
+  const [invoice] = await tx
+    .select({ status: n.status, takerId: n.takerId })
+    .from(n)
+    .where(and(eq(n.orgId, input.orgId), eq(n.id, input.invoiceId)))
+    .for("update");
+  if (!invoice) return err("Nota não encontrada.");
+  if (invoice.status !== "failed") return err("Só uma nota com erro volta para a fila.");
+  const address = cleanAddress(input.address);
+  if (address?.zipCode?.length !== 8) return err("O CEP precisa ter 8 dígitos.");
+  if (!buildNfseTakerAddress(address as NfseClientAddress, ibgeCityCode)) {
+    return err("Confira rua, bairro, cidade e UF: a cidade precisa existir nessa UF.");
+  }
+  const t = schema.clientNfseTakers;
+  await tx
+    .update(t)
+    .set({ address, updatedBy: input.actorId, updatedAt: new Date() })
+    .where(and(eq(t.orgId, input.orgId), eq(t.id, invoice.takerId)));
+  return requeueClientNfseInvoice(tx, { orgId: input.orgId, actorId: input.actorId, invoiceId: input.invoiceId });
 }
 
 async function existingTakerId(tx: OrgTx, orgId: string, issuerId: string, document: string): Promise<string | null> {

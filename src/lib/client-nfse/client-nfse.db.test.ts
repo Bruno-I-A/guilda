@@ -394,3 +394,36 @@ test("adicionar empresa: quem não pode entrar aparece com o motivo, não some",
   // Quem já emite pelas Notas dos clientes aparece, mas não pode entrar de novo.
   expect(reason("Academia")).toMatch(/Já está nas Notas dos clientes/);
 }, 60_000);
+
+test("nota com erro: corrigir o endereço grava no tomador e devolve à fila com a mesma DPS", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const { retryClientNfseWithAddress } = await import("./emit");
+  const invoices = schema.clientNfseInvoices;
+  // Da empresa que não trocou de série: quem trocou ganha número novo no requeue (outro teste).
+  const failed = (await withOrgTx(ORG, (tx) => tx.select().from(invoices).where(and(eq(invoices.status, "failed"), eq(invoices.dpsSeries, "1")))))[0];
+  expect(failed).toBeDefined();
+  const fix = (invoiceId: string, zipCode: string, city = "Getúlio Vargas") =>
+    withOrgTx(ORG, (tx) =>
+      retryClientNfseWithAddress(tx, {
+        ...ACTOR,
+        invoiceId,
+        address: { zipCode, street: "Rua das Palmeiras", number: "10", complement: null, district: "Centro", city, state: "rs" },
+      }),
+    );
+  // CEP curto e cidade que não existe na UF: nada muda.
+  expect(await fix(failed.id, "9990")).toMatchObject({ ok: false, error: expect.stringMatching(/CEP/) });
+  expect(await fix(failed.id, "99900-000", "Cidade Que Não Existe")).toMatchObject({ ok: false, error: expect.stringMatching(/cidade/) });
+  const [same] = await withOrgTx(ORG, (tx) => tx.select().from(invoices).where(eq(invoices.id, failed.id)));
+  expect(same.status).toBe("failed");
+
+  expect(await fix(failed.id, "99900-000")).toEqual({ ok: true });
+  const [requeued] = await withOrgTx(ORG, (tx) => tx.select().from(invoices).where(eq(invoices.id, failed.id)));
+  expect(requeued).toMatchObject({ status: "queued", lastError: null, dpsSeries: failed.dpsSeries, dpsNumber: failed.dpsNumber, amount: failed.amount });
+  expect(requeued.takerAddress).toMatchObject({ zipCode: "99900000", cityCode: expect.any(String) });
+  const [taker] = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseTakers).where(eq(schema.clientNfseTakers.id, failed.takerId)));
+  expect(taker.address).toMatchObject({ zipCode: "99900000", state: "RS" });
+  // Já na fila: não corrige de novo por aqui.
+  expect(await fix(failed.id, "99900-000")).toMatchObject({ ok: false, error: expect.stringMatching(/erro/) });
+  // Outra organização não vê a nota.
+  expect(await withOrgTx(OTHER, (tx) => retryClientNfseWithAddress(tx, { orgId: OTHER, actorId: "u1", invoiceId: failed.id, address: { zipCode: "99900000", street: "R", number: "1", complement: null, district: "C", city: "Getúlio Vargas", state: "RS" } }))).toMatchObject({ ok: false });
+}, 60_000);

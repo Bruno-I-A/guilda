@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Download, FilePenLine, LoaderCircle, MoreHorizontal, Pencil, RotateCcw, Send, XCircle } from "lucide-react";
+import { AlertTriangle, Download, FilePenLine, LoaderCircle, MapPin, MoreHorizontal, Pencil, RotateCcw, Send, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -23,6 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,6 +35,7 @@ import {
   NFSE_CANCEL_TEXT_MAX,
   NFSE_CANCEL_TEXT_MIN,
   type NfseCancelReasonCode,
+  type NfseClientAddress,
   type NfseInvoiceStatus,
 } from "@/domain/nfse";
 import type { ClientNfseInvoiceView, ClientNfseNoteView } from "@/lib/client-nfse/loaders";
@@ -41,7 +43,8 @@ import { formatBRLCurrency } from "@/lib/currency";
 import { formatAppDate } from "@/lib/date-time";
 import { cn } from "@/lib/utils";
 
-import { adjustNote, cancelInvoice, retryInvoice } from "./client-nfse-actions";
+import { adjustNote, cancelInvoice, fixInvoiceAddress, retryInvoice } from "./client-nfse-actions";
+import { Field } from "./nfse-settings-dialog";
 
 export const STATUS_LABELS: Record<NfseInvoiceStatus, string> = {
   queued: "Na fila",
@@ -74,6 +77,7 @@ export function ClientNfseInvoiceDialog({
   clanId,
   period,
   takerName,
+  takerAddress,
   amount,
   invoice,
   open,
@@ -84,6 +88,8 @@ export function ClientNfseInvoiceDialog({
   clanId: string;
   period: { year: number; month: number };
   takerName: string;
+  /** O endereço no cadastro do tomador, para corrigir a nota com erro. */
+  takerAddress: NfseClientAddress | null;
   amount: string;
   invoice: ClientNfseInvoiceView;
   open: boolean;
@@ -97,6 +103,19 @@ export function ClientNfseInvoiceDialog({
   const [text, setText] = useState("");
   const [pending, startTransition] = useTransition();
   const length = text.trim().length;
+  // Erro que fala de endereço já abre o formulário: é o conserto que falta.
+  const [fixing, setFixing] = useState(invoice.status === "failed" && canManage && /cep|endere/i.test(invoice.lastError ?? ""));
+  const [address, setAddress] = useState(() => ({
+    zipCode: takerAddress?.zipCode ?? "",
+    street: takerAddress?.street ?? "",
+    number: takerAddress?.number ?? "",
+    complement: takerAddress?.complement ?? "",
+    district: takerAddress?.district ?? "",
+    city: takerAddress?.city ?? "",
+    state: takerAddress?.state ?? "",
+  }));
+  const field = (key: keyof typeof address) => (event: React.ChangeEvent<HTMLInputElement>) => setAddress((current) => ({ ...current, [key]: event.target.value }));
+  const blank = (value: string) => value.trim() || null;
 
   function run(action: () => Promise<{ ok: boolean; error?: string }>, success: string) {
     startTransition(async () => {
@@ -113,7 +132,7 @@ export function ClientNfseInvoiceDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!pending) onOpenChange(next); }}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Nota para {takerName}</DialogTitle>
           <DialogDescription>
@@ -123,6 +142,25 @@ export function ClientNfseInvoiceDialog({
           </DialogDescription>
         </DialogHeader>
         {invoice.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{invoice.lastError}</p> : null}
+        {fixing && !cancelling ? (
+          <fieldset className="grid gap-3 rounded-md border p-3">
+            <legend className="px-1 text-sm font-medium">Endereço de {takerName}</legend>
+            <div className="grid gap-3 sm:grid-cols-[8rem_1fr]">
+              <Field id={`${invoice.id}-zip`} label="CEP"><Input id={`${invoice.id}-zip`} value={address.zipCode} inputMode="numeric" autoComplete="off" onChange={field("zipCode")} /></Field>
+              <Field id={`${invoice.id}-street`} label="Rua"><Input id={`${invoice.id}-street`} value={address.street} autoComplete="off" onChange={field("street")} /></Field>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[6rem_1fr_1fr]">
+              <Field id={`${invoice.id}-number`} label="Número"><Input id={`${invoice.id}-number`} value={address.number} autoComplete="off" onChange={field("number")} /></Field>
+              <Field id={`${invoice.id}-complement`} label="Complemento"><Input id={`${invoice.id}-complement`} value={address.complement} autoComplete="off" onChange={field("complement")} /></Field>
+              <Field id={`${invoice.id}-district`} label="Bairro"><Input id={`${invoice.id}-district`} value={address.district} autoComplete="off" onChange={field("district")} /></Field>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[1fr_5rem]">
+              <Field id={`${invoice.id}-city`} label="Cidade"><Input id={`${invoice.id}-city`} value={address.city} autoComplete="off" onChange={field("city")} /></Field>
+              <Field id={`${invoice.id}-state`} label="UF"><Input id={`${invoice.id}-state`} value={address.state} maxLength={2} autoComplete="off" onChange={field("state")} /></Field>
+            </div>
+            <p className="text-xs text-muted-foreground">Fica gravado no cadastro do cliente e vale para as próximas notas dele.</p>
+          </fieldset>
+        ) : null}
         {cancelling && canManage ? (
           <div className="grid gap-3">
             <div className="grid gap-1.5">
@@ -158,7 +196,40 @@ export function ClientNfseInvoiceDialog({
             </>
           ) : (
             <>
-              {canManage && invoice.status === "failed" ? (
+              {invoice.status === "failed" && canManage && fixing ? (
+                <>
+                  <Button type="button" variant="outline" disabled={pending} onClick={() => setFixing(false)}>Voltar</Button>
+                  <Button
+                    type="button"
+                    disabled={pending}
+                    onClick={() =>
+                      run(
+                        () =>
+                          fixInvoiceAddress({
+                            clanId,
+                            id: invoice.id,
+                            address: {
+                              zipCode: blank(address.zipCode),
+                              street: blank(address.street),
+                              number: blank(address.number),
+                              complement: blank(address.complement),
+                              district: blank(address.district),
+                              city: blank(address.city),
+                              state: blank(address.state),
+                            },
+                          }),
+                        "Endereço corrigido. A nota voltou à fila.",
+                      )
+                    }
+                  >
+                    {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <RotateCcw aria-hidden />} Salvar e tentar de novo
+                  </Button>
+                </>
+              ) : null}
+              {invoice.status === "failed" && canManage && !fixing ? (
+                <Button type="button" variant="outline" disabled={pending} onClick={() => setFixing(true)}><MapPin aria-hidden /> Corrigir endereço</Button>
+              ) : null}
+              {canManage && invoice.status === "failed" && !fixing ? (
                 <Button type="button" disabled={pending} onClick={() => run(() => retryInvoice({ clanId, id: invoice.id }), "Nota de volta à fila.")}>
                   {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <RotateCcw aria-hidden />} Tentar de novo
                 </Button>
@@ -344,6 +415,7 @@ export function ClientNfseNoteRow({
           clanId={clanId}
           period={period}
           takerName={note.takerName}
+          takerAddress={note.takerAddress}
           amount={note.amount}
           invoice={invoice}
           open={invoiceOpen}

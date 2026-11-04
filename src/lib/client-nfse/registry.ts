@@ -31,7 +31,7 @@ export type AddressInput = {
   zipCode: string | null;
 };
 
-function cleanAddress(address: AddressInput | null): AddressInput | null {
+export function cleanAddress(address: AddressInput | null): AddressInput | null {
   if (!address) return null;
   const text = (value: string | null) => value?.replace(/\s+/g, " ").trim() || null;
   const clean = {
