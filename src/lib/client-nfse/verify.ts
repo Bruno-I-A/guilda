@@ -5,6 +5,8 @@ export interface NfseRequestFacts {
   providerCnpj: string;
   takerDocument: string;
   amountCents: number;
+  /** Quando a nota foi pedida na Guilda. */
+  requestedAt: Date;
 }
 
 /** O que a nota encontrada diz, para mostrar ao lado do que foi pedido. */
@@ -13,14 +15,33 @@ export interface NfseFoundFacts {
   providerCnpj: string | null;
   takerDocument: string | null;
   amountCents: number | null;
+  issuedAt: Date | null;
+}
+
+/** Folga para diferença de relógio: a DPS sai sempre depois do pedido. */
+const REQUEST_TOLERANCE_MS = 60 * 60 * 1000;
+
+/**
+ * Emitida antes de a Guilda pedir: é de outro sistema, mesmo com tudo igual.
+ * Nota recorrente repete prestador, tomador e valor; só a data separa as duas.
+ */
+export function issuedBeforeRequest(issuedAt: Date | null, requestedAt: Date): boolean {
+  return issuedAt !== null && issuedAt.getTime() < requestedAt.getTime() - REQUEST_TOLERANCE_MS;
+}
+
+/** A data de emissão que a própria nota traz na DPS. */
+export function nfseXmlIssuedAt(xml: string): Date | null {
+  const text = firstElementText(xml, "dhEmi");
+  const date = text ? new Date(text) : null;
+  return date && !Number.isNaN(date.getTime()) ? date : null;
 }
 
 /**
  * A nota achada pela DPS é mesmo a que pedimos? A numeração da DPS é por
  * CNPJ: se a empresa já usou a mesma série em outro sistema, a consulta "a
  * DPS já existe?" devolveria a nota de lá — e a Guilda a adotaria como sua.
- * Conferir prestador, tomador e valor separa as duas. Devolve null quando
- * bate; senão, o que a nota encontrada tem.
+ * Conferir prestador, tomador, valor e data separa as duas. Devolve null
+ * quando bate; senão, o que a nota encontrada tem.
  */
 export function nfseXmlMismatch(xml: string, request: NfseRequestFacts): NfseFoundFacts | null {
   const prest = /<(?:\w+:)?prest>([\s\S]*?)<\/(?:\w+:)?prest>/.exec(xml)?.[1] ?? "";
@@ -37,16 +58,22 @@ export function nfseXmlMismatch(xml: string, request: NfseRequestFacts): NfseFou
     providerCnpj: firstElementText(prest, "CNPJ"),
     takerDocument: firstElementText(toma, "CNPJ") ?? firstElementText(toma, "CPF"),
     amountCents,
+    issuedAt: nfseXmlIssuedAt(xml),
   };
   const matches =
     found.providerCnpj === request.providerCnpj &&
     found.takerDocument === request.takerDocument &&
-    found.amountCents === request.amountCents;
+    found.amountCents === request.amountCents &&
+    !issuedBeforeRequest(found.issuedAt, request.requestedAt);
   return matches ? null : found;
 }
 
 export function nfseXmlMatchesRequest(xml: string, request: NfseRequestFacts): boolean {
   return nfseXmlMismatch(xml, request) === null;
+}
+
+export function nfseDateLabel(date: Date): string {
+  return date.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 }
 
 function money(cents: number | null): string {
@@ -68,6 +95,7 @@ export function dpsConflictMessage(input: {
     found.providerCnpj !== request.providerCnpj ? `prestador ${found.providerCnpj ?? "não lido"}` : null,
     found.takerDocument !== request.takerDocument ? `tomador ${found.takerDocument ?? "não lido"} (este pedido: ${request.takerDocument})` : null,
     found.amountCents !== request.amountCents ? `valor ${money(found.amountCents)} (este pedido: ${money(request.amountCents)})` : null,
+    found.issuedAt && issuedBeforeRequest(found.issuedAt, request.requestedAt) ? `emitida em ${nfseDateLabel(found.issuedAt)}, antes deste pedido` : null,
   ].filter(Boolean);
   return (
     `A DPS ${input.dpsSeries}/${input.dpsNumber} já existe no Sistema Nacional com outra nota` +

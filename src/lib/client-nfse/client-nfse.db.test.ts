@@ -482,3 +482,36 @@ test("nota com erro: corrigir o serviço muda o pedido, opcionalmente a empresa,
   expect((changed.template as { service: unknown }).service).toEqual({ nationalTaxCode: "020202", municipalTaxCode: "001" });
   await withOrgTx(ORG, (tx) => tx.update(issuers).set({ template: before.template }).where(eq(issuers.id, before.id)));
 }, 60_000);
+
+test("reparo: nota antiga adotada volta para com erro; a emitida depois do pedido fica", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const { gzipSync } = await import("node:zlib");
+  const { testNfseXml } = await import("@/lib/nfse/testing/nfse-xml");
+  const { repairAdoptedClientNfse } = await import("./service");
+  const invoices = schema.clientNfseInvoices;
+  const rows = await withOrgTx(ORG, (tx) => tx.select().from(invoices).limit(3));
+  expect(rows.length).toBe(3);
+  const [adopted, real, cancelling] = rows;
+  const gz = (issuedAt: string) => new Uint8Array(gzipSync(Buffer.from(testNfseXml({ issuedAt }), "utf8")));
+  const asIssued = (id: string, key: string, issuedAt: string, status: "issued" | "cancel_requested") =>
+    withOrgTx(ORG, (tx) =>
+      tx.update(invoices).set({ status, accessKey: key.repeat(50), nfseNumber: "1", environment: 1, issuedAt: new Date(), xmlGz: gz(issuedAt), cancelReasonCode: status === "cancel_requested" ? 1 : null }).where(eq(invoices.id, id)),
+    );
+  const late = new Date(Date.now() + 60_000).toISOString();
+  await asIssued(adopted.id, "1", "2024-02-01T16:57:28-03:00", "issued");
+  await asIssued(real.id, "2", late, "issued");
+  await asIssued(cancelling.id, "3", "2024-02-01T16:57:28-03:00", "cancel_requested");
+
+  expect(await repairAdoptedClientNfse(ORG)).toBe(2);
+  const read = async (id: string) => (await withOrgTx(ORG, (tx) => tx.select().from(invoices).where(eq(invoices.id, id))))[0];
+  const fixed = await read(adopted.id);
+  expect(fixed).toMatchObject({ status: "failed", accessKey: null, nfseNumber: null, xmlGz: null, dpsNumber: adopted.dpsNumber });
+  expect(fixed.lastError).toMatch(/NÃO foi emitida.*01\/02\/2024/);
+  expect(await read(real.id)).toMatchObject({ status: "issued", nfseNumber: "1" });
+  // O cancelamento pendente cairia na nota antiga, que é verdadeira.
+  expect(await read(cancelling.id)).toMatchObject({ status: "failed", cancelReasonCode: null });
+  // Fica registrado qual nota tinha sido adotada, e rodar de novo não muda nada.
+  const events = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseInvoiceEvents).where(eq(schema.clientNfseInvoiceEvents.invoiceId, adopted.id)));
+  expect(events).toContainEqual(expect.objectContaining({ eventType: "failed", detail: expect.objectContaining({ adoptedNfseNumber: "1" }) }));
+  expect(await repairAdoptedClientNfse(ORG)).toBe(0);
+}, 60_000);

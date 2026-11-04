@@ -3,7 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 
-import { and, asc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -23,7 +23,7 @@ import { vaultEnvelopeSchema, VaultError, type VaultKey } from "@/lib/nfse/vault
 import { firstElementText } from "@/lib/nfse/xml";
 
 import { nextDpsSeriesAfter } from "./suggest";
-import { dpsConflictMessage, nfseXmlMismatch } from "./verify";
+import { dpsConflictMessage, issuedBeforeRequest, nfseDateLabel, nfseXmlIssuedAt, nfseXmlMismatch } from "./verify";
 
 /**
  * O lado do serviço fiscal das notas dos clientes: reivindica uma nota da
@@ -42,6 +42,7 @@ export interface ClientNfseClaim extends NfseJob {
   clientId: string;
   providerCnpj: string;
   template: NfseIssuerTemplate | null;
+  requestedAt: Date;
 }
 
 export async function claimClientNfseJob(orgId: string): Promise<ClientNfseClaim | null> {
@@ -94,6 +95,7 @@ export async function claimClientNfseJob(orgId: string): Promise<ClientNfseClaim
       clientId: row.clientId,
       providerCnpj: row.providerCnpj,
       template: parseNfseIssuerTemplate(row.template),
+      requestedAt: row.createdAt,
     };
   });
 }
@@ -201,10 +203,60 @@ async function openIssuer(
 }
 
 /**
+ * Conserta as notas que a conferência antiga adotou por engano: a DPS já era
+ * de uma nota antiga da empresa, com o mesmo tomador e valor, e nada foi
+ * emitido. Voltam para "com erro" (o Fiscal decide reemitir) e o pedido de
+ * cancelamento pendente cai: cancelaria a nota antiga, que é verdadeira.
+ */
+export async function repairAdoptedClientNfse(orgId: string): Promise<number> {
+  return withOrgTx(orgId, async (tx) => {
+    const t = schema.clientNfseInvoices;
+    const rows = await tx
+      .select({ id: t.id, status: t.status, createdAt: t.createdAt, xmlGz: t.xmlGz, accessKey: t.accessKey, nfseNumber: t.nfseNumber, dpsSeries: t.dpsSeries, dpsNumber: t.dpsNumber })
+      .from(t)
+      .where(and(eq(t.orgId, orgId), inArray(t.status, ["issued", "cancel_requested", "cancelled"]), isNotNull(t.xmlGz)));
+    let repaired = 0;
+    for (const row of rows) {
+      const issuedAt = nfseXmlIssuedAt(gunzipSync(Buffer.from(row.xmlGz!)).toString("utf8"));
+      if (!issuedBeforeRequest(issuedAt, row.createdAt)) continue;
+      // Já cancelada: o cancelamento foi ao Sistema Nacional e não se desfaz aqui.
+      if (row.status === "cancelled") {
+        console.error(`Nota de cliente ${row.id}: cancelada, mas era uma nota anterior ao pedido. Conferir no Portal.`);
+        continue;
+      }
+      const lastError =
+        `Esta nota NÃO foi emitida: a DPS ${row.dpsSeries}/${row.dpsNumber} já era da NFS-e nº ${row.nfseNumber ?? "?"}, de ${nfseDateLabel(issuedAt!)}, ` +
+        "e a Guilda a tomou por esta nota por engano. Clique em Tentar de novo para emitir.";
+      await tx
+        .update(t)
+        .set({ status: "failed", accessKey: null, nfseNumber: null, environment: null, issuedAt: null, xmlGz: null, lastError, cancelRequestedBy: null, cancelReasonCode: null, cancelReasonText: null, updatedAt: new Date() })
+        .where(and(eq(t.orgId, orgId), eq(t.id, row.id)));
+      await tx.insert(schema.clientNfseInvoiceEvents).values({
+        orgId,
+        invoiceId: row.id,
+        eventType: "failed",
+        actorId: null,
+        detail: { message: lastError, errors: [], adoptedAccessKey: row.accessKey, adoptedNfseNumber: row.nfseNumber },
+      });
+      repaired += 1;
+    }
+    return repaired;
+  });
+}
+
+const repairedOrgs = new Set<string>();
+
+/**
  * Consome a fila das notas dos clientes até esvaziar. A conexão de cada
  * empresa fica aberta só durante esta chamada.
  */
 export async function runClientNfseQueue(orgId: string, vault: VaultKey, environment: NfseEnvironmentName): Promise<void> {
+  // Antes de pegar a fila: um cancelamento pendente de nota adotada cancelaria a antiga.
+  if (!repairedOrgs.has(orgId)) {
+    const repaired = await repairAdoptedClientNfse(orgId);
+    repairedOrgs.add(orgId);
+    if (repaired > 0) console.log(`Notas de cliente: ${repaired} adotada(s) por engano voltaram para com erro.`);
+  }
   const tpAmb = NFSE_ENDPOINTS[environment].tpAmb;
   const connections = new Map<string, IssuerConnection | string>();
   const seriesMoves = new Map<string, number>();
@@ -242,7 +294,7 @@ export async function runClientNfseQueue(orgId: string, vault: VaultKey, environ
         // Só a nota ACHADA pela DPS pode ser de outro sistema. A que a Guilda
         // acabou de emitir é nossa: marcá-la como erro esconderia uma nota
         // real, e trocar a série emitiria outra igual.
-        const request = { providerCnpj: claim.providerCnpj, takerDocument: claim.takerCnpj, amountCents: claim.amountCents };
+        const request = { providerCnpj: claim.providerCnpj, takerDocument: claim.takerCnpj, amountCents: claim.amountCents, requestedAt: claim.requestedAt };
         const found = xml && outcome.foundByDps ? nfseXmlMismatch(xml, request) : null;
         const moves = seriesMoves.get(claim.issuerId) ?? 0;
         if (found && moves < MAX_SERIES_MOVES) {
