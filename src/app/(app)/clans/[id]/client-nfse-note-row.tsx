@@ -57,7 +57,7 @@ export const STATUS_LABELS: Record<NfseInvoiceStatus, string> = {
 export const STATUS_CLASSES: Record<NfseInvoiceStatus, string> = {
   queued: "border-warning/40 bg-warning/10 text-warning",
   issued: "border-success/40 bg-success/10 text-success",
-  failed: "border-destructive/50 bg-destructive/10 text-destructive",
+  failed: "border-destructive bg-destructive/15 text-foreground",
   cancel_requested: "border-warning/40 bg-warning/10 text-warning",
   cancelled: "border-border text-muted-foreground",
 };
@@ -84,6 +84,7 @@ export function ClientNfseInvoiceDialog({
   onOpenChange,
   startCancelling,
   canManage,
+  blockedReason = null,
 }: {
   clanId: string;
   period: { year: number; month: number };
@@ -96,6 +97,8 @@ export function ClientNfseInvoiceDialog({
   onOpenChange: (open: boolean) => void;
   startCancelling: boolean;
   canManage: boolean;
+  /** Por que a empresa não emite agora. Sobra só descartar: tentar de novo falharia igual. */
+  blockedReason?: string | null;
 }) {
   const router = useRouter();
   const [cancelling, setCancelling] = useState(startCancelling);
@@ -103,8 +106,9 @@ export function ClientNfseInvoiceDialog({
   const [text, setText] = useState("");
   const [pending, startTransition] = useTransition();
   const length = text.trim().length;
+  const canFix = canManage && !blockedReason;
   // Erro que fala de endereço já abre o formulário: é o conserto que falta.
-  const [fixing, setFixing] = useState(invoice.status === "failed" && canManage && /cep|endere/i.test(invoice.lastError ?? ""));
+  const [fixing, setFixing] = useState(invoice.status === "failed" && canFix && /cep|endere/i.test(invoice.lastError ?? ""));
   const [address, setAddress] = useState(() => ({
     zipCode: takerAddress?.zipCode ?? "",
     street: takerAddress?.street ?? "",
@@ -115,7 +119,7 @@ export function ClientNfseInvoiceDialog({
     state: takerAddress?.state ?? "",
   }));
   // Erro que aponta o código do serviço já abre a correção dele.
-  const [fixingService, setFixingService] = useState(invoice.status === "failed" && canManage && !fixing && /E03\d\d|c[oó]digo de tributa|NBS/i.test(invoice.lastError ?? ""));
+  const [fixingService, setFixingService] = useState(invoice.status === "failed" && canFix && !fixing && /E03\d\d|c[oó]digo de tributa|NBS/i.test(invoice.lastError ?? ""));
   const [service, setService] = useState({
     nationalTaxCode: invoice.service?.nationalTaxCode ?? "",
     municipalTaxCode: invoice.service?.municipalTaxCode ?? "",
@@ -150,7 +154,13 @@ export function ClientNfseInvoiceDialog({
             {invoice.issuedAt ? ` · ${formatAppDate(invoice.issuedAt)}` : ""} · DPS {invoice.dpsSeries}/{invoice.dpsNumber}
           </DialogDescription>
         </DialogHeader>
-        {invoice.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{invoice.lastError}</p> : null}
+        {invoice.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">{invoice.lastError}</p> : null}
+        {blockedReason && canManage ? (
+          <p role="status" className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+            <span>Esta empresa não pode emitir agora. {blockedReason} Depois de resolver, as ações desta nota voltam a aparecer.</span>
+          </p>
+        ) : null}
         {discarding ? (
           <p role="alert" className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
             A nota sai da lista e não será emitida. Ela não foi emitida, então não há o que cancelar no Sistema Nacional. Se ela ainda precisar sair, emita outra em Nova nota.
@@ -193,7 +203,7 @@ export function ClientNfseInvoiceDialog({
             <p className="text-xs text-muted-foreground">Fica gravado no cadastro do cliente e vale para as próximas notas dele.</p>
           </fieldset>
         ) : null}
-        {cancelling && canManage ? (
+        {cancelling && canFix ? (
           <div className="grid gap-3">
             <div className="grid gap-1.5">
               <Label htmlFor={`cn-cancel-reason-${invoice.id}`}>Motivo do cancelamento</Label>
@@ -213,7 +223,7 @@ export function ClientNfseInvoiceDialog({
             </div>
           </div>
         ) : null}
-        <DialogFooter>
+        <DialogFooter className="sm:flex-wrap">
           {discarding ? (
             <>
               <Button type="button" variant="outline" disabled={pending} onClick={() => setDiscarding(false)}>Voltar</Button>
@@ -221,7 +231,7 @@ export function ClientNfseInvoiceDialog({
                 {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Trash2 aria-hidden />} Descartar a nota
               </Button>
             </>
-          ) : cancelling && canManage ? (
+          ) : cancelling && canFix ? (
             <>
               <Button type="button" variant="outline" disabled={pending} onClick={() => setCancelling(false)}>Voltar</Button>
               <Button
@@ -238,7 +248,7 @@ export function ClientNfseInvoiceDialog({
               {invoice.status === "failed" && canManage ? (
                 <Button type="button" variant="ghost" className="touch-target mr-auto text-destructive" disabled={pending} onClick={() => setDiscarding(true)}><Trash2 aria-hidden /> Descartar</Button>
               ) : null}
-              {invoice.status === "failed" && canManage && fixingService ? (
+              {invoice.status === "failed" && canFix && fixingService ? (
                 <>
                   <Button type="button" variant="outline" disabled={pending} onClick={() => setFixingService(false)}>Voltar</Button>
                   <Button
@@ -265,7 +275,7 @@ export function ClientNfseInvoiceDialog({
                   </Button>
                 </>
               ) : null}
-              {invoice.status === "failed" && canManage && fixing ? (
+              {invoice.status === "failed" && canFix && fixing ? (
                 <>
                   <Button type="button" variant="outline" disabled={pending} onClick={() => setFixing(false)}>Voltar</Button>
                   <Button
@@ -295,20 +305,20 @@ export function ClientNfseInvoiceDialog({
                   </Button>
                 </>
               ) : null}
-              {invoice.status === "failed" && canManage && !fixing && !fixingService ? (
+              {invoice.status === "failed" && canFix && !fixing && !fixingService ? (
                 <Button type="button" variant="outline" disabled={pending} onClick={() => setFixingService(true)}><ClipboardPen aria-hidden /> Corrigir serviço</Button>
               ) : null}
-              {invoice.status === "failed" && canManage && !fixing && !fixingService ? (
+              {invoice.status === "failed" && canFix && !fixing && !fixingService ? (
                 <Button type="button" variant="outline" disabled={pending} onClick={() => setFixing(true)}><MapPin aria-hidden /> Corrigir endereço</Button>
               ) : null}
-              {canManage && invoice.status === "failed" && !fixing && !fixingService ? (
+              {canFix && invoice.status === "failed" && !fixing && !fixingService ? (
                 <Button type="button" disabled={pending} onClick={() => run(() => retryInvoice({ clanId, id: invoice.id }), "Nota de volta à fila.")}>
                   {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <RotateCcw aria-hidden />} Tentar de novo
                 </Button>
               ) : null}
               {invoice.status === "issued" ? (
                 <>
-                  {canManage ? <Button type="button" variant="outline" onClick={() => setCancelling(true)}><XCircle aria-hidden /> Cancelar a nota</Button> : null}
+                  {canFix ? <Button type="button" variant="outline" onClick={() => setCancelling(true)}><XCircle aria-hidden /> Cancelar a nota</Button> : null}
                   <Button asChild><a href={clientNfsePdfHref(clanId, period.year, period.month, { invoiceId: invoice.id })}><Download aria-hidden /> Baixar PDF</a></Button>
                 </>
               ) : null}
@@ -334,6 +344,7 @@ export function ClientNfseNoteRow({
   onToggle,
   onEmit,
   onEditStandard,
+  blockedReason = null,
 }: {
   clanId: string;
   period: { year: number; month: number };
@@ -344,6 +355,7 @@ export function ClientNfseNoteRow({
   onToggle: () => void;
   onEmit: () => void;
   onEditStandard: () => void;
+  blockedReason?: string | null;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -442,6 +454,7 @@ export function ClientNfseNoteRow({
                 aria-label={`Nota de ${note.takerName}: ${STATUS_LABELS[invoice.status]}. Abrir detalhes.`}
               >
                 {working ? <LoaderCircle className="size-3 animate-spin" aria-hidden /> : null}
+                {invoice.status === "failed" ? <AlertTriangle className="size-3 text-destructive" aria-hidden /> : null}
                 {invoice.status === "issued" && invoice.nfseNumber ? `Emitida · Nº ${invoice.nfseNumber}` : invoice.status === "failed" ? "Ver erro e resolver" : STATUS_LABELS[invoice.status]}
               </button>
             ) : note.blocked ? (
@@ -494,6 +507,7 @@ export function ClientNfseNoteRow({
           onOpenChange={setInvoiceOpen}
           startCancelling={cancelFirst}
           canManage={canManage}
+          blockedReason={blockedReason}
         />
       ) : null}
     </li>
