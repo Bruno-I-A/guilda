@@ -355,7 +355,8 @@ que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
   notas; valor e descrição continuam congelados no pedido.
 - **Tipo de operação (2026-11-04, E0903)**: serviços 10.05, 15.09, 17.12 e 25.05
   com IBS/CBS exigem `tpOper`, escolhido pelo Fiscal nos Dados fiscais (nunca
-  assumido pela Guilda). "Tentar de novo" relê os dados fiscais da empresa
+  assumido pela Guilda); nos demais serviços ele é proibido (E0904), então a DPS
+  decide pelo serviço de cada nota. "Tentar de novo" relê os dados fiscais da empresa
   (`refreshFiscalData`: inscrição, regime, tributos, IBS/CBS); serviço, retenções
   e município ficam como no pedido.
 - **Corrigir serviço na nota com erro (2026-11-04, E0314)**: como "Tentar de novo"

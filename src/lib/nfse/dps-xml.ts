@@ -1,6 +1,6 @@
 import { buildDpsId, centsToNfseAmount, normalizeDpsSeries, type NfseTakerAddress } from "@/domain/nfse";
 
-import type { NfseIssuerTemplate } from "./template";
+import { nfseServiceRequiresOperationType, type NfseIssuerTemplate } from "./template";
 import {
   element,
   NFSE_APP_VERSION,
@@ -95,8 +95,11 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
     `<trib>${tribMun}${tribFed}${totTrib}</trib></valores>`;
   // Ordem do TCRTCInfoIBSCBS: finNFSe, (indFinal), cIndOp, ..., indDest, ..., valores.
   // finNFSe 0 = NFS-e regular; indDest 0 = o tomador é o próprio destinatário.
+  // E0903/E0904: o tipo de operação é da empresa, mas só vai nos serviços que o
+  // exigem. Quem decide é o serviço desta nota, que pode não ser o da empresa.
+  const operationType = nfseServiceRequiresOperationType(t.service.nationalTaxCode) ? t.ibsCbs?.operationType : undefined;
   const ibsCbs = t.ibsCbs
-    ? `<IBSCBS>${element("finNFSe", "0")}${element("cIndOp", t.ibsCbs.operationIndicator)}${element("tpOper", t.ibsCbs.operationType)}${element("indDest", "0")}` +
+    ? `<IBSCBS>${element("finNFSe", "0")}${element("cIndOp", t.ibsCbs.operationIndicator)}${element("tpOper", operationType)}${element("indDest", "0")}` +
       `<valores><trib><gIBSCBS>${element("CST", t.ibsCbs.cst)}${element("cClassTrib", t.ibsCbs.classification)}</gIBSCBS></trib></valores></IBSCBS>`
     : "";
   const infDps =
