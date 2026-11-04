@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { parseNfseTemplate } from "./template";
+import { nfseIssuerTemplateRulesSchema, nfseServiceRequiresOperationType, parseNfseTemplate } from "./template";
 import { TEST_TEMPLATE } from "./testing/fixtures";
 import { nfseIssueDate, nfseIssueTimestamp, nfseToday } from "./time";
 import { escapeXml, firstElementText, gunzipBase64, gzipBase64 } from "./xml";
@@ -65,5 +65,27 @@ describe("regras do modelo que o Sistema Nacional cobra", () => {
     const { nfseTemplateRulesSchema } = await import("./template");
     expect(nfseTemplateRulesSchema.safeParse({ ...TEST_TEMPLATE, taxRegime: { opSimpNac: "2", regEspTrib: "0" } }).success).toBe(false);
     expect(nfseTemplateRulesSchema.safeParse({ ...TEST_TEMPLATE, taxRegime: { opSimpNac: "1", regEspTrib: "0" }, totalTaxes: { kind: "none" } }).success).toBe(false);
+  });
+});
+
+describe("tipo de operação (E0903)", () => {
+  const ibsCbs = { operationIndicator: "100301", cst: "200", classification: "200052" };
+  const issuer = (nationalTaxCode: string, operationType?: "5") => ({
+    cityCode: "4308904",
+    taxRegime: { opSimpNac: "3", regApTribSN: "1", regEspTrib: "0" },
+    service: { nationalTaxCode },
+    issqn: { taxation: "1", withholding: "1" },
+    totalTaxes: { kind: "simples", percent: "6.00" },
+    ibsCbs: { ...ibsCbs, operationType },
+  });
+
+  test("os serviços 10.05, 15.09, 17.12 e 25.05 exigem; os demais, não", () => {
+    for (const code of ["100501", "150901", "171201", "250501"]) {
+      expect(nfseServiceRequiresOperationType(code)).toBe(true);
+      expect(nfseIssuerTemplateRulesSchema.safeParse(issuer(code)).success).toBe(false);
+      expect(nfseIssuerTemplateRulesSchema.safeParse(issuer(code, "5")).success).toBe(true);
+    }
+    expect(nfseServiceRequiresOperationType("171901")).toBe(false);
+    expect(nfseIssuerTemplateRulesSchema.safeParse(issuer("171901")).success).toBe(true);
   });
 });

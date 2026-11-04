@@ -96,7 +96,7 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
   // Ordem do TCRTCInfoIBSCBS: finNFSe, (indFinal), cIndOp, ..., indDest, ..., valores.
   // finNFSe 0 = NFS-e regular; indDest 0 = o tomador é o próprio destinatário.
   const ibsCbs = t.ibsCbs
-    ? `<IBSCBS>${element("finNFSe", "0")}${element("cIndOp", t.ibsCbs.operationIndicator)}${element("indDest", "0")}` +
+    ? `<IBSCBS>${element("finNFSe", "0")}${element("cIndOp", t.ibsCbs.operationIndicator)}${element("tpOper", t.ibsCbs.operationType)}${element("indDest", "0")}` +
       `<valores><trib><gIBSCBS>${element("CST", t.ibsCbs.cst)}${element("cClassTrib", t.ibsCbs.classification)}</gIBSCBS></trib></valores></IBSCBS>`
     : "";
   const infDps =

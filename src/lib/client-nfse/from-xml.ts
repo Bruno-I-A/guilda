@@ -101,7 +101,7 @@ export function readIssuedNoteFacts(xml: string): IssuedNoteFacts | null {
     issqn: { taxation: read(tribMun, "tribISSQN") ?? "1", withholding: "1", rate: twoDecimals(read(tribMun, "pAliq")) },
     totalTaxes: readTotalTaxes(at(dps, "valores/trib/totTrib")),
     ibsCbs: operationIndicator
-      ? { operationIndicator, cst: read(gIbsCbs, "CST") ?? "", classification: read(gIbsCbs, "cClassTrib") ?? "" }
+      ? { operationIndicator, cst: read(gIbsCbs, "CST") ?? "", classification: read(gIbsCbs, "cClassTrib") ?? "", operationType: read(ibsCbs, "tpOper") ?? undefined }
       : undefined,
   } as NfseIssuerTemplate;
   return {

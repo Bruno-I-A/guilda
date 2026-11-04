@@ -8,6 +8,7 @@ import { clientNfseMonthDescription, type ClientNfseReference } from "@/domain/c
 import { amountToCents, buildDpsId, buildNfseTakerAddress, centsToNfseAmount, type NfseClientAddress } from "@/domain/nfse";
 import { err, type ActionResult } from "@/lib/action-context";
 import { ibgeCityCode } from "@/lib/nfse/municipios";
+import { NFSE_OPERATION_TYPE_REQUIRED, nfseServiceRequiresOperationType } from "@/lib/nfse/template";
 
 import { hasNfseRetentions, type NfseRetentions } from "@/domain/nfse-retentions";
 
@@ -100,6 +101,10 @@ export async function emitClientNfseNote(
       .where(and(eq(schema.clientNfseTakers.orgId, input.orgId), eq(schema.clientNfseTakers.id, takerId)));
   }
   const template = withRetentions(issuerTemplateFor(issuer.template, input.service), hasNfseRetentions(retentions) ? retentions : null, cents);
+  // Serviço próprio da nota escapa da regra dos dados fiscais: confere aqui.
+  if (template.ibsCbs && !template.ibsCbs.operationType && nfseServiceRequiresOperationType(template.service.nationalTaxCode)) {
+    return err(NFSE_OPERATION_TYPE_REQUIRED);
+  }
   if (template.issqn.withholding === "2" && !template.issqn.rate) {
     return err("Com ISS retido, informe a alíquota do ISS.");
   }

@@ -427,3 +427,30 @@ test("nota com erro: corrigir o endereço grava no tomador e devolve à fila com
   // Outra organização não vê a nota.
   expect(await withOrgTx(OTHER, (tx) => retryClientNfseWithAddress(tx, { orgId: OTHER, actorId: "u1", invoiceId: failed.id, address: { zipCode: "99900000", street: "R", number: "1", complement: null, district: "C", city: "Getúlio Vargas", state: "RS" } }))).toMatchObject({ ok: false });
 }, 60_000);
+
+test("tentar de novo relê os dados fiscais da empresa; o que é da nota continua congelado", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const month = await import("./month");
+  const invoices = schema.clientNfseInvoices;
+  const issuers = schema.clientNfseIssuers;
+  const [invoice] = await withOrgTx(ORG, (tx) => tx.select().from(invoices).where(eq(invoices.dpsSeries, "1")).limit(1));
+  await withOrgTx(ORG, (tx) => tx.update(invoices).set({ status: "failed", lastError: "E0903" }).where(eq(invoices.id, invoice.id)));
+  // Nota com IBS/CBS exige o endereço do tomador.
+  await withOrgTx(ORG, (tx) =>
+    tx.update(schema.clientNfseTakers).set({ address: { zipCode: "99900000", street: "Rua A", number: "1", complement: null, district: "Centro", city: "Getúlio Vargas", state: "RS" } }).where(eq(schema.clientNfseTakers.id, invoice.takerId)),
+  );
+  const [issuer] = await withOrgTx(ORG, (tx) => tx.select().from(issuers).where(eq(issuers.id, invoice.issuerId)));
+  const ibsCbs = { operationIndicator: "100301", cst: "200", classification: "200052", operationType: "5" };
+  await withOrgTx(ORG, (tx) =>
+    tx.update(issuers).set({ template: { ...(issuer.template as object), ibsCbs, service: { nationalTaxCode: "999999" } } }).where(eq(issuers.id, issuer.id)),
+  );
+  expect(await withOrgTx(ORG, (tx) => month.requeueClientNfseInvoice(tx, { ...ACTOR, invoiceId: invoice.id }))).toEqual({ ok: true });
+  const [requeued] = await withOrgTx(ORG, (tx) => tx.select().from(invoices).where(eq(invoices.id, invoice.id)));
+  expect(requeued.status).toBe("queued");
+  expect(requeued.template).toMatchObject({ ibsCbs, service: (invoice.template as { service: unknown }).service });
+  expect(requeued.amount).toBe(invoice.amount);
+  // O banco segue recusando mudar o valor da nota.
+  const amountChange = await withOrgTx(ORG, (tx) => tx.update(invoices).set({ amount: "1.00" }).where(eq(invoices.id, invoice.id))).then(() => "mudou", () => "recusou");
+  expect(amountChange).toBe("recusou");
+  await withOrgTx(ORG, (tx) => tx.update(issuers).set({ template: issuer.template }).where(eq(issuers.id, issuer.id)));
+}, 60_000);
