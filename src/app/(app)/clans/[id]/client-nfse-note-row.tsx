@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ClipboardPen, Download, FilePenLine, LoaderCircle, MapPin, MoreHorizontal, Pencil, RotateCcw, Send, XCircle } from "lucide-react";
+import { AlertTriangle, ClipboardPen, Download, FilePenLine, LoaderCircle, MapPin, MoreHorizontal, Pencil, RotateCcw, Send, Trash2, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -43,7 +43,7 @@ import { formatBRLCurrency } from "@/lib/currency";
 import { formatAppDate } from "@/lib/date-time";
 import { cn } from "@/lib/utils";
 
-import { adjustNote, cancelInvoice, fixInvoiceAddress, fixInvoiceService, retryInvoice } from "./client-nfse-actions";
+import { adjustNote, cancelInvoice, discardInvoice, fixInvoiceAddress, fixInvoiceService, retryInvoice } from "./client-nfse-actions";
 import { Field } from "./nfse-settings-dialog";
 
 export const STATUS_LABELS: Record<NfseInvoiceStatus, string> = {
@@ -122,6 +122,7 @@ export function ClientNfseInvoiceDialog({
     nbsCode: invoice.service?.nbsCode ?? "",
   });
   const [applyToIssuer, setApplyToIssuer] = useState(true);
+  const [discarding, setDiscarding] = useState(false);
   const field = (key: keyof typeof address) => (event: React.ChangeEvent<HTMLInputElement>) => setAddress((current) => ({ ...current, [key]: event.target.value }));
   const blank = (value: string) => value.trim() || null;
 
@@ -150,7 +151,12 @@ export function ClientNfseInvoiceDialog({
           </DialogDescription>
         </DialogHeader>
         {invoice.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{invoice.lastError}</p> : null}
-        {fixingService && !cancelling ? (
+        {discarding ? (
+          <p role="alert" className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+            A nota sai da lista e não será emitida. Ela não foi emitida, então não há o que cancelar no Sistema Nacional. Se ela ainda precisar sair, emita outra em Nova nota.
+          </p>
+        ) : null}
+        {fixingService && !cancelling && !discarding ? (
           <fieldset className="grid gap-3 rounded-md border p-3">
             <legend className="px-1 text-sm font-medium">Serviço desta nota</legend>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -164,7 +170,7 @@ export function ClientNfseInvoiceDialog({
             </label>
           </fieldset>
         ) : null}
-        {fixing && !cancelling ? (
+        {fixing && !cancelling && !discarding ? (
           <fieldset className="grid gap-3 rounded-md border p-3">
             <legend className="px-1 text-sm font-medium">Endereço de {takerName}</legend>
             <div className="grid gap-3 sm:grid-cols-[8rem_1fr]">
@@ -204,7 +210,14 @@ export function ClientNfseInvoiceDialog({
           </div>
         ) : null}
         <DialogFooter>
-          {cancelling && canManage ? (
+          {discarding ? (
+            <>
+              <Button type="button" variant="outline" disabled={pending} onClick={() => setDiscarding(false)}>Voltar</Button>
+              <Button type="button" variant="destructive" disabled={pending} onClick={() => run(() => discardInvoice({ clanId, id: invoice.id }), "Nota descartada.")}>
+                {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : <Trash2 aria-hidden />} Descartar a nota
+              </Button>
+            </>
+          ) : cancelling && canManage ? (
             <>
               <Button type="button" variant="outline" disabled={pending} onClick={() => setCancelling(false)}>Voltar</Button>
               <Button
@@ -218,6 +231,9 @@ export function ClientNfseInvoiceDialog({
             </>
           ) : (
             <>
+              {invoice.status === "failed" && canManage ? (
+                <Button type="button" variant="ghost" className="touch-target mr-auto text-destructive" disabled={pending} onClick={() => setDiscarding(true)}><Trash2 aria-hidden /> Descartar</Button>
+              ) : null}
               {invoice.status === "failed" && canManage && fixingService ? (
                 <>
                   <Button type="button" variant="outline" disabled={pending} onClick={() => setFixingService(false)}>Voltar</Button>
