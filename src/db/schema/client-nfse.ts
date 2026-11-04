@@ -11,6 +11,7 @@ import {
   numeric,
   pgEnum,
   pgTable,
+  primaryKey,
   smallint,
   text,
   timestamp,
@@ -165,7 +166,9 @@ export const clientNfseModels = pgTable(
  * A nota do mês: nasce da nota padrão (com valor e descrição resolvidos e
  * editáveis só para este mês) ou é avulsa (`model_id` nulo), emitida pelo
  * "+ Emitir nota". A avulsa traz a chave do formulário (`request_id`): o
- * mesmo envio duas vezes não pede duas notas.
+ * mesmo envio duas vezes não pede duas notas. A que veio da previsão guarda a
+ * chave de acesso da nota de origem (`source_access_key`): cada nota do mês
+ * anterior gera no máximo uma por mês, venha ela da Guilda ou do Portal.
  */
 export const clientNfseItems = pgTable(
   "client_nfse_items",
@@ -176,6 +179,7 @@ export const clientNfseItems = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     modelId: uuid("model_id"),
     requestId: uuid("request_id"),
+    sourceAccessKey: varchar("source_access_key", { length: 50 }),
     issuerId: uuid("issuer_id").notNull(),
     takerId: uuid("taker_id").notNull(),
     periodYear: smallint("period_year").notNull(),
@@ -201,11 +205,42 @@ export const clientNfseItems = pgTable(
     uniqueIndex("client_nfse_items_org_id_uidx").on(t.orgId, t.id),
     uniqueIndex("client_nfse_items_org_model_period_uidx").on(t.orgId, t.modelId, t.periodYear, t.periodMonth),
     uniqueIndex("client_nfse_items_org_request_uidx").on(t.orgId, t.requestId).where(sql`request_id IS NOT NULL`),
+    uniqueIndex("client_nfse_items_org_source_period_uidx").on(t.orgId, t.sourceAccessKey, t.periodYear, t.periodMonth).where(sql`source_access_key IS NOT NULL`),
     check("client_nfse_items_origin_check", sql`${t.modelId} IS NOT NULL OR ${t.requestId} IS NOT NULL`),
     index("client_nfse_items_org_period_idx").on(t.orgId, t.periodYear, t.periodMonth),
     check("client_nfse_items_amount_check", sql`${t.amount} >= 0`),
     check("client_nfse_items_month_check", sql`${t.periodMonth} BETWEEN 1 AND 12`),
     check("client_nfse_items_description_check", sql`length(${t.description}) <= 2000`),
+  ],
+);
+
+/**
+ * "Não emitir este mês": a nota de origem sai da previsão só neste mês e o
+ * Fiscal pode desfazer. Fica fora de client_nfse_items porque o cliente da nota
+ * do Portal pode nem ser tomador cadastrado.
+ */
+export const clientNfseForecastSkips = pgTable(
+  "client_nfse_forecast_skips",
+  {
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    issuerId: uuid("issuer_id").notNull(),
+    sourceAccessKey: varchar("source_access_key", { length: 50 }).notNull(),
+    periodYear: smallint("period_year").notNull(),
+    periodMonth: smallint("period_month").notNull(),
+    createdBy: text("created_by").references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.issuerId, t.sourceAccessKey, t.periodYear, t.periodMonth] }),
+    foreignKey({
+      name: "client_nfse_forecast_skips_org_issuer_fk",
+      columns: [t.orgId, t.issuerId],
+      foreignColumns: [clientNfseIssuers.orgId, clientNfseIssuers.id],
+    }).onDelete("cascade"),
+    index("client_nfse_forecast_skips_org_period_idx").on(t.orgId, t.periodYear, t.periodMonth),
+    check("client_nfse_forecast_skips_month_check", sql`${t.periodMonth} BETWEEN 1 AND 12`),
   ],
 );
 

@@ -39,6 +39,7 @@ export async function ClientNfseTab({
 }) {
   const now = new Date();
   const period = parsePeriod(requestedYear, requestedMonth, now);
+  const today = currentPeriod(now);
   const { workspace, vault } = await withOrgTx(orgId, async (tx) => ({
     workspace: await loadClientNfseWorkspace(tx, { orgId, ...period, now }),
     vault: await loadVaultPublicKey(tx, orgId),
@@ -48,6 +49,7 @@ export async function ClientNfseTab({
       key={`${period.year}-${period.month}`}
       clanId={clanId}
       period={period}
+      currentPeriod={today}
       canManage={canManage}
       issuers={workspace.issuers}
       candidates={workspace.candidates}

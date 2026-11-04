@@ -337,7 +337,7 @@ export async function enqueueClientNfseBatch(
     today: string;
     now: Date;
   },
-): Promise<ActionResult<{ queued: number }>> {
+): Promise<ActionResult<{ queued: number; invoiceIds: string[] }>> {
   if (isFutureNfsePeriod(input, input.today)) return err("Não dá para emitir nota de um mês que ainda não começou.");
   const wanted = new Set(input.selected);
   const candidates = await loadClientNfseMonthRows(tx, input);
@@ -406,7 +406,7 @@ export async function enqueueClientNfseBatch(
   await tx.insert(schema.clientNfseInvoiceEvents).values(
     inserted.map((row) => ({ orgId: input.orgId, invoiceId: row.id, eventType: "requested" as const, actorId: input.actorId })),
   );
-  return { ok: true, data: { queued: inserted.length } };
+  return { ok: true, data: { queued: inserted.length, invoiceIds: inserted.map((row) => row.id) } };
 }
 
 export async function requestClientNfseCancel(

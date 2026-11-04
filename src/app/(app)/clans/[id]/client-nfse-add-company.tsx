@@ -19,14 +19,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { formatCnpj } from "@/domain/cnpj";
 import type { ClientNfseCandidateView, IssuerSuggestionView } from "@/lib/client-nfse/loaders";
-import { formatBRLCurrency } from "@/lib/currency";
 import { formatAppDate } from "@/lib/date-time";
 import { cn } from "@/lib/utils";
 
 import { saveIssuer, suggestIssuerSetup } from "./client-nfse-actions";
 import { FiscalFields, FiscalSummary, fiscalFormToTemplate, initialFiscalForm, type FiscalForm } from "./client-nfse-fiscal-form";
 
-const MONTHS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"] as const;
 
 const CERTIFICATE: Record<ClientNfseCandidateView["certificate"], { label: string; className: string }> = {
   valid: { label: "certificado ok", className: "border-success/40 text-success" },
@@ -39,15 +37,9 @@ function normalize(text: string): string {
   return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
-function monthLabel(key: string | null): string {
-  if (!key) return "";
-  const [year, month] = key.split("-").map(Number);
-  return `${MONTHS[month - 1]} de ${year}`;
-}
-
 /**
  * Adicionar empresa num quadro só: escolher a empresa, conferir os dados
- * fiscais lidos da última nota dela e marcar as notas que viram notas padrão.
+ * fiscais lidos da última nota dela. As notas do mês passado viram previstas sozinhas.
  */
 export function ClientNfseAddCompany({ clanId, candidates }: { clanId: string; candidates: readonly ClientNfseCandidateView[] }) {
   const router = useRouter();
@@ -58,7 +50,6 @@ export function ClientNfseAddCompany({ clanId, candidates }: { clanId: string; c
   const [form, setForm] = useState<FiscalForm>(() => initialFiscalForm(null));
   const [series, setSeries] = useState("900");
   const [editing, setEditing] = useState(false);
-  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [reading, startReading] = useTransition();
   const [saving, startSaving] = useTransition();
 
@@ -76,7 +67,6 @@ export function ClientNfseAddCompany({ clanId, candidates }: { clanId: string; c
     setCompany(null);
     setSuggestion(null);
     setEditing(false);
-    setSelected(new Set());
   }
 
   function pick(item: ClientNfseCandidateView) {
@@ -97,22 +87,8 @@ export function ClientNfseAddCompany({ clanId, candidates }: { clanId: string; c
       setSeries(data.dpsSeries);
       if (data.template) setForm(initialFiscalForm(data.template, item.suggestion));
       else setEditing(true);
-      setSelected(new Set(data.models.filter((model) => model.recurring).map((model) => model.key)));
     });
   }
-
-  function toggle(key: string) {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
-
-  const models = suggestion?.models ?? [];
-  const chosen = models.filter((model) => selected.has(model.key));
-  const total = chosen.reduce((sum, model) => sum + Number(model.amount), 0);
 
   function save() {
     if (!company) return;
@@ -124,15 +100,13 @@ export function ClientNfseAddCompany({ clanId, candidates }: { clanId: string; c
         template: fiscalFormToTemplate(form),
         dpsSeries: series,
         active: true,
-        notes: chosen.map(({ takerDocument, takerName, address, amount, description, reference }) => ({ takerDocument, takerName, address, amount, description, reference })),
       });
       if (!result.ok) {
         toast.error(result.error);
         setEditing(true);
         return;
       }
-      const notes = result.data?.notes ?? 0;
-      toast.success(notes > 0 ? `${company.name} adicionada com ${notes} nota(s) padrão.` : `${company.name} adicionada. Agora cadastre as notas dela.`);
+      toast.success(`${company.name} adicionada. As notas do mês passado já aparecem como previstas.`);
       setOpen(false);
       reset();
       router.refresh();
@@ -142,7 +116,7 @@ export function ClientNfseAddCompany({ clanId, candidates }: { clanId: string; c
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) reset(); setOpen(next); }}>
       <DialogTrigger asChild>
-        <Button type="button"><Building2 aria-hidden /> Adicionar empresa</Button>
+        <Button type="button" variant="outline" size="sm"><Building2 aria-hidden /> Adicionar empresa</Button>
       </DialogTrigger>
       <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
@@ -231,55 +205,11 @@ export function ClientNfseAddCompany({ clanId, candidates }: { clanId: string; c
           </section>
         ) : null}
 
-        {company && !reading ? (
-          <section className="grid gap-2">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h3>3. Notas que se repetem</h3>
-              {models.length > 0 ? (
-                <span className="flex gap-1">
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setSelected(new Set(models.map((model) => model.key)))}>Marcar todas</Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Desmarcar</Button>
-                </span>
-              ) : null}
-            </div>
-            {models.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhuma nota recente para sugerir. Depois de adicionar, use “+ Nova nota” no quadro da empresa.</p>
-            ) : (
-              <>
-                <p className="text-xs text-muted-foreground">
-                  As notas de {monthLabel(suggestion?.basedOn.month ?? null)}. Vêm marcadas as que também saíram no mês anterior; o mês na descrição vira {"{mes}"}.
-                </p>
-                <ul className="max-h-[40dvh] divide-y overflow-auto rounded-md border">
-                  {models.map((model) => (
-                    <li key={model.key}>
-                      <label className={cn("flex cursor-pointer items-start gap-3 px-3 py-2 text-sm hover:bg-muted/30", !selected.has(model.key) && "text-muted-foreground")}>
-                        <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-primary" checked={selected.has(model.key)} disabled={saving} onChange={() => toggle(model.key)} />
-                        <span className="grid min-w-0 flex-1 gap-0.5">
-                          <span className="flex min-w-0 flex-wrap items-center gap-2">
-                            <span className="truncate font-medium">{model.takerName}</span>
-                            {model.recurring ? <Badge variant="outline" className="text-xs">repete</Badge> : null}
-                          </span>
-                          <span className="line-clamp-1 text-xs text-muted-foreground">{model.description}</span>
-                        </span>
-                        <span className="font-mono tabular-nums">{formatBRLCurrency(model.amount)}</span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </section>
-        ) : null}
-
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => setOpen(false)}>Voltar</Button>
           <Button type="button" disabled={!company || reading || saving} onClick={save}>
             {saving ? <LoaderCircle className="animate-spin" aria-hidden /> : <Check aria-hidden />}
-            {chosen.length > 0 ? (
-              <>Adicionar empresa e {chosen.length} {chosen.length === 1 ? "nota" : "notas"} · <span className="font-mono tabular-nums">{formatBRLCurrency(total.toFixed(2))}</span></>
-            ) : (
-              "Adicionar empresa"
-            )}
+            Adicionar empresa
           </Button>
         </DialogFooter>
       </DialogContent>

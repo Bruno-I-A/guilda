@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ClipboardPen, Download, FilePenLine, LoaderCircle, MapPin, MoreHorizontal, Pencil, RotateCcw, Send, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, ClipboardPen, CircleSlash, Download, LoaderCircle, MapPin, MoreHorizontal, Pencil, RotateCcw, Send, Trash2, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -331,8 +331,8 @@ export function ClientNfseInvoiceDialog({
 }
 
 /**
- * Uma nota do mês. Valor e texto se ajustam clicando neles (só este mês); o
- * "Emitir" da linha emite só ela; o menu leva à nota padrão e à nota emitida.
+ * Uma nota padrão no mês. Valor e texto se ajustam clicando neles (só este
+ * mês); o "Emitir" da linha emite só ela. Na tela, ela é mais uma nota prevista.
  */
 export function ClientNfseNoteRow({
   clanId,
@@ -343,8 +343,9 @@ export function ClientNfseNoteRow({
   selected,
   onToggle,
   onEmit,
-  onEditStandard,
+  onPause,
   blockedReason = null,
+  autoOpen = false,
 }: {
   clanId: string;
   period: { year: number; month: number };
@@ -354,14 +355,16 @@ export function ClientNfseNoteRow({
   selected: boolean;
   onToggle: () => void;
   onEmit: () => void;
-  onEditStandard: () => void;
+  onPause: () => void;
   blockedReason?: string | null;
+  /** "Resolver" da empresa: abre direto a nota com erro. */
+  autoOpen?: boolean;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [amount, setAmount] = useState(note.amount);
   const [text, setText] = useState(note.description);
-  const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [invoiceOpen, setInvoiceOpen] = useState(autoOpen);
   const [cancelFirst, setCancelFirst] = useState(false);
   const [saving, startSaving] = useTransition();
   const open = noteIsOpen(note);
@@ -409,7 +412,7 @@ export function ClientNfseNoteRow({
       {editing ? (
         <div className="col-span-1 grid min-w-0 gap-2 sm:col-span-2 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:items-start">
           <p className="text-sm sm:col-span-3">
-            <span className="font-medium">{note.takerName}</span> <span className="text-xs text-muted-foreground">· ajuste só deste mês; a nota padrão continua igual</span>
+            <span className="font-medium">{note.takerName}</span> <span className="text-xs text-muted-foreground">· vale só para este mês</span>
           </p>
           <Textarea aria-label={`Descrição da nota de ${note.takerName} neste mês`} rows={2} maxLength={2000} value={text} onChange={(event) => setText(event.target.value)} autoFocus />
           <CurrencyInput aria-label={`Valor da nota de ${note.takerName} neste mês`} value={amount} onValueChange={setAmount} />
@@ -426,9 +429,7 @@ export function ClientNfseNoteRow({
             <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
               <span className="truncate font-medium">{note.takerName}</span>
               <span className="font-mono text-xs text-muted-foreground">{formatCnpj(note.takerDocument)}</span>
-              <Badge variant="outline">Recorrente</Badge>
               {adjusted ? <Badge variant="outline" className="text-xs">ajustada neste mês</Badge> : null}
-              {!note.model.active ? <Badge variant="outline" className="text-xs">pausada</Badge> : null}
             </span>
             {editable ? (
               <button type="button" onClick={startEditing} className="line-clamp-2 text-left text-xs text-muted-foreground decoration-dashed underline-offset-4 hover:text-foreground hover:underline" title="Ajustar o texto só neste mês">
@@ -478,7 +479,7 @@ export function ClientNfseNoteRow({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   {editable ? <DropdownMenuItem onSelect={startEditing}><Pencil aria-hidden /> Ajustar só este mês</DropdownMenuItem> : null}
-                  <DropdownMenuItem onSelect={onEditStandard}><FilePenLine aria-hidden /> Editar nota padrão</DropdownMenuItem>
+                  {open && note.model.active ? <DropdownMenuItem onSelect={onPause}><CircleSlash aria-hidden /> Parar de prever</DropdownMenuItem> : null}
                   {invoice?.status === "issued" ? (
                     <>
                       <DropdownMenuSeparator />

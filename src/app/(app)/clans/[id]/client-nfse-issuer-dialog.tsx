@@ -37,7 +37,6 @@ export function ClientNfseIssuerDialog({
   const [filling, startFilling] = useTransition();
   const [series, setSeries] = useState(issuer.dpsSeries);
   const [active, setActive] = useState(issuer.active);
-  const [usesStandardNotes, setUsesStandardNotes] = useState(issuer.usesStandardNotes);
   const [form, setForm] = useState<FiscalForm>(() => initialFiscalForm(issuer.template));
   const [cityLabel, setCityLabel] = useState(issuer.cityLabel);
   const [filledFrom, setFilledFrom] = useState<string | null>(null);
@@ -72,7 +71,7 @@ export function ClientNfseIssuerDialog({
 
   function save() {
     startTransition(async () => {
-      const result = await saveIssuer({ clanId, issuerId: issuer.id, clientId: issuer.clientId, template: fiscalFormToTemplate(form), dpsSeries: series, active, usesStandardNotes });
+      const result = await saveIssuer({ clanId, issuerId: issuer.id, clientId: issuer.clientId, template: fiscalFormToTemplate(form), dpsSeries: series, active });
       if (!result.ok) {
         toast.error(result.error);
         return;
@@ -101,13 +100,6 @@ export function ClientNfseIssuerDialog({
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" className="size-4 accent-primary" checked={active} onChange={(event) => setActive(event.target.checked)} />
           Ativa (desmarque para as notas desta empresa saírem da tela)
-        </label>
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={usesStandardNotes} onChange={(event) => setUsesStandardNotes(event.target.checked)} />
-          <span>
-            Tem notas fixas todo mês
-            <span className="block text-xs text-muted-foreground">As notas fixas aparecem sozinhas no mês, prontas para emitir. Sem isso, a empresa só emite pelo &quot;+ Emitir nota&quot;.</span>
-          </span>
         </label>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Voltar</Button>

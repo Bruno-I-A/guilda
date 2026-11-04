@@ -652,6 +652,20 @@
       "when": 1793798682087,
       "tag": "0092_client-nfse-discard",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1793821035176,
+      "tag": "0093_client-nfse-source-key",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1793821521688,
+      "tag": "0094_client-nfse-forecast-skips",
+      "breakpoints": true
     }
   ]
 }
