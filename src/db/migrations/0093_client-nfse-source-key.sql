@@ -1,0 +1,2 @@
+ALTER TABLE "client_nfse_items" ADD COLUMN "source_access_key" varchar(50);--> statement-breakpoint
+CREATE UNIQUE INDEX "client_nfse_items_org_source_period_uidx" ON "client_nfse_items" USING btree ("org_id","source_access_key","period_year","period_month") WHERE source_access_key IS NOT NULL;

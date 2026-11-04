@@ -165,7 +165,9 @@ export const clientNfseModels = pgTable(
  * A nota do mês: nasce da nota padrão (com valor e descrição resolvidos e
  * editáveis só para este mês) ou é avulsa (`model_id` nulo), emitida pelo
  * "+ Emitir nota". A avulsa traz a chave do formulário (`request_id`): o
- * mesmo envio duas vezes não pede duas notas.
+ * mesmo envio duas vezes não pede duas notas. A que veio da previsão guarda a
+ * chave de acesso da nota de origem (`source_access_key`): cada nota do mês
+ * anterior gera no máximo uma por mês, venha ela da Guilda ou do Portal.
  */
 export const clientNfseItems = pgTable(
   "client_nfse_items",
@@ -176,6 +178,7 @@ export const clientNfseItems = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     modelId: uuid("model_id"),
     requestId: uuid("request_id"),
+    sourceAccessKey: varchar("source_access_key", { length: 50 }),
     issuerId: uuid("issuer_id").notNull(),
     takerId: uuid("taker_id").notNull(),
     periodYear: smallint("period_year").notNull(),
@@ -201,6 +204,7 @@ export const clientNfseItems = pgTable(
     uniqueIndex("client_nfse_items_org_id_uidx").on(t.orgId, t.id),
     uniqueIndex("client_nfse_items_org_model_period_uidx").on(t.orgId, t.modelId, t.periodYear, t.periodMonth),
     uniqueIndex("client_nfse_items_org_request_uidx").on(t.orgId, t.requestId).where(sql`request_id IS NOT NULL`),
+    uniqueIndex("client_nfse_items_org_source_period_uidx").on(t.orgId, t.sourceAccessKey, t.periodYear, t.periodMonth).where(sql`source_access_key IS NOT NULL`),
     check("client_nfse_items_origin_check", sql`${t.modelId} IS NOT NULL OR ${t.requestId} IS NOT NULL`),
     index("client_nfse_items_org_period_idx").on(t.orgId, t.periodYear, t.periodMonth),
     check("client_nfse_items_amount_check", sql`${t.amount} >= 0`),

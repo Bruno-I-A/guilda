@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -45,6 +45,8 @@ export async function emitClientNfseNote(
     /** O mês da nota (o da emissão, em Brasília). */
     period: { year: number; month: number };
     now: Date;
+    /** A chave da nota do mês anterior que esta repete: cada origem sai uma vez por mês. */
+    sourceAccessKey?: string;
   },
 ): Promise<ActionResult<{ invoiceId: string; repeated: boolean }>> {
   const issuers = schema.clientNfseIssuers;
@@ -57,16 +59,40 @@ export async function emitClientNfseNote(
 
   const it = schema.clientNfseItems;
   const n = schema.clientNfseInvoices;
-  const [already] = await tx
-    .select({ invoiceId: n.id })
+  // A nota do mês pode ter uma descartada e a que saiu depois: vale a ativa.
+  const sent = await tx
+    .select({ invoiceId: n.id, status: n.status })
     .from(it)
     .innerJoin(n, and(eq(n.orgId, it.orgId), eq(n.itemId, it.id)))
-    .where(and(eq(it.orgId, input.orgId), eq(it.requestId, input.requestId)))
-    .limit(1);
+    .where(and(eq(it.orgId, input.orgId), eq(it.requestId, input.requestId)));
+  const already = sent.find((row) => row.status !== "cancelled") ?? sent[0];
   if (already) return { ok: true, data: { invoiceId: already.invoiceId, repeated: true } };
+
+  // A mesma origem, por outro formulário ou outra aba, devolve a nota já pedida.
+  // Nota cancelada ou descartada libera a origem, e a nota do mês é reaproveitada.
+  const source = input.sourceAccessKey;
+  const [sourceItem] = source
+    ? await tx
+        .select({ id: it.id })
+        .from(it)
+        .where(and(eq(it.orgId, input.orgId), eq(it.sourceAccessKey, source), eq(it.periodYear, input.period.year), eq(it.periodMonth, input.period.month)))
+        .for("update")
+    : [];
+  if (sourceItem) {
+    const [active] = await tx
+      .select({ id: n.id })
+      .from(n)
+      .where(and(eq(n.orgId, input.orgId), eq(n.itemId, sourceItem.id), ne(n.status, "cancelled")))
+      .limit(1);
+    if (active) return { ok: true, data: { invoiceId: active.id, repeated: true } };
+  }
 
   const issuer = (await loadIssuerReadiness(tx, { orgId: input.orgId, issuerIds: [input.issuerId], now: input.now })).get(input.issuerId);
   if (!issuer?.template || issuer.problem) return err(issuer?.problem ?? "A empresa não está pronta para emitir.");
+  if (source && !sourceItem) {
+    const problem = await sourceProblem(tx, { orgId: input.orgId, issuerId: input.issuerId, clientId: issuer.clientId, accessKey: source });
+    if (problem) return err(problem);
+  }
   let cents: number;
   try {
     cents = amountToCents(input.amount);
@@ -114,22 +140,29 @@ export async function emitClientNfseNote(
   }
 
   const amount = centsToNfseAmount(cents);
-  const [item] = await tx
-    .insert(it)
-    .values({
-      orgId: input.orgId,
-      modelId: null,
-      requestId: input.requestId,
-      issuerId: input.issuerId,
-      takerId,
-      periodYear: input.period.year,
-      periodMonth: input.period.month,
-      amount,
-      description,
-      createdBy: input.actorId,
-      updatedBy: input.actorId,
-    })
-    .returning({ id: it.id });
+  const [item] = sourceItem
+    ? await tx
+        .update(it)
+        .set({ requestId: input.requestId, takerId, amount, description, updatedBy: input.actorId, updatedAt: input.now })
+        .where(and(eq(it.orgId, input.orgId), eq(it.id, sourceItem.id)))
+        .returning({ id: it.id })
+    : await tx
+        .insert(it)
+        .values({
+          orgId: input.orgId,
+          modelId: null,
+          requestId: input.requestId,
+          sourceAccessKey: source ?? null,
+          issuerId: input.issuerId,
+          takerId,
+          periodYear: input.period.year,
+          periodMonth: input.period.month,
+          amount,
+          description,
+          createdBy: input.actorId,
+          updatedBy: input.actorId,
+        })
+        .returning({ id: it.id });
   const number = locked.nextDpsNumber;
   await tx.update(issuers).set({ nextDpsNumber: number + 1 }).where(and(eq(issuers.orgId, input.orgId), eq(issuers.id, input.issuerId)));
   const [invoice] = await tx
@@ -226,6 +259,25 @@ export async function retryClientNfseWithService(
     }
   }
   return requeueClientNfseInvoice(tx, { orgId: input.orgId, actorId: input.actorId, invoiceId: input.invoiceId });
+}
+
+/** A nota de origem precisa ser desta empresa e não pode estar cancelada, na Guilda nem no Portal. */
+async function sourceProblem(tx: OrgTx, input: { orgId: string; issuerId: string; clientId: string; accessKey: string }): Promise<string | null> {
+  const portal = schema.nfseIssuedNotes;
+  const n = schema.clientNfseInvoices;
+  const [stored] = await tx
+    .select({ cancelledAt: portal.cancelledAt })
+    .from(portal)
+    .where(and(eq(portal.orgId, input.orgId), eq(portal.clientId, input.clientId), eq(portal.accessKey, input.accessKey)))
+    .limit(1);
+  const [requested] = await tx
+    .select({ status: n.status })
+    .from(n)
+    .where(and(eq(n.orgId, input.orgId), eq(n.issuerId, input.issuerId), eq(n.accessKey, input.accessKey)))
+    .limit(1);
+  if (!stored && !requested) return "A nota de origem não é desta empresa.";
+  if (stored?.cancelledAt || (requested && requested.status !== "issued")) return "A nota de origem foi cancelada. Use Nova nota.";
+  return null;
 }
 
 async function existingTakerId(tx: OrgTx, orgId: string, issuerId: string, document: string): Promise<string | null> {
