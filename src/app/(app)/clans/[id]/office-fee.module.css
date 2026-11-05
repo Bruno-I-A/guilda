@@ -1,0 +1,50 @@
+.workspace { --fee-line: color-mix(in oklab, var(--border) 85%, transparent); }
+.overview { display: grid; grid-template-columns: 1.15fr 1fr; border-block: 1px solid var(--fee-line); background: var(--card); }
+.emission { padding: 1.5rem; border-left: 3px solid var(--success); }
+.summaryLabel { display: flex; align-items: center; gap: .5rem; color: var(--muted-foreground); font-size: .75rem; }
+.headline { display: flex; align-items: center; gap: 1rem; margin-block: .75rem 1.25rem; }
+.headline > strong { font-family: var(--font-geist-mono), monospace; font-size: 3rem; line-height: 1; font-weight: 600; color: var(--success); font-variant-numeric: tabular-nums; }
+.headline > span { font-size: .875rem; font-weight: 500; }
+.headline small { display: block; margin-top: .25rem; color: var(--muted-foreground); font-size: .75rem; font-weight: 400; }
+.progressLabel { display: flex; justify-content: space-between; gap: 1rem; font-size: .75rem; color: var(--muted-foreground); }
+.progressLabel strong { color: var(--success); font-family: var(--font-geist-mono), monospace; }
+.progress { height: 5px; background: var(--muted); margin-top: .65rem; overflow: hidden; }
+.progress > span { display: block; height: 100%; background: var(--success); transition: width 600ms ease; }
+.metrics { display: grid; grid-template-columns: 1fr 1fr; align-content: center; gap: 1.25rem 1.5rem; padding: 1.5rem; border-left: 1px solid var(--fee-line); }
+.metrics > div:first-child { grid-column: 1 / -1; }
+.metrics dt { font-size: .75rem; color: var(--muted-foreground); margin-bottom: .35rem; }
+.metrics dd { font-family: var(--font-geist-mono), monospace; font-size: 1.25rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.metrics dd.amount { font-size: 1.65rem; }
+.metrics dd span { font-family: var(--font-geist-sans), sans-serif; font-size: .75rem; font-weight: 400; color: var(--muted-foreground); margin-left: .5rem; }
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--fee-line); }
+.step { display: flex; align-items: center; gap: .75rem; padding: .75rem .65rem 1rem; border-bottom: 2px solid transparent; }
+.stepNumber { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 1.75rem; height: 1.75rem; border: 1px solid var(--border); border-radius: 50%; font-family: var(--font-geist-mono), monospace; font-size: .75rem; }
+.stepDone { color: var(--success); }
+.stepDone .stepNumber { border-color: color-mix(in oklab, var(--success) 35%, transparent); background: color-mix(in oklab, var(--success) 8%, transparent); }
+.stepCurrent { color: var(--primary); border-bottom-color: var(--primary); }
+.stepCurrent .stepNumber { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+.service { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-height: 2rem; font-size: .75rem; }
+.board { min-width: 0; grid-template-columns: minmax(0, 1fr); border-top: 1px solid var(--fee-line, var(--border)); }
+.tableHeading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .75rem; padding-block: 1.25rem .75rem; }
+.tableHeading h3 { display: flex; align-items: center; gap: .65rem; }
+.tableHeading h3 span { color: var(--muted-foreground); font-family: var(--font-geist-mono), monospace; font-size: .75rem; }
+.tableHeading p { display: flex; flex-wrap: wrap; gap: 1rem; font-size: .75rem; color: var(--muted-foreground); }
+.tableHeading strong { font-family: var(--font-geist-mono), monospace; color: var(--foreground); }
+.tableFrame { min-width: 0; border: 1px solid var(--fee-line, var(--border)); border-radius: .25rem; background: color-mix(in oklab, var(--card) 60%, var(--background)); }
+.tableFrame th { background: var(--muted); font-size: .75rem; height: 2.75rem; color: var(--muted-foreground); font-weight: 500; }
+.tableFrame td { padding: .85rem .75rem; }
+.tableFrame td:first-child { border-left: 2px solid transparent; }
+.issued td:first-child { border-left-color: var(--success); }
+.client { display: block; max-width: 22rem; white-space: normal; overflow-wrap: anywhere; font-weight: 500; }
+.clientMeta { display: flex; flex-wrap: wrap; gap: .25rem .75rem; margin-top: .35rem; font-size: .75rem; color: var(--muted-foreground); }
+.status { display: inline-flex; align-items: center; gap: .4rem; font-size: .75rem; white-space: nowrap; }
+.status::before { content: ''; width: .375rem; height: .375rem; background: currentColor; border-radius: 50%; }
+@media (max-width: 639px) {
+  .overview { grid-template-columns: minmax(0, 1fr); }
+  .metrics { border-left: 0; border-top: 1px solid var(--fee-line); padding: 1.25rem; }
+  .emission { padding: 1.25rem; }
+  .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .step { padding-inline: .25rem; }
+  .client { min-width: 11rem; }
+}
+@media (prefers-reduced-motion: reduce) { .progress > span { transition: none; } }

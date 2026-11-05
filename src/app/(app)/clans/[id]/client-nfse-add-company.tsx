@@ -39,7 +39,7 @@ function normalize(text: string): string {
 
 /**
  * Adicionar empresa num quadro só: escolher a empresa, conferir os dados
- * fiscais lidos da última nota dela. As notas do mês passado viram previstas sozinhas.
+ * fiscais lidos da última nota dela.
  */
 export function ClientNfseAddCompany({ clanId, candidates }: { clanId: string; candidates: readonly ClientNfseCandidateView[] }) {
   const router = useRouter();
@@ -106,7 +106,7 @@ export function ClientNfseAddCompany({ clanId, candidates }: { clanId: string; c
         setEditing(true);
         return;
       }
-      toast.success(`${company.name} adicionada. As notas do mês passado já aparecem como previstas.`);
+      toast.success(`${company.name} adicionada. Use Nova nota quando o cliente pedir.`);
       setOpen(false);
       reset();
       router.refresh();
