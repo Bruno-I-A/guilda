@@ -211,6 +211,7 @@ export async function OfficeFeeTab({
       .select({
         id: schema.officeFeeControlPeriods.id,
         clientId: schema.officeFeeControlPeriods.clientId,
+        takerId: schema.officeFeeControlPeriods.takerId,
         clientName: schema.officeFeeControlPeriods.clientNameSnapshot,
         cnpj: schema.officeFeeControlPeriods.clientCnpjSnapshot,
         responsibleUserId: schema.officeFeeControlPeriods.responsibleUserId,
