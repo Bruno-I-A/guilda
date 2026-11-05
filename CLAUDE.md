@@ -395,37 +395,23 @@ que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
   (`requestIssuerHistory`) relê o histórico da empresa num cursor próprio
   (`nfse_dfe_cursors.history_nsu`) que ignora essa data e some ao acabar.
 
-### Mesa do mês (decisão de 2026-11-04)
+### Lista por ordem alfabética (decisão de 2026-11-05)
 
-A aba virou o painel de emissão do escritório: **uma pessoa, mais de 100 empresas,
-notas conforme o cliente pede**. Substitui a nota padrão como caminho e as decisões
-acima sobre "notas fixas" e "Repetir" no que conflitarem. Crítica em
-`.impeccable/critique/`.
+**Previsão do mês e grupos por urgência foram testados e rejeitados pelo Bruno**, um
+dia depois de publicados: "ficou pior, muito mais difícil de se localizar". Não
+reintroduzir sem ele pedir. Quem emite é uma pessoa, em mais de 100 empresas, conforme
+o cliente pede: ela precisa achar a empresa, e empresa que muda de lugar conforme a
+situação atrapalha. Isto substitui as decisões acima sobre notas fixas no que conflitarem.
 
-- **Tela**: placar que também filtra (A resolver, Previstas, Em andamento, Emitidas),
-  busca como ponto de partida (tecla `/`, acha também pelo cliente) e uma linha por
-  empresa, por urgência, com o botão do próximo passo. Clicar abre as notas ali mesmo.
-  Emitidas e Sem previsão começam recolhidas. Sem filtro de carteira: quem emite é uma
-  pessoa só, sem carteira. Não voltar a duas visões nem ao passo de abrir o mês.
-- **Previsão** (`forecast.ts`, `forecast-month.ts`): as notas emitidas no mês anterior,
-  da Guilda e do Portal, unidas pela chave de acesso, com o mês do texto trocado. **Só
-  o mês anterior**: o Bruno recusou olhar o mesmo mês do ano passado, então nota
-  trimestral ou anual sai à mão. Só o mês corrente tem previsão. A tela diz "previstas",
-  nunca "faltam": a emissão depende do pedido do cliente. Nada sai sem o clique.
-- **Trava contra nota em dobro**: `client_nfse_items.source_access_key`, único por mês.
-  Nota cancelada ou descartada libera a origem. Nota sem origem para a mesma pessoa,
-  na Guilda ou no Portal, abate uma prevista, de preferência a de mesmo valor. O que
-  saiu no Portal só abate depois que a rotina da aba XML lê: a conferência avisa quando
-  a leitura tem mais de um dia.
-- **Lote**: emite nota a nota, em transações separadas (`emitForecast`): uma com problema
-  não segura as outras. Valor e texto são recalculados no servidor. Nota com data que não
-  deu para trocar não entra no lote.
-- **"Não emitir este mês"** (`client_nfse_forecast_skips`, com desfazer): sem nota, ela não
-  é prevista no mês seguinte. É consequência de usar só o mês anterior.
-- **Nota padrão se aposenta sozinha**: não se cria mais, mas a existente aparece como
-  prevista até o cliente ter nota no mês anterior; aí a previsão vale, com o valor real.
-  A ajustada no mês fica e ocupa o lugar da prevista. As tabelas e as actions antigas
-  (`saveNote`, `deleteModel`, `importSuggestions`) ficam até um fechamento real decidir.
+- **Tela** (`client-nfse-workspace.tsx`): toda empresa em ordem alfabética, sempre no
+  mesmo lugar, com as notas do mês visíveis abaixo dela, sem nada para abrir. Busca por
+  empresa, CNPJ ou cliente (tecla `/`) e filtros simples. O erro se destaca na própria
+  linha, sem mudar a empresa de lugar.
+- **Emissão**: só pedida, por "Nova nota" ou "Nova igual". Sem lote. Nota padrão não
+  aparece mais sozinha nem se cria; a que já saiu aparece como qualquer nota do mês.
+- **Banco**: `client_nfse_items.source_access_key` e `client_nfse_forecast_skips` ficaram
+  sem uso, porque já foram publicados. As tabelas e actions da nota padrão (`saveNote`,
+  `deleteModel`, `importSuggestions`, `emitBatch`, `adjustNote`) também estão sem tela.
 
 ## Estrutura por clã (decisões de 2026-08-18)
 

@@ -15,7 +15,7 @@ const BRASILIA_OFFSET_MS = 3 * 60 * 60 * 1000;
 /** Primeira série tentada; sobe até achar uma que a empresa não use. */
 const FIRST_SERIES = 900;
 
-export function monthOf(date: Date): { year: number; month: number } {
+function monthOf(date: Date): { year: number; month: number } {
   const shifted = new Date(date.getTime() - BRASILIA_OFFSET_MS);
   return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1 };
 }
@@ -24,7 +24,7 @@ function monthKey(period: { year: number; month: number }): string {
   return `${period.year}-${String(period.month).padStart(2, "0")}`;
 }
 
-export function previousMonth(period: { year: number; month: number }) {
+function previous(period: { year: number; month: number }) {
   return period.month === 1 ? { year: period.year - 1, month: 12 } : { year: period.year, month: period.month - 1 };
 }
 
@@ -41,7 +41,7 @@ export function templateDescription(
   text: string,
   issued: { year: number; month: number },
 ): { description: string; reference: ClientNfseReference } {
-  const before = mmYyyy(previousMonth(issued));
+  const before = mmYyyy(previous(issued));
   if (text.includes(before)) return { description: text.replaceAll(before, "{mes}"), reference: "previous" };
   const same = mmYyyy(issued);
   if (text.includes(same)) return { description: text.replaceAll(same, "{mes}"), reference: "current" };
@@ -103,7 +103,7 @@ export function suggestFromIssuedNotes(
 
   const lastMonth = monthOf(latest.issuedAt);
   const lastKey = monthKey(lastMonth);
-  const beforeKey = monthKey(previousMonth(lastMonth));
+  const beforeKey = monthKey(previous(lastMonth));
   const known = new Set(existing.models.map((model) => `${model.takerDocument}|${model.description}`));
   const shapeOf = (note: (typeof dated)[number]) => {
     if (!note.taker || !note.description || note.amountCents === null) return null;

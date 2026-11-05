@@ -1,13 +1,11 @@
 "use client";
 
-import { AlertTriangle, ClipboardPen, CircleSlash, Download, LoaderCircle, MapPin, MoreHorizontal, Pencil, RotateCcw, Send, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, ClipboardPen, Download, LoaderCircle, MapPin, RotateCcw, Trash2, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Dialog,
   DialogContent,
@@ -16,19 +14,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { formatCnpj } from "@/domain/cnpj";
-import { clientNfseMonthDescription } from "@/domain/client-nfse";
 import {
   NFSE_CANCEL_REASON_CODES,
   NFSE_CANCEL_REASON_LABELS,
@@ -38,12 +27,12 @@ import {
   type NfseClientAddress,
   type NfseInvoiceStatus,
 } from "@/domain/nfse";
-import type { ClientNfseInvoiceView, ClientNfseNoteView } from "@/lib/client-nfse/loaders";
+import type { ClientNfseInvoiceView } from "@/lib/client-nfse/loaders";
 import { formatBRLCurrency } from "@/lib/currency";
 import { formatAppDate } from "@/lib/date-time";
 import { cn } from "@/lib/utils";
 
-import { adjustNote, cancelInvoice, discardInvoice, fixInvoiceAddress, fixInvoiceService, retryInvoice } from "./client-nfse-actions";
+import { cancelInvoice, discardInvoice, fixInvoiceAddress, fixInvoiceService, retryInvoice } from "./client-nfse-actions";
 import { Field } from "./nfse-settings-dialog";
 
 export const STATUS_LABELS: Record<NfseInvoiceStatus, string> = {
@@ -67,12 +56,7 @@ export function clientNfsePdfHref(clanId: string, year: number, month: number, s
   return `/api/nfse/clientes/pdf?clanId=${clanId}&year=${year}&month=${month}${extra}`;
 }
 
-/** Sem nota pedida neste mês (ou só cancelada): valor e texto ainda se ajustam. */
-export function noteIsOpen(note: ClientNfseNoteView): boolean {
-  return !note.invoice || note.invoice.status === "cancelled";
-}
-
-/** A nota pedida (fixa ou avulsa): detalhes, PDF, cancelar e tentar de novo. */
+/** A nota pedida: detalhes, PDF, cancelar e tentar de novo. */
 export function ClientNfseInvoiceDialog({
   clanId,
   period,
@@ -327,190 +311,5 @@ export function ClientNfseInvoiceDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-/**
- * Uma nota padrão no mês. Valor e texto se ajustam clicando neles (só este
- * mês); o "Emitir" da linha emite só ela. Na tela, ela é mais uma nota prevista.
- */
-export function ClientNfseNoteRow({
-  clanId,
-  period,
-  note,
-  canManage,
-  emissible,
-  selected,
-  onToggle,
-  onEmit,
-  onPause,
-  blockedReason = null,
-  autoOpen = false,
-}: {
-  clanId: string;
-  period: { year: number; month: number };
-  note: ClientNfseNoteView;
-  canManage: boolean;
-  emissible: boolean;
-  selected: boolean;
-  onToggle: () => void;
-  onEmit: () => void;
-  onPause: () => void;
-  blockedReason?: string | null;
-  /** "Resolver" da empresa: abre direto a nota com erro. */
-  autoOpen?: boolean;
-}) {
-  const router = useRouter();
-  const [editing, setEditing] = useState(false);
-  const [amount, setAmount] = useState(note.amount);
-  const [text, setText] = useState(note.description);
-  const [invoiceOpen, setInvoiceOpen] = useState(autoOpen);
-  const [cancelFirst, setCancelFirst] = useState(false);
-  const [saving, startSaving] = useTransition();
-  const open = noteIsOpen(note);
-  const editable = canManage && open;
-  const invoice = note.invoice;
-  const working = invoice?.status === "queued" || invoice?.status === "cancel_requested";
-  const standard = clientNfseMonthDescription(note.model.description, period, note.model.reference);
-  const adjusted = Boolean(note.itemId) && (note.amount !== note.model.amount || note.description !== standard);
-
-  function startEditing() {
-    if (!editable) return;
-    setAmount(note.amount);
-    setText(note.description);
-    setEditing(true);
-  }
-
-  function save() {
-    startSaving(async () => {
-      const result = await adjustNote({ clanId, year: period.year, month: period.month, modelId: note.modelId, amount, description: text });
-      if (!result.ok) {
-        toast.error(result.error);
-        return;
-      }
-      toast.success("Ajustado só neste mês.");
-      setEditing(false);
-      router.refresh();
-    });
-  }
-
-  function showInvoice(cancel: boolean) {
-    setCancelFirst(cancel);
-    setInvoiceOpen(true);
-  }
-
-  return (
-    <li className={cn("grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center", selected && "bg-primary/5")}>
-      <input
-        type="checkbox"
-        className="size-4 accent-primary disabled:opacity-30"
-        checked={selected}
-        disabled={!emissible}
-        onChange={onToggle}
-        aria-label={`Escolher a nota de ${note.takerName}`}
-      />
-      {editing ? (
-        <div className="col-span-1 grid min-w-0 gap-2 sm:col-span-2 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:items-start">
-          <p className="text-sm sm:col-span-3">
-            <span className="font-medium">{note.takerName}</span> <span className="text-xs text-muted-foreground">· vale só para este mês</span>
-          </p>
-          <Textarea aria-label={`Descrição da nota de ${note.takerName} neste mês`} rows={2} maxLength={2000} value={text} onChange={(event) => setText(event.target.value)} autoFocus />
-          <CurrencyInput aria-label={`Valor da nota de ${note.takerName} neste mês`} value={amount} onValueChange={setAmount} />
-          <div className="flex gap-1">
-            <Button type="button" size="sm" disabled={saving || !amount || !text.trim()} onClick={save}>
-              {saving ? <LoaderCircle className="animate-spin" aria-hidden /> : null} Salvar
-            </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancelar</Button>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="grid min-w-0 gap-0.5 text-sm">
-            <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-              <span className="truncate font-medium">{note.takerName}</span>
-              <span className="font-mono text-xs text-muted-foreground">{formatCnpj(note.takerDocument)}</span>
-              {adjusted ? <Badge variant="outline" className="text-xs">ajustada neste mês</Badge> : null}
-            </span>
-            {editable ? (
-              <button type="button" onClick={startEditing} className="line-clamp-2 text-left text-xs text-muted-foreground decoration-dashed underline-offset-4 hover:text-foreground hover:underline" title="Ajustar o texto só neste mês">
-                {note.description}
-              </button>
-            ) : (
-              <span className="line-clamp-2 text-xs text-muted-foreground">{note.description}</span>
-            )}
-          </div>
-          <div className="col-start-2 flex flex-wrap items-center gap-2 sm:col-start-3 sm:justify-end">
-            {editable ? (
-              <button type="button" onClick={startEditing} className="font-mono text-sm tabular-nums decoration-dashed underline-offset-4 hover:underline" title="Ajustar o valor só neste mês">
-                {formatBRLCurrency(note.amount)}
-              </button>
-            ) : (
-              <span className="font-mono text-sm tabular-nums">{formatBRLCurrency(note.amount)}</span>
-            )}
-            {invoice && invoice.status !== "cancelled" ? (
-              <button
-                type="button"
-                onClick={() => showInvoice(false)}
-                className={cn("touch-target inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs tabular-nums transition-colors hover:brightness-125", STATUS_CLASSES[invoice.status])}
-                aria-label={`Nota de ${note.takerName}: ${STATUS_LABELS[invoice.status]}. Abrir detalhes.`}
-              >
-                {working ? <LoaderCircle className="size-3 animate-spin" aria-hidden /> : null}
-                {invoice.status === "failed" ? <AlertTriangle className="size-3 text-destructive" aria-hidden /> : null}
-                {invoice.status === "issued" && invoice.nfseNumber ? `Emitida · Nº ${invoice.nfseNumber}` : invoice.status === "failed" ? "Ver erro e resolver" : STATUS_LABELS[invoice.status]}
-              </button>
-            ) : note.blocked ? (
-              <span className="flex max-w-56 items-start gap-1 text-xs text-warning" title={note.blocked}>
-                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden /> <span className="line-clamp-2">{note.blocked}</span>
-              </span>
-            ) : emissible ? (
-              <Button type="button" size="sm" variant="outline" onClick={onEmit}>
-                <Send aria-hidden /> Emitir
-              </Button>
-            ) : null}
-            {invoice?.status === "cancelled" ? <span className="text-xs text-muted-foreground">anterior cancelada</span> : null}
-            {editable ? <Button type="button" size="sm" variant="ghost" onClick={startEditing}><Pencil aria-hidden /> Ajustar</Button> : null}
-            {invoice?.status === "issued" ? <Button asChild size="sm" variant="outline"><a href={clientNfsePdfHref(clanId, period.year, period.month, { invoiceId: invoice.id })}><Download aria-hidden /> PDF</a></Button> : null}
-            {canManage ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="ghost" size="icon-sm" className="touch-target" aria-label={`Mais ações da nota de ${note.takerName}`}>
-                    <MoreHorizontal aria-hidden />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {editable ? <DropdownMenuItem onSelect={startEditing}><Pencil aria-hidden /> Ajustar só este mês</DropdownMenuItem> : null}
-                  {open && note.model.active ? <DropdownMenuItem onSelect={onPause}><CircleSlash aria-hidden /> Parar de prever</DropdownMenuItem> : null}
-                  {invoice?.status === "issued" ? (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem asChild><a href={clientNfsePdfHref(clanId, period.year, period.month, { invoiceId: invoice.id })}><Download aria-hidden /> Baixar PDF</a></DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => showInvoice(true)}><XCircle aria-hidden /> Cancelar a nota</DropdownMenuItem>
-                    </>
-                  ) : null}
-                  {invoice?.status === "failed" ? (
-                    <DropdownMenuItem onSelect={() => showInvoice(false)}><RotateCcw aria-hidden /> Ver erro e tentar de novo</DropdownMenuItem>
-                  ) : null}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
-          </div>
-        </>
-      )}
-      {invoice && invoice.status !== "cancelled" && invoiceOpen ? (
-        <ClientNfseInvoiceDialog
-          clanId={clanId}
-          period={period}
-          takerName={note.takerName}
-          takerAddress={note.takerAddress}
-          amount={note.amount}
-          invoice={invoice}
-          open={invoiceOpen}
-          onOpenChange={setInvoiceOpen}
-          startCancelling={cancelFirst}
-          canManage={canManage}
-          blockedReason={blockedReason}
-        />
-      ) : null}
-    </li>
   );
 }

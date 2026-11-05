@@ -166,9 +166,8 @@ export const clientNfseModels = pgTable(
  * A nota do mês: nasce da nota padrão (com valor e descrição resolvidos e
  * editáveis só para este mês) ou é avulsa (`model_id` nulo), emitida pelo
  * "+ Emitir nota". A avulsa traz a chave do formulário (`request_id`): o
- * mesmo envio duas vezes não pede duas notas. A que veio da previsão guarda a
- * chave de acesso da nota de origem (`source_access_key`): cada nota do mês
- * anterior gera no máximo uma por mês, venha ela da Guilda ou do Portal.
+ * mesmo envio duas vezes não pede duas notas.
+ * `source_access_key` foi da previsão do mês, retirada em 2026-11-05: sem uso.
  */
 export const clientNfseItems = pgTable(
   "client_nfse_items",
@@ -215,9 +214,8 @@ export const clientNfseItems = pgTable(
 );
 
 /**
- * "Não emitir este mês": a nota de origem sai da previsão só neste mês e o
- * Fiscal pode desfazer. Fica fora de client_nfse_items porque o cliente da nota
- * do Portal pode nem ser tomador cadastrado.
+ * "Não emitir este mês" da previsão, retirada em 2026-11-05: sem uso. Fica no
+ * banco porque já foi publicada; apagar não ganharia nada.
  */
 export const clientNfseForecastSkips = pgTable(
   "client_nfse_forecast_skips",
