@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronLeft, ChevronRight, Download, FilePlus2, LoaderCircle, RefreshCw, CalendarPlus } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Download, FilePlus2, LoaderCircle, RefreshCw, CalendarPlus, FileCheck2, Clock3, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useTransition } from "react";
@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import type { FiscalStepStatus } from "@/domain/fiscal-control";
 import { cn } from "@/lib/utils";
+import { formatBRLCurrency } from "@/lib/currency";
+import styles from "./office-fee.module.css";
 
 import { NfseEmitDialog, NfseNotice, nfseHealth, nfsePdfHref, type NfseInvoiceView, type NfseSettingsPanelView } from "./nfse-parts";
 import { openOfficeFeeControlPeriod } from "./office-fee-actions";
@@ -102,6 +104,9 @@ export function OfficeFeeMonth({
     { key: "collect", label: "Cobrança", detail: `${collectedDone} de ${rows.length}`, done: rows.length > 0 && collectedDone === rows.length },
   ];
   const current = steps.find((step) => !step.done)?.key ?? null;
+  const emissionPercent = rows.length ? Math.round((notesDone / rows.length) * 100) : 0;
+  const queuedCount = invoices.filter((invoice) => invoice.status === "queued").length;
+  const total = rows.reduce((sum, row) => sum + Number(row.profileSnapshot.monthlyFee), 0);
 
   function openPeriod() {
     startOpening(async () => {
@@ -122,14 +127,14 @@ export function OfficeFeeMonth({
       : null;
 
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-4">
+    <div className={cn(styles.workspace, "grid min-w-0 grid-cols-1 gap-5")}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1">
-          <Button asChild variant="outline" size="icon-sm">
+          <Button asChild variant="outline" size="icon-sm" className="touch-target">
             <Link href={monthHref(clanId, previous.year, previous.month)} aria-label="Mês anterior"><ChevronLeft aria-hidden /></Link>
           </Button>
           <h2 className="px-2">{title}</h2>
-          <Button asChild variant="outline" size="icon-sm">
+          <Button asChild variant="outline" size="icon-sm" className="touch-target">
             <Link href={monthHref(clanId, next.year, next.month)} aria-label="Próximo mês"><ChevronRight aria-hidden /></Link>
           </Button>
         </div>
@@ -138,7 +143,21 @@ export function OfficeFeeMonth({
         ) : null}
       </div>
 
-      <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label={`Passos de ${monthName}`}>
+      <section className={styles.overview} aria-label="Resumo da emissão de notas">
+        <div className={styles.emission}>
+          <div className={styles.summaryLabel}><FileCheck2 className="size-4" aria-hidden /> Notas de honorários</div>
+          <div className={styles.headline}><strong>{issuedCount}</strong><span>notas emitidas<small>em {monthName}</small></span></div>
+          <div className={styles.progressLabel}><span>{notesDone} de {rows.length} clientes com a etapa de nota concluída</span><strong>{emissionPercent}%</strong></div>
+          <div className={styles.progress} role="progressbar" aria-label="Etapa de emissão concluída" aria-valuemin={0} aria-valuemax={100} aria-valuenow={emissionPercent}><span style={{ width: `${emissionPercent}%` }} /></div>
+        </div>
+        <dl className={styles.metrics}>
+          <div><dt>Valor da competência</dt><dd className={styles.amount}>{formatBRLCurrency(total.toFixed(2))}</dd></div>
+          <div><dt>Etapa de nota pendente</dt><dd>{rows.length - notesDone}<span>clientes</span></dd></div>
+          <div><dt>Pedidos na fila</dt><dd>{queuedCount}<span>{queuedCount === 1 ? "nota" : "notas"}</span></dd></div>
+        </dl>
+      </section>
+
+      <ol className={styles.steps} aria-label={`Passos de ${monthName}`}>
         {steps.map((step, index) => {
           const isCurrent = step.key === current;
           return (
@@ -146,23 +165,28 @@ export function OfficeFeeMonth({
               key={step.key}
               aria-current={isCurrent ? "step" : undefined}
               className={cn(
-                "grid gap-0.5 rounded-md border p-3 text-sm",
-                step.done && "border-success/40 bg-success/10 text-success",
-                isCurrent && "border-primary text-primary ring-1 ring-primary",
+                styles.step,
+                step.done && styles.stepDone,
+                isCurrent && styles.stepCurrent,
                 !step.done && !isCurrent && "text-muted-foreground",
               )}
             >
-              <span className="flex items-center gap-1.5 font-medium">
-                {step.done ? <Check className="size-3.5" aria-hidden /> : <span className="font-mono text-xs">{index + 1}.</span>}
+              <span className={styles.stepNumber}>{step.done ? <Check className="size-4" aria-hidden /> : index + 1}</span>
+              <span className="grid gap-1"><span className="text-sm font-medium">
                 {step.label}
               </span>
-              <span className="font-mono text-xs tabular-nums">{isCurrent && step.key === "open" ? "próximo passo" : step.detail}</span>
+              <span className="font-mono text-xs tabular-nums text-muted-foreground">{isCurrent && step.key === "open" ? "próximo passo" : step.detail}</span></span>
             </li>
           );
         })}
       </ol>
 
       <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className={cn(styles.service, health.state === "ready" ? "text-success" : "text-warning")}>
+          {health.state === "ready" ? <ShieldCheck className="size-4" aria-hidden /> : <Clock3 className="size-4" aria-hidden />}
+          <span>{health.state === "ready" ? settings?.serviceEnvironment === 2 ? "Conectado ao ambiente de teste" : "Conectado ao Sistema Nacional" : "Emissão requer atenção"}</span>
+          {pendingWork ? <span className="inline-flex items-center gap-1.5 text-primary"><LoaderCircle className="size-3.5 animate-spin" aria-hidden /> Processando</span> : null}
+        </div>
         <NfseNotice clanId={clanId} settings={settings} isAdmin={isAdmin} />
         <div className="ml-auto flex flex-wrap gap-2">
           {canManage && rows.length > 0 ? (
