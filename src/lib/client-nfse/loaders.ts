@@ -6,17 +6,14 @@ import { and, asc, desc, eq, gte, inArray, isNull, ne } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
-import { CLIENT_NFSE_EXCLUSION_LABELS, selectClientNfseBatch, type ClientNfseReference } from "@/domain/client-nfse";
 import { danfseFileName, type NfseClientAddress, type NfseInvoiceStatus } from "@/domain/nfse";
 import type { NfseRetentions } from "@/domain/nfse-retentions";
 import { ibgeCity, ibgeCityCode } from "@/lib/nfse/municipios";
 import { firstElementText } from "@/lib/nfse/xml";
 import { parseNfseIssuerTemplate, type NfseIssuerTemplate } from "@/lib/nfse/template";
 
-import { modelRowsCoveredByForecast } from "./forecast";
-import { adjustedModelRows, loadClientNfseForecast, type IssuerForecast } from "./forecast-month";
 import { readIssuedNoteFacts, type IssuedNoteFacts } from "./from-xml";
-import { loadClientNfseMonthRows, loadIssuerReadiness } from "./month";
+import { loadIssuerReadiness } from "./month";
 import type { ServiceOverride } from "./registry";
 import { customersFromIssuedNotes, freeDpsSeries, suggestFromIssuedNotes, type IssuerCustomer, type IssuerSuggestion } from "./suggest";
 
@@ -37,33 +34,8 @@ export interface ClientNfseInvoiceView {
   cityLabel: string | null;
 }
 
-/** Uma nota do mês: a nota padrão com o que este mês tem de próprio. */
-export interface ClientNfseNoteView {
-  modelId: string;
-  /** Ajustada ou pedida neste mês (sem isso, o valor e o texto são os do padrão). */
-  itemId: string | null;
-  takerId: string;
-  takerName: string;
-  takerDocument: string;
-  takerAddress: NfseClientAddress | null;
-  amount: string;
-  description: string;
-  /** A nota padrão, para editar: valor, texto com {mes}, referência e serviço. */
-  model: {
-    amount: string;
-    description: string;
-    reference: ClientNfseReference;
-    service: ServiceOverride | null;
-    active: boolean;
-  };
-  /** A nota mais recente deste mês (a cancelada fica visível até sair outra). */
-  invoice: ClientNfseInvoiceView | null;
-  /** Por que não pode sair agora (sem nota ativa). */
-  blocked: string | null;
-}
-
-/** Uma nota avulsa do mês ("+ Emitir nota"), na ordem em que foi pedida. */
-export interface ClientNfseFreeNoteView {
+/** Uma nota pedida no mês, da mais recente para a mais antiga. */
+export interface ClientNfseMonthNoteView {
   takerId: string;
   takerName: string;
   takerDocument: string;
@@ -91,9 +63,7 @@ export interface ClientNfseIssuerView {
   name: string;
   cnpj: string | null;
   active: boolean;
-  /** Notas fixas que aparecem sozinhas todo mês (opção do Fiscal). */
-  usesStandardNotes: boolean;
-  freeNotes: ClientNfseFreeNoteView[];
+  notes: ClientNfseMonthNoteView[];
   takers: ClientNfseTakerView[];
   dpsSeries: string;
   nextDpsNumber: number;
@@ -102,9 +72,6 @@ export interface ClientNfseIssuerView {
   /** "Getúlio Vargas/RS", para o resumo dos dados fiscais. */
   cityLabel: string | null;
   problem: string | null;
-  notes: ClientNfseNoteView[];
-  /** O que costuma sair neste mês e ainda não saiu. Vazia fora do mês corrente. */
-  forecast: IssuerForecast;
 }
 
 /** Nome do município do código IBGE, para a tela não carregar a tabela inteira. */
@@ -134,92 +101,16 @@ export async function loadClientNfseWorkspace(
   const i = schema.clientNfseIssuers;
   const c = schema.clients;
   const issuers = await tx
-    .select({ id: i.id, clientId: i.clientId, name: c.name, cnpj: c.cnpj, active: i.active, usesStandardNotes: i.usesStandardNotes, dpsSeries: i.dpsSeries, nextDpsNumber: i.nextDpsNumber, template: i.template })
+    .select({ id: i.id, clientId: i.clientId, name: c.name, cnpj: c.cnpj, active: i.active, dpsSeries: i.dpsSeries, nextDpsNumber: i.nextDpsNumber, template: i.template })
     .from(i)
     .innerJoin(c, and(eq(c.orgId, i.orgId), eq(c.id, i.clientId)))
     .where(eq(i.orgId, input.orgId))
     .orderBy(asc(c.name));
   const readiness = await loadIssuerReadiness(tx, { orgId: input.orgId, now: input.now });
-  const monthRows = await loadClientNfseMonthRows(tx, input);
-  const forecasts = await loadClientNfseForecast(tx, {
-    orgId: input.orgId,
-    now: input.now,
-    period: { year: input.year, month: input.month },
-    issuers,
-    standing: adjustedModelRows(monthRows),
-  });
-  const covered = new Set(
-    modelRowsCoveredByForecast(
-      monthRows,
-      [...forecasts.entries()].flatMap(([issuerId, forecast]) => [...forecast.notes, ...forecast.skipped].map((note) => ({ issuerId, takerDocument: note.takerDocument }))),
-    ),
-  );
-  const rows = monthRows.filter((row) => !covered.has(row));
-  const blocked = new Map(
-    selectClientNfseBatch(rows).excluded
-      .filter((item) => item.reason !== "already_active")
-      .map((item) => [item.modelId, item.detail ?? CLIENT_NFSE_EXCLUSION_LABELS[item.reason]]),
-  );
-  const m = schema.clientNfseModels;
-  const models = rows.length
-    ? await tx.select().from(m).where(and(eq(m.orgId, input.orgId), inArray(m.id, rows.map((row) => row.modelId))))
-    : [];
-  const modelById = new Map(models.map((model) => [model.id, model]));
-  const tk = schema.clientNfseTakers;
-  const takers = rows.length
-    ? await tx.select({ id: tk.id, address: tk.address }).from(tk).where(and(eq(tk.orgId, input.orgId), inArray(tk.id, rows.map((row) => row.takerId))))
-    : [];
-  const addressByTaker = new Map(takers.map((taker) => [taker.id, taker.address]));
-  const itemIds = rows.flatMap((row) => (row.itemId ? [row.itemId] : []));
+  // As notas pedidas no mês e os tomadores de cada empresa, com a última nota de cada um.
   const n = schema.clientNfseInvoices;
-  const invoices = itemIds.length
-    ? await tx
-        .select({ id: n.id, itemId: n.itemId, status: n.status, nfseNumber: n.nfseNumber, issuedAt: n.issuedAt, lastError: n.lastError, dpsSeries: n.dpsSeries, dpsNumber: n.dpsNumber, template: n.template })
-        .from(n)
-        .where(and(eq(n.orgId, input.orgId), inArray(n.itemId, itemIds), isNull(n.discardedAt)))
-        .orderBy(desc(n.createdAt))
-    : [];
-  const latest = new Map<string, (typeof invoices)[number]>();
-  for (const invoice of invoices) if (!latest.has(invoice.itemId)) latest.set(invoice.itemId, invoice);
-
-  const notesByIssuer = new Map<string, ClientNfseNoteView[]>();
-  for (const row of rows) {
-    const model = modelById.get(row.modelId);
-    if (!model) continue;
-    const invoice = row.itemId ? latest.get(row.itemId) : undefined;
-    const list = notesByIssuer.get(row.issuerId) ?? [];
-    list.push({
-      modelId: row.modelId,
-      itemId: row.itemId,
-      takerId: row.takerId,
-      takerName: row.takerName,
-      takerDocument: row.takerDocument,
-      takerAddress: addressByTaker.get(row.takerId) ?? null,
-      amount: row.amount,
-      description: row.description,
-      model: { amount: model.amount, description: model.description, reference: model.reference, service: model.service, active: model.active },
-      invoice: invoice
-        ? {
-            id: invoice.id,
-            status: invoice.status,
-            nfseNumber: invoice.nfseNumber,
-            issuedAt: invoice.issuedAt?.toISOString() ?? null,
-            lastError: invoice.lastError,
-            dpsSeries: invoice.dpsSeries,
-            dpsNumber: invoice.dpsNumber,
-            service: parseNfseIssuerTemplate(invoice.template)?.service ?? null,
-            cityCode: parseNfseIssuerTemplate(invoice.template)?.cityCode ?? null,
-            cityLabel: cityLabelOf(parseNfseIssuerTemplate(invoice.template)?.cityCode),
-          }
-        : null,
-      blocked: blocked.get(row.modelId) ?? null,
-    });
-    notesByIssuer.set(row.issuerId, list);
-  }
-
-  // Notas avulsas do mês e os tomadores de cada empresa, com a última nota de cada um.
-  const itemsTable = schema.clientNfseItems;
-  const free = await tx
+  const tk = schema.clientNfseTakers;
+  const monthNotes = await tx
     .select({
       id: n.id,
       issuerId: n.issuerId,
@@ -238,12 +129,11 @@ export async function loadClientNfseWorkspace(
       template: n.template,
     })
     .from(n)
-    .innerJoin(itemsTable, and(eq(itemsTable.orgId, n.orgId), eq(itemsTable.id, n.itemId)))
-    .where(and(eq(n.orgId, input.orgId), eq(n.periodYear, input.year), eq(n.periodMonth, input.month), isNull(itemsTable.modelId), isNull(n.discardedAt)))
+    .where(and(eq(n.orgId, input.orgId), eq(n.periodYear, input.year), eq(n.periodMonth, input.month), isNull(n.discardedAt)))
     .orderBy(desc(n.createdAt));
-  const freeByIssuer = new Map<string, ClientNfseFreeNoteView[]>();
-  for (const row of free) {
-    const list = freeByIssuer.get(row.issuerId) ?? [];
+  const notesByIssuer = new Map<string, ClientNfseMonthNoteView[]>();
+  for (const row of monthNotes) {
+    const list = notesByIssuer.get(row.issuerId) ?? [];
     list.push({
       takerId: row.takerId,
       takerName: row.takerName,
@@ -264,7 +154,7 @@ export async function loadClientNfseWorkspace(
         cityLabel: cityLabelOf(parseNfseIssuerTemplate(row.template)?.cityCode),
       },
     });
-    freeByIssuer.set(row.issuerId, list);
+    notesByIssuer.set(row.issuerId, list);
   }
   const allTakers = await tx
     .select({ id: tk.id, issuerId: tk.issuerId, name: tk.name, document: tk.document, address: tk.address, retentions: tk.retentions })
@@ -303,16 +193,13 @@ export async function loadClientNfseWorkspace(
       name: issuer.name,
       cnpj: issuer.cnpj,
       active: issuer.active,
-      usesStandardNotes: issuer.usesStandardNotes,
-      freeNotes: freeByIssuer.get(issuer.id) ?? [],
+      notes: notesByIssuer.get(issuer.id) ?? [],
       takers: takersByIssuer.get(issuer.id) ?? [],
       dpsSeries: issuer.dpsSeries,
       nextDpsNumber: issuer.nextDpsNumber,
       template: parseNfseIssuerTemplate(issuer.template),
       cityLabel: cityLabelOf(parseNfseIssuerTemplate(issuer.template)?.cityCode),
       problem: readiness.get(issuer.id)?.problem ?? null,
-      notes: notesByIssuer.get(issuer.id) ?? [],
-      forecast: forecasts.get(issuer.id) ?? { notes: [], skipped: [], portalReadAt: null },
     })),
     candidates: candidates
       .map((row) => {

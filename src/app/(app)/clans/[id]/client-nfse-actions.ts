@@ -11,7 +11,6 @@ import { NFSE_CANCEL_TEXT_MAX, NFSE_CANCEL_TEXT_MIN } from "@/domain/nfse";
 import { hasNfseRetentions, RETENTION_PERCENT_PATTERN } from "@/domain/nfse-retentions";
 import { err, type ActionResult } from "@/lib/action-context";
 import { emitClientNfseNote, retryClientNfseWithAddress, retryClientNfseWithService } from "@/lib/client-nfse/emit";
-import { prepareForecastEmission, restoreClientNfseForecast, skipClientNfseForecast } from "@/lib/client-nfse/forecast-month";
 import {
   loadIssuerCustomers,
   loadIssuerSuggestion,
@@ -255,14 +254,10 @@ const retentionsSchema = z
   })
   .nullable();
 
-const accessKey = z.string().regex(/^[0-9]{50}$/, "Nota de origem inválida.");
-
 const emitNoteSchema = z.object({
   clanId: clan,
   issuerId: z.uuid("Empresa inválida."),
   requestId: z.uuid("Recarregue a página e tente de novo."),
-  // Veio da previsão do mês: cada nota de origem sai uma vez por mês.
-  sourceAccessKey: accessKey.optional(),
   taker: z.object({ document, name: z.string().trim().min(1, "Informe o nome do tomador.").max(200, "Nome muito longo."), address }),
   amount: money,
   description,
@@ -309,90 +304,6 @@ export async function emitNote(input: z.input<typeof emitNoteSchema>): Promise<A
   const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
     emitClientNfseNote(tx, { orgId: ctx.orgId, actorId: ctx.userId, ...data, period: { year, month }, now }),
   );
-  if (result.ok) revalidateClan();
-  return result;
-}
-
-const forecastSchema = z.object({ clanId: clan, issuerId: z.uuid("Empresa inválida."), sourceAccessKey: accessKey });
-
-/** "Não emitir este mês": a nota prevista sai da conta deste mês. */
-export async function skipForecast(input: z.input<typeof forecastSchema>): Promise<ActionResult> {
-  const parsed = forecastSchema.safeParse(input);
-  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Nota inválida.");
-  const data = parsed.data;
-  const [year, month] = nfseToday(new Date()).split("-").map(Number);
-  const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
-    skipClientNfseForecast(tx, { orgId: ctx.orgId, actorId: ctx.userId, issuerId: data.issuerId, sourceAccessKey: data.sourceAccessKey, period: { year, month } }),
-  );
-  if (result.ok) revalidateClan();
-  return result;
-}
-
-/** Desfaz o "Não emitir este mês". */
-export async function restoreForecast(input: z.input<typeof forecastSchema>): Promise<ActionResult> {
-  const parsed = forecastSchema.safeParse(input);
-  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Nota inválida.");
-  const data = parsed.data;
-  const [year, month] = nfseToday(new Date()).split("-").map(Number);
-  const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
-    restoreClientNfseForecast(tx, { orgId: ctx.orgId, issuerId: data.issuerId, sourceAccessKey: data.sourceAccessKey, period: { year, month } }),
-  );
-  if (result.ok) revalidateClan();
-  return result;
-}
-
-const emitForecastSchema = z.object({
-  clanId: clan,
-  items: z
-    .array(z.object({ issuerId: z.uuid("Empresa inválida."), sourceAccessKey: accessKey, requestId: z.uuid("Recarregue a página e tente de novo.") }))
-    .min(1, "Escolha ao menos uma nota para emitir.")
-    .max(500, "Escolha até 500 notas de uma vez."),
-  expectedTotalCents: z.number().int().min(1),
-});
-
-/**
- * Emite as previstas escolhidas. Cada nota vai na própria transação: uma com
- * problema não segura as outras, e repetir o pedido não duplica nenhuma.
- */
-export async function emitForecast(
-  input: z.input<typeof emitForecastSchema>,
-): Promise<ActionResult<{ queued: number; invoiceIds: string[]; failures: { takerName: string; error: string }[] }>> {
-  const parsed = emitForecastSchema.safeParse(input);
-  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Notas inválidas.");
-  const data = parsed.data;
-  const now = new Date();
-  const [year, month] = nfseToday(now).split("-").map(Number);
-  const period = { year, month };
-  const prepared = await asFiscalOperator(data.clanId, (tx, ctx) =>
-    prepareForecastEmission(tx, { orgId: ctx.orgId, now, period, items: data.items, expectedTotalCents: data.expectedTotalCents }),
-  );
-  if (!prepared.ok) return prepared;
-  const invoiceIds: string[] = [];
-  const failures: { takerName: string; error: string }[] = [];
-  for (const emission of prepared.data ?? []) {
-    const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
-      emitClientNfseNote(tx, { orgId: ctx.orgId, actorId: ctx.userId, ...emission, reference: "previous", period, now }),
-    );
-    if (result.ok) invoiceIds.push(result.data!.invoiceId);
-    else failures.push({ takerName: emission.taker.name, error: result.error });
-  }
-  revalidateClan();
-  return { ok: true, data: { queued: invoiceIds.length, invoiceIds, failures } };
-}
-
-/** "Parar de prever": a nota padrão deixa de aparecer sozinha no mês. */
-export async function pauseModel(input: z.input<ReturnType<typeof idSchema>>): Promise<ActionResult> {
-  const parsed = idSchema("Nota padrão inválida.").safeParse(input);
-  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Pedido inválido.");
-  const result = await asFiscalOperator(parsed.data.clanId, async (tx, ctx): Promise<ActionResult> => {
-    const m = schema.clientNfseModels;
-    const [updated] = await tx
-      .update(m)
-      .set({ active: false, updatedBy: ctx.userId, updatedAt: new Date() })
-      .where(and(eq(m.orgId, ctx.orgId), eq(m.id, parsed.data.id)))
-      .returning({ id: m.id });
-    return updated ? { ok: true } : err("Nota padrão não encontrada.");
-  });
   if (result.ok) revalidateClan();
   return result;
 }
@@ -446,7 +357,7 @@ const emitSchema = periodSchema.extend({
   expectedTotalCents: z.number().int().min(1),
 });
 
-export async function emitBatch(input: z.input<typeof emitSchema>): Promise<ActionResult<{ queued: number; invoiceIds: string[] }>> {
+export async function emitBatch(input: z.input<typeof emitSchema>): Promise<ActionResult<{ queued: number }>> {
   const parsed = emitSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Pedido inválido.");
   const data = parsed.data;

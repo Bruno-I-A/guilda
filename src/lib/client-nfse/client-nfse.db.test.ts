@@ -4,7 +4,7 @@
  * empresa, nota que não se apaga, RLS e o serviço fiscal sem certificado.
  */
 import { PGlite } from "@electric-sql/pglite";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
@@ -121,7 +121,7 @@ test("ciclo: cadastro, mês, prévia, fila com numeração por empresa, travas e
   const future = await withOrgTx(ORG, (tx) => month.enqueueClientNfseBatch(tx, { ...ACTOR, year: 2026, month: 12, selected, expectedCount: 3, expectedTotalCents: adjusted.totalCents, today: "2026-11-05", now: NOW }));
   expect(future.ok).toBe(false);
   const queued = await withOrgTx(ORG, (tx) => month.enqueueClientNfseBatch(tx, { ...ACTOR, year: 2026, month: 11, selected, expectedCount: 3, expectedTotalCents: adjusted.totalCents, today: "2026-11-05", now: NOW }));
-  expect(queued).toEqual({ ok: true, data: { queued: 3, invoiceIds: expect.any(Array) } });
+  expect(queued).toEqual({ ok: true, data: { queued: 3 } });
   const invoices = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseInvoices));
   const academia = invoices.filter((row) => row.issuerId === issuerId).sort((a, b) => a.dpsNumber - b.dpsNumber);
   expect(academia.map((row) => [row.dpsSeries, row.dpsNumber])).toEqual([["900", 1], ["900", 2]]);
@@ -534,10 +534,15 @@ test("descartar: só nota com erro, sai da lista e a nota fixa volta a poder ser
   expect(gone).toMatchObject({ status: "cancelled", accessKey: null, amount: failed.amount, dpsNumber: failed.dpsNumber });
   expect(gone.discardedAt).toBeInstanceOf(Date);
   expect(gone.cancelledAt).toBeNull();
-  // Sumiu da tela do mês, nas avulsas e nas fixas.
+  // Sumiu da tela do mês.
   const { issuers } = await withOrgTx(ORG, (tx) => loadClientNfseWorkspace(tx, { orgId: ORG, year: failed.periodYear, month: failed.periodMonth, now: NOW }));
-  const shown = issuers.flatMap((issuer) => [...issuer.freeNotes.map((note) => note.invoice.id), ...issuer.notes.flatMap((note) => (note.invoice ? [note.invoice.id] : []))]);
+  const shown = issuers.flatMap((issuer) => issuer.notes.map((note) => note.invoice.id));
   expect(shown).not.toContain(failed.id);
+  // A tela mostra só nota pedida: nota padrão não aparece sozinha, nem a pedida fica de fora.
+  const requested = await withOrgTx(ORG, (tx) => tx.select({ id: invoices.id }).from(invoices).where(and(eq(invoices.periodYear, failed.periodYear), eq(invoices.periodMonth, failed.periodMonth), isNull(invoices.discardedAt))));
+  expect(shown.sort()).toEqual(requested.map((row) => row.id).sort());
+  const empty = await withOrgTx(ORG, (tx) => loadClientNfseWorkspace(tx, { orgId: ORG, year: 2027, month: 3, now: NOW }));
+  expect(empty.issuers.flatMap((issuer) => issuer.notes)).toEqual([]);
   // Fica no histórico, e nada no banco deixa cancelar sem chave por outro caminho.
   const events = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseInvoiceEvents).where(eq(schema.clientNfseInvoiceEvents.invoiceId, failed.id)));
   expect(events).toContainEqual(expect.objectContaining({ eventType: "cancelled", detail: expect.objectContaining({ discarded: true }) }));
