@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { and, asc, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
-import { PageHeader } from "@/components/page-header";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { isAdminRole } from "@/domain/guild-permissions";
@@ -13,6 +12,7 @@ import { getActiveMember, requireOrgSession } from "@/lib/session";
 import { countActiveSupportChannels, loadSupportConversation, loadSupportQueue, loadSupportViewer } from "@/lib/support/inbox";
 
 import { SupportInbox } from "./support-inbox";
+import { AtendimentoSectionHeader } from "./section-header";
 
 export const metadata: Metadata = { title: "Atendimento" };
 
@@ -50,7 +50,7 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
 
   return (
     <div className="grid min-w-0 gap-4">
-      <PageHeader title="Atendimento" description="As conversas do WhatsApp do escritório, com a empresa e as missões ao lado." />
+      <AtendimentoSectionHeader active="inbox" canManage={isAdminRole(role)} />
       <SupportInbox
         now={now.toISOString()}
         filter={filter}

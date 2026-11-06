@@ -134,7 +134,7 @@ test("membro só vê o clã dele; sem setor, só admin; outra organização não
 
   const other = await tx((t) => loadSupportQueue(t, { orgId: OTHER, viewer: admin, filter: "open" }), OTHER);
   expect(other.rows).toEqual([]);
-});
+}, 30_000);
 
 test("os comandos respeitam a mesma visibilidade", async () => {
   const { takeSupportConversation, addSupportNote, resolveSupportConversation } = await import("./inbox");

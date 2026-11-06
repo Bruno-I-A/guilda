@@ -20,8 +20,6 @@ import { canProvisionMcpKey } from "@/domain/mcp-access";
 import type { OrgRole } from "@/domain/task-state";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 import { listMcpAgentKeys } from "@/lib/mcp/access";
-import { listWhatsAppChannels } from "@/lib/whatsapp/channel-repository";
-import { getReadyEmbeddedSignupConfig } from "@/lib/whatsapp/onboarding";
 
 import { ClanMembershipManager } from "./clan-membership-manager";
 import {
@@ -31,7 +29,6 @@ import {
   CreateClanDialog,
 } from "./clan-configuration-manager";
 import { McpKeyManager } from "./mcp-key-manager";
-import { WhatsAppOnboardingPanel } from "./whatsapp-onboarding-panel";
 
 export const metadata: Metadata = { title: "Configurações" };
 
@@ -46,7 +43,7 @@ export default async function SettingsPage() {
     redirect("/dashboard");
   }
 
-  const [{ clans, orgMembers }, mcpKeys, whatsappChannels] = await Promise.all([
+  const [{ clans, orgMembers }, mcpKeys] = await Promise.all([
     withOrgTx(session.orgId, async (tx) => {
       const clanRows = await tx.query.clans.findMany({
         where: eq(schema.clans.orgId, session.orgId),
@@ -72,9 +69,7 @@ export default async function SettingsPage() {
       return { clans: clanRows, orgMembers: memberRows };
     }),
     listMcpAgentKeys(session.orgId),
-    listWhatsAppChannels(session.orgId),
   ]);
-  const embeddedSignupConfig = getReadyEmbeddedSignupConfig();
   const orgMemberIds = new Set(orgMembers.map((row) => row.userId));
   const provisionableMembers = orgMembers.filter((target) =>
     canProvisionMcpKey({
@@ -101,7 +96,7 @@ export default async function SettingsPage() {
       <PageHeader
         title="Configurações"
         icon={Settings}
-        description="Organize o atendimento, os clãs, as funções e os destinos dos Informativos."
+        description="Organize os clãs, as funções e os destinos dos Informativos."
         action={<CreateClanDialog />}
       />
 
@@ -117,11 +112,6 @@ export default async function SettingsPage() {
           </span>
         </div>
       ) : null}
-
-      <WhatsAppOnboardingPanel
-        config={embeddedSignupConfig}
-        initialChannels={whatsappChannels}
-      />
 
       <McpKeyManager members={provisionableMembers} keys={manageableMcpKeys} />
 
