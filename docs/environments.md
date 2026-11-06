@@ -69,6 +69,8 @@ Todas exclusivas. Nenhuma pode repetir valor da produção.
 | `NEXT_PUBLIC_APP_URL` | idêntica à anterior |
 | `TELEGRAM_BOT_TOKEN` | **bot exclusivo**; nunca o da produção |
 | `TELEGRAM_UPDATE_MODE` | vazio (`polling` é o padrão) |
+| `WHATSAPP_APP_SECRET` | segredo do app Meta exclusivo do ambiente |
+| `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | token aleatório definido por nós; nunca access token de número |
 
 ## Armadilhas já pagas (não repita)
 
