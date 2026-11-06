@@ -75,13 +75,14 @@ const MOBILE_PRIMARY_HREFS = [
 
 /**
  * No desktop, a navegação deixa de ser uma lista indiferenciada. A barra vira
- * um mapa de rotas: primeiro o trabalho do dia, depois a operação e, por
- * fim, os espaços da Guilda. Perfil e ajustes vivem junto da identidade.
+ * um mapa de rotas: primeiro o trabalho do dia, depois a gestão, o atendimento
+ * e, por fim, os espaços da Guilda. Perfil e ajustes vivem junto da identidade.
  */
 const DESKTOP_NAV_GROUPS = [
   { code: "01", label: "Jornada", hrefs: ["/dashboard", "/tasks", "/mural"] },
-  { code: "02", label: "Operação", hrefs: ["/clans", "/informativos", "/atendimento", "/clients"] },
-  { code: "03", label: "Guilda", hrefs: ["/leaderboard", "/members"] },
+  { code: "02", label: "Gestão", hrefs: ["/clans", "/informativos", "/clients"] },
+  { code: "03", label: "Atendimento", hrefs: ["/atendimento"] },
+  { code: "04", label: "Guilda", hrefs: ["/leaderboard", "/members"] },
 ] as const;
 
 const DESKTOP_ACCOUNT_HREFS = ["/profile", "/settings"] as const;
@@ -321,7 +322,7 @@ export function AppShell({
           <div className="mt-auto pt-6">
             <div className="divider-rune mb-4" />
             <div className="flex items-center gap-2 px-1">
-              <span className="font-mono text-hud text-primary/80">04</span>
+              <span className="font-mono text-hud text-primary/80">05</span>
               <p className="hud-label text-hud">Conta</p>
               <span className="h-px flex-1 bg-sidebar-border" aria-hidden />
             </div>
