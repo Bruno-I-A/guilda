@@ -1,6 +1,8 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { buildContentSecurityPolicy } from "@/lib/content-security-policy";
+
 /**
  * Proteção de rotas (Next 16: proxy.ts, o antigo middleware) + CSP com nonce.
  *
@@ -25,28 +27,6 @@ function novoNonce(): string {
   return btoa(crypto.randomUUID() + crypto.randomUUID());
 }
 
-function contentSecurityPolicy(nonce: string): string {
-  const producao = process.env.NODE_ENV === "production";
-  const scriptSrc = producao
-    ? `'self' 'nonce-${nonce}' 'strict-dynamic'`
-    : "'self' 'unsafe-inline' 'unsafe-eval'";
-  return [
-    "default-src 'self'",
-    `script-src ${scriptSrc}`,
-    // Estilos inline do Next/Tailwind: nonce de estilo é impraticável aqui, e
-    // o risco de `style-src` é muito menor que o de `script-src`.
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
-    "font-src 'self'",
-    "connect-src 'self'",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-    "upgrade-insecure-requests",
-  ].join("; ");
-}
-
 export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const sessionCookie = getSessionCookie(request);
@@ -66,7 +46,10 @@ export default function proxy(request: NextRequest) {
   // Next o aplique aos próprios <script>, e no header da RESPOSTA para o
   // navegador. Ambos precisam do MESMO valor.
   const nonce = novoNonce();
-  const csp = contentSecurityPolicy(nonce);
+  const csp = buildContentSecurityPolicy(
+    nonce,
+    process.env.NODE_ENV === "production",
+  );
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);

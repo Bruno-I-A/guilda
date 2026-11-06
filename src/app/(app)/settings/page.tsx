@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -19,6 +20,8 @@ import { canProvisionMcpKey } from "@/domain/mcp-access";
 import type { OrgRole } from "@/domain/task-state";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 import { listMcpAgentKeys } from "@/lib/mcp/access";
+import { listWhatsAppChannels } from "@/lib/whatsapp/channel-repository";
+import { getReadyEmbeddedSignupConfig } from "@/lib/whatsapp/onboarding";
 
 import { ClanMembershipManager } from "./clan-membership-manager";
 import {
@@ -28,6 +31,7 @@ import {
   CreateClanDialog,
 } from "./clan-configuration-manager";
 import { McpKeyManager } from "./mcp-key-manager";
+import { WhatsAppOnboardingPanel } from "./whatsapp-onboarding-panel";
 
 export const metadata: Metadata = { title: "Configurações" };
 
@@ -42,29 +46,35 @@ export default async function SettingsPage() {
     redirect("/dashboard");
   }
 
-  const [{ clans, orgMembers }, mcpKeys] = await Promise.all([
+  const [{ clans, orgMembers }, mcpKeys, whatsappChannels] = await Promise.all([
     withOrgTx(session.orgId, async (tx) => {
-    const clanRows = await tx.query.clans.findMany({
-      where: eq(schema.clans.orgId, session.orgId),
-      with: {
-        memberships: { with: { user: { columns: { name: true } } } },
-        informativeRoutes: {
-          with: { user: { columns: { name: true } } },
+      const clanRows = await tx.query.clans.findMany({
+        where: eq(schema.clans.orgId, session.orgId),
+        with: {
+          memberships: { with: { user: { columns: { name: true } } } },
+          informativeRoutes: {
+            with: { user: { columns: { name: true } } },
+          },
+          memberDuties: true,
         },
-        memberDuties: true,
-      },
-      orderBy: [asc(schema.clans.name)],
-    });
-    const memberRows = await tx
-      .select({ userId: schema.member.userId, name: schema.user.name, role: schema.member.role })
-      .from(schema.member)
-      .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
-      .where(eq(schema.member.organizationId, session.orgId))
-      .orderBy(asc(schema.user.name));
+        orderBy: [asc(schema.clans.name)],
+      });
+      const memberRows = await tx
+        .select({
+          userId: schema.member.userId,
+          name: schema.user.name,
+          role: schema.member.role,
+        })
+        .from(schema.member)
+        .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+        .where(eq(schema.member.organizationId, session.orgId))
+        .orderBy(asc(schema.user.name));
       return { clans: clanRows, orgMembers: memberRows };
     }),
     listMcpAgentKeys(session.orgId),
+    listWhatsAppChannels(session.orgId),
   ]);
+  const embeddedSignupConfig = getReadyEmbeddedSignupConfig();
   const orgMemberIds = new Set(orgMembers.map((row) => row.userId));
   const provisionableMembers = orgMembers.filter((target) =>
     canProvisionMcpKey({
@@ -88,18 +98,12 @@ export default async function SettingsPage() {
 
   return (
     <div className="grid gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-wide">
-            <Settings className="size-6 text-primary" aria-hidden /> Configurações
-          </h1>
-          <p className="max-w-2xl text-muted-foreground">
-            Organize clãs, funções e destinos dos Informativos sem depender de
-            alterações no sistema.
-          </p>
-        </div>
-        <CreateClanDialog />
-      </div>
+      <PageHeader
+        title="Configurações"
+        icon={Settings}
+        description="Organize o atendimento, os clãs, as funções e os destinos dos Informativos."
+        action={<CreateClanDialog />}
+      />
 
       {semClan.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-destructive/50 bg-destructive/5 p-4 text-sm">
@@ -114,14 +118,17 @@ export default async function SettingsPage() {
         </div>
       ) : null}
 
+      <WhatsAppOnboardingPanel
+        config={embeddedSignupConfig}
+        initialChannels={whatsappChannels}
+      />
+
       <McpKeyManager members={provisionableMembers} keys={manageableMcpKeys} />
 
       <section className="grid gap-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h2 className="font-heading text-lg font-semibold tracking-wide">
-              Composição dos clãs
-            </h2>
+            <h2>Composição dos clãs</h2>
             <p className="text-sm text-muted-foreground">
               Quem entra, quem sai, quem lidera e qual é o clã principal de cada
               pessoa.

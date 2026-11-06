@@ -51,6 +51,6 @@ EXPOSE 4000
 ENV PORT=4000
 ENV HOSTNAME=0.0.0.0
 # O painel de hospedagem constrói somente este Dockerfile (não o Compose).
-# O supervisor inicia a aplicação e o consumidor de updates do Telegram no
-# mesmo serviço, propagando sinais e reiniciando o container se um deles cair.
+# O supervisor inicia a aplicação e os consumidores do Telegram e do
+# atendimento no mesmo serviço, propagando sinais e reiniciando o container.
 CMD ["node", "scripts/start-production.mjs"]
