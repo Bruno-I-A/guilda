@@ -1,5 +1,9 @@
 import "server-only";
 
+import type { EmbeddedSignupClientConfig } from "./embedded-signup";
+
+export type { EmbeddedSignupClientConfig } from "./embedded-signup";
+
 export type WhatsAppConfig = Readonly<{
   appId?: string;
   appSecret?: string;
@@ -37,14 +41,6 @@ export function isWhatsAppWebhookConfigured(): boolean {
   const config = getWhatsAppConfig();
   return Boolean(config.appSecret && config.webhookVerifyToken);
 }
-
-export type EmbeddedSignupClientConfig = Readonly<{
-  appId: string;
-  configId: string;
-  graphApiVersion: string;
-  featureType: "whatsapp_business_app_onboarding";
-  sessionInfoVersion: "3";
-}>;
 
 /** Somente dados públicos necessários para inicializar o SDK no browser. */
 export function getEmbeddedSignupClientConfig(): EmbeddedSignupClientConfig | null {

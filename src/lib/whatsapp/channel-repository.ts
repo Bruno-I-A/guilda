@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -27,6 +27,56 @@ export type WhatsAppChannelSummary = Readonly<{
 
 function channelName(phone: MetaPhoneNumber): string {
   return phone.verifiedName?.trim() || phone.displayPhoneNumber?.trim() || "WhatsApp";
+}
+
+function channelSummary(channel: {
+  id: string;
+  name: string;
+  status: WhatsAppChannelSummary["status"];
+  wabaId: string | null;
+  phoneNumberId: string | null;
+  displayPhoneNumber: string | null;
+  verifiedName: string | null;
+  coexistenceEnabled: boolean;
+}): WhatsAppChannelSummary | null {
+  if (!channel.wabaId || !channel.phoneNumberId) return null;
+  return {
+    id: channel.id,
+    name: channel.name,
+    status: channel.status,
+    wabaId: channel.wabaId,
+    phoneNumberId: channel.phoneNumberId,
+    ...(channel.displayPhoneNumber
+      ? { displayPhoneNumber: channel.displayPhoneNumber }
+      : {}),
+    ...(channel.verifiedName ? { verifiedName: channel.verifiedName } : {}),
+    coexistenceEnabled: channel.coexistenceEnabled,
+  };
+}
+
+/** Lista somente metadados operacionais; o envelope cifrado não sai do repositório. */
+export async function listWhatsAppChannels(
+  orgId: string,
+): Promise<WhatsAppChannelSummary[]> {
+  return withOrgTx(orgId, async (tx) => {
+    const channels = await tx
+      .select({
+        id: schema.supportWhatsAppChannels.id,
+        name: schema.supportWhatsAppChannels.name,
+        status: schema.supportWhatsAppChannels.status,
+        wabaId: schema.supportWhatsAppChannels.wabaId,
+        phoneNumberId: schema.supportWhatsAppChannels.phoneNumberId,
+        displayPhoneNumber: schema.supportWhatsAppChannels.displayPhoneNumber,
+        verifiedName: schema.supportWhatsAppChannels.verifiedName,
+        coexistenceEnabled: schema.supportWhatsAppChannels.coexistenceEnabled,
+      })
+      .from(schema.supportWhatsAppChannels)
+      .where(eq(schema.supportWhatsAppChannels.orgId, orgId))
+      .orderBy(desc(schema.supportWhatsAppChannels.updatedAt));
+    return channels
+      .map(channelSummary)
+      .filter((channel): channel is WhatsAppChannelSummary => channel !== null);
+  });
 }
 
 export async function persistPendingWhatsAppChannel(input: {
@@ -112,20 +162,7 @@ export async function activateWhatsAppChannel(
         ),
       )
       .returning();
-    return channel?.wabaId && channel.phoneNumberId
-      ? {
-          id: channel.id,
-          name: channel.name,
-          status: channel.status,
-          wabaId: channel.wabaId,
-          phoneNumberId: channel.phoneNumberId,
-          ...(channel.displayPhoneNumber
-            ? { displayPhoneNumber: channel.displayPhoneNumber }
-            : {}),
-          ...(channel.verifiedName ? { verifiedName: channel.verifiedName } : {}),
-          coexistenceEnabled: channel.coexistenceEnabled,
-        }
-      : null;
+    return channel ? channelSummary(channel) : null;
   });
 }
 
@@ -161,20 +198,11 @@ export async function loadWhatsAppChannelAccess(input: {
       channelId: channel.id,
     });
     if (!accessToken) return null;
+    const summary = channelSummary(channel);
+    if (!summary) return null;
     return {
       accessToken,
-      channel: {
-        id: channel.id,
-        name: channel.name,
-        status: channel.status,
-        wabaId: channel.wabaId,
-        phoneNumberId: channel.phoneNumberId,
-        ...(channel.displayPhoneNumber
-          ? { displayPhoneNumber: channel.displayPhoneNumber }
-          : {}),
-        ...(channel.verifiedName ? { verifiedName: channel.verifiedName } : {}),
-        coexistenceEnabled: channel.coexistenceEnabled,
-      },
+      channel: summary,
     };
   });
 }

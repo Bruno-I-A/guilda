@@ -106,6 +106,16 @@ test("token do canal fica cifrado e preso ao tenant/canal", async () => {
   await expect(
     repository.loadWhatsAppChannelAccess({ orgId: OTHER, channelId: pending.id }),
   ).resolves.toBeNull();
+  const listed = await repository.listWhatsAppChannels(ORG);
+  expect(listed).toContainEqual(
+    expect.objectContaining({
+      id: pending.id,
+      status: "pending",
+      phoneNumberId: "333333",
+    }),
+  );
+  expect(JSON.stringify(listed)).not.toContain(token);
+  expect(JSON.stringify(listed)).not.toContain("accessToken");
   await expect(webhookRepository.lookupWhatsAppChannel("333333")).resolves.toBeNull();
 
   await repository.activateWhatsAppChannel(ORG, pending.id);
