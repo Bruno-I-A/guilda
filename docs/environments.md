@@ -70,7 +70,11 @@ Todas exclusivas. Nenhuma pode repetir valor da produção.
 | `TELEGRAM_BOT_TOKEN` | **bot exclusivo**; nunca o da produção |
 | `TELEGRAM_UPDATE_MODE` | vazio (`polling` é o padrão) |
 | `WHATSAPP_APP_SECRET` | segredo do app Meta exclusivo do ambiente |
+| `WHATSAPP_APP_ID` | ID público do app Meta do ambiente |
+| `WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID` | configuração Tech Provider com coexistência |
+| `WHATSAPP_GRAPH_API_VERSION` | versão fixada da Graph API (atualmente `v24.0`) |
 | `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | token aleatório definido por nós; nunca access token de número |
+| `WHATSAPP_TOKEN_KEY` | AES-256 exclusiva do ambiente; perder exige reconectar os números |
 
 ## Armadilhas já pagas (não repita)
 

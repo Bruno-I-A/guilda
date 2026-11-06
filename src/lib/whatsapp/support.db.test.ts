@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { PGlite } from "@electric-sql/pglite";
 import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
@@ -14,9 +16,11 @@ vi.mock("@/db", () => ({ db: pgDb }));
 
 const ORG = "support-org-a";
 const OTHER = "support-org-b";
+const previousTokenKey = process.env.WHATSAPP_TOKEN_KEY;
 let channelId = "";
 
 beforeAll(async () => {
+  process.env.WHATSAPP_TOKEN_KEY = randomBytes(32).toString("base64");
   await applyMigrations(client);
   await client.exec(`
     INSERT INTO organization (id, name, slug, created_at) VALUES
@@ -46,7 +50,11 @@ beforeAll(async () => {
   channelId = channel.id;
 }, 120_000);
 
-afterAll(() => client.close());
+afterAll(() => {
+  if (previousTokenKey === undefined) delete process.env.WHATSAPP_TOKEN_KEY;
+  else process.env.WHATSAPP_TOKEN_KEY = previousTokenKey;
+  return client.close();
+});
 
 test("roteia antes do tenant sem revelar credenciais", async () => {
   const repository = await import("./webhook-repository");
@@ -55,6 +63,56 @@ test("roteia antes do tenant sem revelar credenciais", async () => {
     orgId: ORG,
   });
   await expect(repository.lookupWhatsAppChannel("999999")).resolves.toBeNull();
+});
+
+test("token do canal fica cifrado e preso ao tenant/canal", async () => {
+  const repository = await import("./channel-repository");
+  const webhookRepository = await import("./webhook-repository");
+  const { withOrgTx } = await import("@/db/org-tx");
+  const token = "EA-access-token-que-nao-pode-ir-em-texto-puro";
+  const pending = await repository.persistPendingWhatsAppChannel({
+    orgId: ORG,
+    userId: "support-user",
+    wabaId: "444444",
+    phone: {
+      id: "333333",
+      displayPhoneNumber: "+55 54 97777-7777",
+      verifiedName: "Atendimento",
+      status: "CONNECTED",
+      isOnBusinessApp: true,
+    },
+    accessToken: token,
+  });
+
+  const [stored] = await withOrgTx(ORG, (tx) =>
+    tx
+      .select({
+        ciphertext: schema.supportWhatsAppChannels.accessTokenCiphertext,
+        iv: schema.supportWhatsAppChannels.accessTokenIv,
+        authTag: schema.supportWhatsAppChannels.accessTokenAuthTag,
+        status: schema.supportWhatsAppChannels.status,
+      })
+      .from(schema.supportWhatsAppChannels)
+      .where(eq(schema.supportWhatsAppChannels.id, pending.id)),
+  );
+  expect(stored.status).toBe("pending");
+  expect(stored.ciphertext).not.toBe(token);
+  expect(stored.ciphertext).not.toContain(token);
+  expect(stored.iv).toBeTruthy();
+  expect(stored.authTag).toBeTruthy();
+  await expect(
+    repository.loadWhatsAppChannelAccess({ orgId: ORG, channelId: pending.id }),
+  ).resolves.toMatchObject({ accessToken: token });
+  await expect(
+    repository.loadWhatsAppChannelAccess({ orgId: OTHER, channelId: pending.id }),
+  ).resolves.toBeNull();
+  await expect(webhookRepository.lookupWhatsAppChannel("333333")).resolves.toBeNull();
+
+  await repository.activateWhatsAppChannel(ORG, pending.id);
+  await expect(webhookRepository.lookupWhatsAppChannel("333333")).resolves.toEqual({
+    orgId: ORG,
+    channelId: pending.id,
+  });
 });
 
 test("RLS isola conversas e o histórico é append-only", async () => {

@@ -18,6 +18,7 @@ export type EnvIssue = { variavel: string; motivo: string };
 export type EnvLike = {
   BETTER_AUTH_SECRET?: string;
   FLOW_SECRETS_KEY?: string;
+  WHATSAPP_TOKEN_KEY?: string;
   NODE_ENV?: string;
   NEXT_PHASE?: string;
 };
@@ -116,11 +117,34 @@ export function validarFlowSecretsKey(value: string | undefined): EnvIssue | nul
   return null;
 }
 
+/** Chave independente: perder ou trocar exige reconectar os números. */
+export function validarWhatsAppTokenKey(
+  value: string | undefined,
+): EnvIssue | null {
+  const v = value?.trim();
+  if (!v) return null;
+  const key = decodeFlowKey(v);
+  if (key.length !== 32) {
+    return {
+      variavel: "WHATSAPP_TOKEN_KEY",
+      motivo: "precisa decodificar para exatamente 32 bytes (hex de 64 ou base64 de 32 bytes).",
+    };
+  }
+  if (new Set(key).size < 16) {
+    return {
+      variavel: "WHATSAPP_TOKEN_KEY",
+      motivo: "tem entropia baixa demais para uma chave AES-256 — gere com `openssl rand -base64 32`.",
+    };
+  }
+  return null;
+}
+
 /** Todos os problemas de segredo do ambiente atual. */
 export function problemasDeSegredo(env: EnvLike = process.env): EnvIssue[] {
   return [
     validarAuthSecret(env.BETTER_AUTH_SECRET),
     validarFlowSecretsKey(env.FLOW_SECRETS_KEY),
+    validarWhatsAppTokenKey(env.WHATSAPP_TOKEN_KEY),
   ].filter((issue): issue is EnvIssue => issue !== null);
 }
 
