@@ -214,7 +214,8 @@ export const supportConversations = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     channelId: uuid("channel_id").notNull(),
     contactId: uuid("contact_id").notNull(),
-    status: supportConversationStatus("status").notNull().default("ai_active"),
+    // Até a IA existir, conversa nova é de uma pessoa: "IA atendendo" ficaria sem ninguém.
+    status: supportConversationStatus("status").notNull().default("needs_human"),
     assignedClanId: uuid("assigned_clan_id"),
     assignedUserId: text("assigned_user_id").references(() => user.id),
     summary: text("summary"),
@@ -363,6 +364,32 @@ export const supportConversationEvents = pgTable(
       t.conversationId,
       t.createdAt,
     ),
+  ],
+);
+
+/** Nota interna da equipe: nunca vai para o cliente e não se edita. */
+export const supportConversationNotes = pgTable(
+  "support_conversation_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: uuid("conversation_id").notNull(),
+    authorId: text("author_id")
+      .notNull()
+      .references(() => user.id),
+    text: text("text").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "support_conversation_notes_org_conversation_fk",
+      columns: [t.orgId, t.conversationId],
+      foreignColumns: [supportConversations.orgId, supportConversations.id],
+    }).onDelete("restrict"),
+    index("support_conversation_notes_org_conversation_time_idx").on(t.orgId, t.conversationId, t.createdAt),
+    check("support_conversation_notes_text_check", sql`length(btrim(${t.text})) BETWEEN 1 AND 4000`),
   ],
 );
 

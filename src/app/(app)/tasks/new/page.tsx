@@ -14,8 +14,10 @@ import { TaskForm } from "./task-form";
 
 export const metadata: Metadata = { title: "Nova missão" };
 
-export default async function NewTaskPage() {
+export default async function NewTaskPage({ searchParams }: { searchParams: Promise<{ title?: string; description?: string; clientId?: string }> }) {
   const session = await requireOrgSession();
+  // Vem preenchida de outra tela, como o Atendimento. É só sugestão: o formulário valida tudo.
+  const prefill = await searchParams;
   const [members, clans, clients] = await Promise.all([
     listOrgMembersWithResolvedClan(session.orgId),
     listActiveClans(session.orgId),
@@ -56,6 +58,9 @@ export default async function NewTaskPage() {
         clans={clans}
         clients={clients}
         currentUserId={session.user.id}
+        initialTitle={prefill.title?.slice(0, 200)}
+        initialDescription={prefill.description?.slice(0, 5000)}
+        initialClientId={prefill.clientId}
       />
     </div>
   );

@@ -10,6 +10,7 @@ import {
   KeyRound,
   ListTodo,
   LogOut,
+  MessagesSquare,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
@@ -57,6 +58,7 @@ const NAV_ITEMS = [
   { href: "/mural", label: "Mural", icon: ScrollText },
   { href: "/clans", label: "Meu clã", icon: Flag },
   { href: "/informativos", label: "Informativos", icon: Inbox },
+  { href: "/atendimento", label: "Atendimento", icon: MessagesSquare },
   { href: "/clients", label: "Clientes", icon: Building2 },
   { href: "/leaderboard", label: "Ranking", icon: Trophy },
   { href: "/members", label: "Membros", icon: Users },
@@ -78,7 +80,7 @@ const MOBILE_PRIMARY_HREFS = [
  */
 const DESKTOP_NAV_GROUPS = [
   { code: "01", label: "Jornada", hrefs: ["/dashboard", "/tasks", "/mural"] },
-  { code: "02", label: "Operação", hrefs: ["/clans", "/informativos", "/clients"] },
+  { code: "02", label: "Operação", hrefs: ["/clans", "/informativos", "/atendimento", "/clients"] },
   { code: "03", label: "Guilda", hrefs: ["/leaderboard", "/members"] },
 ] as const;
 

@@ -413,6 +413,33 @@ situação atrapalha. Isto substitui as decisões acima sobre notas fixas no que
   sem uso, porque já foram publicados. As tabelas e actions da nota padrão (`saveNote`,
   `deleteModel`, `importSuggestions`, `emitBatch`, `adjustNote`) também estão sem tela.
 
+## Atendimento: caixa de entrada (decisão de 2026-11-06)
+
+Desenho em `docs/superpowers/specs/2026-11-05-atendimento-ia-design.md`; a fundação do
+WhatsApp veio no PR #104 (Codex). A rota `/atendimento` (`support-inbox.tsx`,
+`src/lib/support/inbox.ts`) é a primeira tela: fila, conversa e empresa; no celular, um
+passo por vez. **Ainda não há IA, Base nem Métricas.**
+
+- **Toda conversa nova nasce em "Precisa de pessoa"**, porque não há IA para o estado
+  "IA atendendo". Quando o agente entrar, é ele quem muda isso.
+- **Quem vê**: admin vê tudo; membro vê os clãs dele e o que está atribuído a ele
+  (`canSeeConversation`, repetida em SQL em `visibleTo`). Conversa sem setor só o admin vê,
+  até ser transferida. É o padrão mais fechado, até o Bruno confirmar quem atende (pendência
+  do desenho). Conversa alheia responde como inexistente.
+- **Só quem assumiu responde**. Assumir é atômico e pausa a IA. Resposta pelo celular
+  (eco da coexistência) vira "Em atendimento" sem responsável.
+- **Envio**: a action só grava mensagem e `support_outbox`; `outbound-worker.ts` (no
+  `support-worker`) chama a Meta. O destino sai do contato, nunca do navegador. A chave do
+  formulário impede resposta em dobro. Mensagem é imutável, então o id da Meta (wamid) mora
+  no evento `accepted`, e é por ele que os recibos a acham. Recusa 4xx da Meta falha na hora;
+  o resto tenta 5 vezes. Se o processo cair entre a Meta aceitar e o registro, a mensagem
+  pode sair duas vezes: risco raro e aceito.
+- **24 horas**: fora da janela da Meta, a tela bloqueia e explica. Modelos aprovados
+  (templates) ainda não existem, então não dá para iniciar conversa pela Guilda.
+- **Mídia não abre**: a tela diz "Documento", "Áudio" etc. Baixar exige outra etapa.
+- **Vínculo com a empresa é manual**, com histórico. Nota interna não se edita nem se apaga
+  (`support_conversation_notes`, REVOKE no `guilda_app`).
+
 ## Estrutura por clã (decisões de 2026-08-18)
 
 O clã deixou de ser um diretório da Guilda e virou o **espaço de trabalho** da

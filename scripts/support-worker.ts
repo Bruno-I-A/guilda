@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { isWhatsAppWebhookConfigured } from "../src/lib/whatsapp/config";
 import { runSupportInboundCycle } from "../src/lib/whatsapp/inbound-worker";
+import { runSupportOutboxCycle } from "../src/lib/whatsapp/outbound-worker";
 
 const INTERVAL_MS = 2_000;
 
@@ -19,6 +20,7 @@ async function main() {
     const started = Date.now();
     try {
       await runSupportInboundCycle();
+      await runSupportOutboxCycle();
     } catch (error) {
       console.error(
         "Falha no ciclo do worker de atendimento:",

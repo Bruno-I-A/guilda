@@ -7,6 +7,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { statusAfterCustomerMessage } from "@/domain/support-inbox";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -229,7 +230,7 @@ async function materializeMessage(
       conversationId: conversation.id,
       eventType: "opened",
       source: input.message.source,
-      detail: { initialStatus: "ai_active" },
+      detail: { initialStatus: "needs_human" },
     });
   }
 
@@ -284,9 +285,17 @@ async function materializeMessage(
       detail: { reason: "business_app_message", externalMessageId: input.message.externalId },
     });
   } else {
+    const [current] = await tx
+      .select({ status: schema.supportConversations.status, assignedUserId: schema.supportConversations.assignedUserId })
+      .from(schema.supportConversations)
+      .where(eq(schema.supportConversations.id, conversation.id));
     await tx
       .update(schema.supportConversations)
-      .set({ lastMessageAt: input.message.occurredAt, updatedAt: new Date() })
+      .set({
+        ...(current ? { status: statusAfterCustomerMessage(current.status, current.assignedUserId) } : {}),
+        lastMessageAt: input.message.occurredAt,
+        updatedAt: new Date(),
+      })
       .where(eq(schema.supportConversations.id, conversation.id));
   }
 }
@@ -308,7 +317,7 @@ async function materializeStatuses(
     ) {
       continue;
     }
-    const [message] = await tx
+    const [received] = await tx
       .select({ id: schema.supportMessages.id })
       .from(schema.supportMessages)
       .where(
@@ -319,6 +328,22 @@ async function materializeStatuses(
         ),
       )
       .limit(1);
+    // A resposta enviada pela Guilda guarda o id da Meta no evento "accepted":
+    // a mensagem é imutável e foi gravada antes de a Meta devolver esse id.
+    const [accepted] = received
+      ? []
+      : await tx
+          .select({ id: schema.supportMessageEvents.messageId })
+          .from(schema.supportMessageEvents)
+          .where(
+            and(
+              eq(schema.supportMessageEvents.orgId, input.orgId),
+              eq(schema.supportMessageEvents.eventType, "accepted"),
+              sql`${schema.supportMessageEvents.detail}->>'wamid' = ${externalId}`,
+            ),
+          )
+          .limit(1);
+    const message = received ?? accepted;
     if (!message) continue;
     const at = occurredAt(status.timestamp);
     await tx

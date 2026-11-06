@@ -20,7 +20,7 @@ type MetaErrorPayload = {
 
 export class MetaGraphError extends Error {
   constructor(
-    readonly operation: "exchange_code" | "list_phones" | "subscribe_webhook",
+    readonly operation: "exchange_code" | "list_phones" | "subscribe_webhook" | "send_message",
     readonly httpStatus: number,
     readonly graphCode?: number,
     readonly graphType?: string,
@@ -121,6 +121,34 @@ export async function resolveCoexistencePhone(
     throw new MetaGraphError("list_phones", 409);
   }
   return candidates[0];
+}
+
+/** Envia texto pela Cloud API e devolve o id da mensagem na Meta (wamid). */
+export async function sendWhatsAppText(
+  input: { phoneNumberId: string; accessToken: string; to: string; text: string },
+  config: MetaServerConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const url = graphUrl(config, `/${input.phoneNumberId}/messages`);
+  const response = await fetchImpl(url, {
+    method: "POST",
+    headers: { authorization: `Bearer ${input.accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: input.to,
+      type: "text",
+      text: { preview_url: false, body: input.text },
+    }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const payload = await responsePayload(response);
+  const sent = Array.isArray(payload.messages) ? (payload.messages[0] as { id?: unknown } | undefined) : undefined;
+  if (!response.ok || typeof sent?.id !== "string") {
+    throw graphError("send_message", response, payload);
+  }
+  return sent.id;
 }
 
 export async function subscribeWhatsAppWebhook(
