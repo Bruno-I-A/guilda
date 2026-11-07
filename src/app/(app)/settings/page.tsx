@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -44,23 +45,27 @@ export default async function SettingsPage() {
 
   const [{ clans, orgMembers }, mcpKeys] = await Promise.all([
     withOrgTx(session.orgId, async (tx) => {
-    const clanRows = await tx.query.clans.findMany({
-      where: eq(schema.clans.orgId, session.orgId),
-      with: {
-        memberships: { with: { user: { columns: { name: true } } } },
-        informativeRoutes: {
-          with: { user: { columns: { name: true } } },
+      const clanRows = await tx.query.clans.findMany({
+        where: eq(schema.clans.orgId, session.orgId),
+        with: {
+          memberships: { with: { user: { columns: { name: true } } } },
+          informativeRoutes: {
+            with: { user: { columns: { name: true } } },
+          },
+          memberDuties: true,
         },
-        memberDuties: true,
-      },
-      orderBy: [asc(schema.clans.name)],
-    });
-    const memberRows = await tx
-      .select({ userId: schema.member.userId, name: schema.user.name, role: schema.member.role })
-      .from(schema.member)
-      .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
-      .where(eq(schema.member.organizationId, session.orgId))
-      .orderBy(asc(schema.user.name));
+        orderBy: [asc(schema.clans.name)],
+      });
+      const memberRows = await tx
+        .select({
+          userId: schema.member.userId,
+          name: schema.user.name,
+          role: schema.member.role,
+        })
+        .from(schema.member)
+        .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+        .where(eq(schema.member.organizationId, session.orgId))
+        .orderBy(asc(schema.user.name));
       return { clans: clanRows, orgMembers: memberRows };
     }),
     listMcpAgentKeys(session.orgId),
@@ -88,18 +93,12 @@ export default async function SettingsPage() {
 
   return (
     <div className="grid gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-wide">
-            <Settings className="size-6 text-primary" aria-hidden /> Configurações
-          </h1>
-          <p className="max-w-2xl text-muted-foreground">
-            Organize clãs, funções e destinos dos Informativos sem depender de
-            alterações no sistema.
-          </p>
-        </div>
-        <CreateClanDialog />
-      </div>
+      <PageHeader
+        title="Configurações"
+        icon={Settings}
+        description="Organize os clãs, as funções e os destinos dos Informativos."
+        action={<CreateClanDialog />}
+      />
 
       {semClan.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-destructive/50 bg-destructive/5 p-4 text-sm">
@@ -119,9 +118,7 @@ export default async function SettingsPage() {
       <section className="grid gap-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h2 className="font-heading text-lg font-semibold tracking-wide">
-              Composição dos clãs
-            </h2>
+            <h2>Composição dos clãs</h2>
             <p className="text-sm text-muted-foreground">
               Quem entra, quem sai, quem lidera e qual é o clã principal de cada
               pessoa.

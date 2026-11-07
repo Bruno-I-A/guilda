@@ -67,6 +67,9 @@ export function TaskForm({
   clans,
   clients,
   currentUserId,
+  initialTitle,
+  initialDescription,
+  initialClientId,
 }: {
   members: {
     userId: string;
@@ -77,6 +80,9 @@ export function TaskForm({
   clans: { id: string; name: string }[];
   clients: { id: string; name: string; cnpj: string | null }[];
   currentUserId: string;
+  initialTitle?: string;
+  initialDescription?: string;
+  initialClientId?: string;
 }) {
   const router = useRouter();
   const eligibleMembers = members.filter((member) => !member.resolutionError);
@@ -91,7 +97,7 @@ export function TaskForm({
   const [clanId, setClanId] = useState(clans[0]?.id ?? "");
   const [dueDate, setDueDate] = useState("");
   const [dueTime, setDueTime] = useState("");
-  const [clientId, setClientId] = useState("");
+  const [clientId, setClientId] = useState(clients.some((client) => client.id === initialClientId) ? (initialClientId as string) : "");
   const [clientQuery, setClientQuery] = useState("");
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
   const [priority, setPriority] = useState(2);
@@ -192,6 +198,7 @@ export function TaskForm({
             <Input
               id="title"
               name="title"
+              defaultValue={initialTitle}
               placeholder="Ex.: Revisar proposta comercial"
               maxLength={200}
               required
@@ -203,6 +210,7 @@ export function TaskForm({
             <Textarea
               id="description"
               name="description"
+              defaultValue={initialDescription}
               placeholder="Contexto, critérios de aceite…"
               rows={4}
               maxLength={5000}

@@ -10,6 +10,7 @@ import {
   problemasDeSegredo,
   validarAuthSecret,
   validarFlowSecretsKey,
+  validarWhatsAppTokenKey,
 } from "./env-guard";
 
 const SEGREDO_FORTE = randomBytes(32).toString("base64"); // ~44 chars, alta entropia
@@ -76,12 +77,32 @@ describe("FLOW_SECRETS_KEY", () => {
   });
 });
 
+describe("WHATSAPP_TOKEN_KEY", () => {
+  test("aceita vazia enquanto a integração estiver desligada", () => {
+    expect(validarWhatsAppTokenKey(undefined)).toBeNull();
+  });
+
+  test("aceita chave AES-256 forte", () => {
+    expect(
+      validarWhatsAppTokenKey(randomBytes(32).toString("base64")),
+    ).toBeNull();
+  });
+
+  test("recusa tamanho e entropia fracos", () => {
+    expect(validarWhatsAppTokenKey("curta")?.motivo).toMatch(/32 bytes/);
+    expect(
+      validarWhatsAppTokenKey(Buffer.alloc(32).toString("base64"))?.motivo,
+    ).toMatch(/entropia/);
+  });
+});
+
 describe("problemasDeSegredo", () => {
   test("ambiente forte não tem problemas", () => {
     expect(
       problemasDeSegredo({
         BETTER_AUTH_SECRET: SEGREDO_FORTE,
         FLOW_SECRETS_KEY: randomBytes(32).toString("base64"),
+        WHATSAPP_TOKEN_KEY: randomBytes(32).toString("base64"),
       }),
     ).toEqual([]);
   });
@@ -90,10 +111,12 @@ describe("problemasDeSegredo", () => {
     const issues = problemasDeSegredo({
       BETTER_AUTH_SECRET: "placeholder-somente-para-o-build-32ch",
       FLOW_SECRETS_KEY: "curta",
+      WHATSAPP_TOKEN_KEY: "curta",
     });
     expect(issues.map((i) => i.variavel).sort()).toEqual([
       "BETTER_AUTH_SECRET",
       "FLOW_SECRETS_KEY",
+      "WHATSAPP_TOKEN_KEY",
     ]);
   });
 });
