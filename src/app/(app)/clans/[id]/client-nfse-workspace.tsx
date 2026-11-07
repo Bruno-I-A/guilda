@@ -33,6 +33,7 @@ import type { NfseClientAddress } from "@/domain/nfse";
 import type { ClientNfseCandidateView, ClientNfseIssuerView, ClientNfseMonthNoteView } from "@/lib/client-nfse/loaders";
 import { COMPANY_FILTERS, matchesCompanyFilter, matchesCompanyQuery, summarizeNotes, type CompanyFilter } from "@/lib/client-nfse/presentation";
 import { formatBRLCurrency } from "@/lib/currency";
+import { formatAppDateTime } from "@/lib/date-time";
 import { cn } from "@/lib/utils";
 
 import { deleteIssuer } from "./client-nfse-actions";
@@ -83,10 +84,17 @@ function NoteRow({
   const { invoice } = note;
   const working = invoice.status === "queued" || invoice.status === "cancel_requested";
   return (
-    <li className="grid min-w-0 gap-x-3 gap-y-1 py-1.5 pr-4 pl-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:pl-8">
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm sm:flex-nowrap" title={note.description}>
-        <span className={cn("min-w-0 truncate sm:max-w-[45%] sm:shrink-0", invoice.status === "cancelled" && "line-through opacity-60")}>{note.takerName}</span>
-        <span className="min-w-0 truncate text-xs text-muted-foreground">{note.description}</span>
+    <li className="grid min-w-0 gap-3 p-4">
+      <div className="grid min-w-0 gap-1 text-sm">
+        <span className={cn("break-words font-semibold", invoice.status === "cancelled" && "line-through opacity-60")}>{note.takerName}</span>
+        <span className="font-mono text-xs text-muted-foreground">CPF/CNPJ: {note.takerDocument} · DPS {invoice.dpsSeries}/{invoice.dpsNumber}</span>
+        <p className="max-w-prose whitespace-pre-wrap break-words text-muted-foreground">{note.description}</p>
+        <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
+          <span>Solicitada em <time dateTime={note.requestedAt}>{formatAppDateTime(note.requestedAt)}</time></span>
+          <span>{invoice.issuedAt ? <>Emitida em <time dateTime={invoice.issuedAt}>{formatAppDateTime(invoice.issuedAt)}</time></> : invoice.status === "issued" || invoice.status === "cancelled" ? "Horário de emissão não informado" : "Ainda não emitida"} · Brasília</span>
+          {invoice.cityLabel ? <span>Município de emissão: {invoice.cityLabel}</span> : null}
+        </div>
+        {invoice.lastError ? <p className="mt-2 break-words rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm">{invoice.lastError}</p> : null}
       </div>
       <div className="flex flex-wrap items-center gap-2 sm:justify-end">
         <span className="font-mono text-sm tabular-nums">{formatBRLCurrency(note.amount)}</span>
@@ -100,6 +108,7 @@ function NoteRow({
           {invoice.status === "failed" ? <AlertTriangle className="size-3 text-destructive" aria-hidden /> : null}
           {invoice.status === "issued" && invoice.nfseNumber ? `Emitida · Nº ${invoice.nfseNumber}` : invoice.status === "failed" ? "Ver erro e resolver" : STATUS_LABELS[invoice.status]}
         </button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(true)}>Detalhes e ações</Button>
         {invoice.status === "issued" ? (
           <Button asChild size="sm" variant="outline" className="touch-target" aria-label={`Baixar o PDF da nota de ${note.takerName}`}>
             <a href={clientNfsePdfHref(clanId, period.year, period.month, { invoiceId: invoice.id })}><Download aria-hidden /> PDF</a>
@@ -130,7 +139,7 @@ function NoteRow({
   );
 }
 
-/** Uma empresa: o nome, o que ela tem no mês e as notas logo abaixo, sem nada para abrir. */
+/** Área de trabalho da empresa selecionada, com histórico e ações contextualizados. */
 function CompanyRow({
   clanId,
   period,
@@ -138,6 +147,7 @@ function CompanyRow({
   isCurrent,
   canManage,
   serviceReady,
+  initialFilter,
 }: {
   clanId: string;
   period: Period;
@@ -145,6 +155,7 @@ function CompanyRow({
   isCurrent: boolean;
   canManage: boolean;
   serviceReady: boolean;
+  initialFilter: CompanyFilter | null;
 }) {
   const router = useRouter();
   const [fiscalOpen, setFiscalOpen] = useState(false);
@@ -152,11 +163,20 @@ function CompanyRow({
   // O formulário de emissão: vazio ("Nova nota") ou preenchido ("Nova igual", cliente das notas do Portal).
   const [emitting, setEmitting] = useState<{ key: string; prefill: EmitPrefill | null } | null>(null);
   const [removing, startRemoving] = useTransition();
+  const [noteFilter, setNoteFilter] = useState<string>(initialFilter === "none" ? "all" : initialFilter ?? "all");
+  const [noteQuery, setNoteQuery] = useState("");
+  const [page, setPage] = useState(0);
   const canEmit = canManage && serviceReady && issuer.active && !issuer.problem && isCurrent;
   const blockedReason = !serviceReady ? "O serviço fiscal está indisponível." : !issuer.active ? "A empresa está desativada." : issuer.problem;
   const summary = summarizeNotes(issuer.notes);
-  // A nota com erro vem primeiro dentro da empresa; a empresa não muda de lugar.
-  const notes = [...issuer.notes].sort((a, b) => Number(b.invoice.status === "failed") - Number(a.invoice.status === "failed"));
+  // Histórico cronológico; erros têm filtro próprio e não mudam a ordem da carteira.
+  const notes = issuer.notes.filter((note) => {
+    const status = note.invoice.status;
+    const matchesStatus = noteFilter === "all" || (noteFilter === "working" ? status === "queued" || status === "cancel_requested" : status === noteFilter);
+    const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    return matchesStatus && normalize(`${note.takerName} ${note.takerDocument} ${note.description} ${note.invoice.nfseNumber ?? ""}`).includes(normalize(noteQuery.trim()));
+  }).sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(notes.length / 10) - 1));
 
   function remove() {
     if (!window.confirm(`Tirar ${issuer.name} das Notas dos clientes? Com nota já pedida, desative nos dados fiscais.`)) return;
@@ -177,13 +197,13 @@ function CompanyRow({
   }
 
   return (
-    <li className={cn("min-w-0 border-l-2", summary.failed > 0 ? "border-l-destructive" : "border-l-transparent", !issuer.active && "opacity-70")}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-muted/50 px-4 py-1.5">
+    <section className="min-w-0 rounded-md border bg-card" aria-label={`Gestão de ${issuer.name}`}>
+      <div className="flex flex-wrap items-center gap-3 border-b bg-muted/30 p-4">
         <div className="grid min-w-[14rem] flex-1 gap-0.5">
-          <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-            <span className="truncate text-sm font-semibold">{issuer.name}</span>
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+            <h3 className="break-words">{issuer.name}</h3>
             <span className="font-mono text-xs text-muted-foreground">{issuer.cnpj ? formatCnpj(issuer.cnpj) : "sem CNPJ"}</span>
-          </span>
+          </div>
           {!issuer.active ? (
             <span className="text-xs text-muted-foreground">Empresa desativada</span>
           ) : issuer.problem ? (
@@ -200,7 +220,7 @@ function CompanyRow({
             </Button>
           ) : null}
           {canEmit ? (
-            <Button type="button" size="sm" variant="outline" onClick={() => emitFrom(null)} aria-label={`Nova nota de ${issuer.name}`}>
+            <Button type="button" onClick={() => emitFrom(null)} aria-label={`Nova nota de ${issuer.name}`}>
               <Plus aria-hidden /> Nova nota
             </Button>
           ) : null}
@@ -222,9 +242,22 @@ function CompanyRow({
         </div>
       </div>
 
+      <div className="grid gap-4 border-b p-4">
+        <div className="flex flex-wrap gap-2">
+          {canManage ? <><Button variant="outline" onClick={() => setTakersOpen(true)}><Users aria-hidden /> Tomadores ({issuer.takers.length})</Button><Button variant="ghost" onClick={() => setFiscalOpen(true)}><Settings2 aria-hidden /> Dados fiscais</Button></> : null}
+        </div>
+        {canManage && !canEmit ? <p className="text-sm text-warning">{blockedReason ?? "Para emitir uma nova nota, volte ao mês atual."}</p> : null}
+        <div><h3>Notas da empresa</h3><p className="mt-1 text-xs text-muted-foreground">Pedidos de {MONTHS[period.month - 1]} · mais recentes primeiro · horários de Brasília</p></div>
+        <Input type="search" aria-label="Buscar nota da empresa" placeholder="Tomador, documento, nº da nota ou descrição" value={noteQuery} onChange={(event) => { setNoteQuery(event.target.value); setPage(0); }} />
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Situação das notas da empresa">
+          {[["all", "Todas"], ["failed", "Com erro"], ["working", "Em andamento"], ["issued", "Emitidas"], ["cancelled", "Canceladas"]].map(([value, label]) => <Button key={value} size="sm" className="touch-target" variant={noteFilter === value ? "default" : "outline"} aria-pressed={noteFilter === value} onClick={() => { setNoteFilter(value); setPage(0); }}>{label}</Button>)}
+        </div>
+        <p className="text-xs text-muted-foreground" role="status">{notes.length} de {issuer.notes.length} notas neste recorte</p>
+      </div>
+
       {notes.length > 0 ? (
         <ul className="grid min-w-0 divide-y divide-border/40 border-t border-border/40" aria-label={`Notas de ${issuer.name} em ${MONTHS[period.month - 1]}`}>
-          {notes.map((note) => (
+          {notes.slice(currentPage * 10, currentPage * 10 + 10).map((note) => (
             <NoteRow
               key={note.invoice.id}
               clanId={clanId}
@@ -241,7 +274,8 @@ function CompanyRow({
             />
           ))}
         </ul>
-      ) : null}
+      ) : <div className="grid gap-2 p-6 text-sm"><p>{issuer.notes.length ? "Nenhuma nota corresponde à busca e à situação escolhida." : "Esta empresa ainda não tem pedidos de emissão neste mês."}</p>{issuer.notes.length ? <Button variant="outline" onClick={() => { setNoteFilter("all"); setNoteQuery(""); setPage(0); }}>Limpar filtros das notas</Button> : <p className="text-muted-foreground">Use Nova nota para iniciar ou escolha um tomador para reaproveitar os dados anteriores.</p>}</div>}
+      {notes.length > 10 ? <div className="flex items-center justify-between gap-2 border-t p-4"><Button variant="outline" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Anteriores</Button><span className="font-mono text-xs">Página {currentPage + 1} de {Math.ceil(notes.length / 10)}</span><Button variant="outline" disabled={(currentPage + 1) * 10 >= notes.length} onClick={() => setPage(currentPage + 1)}>Próximas</Button></div> : null}
 
       {canManage ? (
         <>
@@ -255,15 +289,13 @@ function CompanyRow({
           {fiscalOpen ? <ClientNfseIssuerDialog clanId={clanId} issuer={issuer} open onOpenChange={setFiscalOpen} /> : null}
         </>
       ) : null}
-    </li>
+    </section>
   );
 }
 
 /**
- * Notas dos clientes (2026-11-05): toda empresa em ordem alfabética, sempre no
- * mesmo lugar, com as notas do mês abaixo dela. Previsão do mês e grupos por
- * urgência foram testados e rejeitados: empresa que muda de lugar conforme a
- * situação fica difícil de achar. Não voltar sem o Bruno pedir.
+ * Carteira alfabética estável e área de trabalho de uma empresa por vez.
+ * A revisão de 07/11 separa o histórico para evitar todas as notas abertas juntas.
  */
 export function ClientNfseWorkspace({
   clanId,
@@ -286,12 +318,14 @@ export function ClientNfseWorkspace({
   const search = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CompanyFilter | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const isCurrent = period.year === currentPeriod.year && period.month === currentPeriod.month;
   const monthName = MONTHS[period.month - 1];
   const title = `${monthName.charAt(0).toUpperCase()}${monthName.slice(1)} de ${period.year}`;
   const total = useMemo(() => summarizeNotes(issuers.flatMap((issuer) => issuer.notes)), [issuers]);
   const visible = useMemo(() => issuers.filter((issuer) => matchesCompanyQuery(issuer, query) && matchesCompanyFilter(issuer.notes, filter)), [issuers, query, filter]);
   const searching = query.trim().length > 0;
+  const selected = visible.find((issuer) => issuer.id === selectedId);
 
   useEffect(() => {
     if (total.working === 0) return;
@@ -313,6 +347,13 @@ export function ClientNfseWorkspace({
 
   return (
     <div className="grid min-w-0 grid-cols-1 gap-4">
+      <section className="panel-cut grid gap-4 border border-primary/20 bg-card p-5">
+        <div><h2>Central de emissões</h2><p className="mt-2 max-w-prose text-sm text-muted-foreground">Escolha uma empresa para emitir, acompanhar os pedidos e consultar as notas. Cada operação fica no contexto do CNPJ selecionado.</p></div>
+        <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[["Emitidas no período", String(total.issued)], ["Valor emitido", money(total.issuedCents)], ["Em andamento", String(total.working)], ["Notas com erro", String(total.failed)]].map(([label, value]) => <div key={label} className="rounded-md border bg-background/40 p-3"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-2 break-words font-mono text-xl tabular-nums">{value}</dd></div>)}
+        </dl>
+        <p className="text-xs text-muted-foreground">Período dos pedidos de emissão. Valor considera apenas notas emitidas; canceladas e cancelamentos em andamento ficam fora do total.</p>
+      </section>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1">
           <Button asChild variant="outline" size="icon-sm" className="touch-target">
@@ -397,19 +438,28 @@ export function ClientNfseWorkspace({
           <Button type="button" variant="ghost" onClick={() => { setQuery(""); setFilter(null); }}>Limpar busca e filtro</Button>
         </div>
       ) : (
-        <ul className="panel-cut grid min-w-0 divide-y divide-border/70" aria-label={`Empresas em ${monthName}`}>
-          {visible.map((issuer) => (
+        <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+          <section className="min-w-0 rounded-md border bg-card" aria-label="Carteira de empresas">
+            <div className="border-b p-3"><h3>Empresas</h3><p className="mt-1 text-xs text-muted-foreground">{visible.length} no recorte · selecione para trabalhar</p></div>
+            <ul className="max-h-72 divide-y overflow-y-auto lg:max-h-[65vh]">
+              {visible.map((issuer) => { const counts = summarizeNotes(issuer.notes); return <li key={issuer.id}><button type="button" aria-pressed={selected?.id === issuer.id} onClick={() => setSelectedId(issuer.id)} className={cn("grid w-full gap-2 border-l-2 p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selected?.id === issuer.id ? "border-primary bg-primary/10" : "border-transparent")}><span className="break-words text-sm font-medium">{issuer.name}</span><span className="font-mono text-xs text-muted-foreground">{issuer.cnpj ? formatCnpj(issuer.cnpj) : "Sem CNPJ"}</span><span className="text-xs text-muted-foreground">{counts.issued} emitidas · {money(counts.issuedCents)}</span>{counts.failed ? <span className="text-xs text-destructive">{counts.failed} nota(s) com erro</span> : null}{counts.working ? <span className="text-xs text-warning">{counts.working} em andamento</span> : null}{!issuer.active || issuer.problem ? <span className="text-xs text-warning">{!issuer.active ? "Empresa desativada" : "Cadastro precisa de atenção"}</span> : <span className="text-xs text-success">Cadastro pronto</span>}</button></li>; })}
+            </ul>
+          </section>
+          <div className="min-w-0" aria-live="polite">
+          {selected ? (
             <CompanyRow
-              key={`${issuer.id}-${period.year}-${period.month}`}
+              key={`${selected.id}-${period.year}-${period.month}-${filter}`}
               clanId={clanId}
               period={period}
-              issuer={issuer}
+              issuer={selected}
+              initialFilter={filter}
               isCurrent={isCurrent}
               canManage={canManage}
               serviceReady={serviceReady}
             />
-          ))}
-        </ul>
+          ) : <section className="grid min-h-64 content-center gap-3 rounded-md border border-dashed p-6 text-center"><h3>Qual empresa vamos atender?</h3><p className="mx-auto max-w-prose text-sm text-muted-foreground">Selecione uma empresa na carteira. Aqui você verá suas notas, tomadores e ações de emissão.</p></section>}
+          </div>
+        </div>
       )}
     </div>
   );
