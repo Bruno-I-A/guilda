@@ -56,6 +56,7 @@ export interface XmlRoutineView {
   keepSince: string | null;
   lastRunStartedAt: string | null;
   lastRunFinishedAt: string | null;
+  runRequestedAt: string | null;
   runRequested: boolean;
   vaultReady: boolean;
   problems: { clientName: string; message: string }[];
@@ -88,6 +89,7 @@ export async function loadXmlRoutineView(tx: OrgTx, orgId: string, now: Date): P
     keepSince: row?.keepSince?.slice(0, 7) ?? null,
     lastRunStartedAt: row?.lastRunStartedAt?.toISOString() ?? null,
     lastRunFinishedAt: row?.lastRunFinishedAt?.toISOString() ?? null,
+    runRequestedAt: row?.runRequestedAt?.toISOString() ?? null,
     runRequested: Boolean(row?.runRequestedAt && (!row.lastRunStartedAt || row.runRequestedAt > row.lastRunStartedAt)),
     vaultReady: Boolean(await loadVaultPublicKey(tx, orgId)),
     problems,
