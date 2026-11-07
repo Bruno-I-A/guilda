@@ -1,9 +1,9 @@
 "use client";
 
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, Download, Search, Files, ShieldCheck, Building2, Activity } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Download, Search, Files, ShieldCheck, Building2, Activity, Timer } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,50 @@ function xmlHref(clanId: string, year: number, month: number, clientId?: string)
 
 function dateLabel(iso: string): string {
   return new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+}
+
+function durationLabel(milliseconds: number): string {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1_000));
+  const hours = Math.floor(seconds / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  const remainder = seconds % 60;
+  return [hours, minutes, remainder].map((part) => String(part).padStart(2, "0")).join(":");
+}
+
+/** Cronômetro vivo durante a coleta e duração congelada depois da conclusão. */
+function RoutineTimer({ routine }: { routine: XmlRoutineView }) {
+  const running = xmlRoutineIsRunning(routine);
+  const active = routine.runRequested || running;
+  const start = routine.runRequested
+    ? routine.runRequestedAt
+    : routine.lastRunStartedAt;
+  const finished = !active && routine.lastRunStartedAt && routine.lastRunFinishedAt
+    ? routine.lastRunFinishedAt
+    : null;
+  const [clock, setClock] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!active || !start) return;
+    const interval = window.setInterval(() => setClock(Date.now()), 1_000);
+    return () => window.clearInterval(interval);
+  }, [active, start]);
+
+  if (!start) return null;
+  const elapsed = (finished ? new Date(finished).getTime() : clock) - new Date(start).getTime();
+  const label = routine.runRequested ? "Preparando há" : running ? "Executando há" : "Concluída em";
+
+  return (
+    <div className={cn(
+      "flex w-fit items-center gap-3 rounded-md border px-3 py-2",
+      active ? "border-primary/40 bg-primary/10 text-primary" : "border-success/40 bg-success/10 text-success",
+    )} role="timer" aria-live="off">
+      <Timer className={cn("size-5", active && "animate-pulse")} aria-hidden />
+      <span className="grid gap-0.5">
+        <span className="text-xs font-medium uppercase tracking-widest">{label}</span>
+        <span className="font-mono text-2xl font-medium tabular-nums" suppressHydrationWarning>{durationLabel(elapsed)}</span>
+      </span>
+    </div>
+  );
 }
 
 function normalize(value: string): string {
@@ -307,6 +351,7 @@ export function XmlNotesBoard({
             <h2>As notas dos seus clientes.<br />Um único lugar para acompanhar.</h2>
             <p className="max-w-prose text-sm text-muted-foreground">Do Sistema Nacional para a sua apuração. XML organizados por empresa e mês de emissão, prontos para baixar.</p>
             <span className="flex items-center gap-2 text-sm text-muted-foreground"><Activity className={cn("size-4", running && "animate-pulse text-primary")} aria-hidden />{xmlRoutineStatusText(routine)}</span>
+            <RoutineTimer routine={routine} />
           </div>
           <div className="grid gap-2 sm:min-w-48 sm:border-l sm:border-primary/20 sm:pl-8">
             <span className="text-sm text-muted-foreground">XML em {monthName}</span>
