@@ -29,7 +29,7 @@ import {
 } from "@/domain/nfse";
 import type { ClientNfseInvoiceView } from "@/lib/client-nfse/loaders";
 import { formatBRLCurrency } from "@/lib/currency";
-import { formatAppDate } from "@/lib/date-time";
+import { formatAppDateTime } from "@/lib/date-time";
 import { cn } from "@/lib/utils";
 
 import { cancelInvoice, discardInvoice, fixInvoiceAddress, fixInvoiceService, retryInvoice } from "./client-nfse-actions";
@@ -135,7 +135,7 @@ export function ClientNfseInvoiceDialog({
           <DialogDescription>
             {STATUS_LABELS[invoice.status]} · {formatBRLCurrency(amount)}
             {invoice.nfseNumber ? ` · nº ${invoice.nfseNumber}` : ""}
-            {invoice.issuedAt ? ` · ${formatAppDate(invoice.issuedAt)}` : ""} · DPS {invoice.dpsSeries}/{invoice.dpsNumber}
+            {invoice.issuedAt ? ` · Emitida em ${formatAppDateTime(invoice.issuedAt)} (Brasília)` : ""} · DPS {invoice.dpsSeries}/{invoice.dpsNumber}
           </DialogDescription>
         </DialogHeader>
         {invoice.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">{invoice.lastError}</p> : null}
