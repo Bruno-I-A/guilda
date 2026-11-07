@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Download, Search, Files, ShieldCheck, Building2, Activity } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
@@ -259,7 +259,7 @@ export function XmlNotesBoard({
       key: "certificates",
       label: "Certificados",
       detail: `${ready} de ${serviceCompanies.length} prontos${summary.pending > 0 ? ` · ${summary.pending} conferindo` : ""}`,
-      done: ready > 0 && summary.pending === 0,
+      done: ready > 0 && ready === serviceCompanies.length && summary.pending === 0,
     },
     {
       key: "routine",
@@ -298,7 +298,31 @@ export function XmlNotesBoard({
   ];
 
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-4">
+    <div className="grid min-w-0 grid-cols-1 gap-6">
+      <section className="panel-cut relative overflow-hidden border border-primary/20 bg-card p-6 sm:p-8" aria-label="Visão geral dos XML">
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 border-l border-primary/10 bg-primary/5" aria-hidden />
+        <div className="relative grid gap-8 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <div className="grid gap-3">
+            <span className="flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-primary"><Files className="size-4" aria-hidden /> Acervo fiscal · NFS-e</span>
+            <h2>As notas dos seus clientes.<br />Um único lugar para acompanhar.</h2>
+            <p className="max-w-prose text-sm text-muted-foreground">Do Sistema Nacional para a sua apuração. XML organizados por empresa e mês de emissão, prontos para baixar.</p>
+            <span className="flex items-center gap-2 text-sm text-muted-foreground"><Activity className={cn("size-4", running && "animate-pulse text-primary")} aria-hidden />{xmlRoutineStatusText(routine)}</span>
+          </div>
+          <div className="grid gap-2 sm:min-w-48 sm:border-l sm:border-primary/20 sm:pl-8">
+            <span className="text-sm text-muted-foreground">XML em {monthName}</span>
+            <span className="font-mono text-5xl font-medium tracking-tight tabular-nums text-primary">{totalNotes.toLocaleString("pt-BR")}</span>
+            <span className="text-xs text-muted-foreground">{isEmissionMonthInProgress(year, month, now) ? "Mês em andamento · até hoje" : `Acervo de ${monthName} de ${year}`}</span>
+            {canManage && totalNotes > 0 ? <Button asChild className="mt-3"><a href={xmlHref(clanId, year, month)}><Download aria-hidden /> Baixar XML do mês</a></Button> : null}
+          </div>
+        </div>
+      </section>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Indicadores do acervo">
+        {[
+          { label: "Empresas com XML", value: companies.filter((company) => company.notes.total > 0).length, detail: "Com notas no período selecionado", icon: Building2 },
+          { label: "Certificados prontos", value: `${ready} / ${serviceCompanies.length}`, detail: "Empresas de serviço · válidos para coleta", icon: ShieldCheck },
+          { label: "Precisam de atenção", value: serviceCompanies.filter((company) => problemIds.has(company.clientId)).length, detail: "Empresas de serviço · certificado ou leitura", icon: AlertTriangle },
+        ].map(({ label, value, detail, icon: Icon }) => <section key={label} className="rounded-md border bg-card/60 p-4"><div className="flex items-center justify-between gap-3 text-sm text-muted-foreground"><span>{label}</span><Icon className="size-4 text-primary" aria-hidden /></div><p className="my-2 font-mono text-2xl tabular-nums">{value}</p><p className="text-xs text-muted-foreground">{detail}</p></section>)}
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1">
           <Button asChild variant="outline" size="icon-sm">
@@ -311,11 +335,6 @@ export function XmlNotesBoard({
         </div>
         <PeriodPicker clanId={clanId} year={year} month={month} now={now} />
       </div>
-
-      <p className="max-w-prose text-sm text-muted-foreground">
-        Como funciona: envie o certificado A1 de cada empresa que emite NFS-e. A rotina busca no Sistema Nacional as notas
-        que ela emitiu e guarda os XML aqui, por mês de emissão. No dia de apurar, é só baixar o mês.
-      </p>
 
       {!routine.vaultReady ? (
         <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning" role="status">
@@ -351,7 +370,7 @@ export function XmlNotesBoard({
         })}
       </ol>
 
-      <section className="grid gap-3 border-y py-3" aria-live="polite">
+      <section className="grid gap-3 rounded-md border bg-card/40 p-4" aria-live="polite">
         <div className="grid gap-1 text-sm">
           {current === "certificates" ? (
             <p>
@@ -391,7 +410,7 @@ export function XmlNotesBoard({
 
       <section className="grid min-w-0 gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2>Empresas</h2>
+          <div><h2>Acervo por empresa</h2><p className="mt-1 text-sm text-muted-foreground">{visible.length} de {scoped.length} empresas · encontre os XML e acompanhe a coleta.</p></div>
           {canManage ? <ImportDominioCodesDialog clanId={clanId} /> : null}
         </div>
         {serviceWithoutCode > 0 ? (
@@ -479,20 +498,19 @@ export function XmlNotesBoard({
             ) : null}
           </div>
         ) : (
-          <ul className="grid min-w-0 divide-y border-y">
+          <ul className="grid min-w-0 gap-3">
             {visible.map((company) => (
-              <li key={company.clientId} className="grid min-w-0 gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+              <li key={company.clientId} className={cn("grid min-w-0 gap-4 rounded-md border border-l-2 bg-card/60 p-4 transition-colors hover:bg-accent/10 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center", problemIds.has(company.clientId) ? "border-l-destructive" : company.notes.total > 0 ? "border-l-primary" : "border-l-border")}>
                 <div className="grid min-w-0 gap-0.5 text-sm">
                   <span className="truncate font-medium">{company.name}</span>
                   <span className="font-mono text-xs text-muted-foreground">{company.cnpj ? formatCnpj(company.cnpj) : "sem CNPJ no cadastro"}</span>
                   <span><CertificateStatus certificate={company.certificate} now={now} /></span>
                   <span className="text-xs"><SyncStatus company={company} now={now} /></span>
-                  <ServiceToggle clanId={clanId} company={company} canManage={canManage} />
-                  <DominioCodeField key={company.dominioCode ?? ""} clanId={clanId} company={company} canManage={canManage} />
+                  <details className="mt-2"><summary className="min-h-11 cursor-pointer py-3 text-xs text-muted-foreground hover:text-foreground">Cadastro e código Domínio{company.dominioCode ? ` · ${company.dominioCode}` : " · código não informado"}</summary><div className="grid gap-2 border-t pt-3"><ServiceToggle clanId={clanId} company={company} canManage={canManage} /><DominioCodeField key={company.dominioCode ?? ""} clanId={clanId} company={company} canManage={canManage} /></div></details>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                    {company.notes.total} nota(s) em {monthName}
+                  <span className="rounded-md border bg-background/50 px-3 py-2 font-mono text-sm tabular-nums">
+                    {company.notes.total} XML · {monthName}
                     {company.notes.cancelled > 0 ? ` · ${company.notes.cancelled} cancelada(s)` : ""}
                   </span>
                   {canManage && company.notes.total > 0 ? (
