@@ -126,11 +126,11 @@ export async function loadIssuerReadiness(
             : !template
               ? `Modelo fiscal incompleto: ${parsed.error?.issues[0]?.message ?? "revise o cadastro"}`
               : !row.certStatus
-                ? "Sem certificado A1 (envie na aba XML das notas)."
+                ? "Sem certificado A1. Envie o certificado nesta empresa."
                 : row.certStatus === "pending"
                   ? "Certificado ainda em conferência."
                   : row.certStatus !== "valid" || row.certCnpj !== row.cnpj
-                    ? "Certificado com problema (veja a aba XML das notas)."
+                    ? "Certificado com problema. Troque o certificado nesta empresa."
                     : row.certValidUntil && row.certValidUntil <= input.now
                       ? "Certificado vencido."
                       : null;

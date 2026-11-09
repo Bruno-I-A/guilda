@@ -37,6 +37,7 @@ import { formatAppDateTime } from "@/lib/date-time";
 import { cn } from "@/lib/utils";
 
 import { deleteIssuer } from "./client-nfse-actions";
+import { ClientCertificateDialog } from "./client-certificate-dialog";
 import { ClientNfseAddCompany } from "./client-nfse-add-company";
 import { ClientNfseTakersDialog } from "./client-nfse-customers";
 import { ClientNfseEmitDialog, type EmitPrefill } from "./client-nfse-emit-dialog";
@@ -147,6 +148,7 @@ function CompanyRow({
   isCurrent,
   canManage,
   serviceReady,
+  vaultKey,
   initialFilter,
 }: {
   clanId: string;
@@ -155,6 +157,7 @@ function CompanyRow({
   isCurrent: boolean;
   canManage: boolean;
   serviceReady: boolean;
+  vaultKey: { keyId: string; publicKeySpki: string } | null;
   initialFilter: CompanyFilter | null;
 }) {
   const router = useRouter();
@@ -244,7 +247,7 @@ function CompanyRow({
 
       <div className="grid gap-4 border-b p-4">
         <div className="flex flex-wrap gap-2">
-          {canManage ? <><Button variant="outline" onClick={() => setTakersOpen(true)}><Users aria-hidden /> Tomadores ({issuer.takers.length})</Button><Button variant="ghost" onClick={() => setFiscalOpen(true)}><Settings2 aria-hidden /> Dados fiscais</Button></> : null}
+          {canManage ? <><ClientCertificateDialog clanId={clanId} clientId={issuer.clientId} clientName={issuer.name} certificate={issuer.certificate} vaultKey={vaultKey} canManage /><Button variant="outline" onClick={() => setTakersOpen(true)}><Users aria-hidden /> Tomadores ({issuer.takers.length})</Button><Button variant="ghost" onClick={() => setFiscalOpen(true)}><Settings2 aria-hidden /> Dados fiscais</Button></> : null}
         </div>
         {canManage && !canEmit ? <p className="text-sm text-warning">{blockedReason ?? "Para emitir uma nova nota, volte ao mês atual."}</p> : null}
         <div><h3>Notas da empresa</h3><p className="mt-1 text-xs text-muted-foreground">Pedidos de {MONTHS[period.month - 1]} · mais recentes primeiro · horários de Brasília</p></div>
@@ -304,7 +307,7 @@ export function ClientNfseWorkspace({
   canManage,
   issuers,
   candidates,
-  serviceReady,
+  vaultKey,
 }: {
   clanId: string;
   period: Period;
@@ -312,13 +315,14 @@ export function ClientNfseWorkspace({
   canManage: boolean;
   issuers: readonly ClientNfseIssuerView[];
   candidates: readonly ClientNfseCandidateView[];
-  serviceReady: boolean;
+  vaultKey: { keyId: string; publicKeySpki: string } | null;
 }) {
   const router = useRouter();
   const search = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CompanyFilter | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const serviceReady = Boolean(vaultKey);
   const isCurrent = period.year === currentPeriod.year && period.month === currentPeriod.month;
   const monthName = MONTHS[period.month - 1];
   const title = `${monthName.charAt(0).toUpperCase()}${monthName.slice(1)} de ${period.year}`;
@@ -456,6 +460,7 @@ export function ClientNfseWorkspace({
               isCurrent={isCurrent}
               canManage={canManage}
               serviceReady={serviceReady}
+              vaultKey={vaultKey}
             />
           ) : <section className="grid min-h-64 content-center gap-3 rounded-md border border-dashed p-6 text-center"><h3>Qual empresa vamos atender?</h3><p className="mx-auto max-w-prose text-sm text-muted-foreground">Selecione uma empresa na carteira. Aqui você verá suas notas, tomadores e ações de emissão.</p></section>}
           </div>

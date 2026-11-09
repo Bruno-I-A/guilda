@@ -53,7 +53,7 @@ export async function ClientNfseTab({
       canManage={canManage}
       issuers={workspace.issuers}
       candidates={workspace.candidates}
-      serviceReady={Boolean(vault)}
+      vaultKey={vault}
     />
   );
 }
