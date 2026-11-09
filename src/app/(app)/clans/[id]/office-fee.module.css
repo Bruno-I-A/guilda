@@ -16,6 +16,14 @@
 .metrics dd { font-family: var(--font-geist-mono), monospace; font-size: 1.25rem; font-weight: 500; font-variant-numeric: tabular-nums; }
 .metrics dd.amount { font-size: 1.65rem; }
 .metrics dd span { font-family: var(--font-geist-sans), sans-serif; font-size: .75rem; font-weight: 400; color: var(--muted-foreground); margin-left: .5rem; }
+.runTimer { display: grid; grid-template-columns: auto auto minmax(10rem, 1fr); align-items: center; width: fit-content; min-width: min(100%, 31rem); gap: .85rem; padding: .8rem 1rem; border: 1px solid; border-left-width: 3px; background: var(--card); }
+.runTimerActive { color: var(--primary); border-color: color-mix(in oklab, var(--primary) 40%, transparent); background: color-mix(in oklab, var(--primary) 8%, var(--card)); }
+.runTimerDone { color: var(--success); border-color: color-mix(in oklab, var(--success) 40%, transparent); background: color-mix(in oklab, var(--success) 8%, var(--card)); }
+.runTimerWarning { color: var(--warning); border-color: color-mix(in oklab, var(--warning) 40%, transparent); background: color-mix(in oklab, var(--warning) 8%, var(--card)); }
+.runTimerCopy { display: grid; gap: .1rem; }
+.runTimerCopy > span { font-size: .75rem; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }
+.runTimerCopy > strong { font-family: var(--font-geist-mono), monospace; font-size: 1.75rem; line-height: 1; font-weight: 500; font-variant-numeric: tabular-nums; }
+.runTimerDetail { justify-self: end; color: var(--muted-foreground); font-size: .75rem; }
 .steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--fee-line); }
 .step { display: flex; align-items: center; gap: .75rem; padding: .75rem .65rem 1rem; border-bottom: 2px solid transparent; }
 .stepNumber { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 1.75rem; height: 1.75rem; border: 1px solid var(--border); border-radius: 50%; font-family: var(--font-geist-mono), monospace; font-size: .75rem; }
@@ -43,6 +51,8 @@
   .overview { grid-template-columns: minmax(0, 1fr); }
   .metrics { border-left: 0; border-top: 1px solid var(--fee-line); padding: 1.25rem; }
   .emission { padding: 1.25rem; }
+  .runTimer { grid-template-columns: auto 1fr; width: 100%; min-width: 0; }
+  .runTimerDetail { grid-column: 2; justify-self: start; }
   .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .step { padding-inline: .25rem; }
   .client { min-width: 11rem; }

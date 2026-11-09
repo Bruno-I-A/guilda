@@ -71,6 +71,12 @@ test("ciclo completo: enfileirar, emitir, marcar etapa, cancelar, reabrir", asyn
   expect(remaining.items.map(nfseBatchItemKey)).toEqual([nfseBatchItemKey(additionalItem)]);
   const queued = await withOrgTx(ORG, (tx) => requests.enqueueNfseBatch(tx, { orgId: ORG, actorId: "u1", year: 2026, month: 9, includeAdditional: true, selected: remaining.items.map(nfseBatchItemKey), expectedCount: 1, expectedTotalCents: 85000, today: "2026-10-05" }));
   expect(queued).toEqual({ ok: true, data: { queued: 1 } });
+  expect(await withOrgTx(ORG, (tx) => requests.loadLatestNfseEmissionRun(tx, { orgId: ORG, year: 2026, month: 9 }))).toMatchObject({
+    finishedAt: null,
+    count: 1,
+    issued: 0,
+    failed: 0,
+  });
 
   // Repetir não duplica: a prévia já não tem nada.
   const again = await withOrgTx(ORG, (tx) => requests.loadNfseEmissionPreview(tx, { orgId: ORG, year: 2026, month: 9, includeAdditional: true }));
@@ -124,8 +130,17 @@ test("ciclo completo: enfileirar, emitir, marcar etapa, cancelar, reabrir", asyn
 
   // "Tentar de novo" relê o endereço do cadastro (precisa do GRANT da 0081).
   expect(await repo.finishNfseJob(ORG, second!, { kind: "failed", message: "E0234: endereço", errors: [] })).toBe(true);
+  const failedRun = await withOrgTx(ORG, (tx) => requests.loadLatestNfseEmissionRun(tx, { orgId: ORG, year: 2026, month: 9 }));
+  expect(failedRun).toMatchObject({ count: 1, issued: 0, failed: 1 });
+  expect(failedRun?.finishedAt).toBeInstanceOf(Date);
   await withOrgTx(ORG, (tx) => tx.update(schema.clients).set({ address: { street: "RUA NOVA", number: "", complement: null, district: "CENTRO", city: "Getúlio Vargas", state: "rs", zipCode: "99900000" } }).where(sql`id = '00000000-0000-4000-8000-000000000001'`));
   expect((await withOrgTx(ORG, (tx) => requests.requeueNfseInvoice(tx, { orgId: ORG, actorId: "u1", invoiceId: second!.id }))).ok).toBe(true);
+  expect(await withOrgTx(ORG, (tx) => requests.loadLatestNfseEmissionRun(tx, { orgId: ORG, year: 2026, month: 9 }))).toMatchObject({
+    finishedAt: null,
+    count: 1,
+    issued: 0,
+    failed: 0,
+  });
   const [requeued] = await withOrgTx(ORG, (tx) => tx.select({ status: schema.nfseInvoices.status, address: schema.nfseInvoices.takerAddress }).from(schema.nfseInvoices).where(sql`id = ${second!.id}`));
   expect(requeued).toEqual({ status: "queued", address: { cityCode: "4308904", zipCode: "99900000", street: "RUA NOVA", number: "S/N", complement: null, district: "CENTRO" } });
 
