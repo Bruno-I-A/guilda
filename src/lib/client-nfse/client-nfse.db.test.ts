@@ -385,7 +385,7 @@ test("adicionar empresa: quem não pode entrar aparece com o motivo, não some",
       { orgId: ORG, name: "Associacao Ativa", taxRegime: "association", cnpj: "11444777000161" },
     ]),
   );
-  const { candidates } = await withOrgTx(ORG, (tx) => loadClientNfseWorkspace(tx, { orgId: ORG, year: 2026, month: 11, now: NOW }));
+  const { candidates, issuers } = await withOrgTx(ORG, (tx) => loadClientNfseWorkspace(tx, { orgId: ORG, year: 2026, month: 11, now: NOW }));
   const reason = (name: string) => candidates.find((item) => item.name === name)?.blocked;
   expect(reason("Associacao Ativa")).toBeNull();
   expect(reason("Sociedade Getuliense Inativa")).toMatch(/Inativa/);
@@ -393,6 +393,11 @@ test("adicionar empresa: quem não pode entrar aparece com o motivo, não some",
   expect(reason("Eletricista MEI")).toMatch(/MEI/);
   // Quem já emite pelas Notas dos clientes aparece, mas não pode entrar de novo.
   expect(reason("Academia")).toMatch(/Já está nas Notas dos clientes/);
+  expect(issuers.find((issuer) => issuer.name === "Academia")?.certificate).toMatchObject({
+    status: "valid",
+    certificateCnpj: "33000167000101",
+    validUntil: "2027-06-01T00:00:00.000Z",
+  });
 }, 60_000);
 
 test("nota com erro: corrigir o endereço grava no tomador e devolve à fila com a mesma DPS", async () => {

@@ -10,6 +10,7 @@ import { danfseFileName, type NfseClientAddress, type NfseInvoiceStatus } from "
 import type { NfseRetentions } from "@/domain/nfse-retentions";
 import { ibgeCity, ibgeCityCode } from "@/lib/nfse/municipios";
 import { firstElementText } from "@/lib/nfse/xml";
+import type { ClientCertificateView } from "@/lib/nfse/xml-requests";
 import { parseNfseIssuerTemplate, type NfseIssuerTemplate } from "@/lib/nfse/template";
 
 import { readIssuedNoteFacts, type IssuedNoteFacts } from "./from-xml";
@@ -71,6 +72,8 @@ export interface ClientNfseIssuerView {
   template: NfseIssuerTemplate | null;
   /** "Getúlio Vargas/RS", para o resumo dos dados fiscais. */
   cityLabel: string | null;
+  /** Certificado A1 da empresa, para gerenciar sem sair da central de emissão. */
+  certificate: ClientCertificateView | null;
   problem: string | null;
 }
 
@@ -179,12 +182,33 @@ export async function loadClientNfseWorkspace(
 
   const cert = schema.nfseClientCertificates;
   const candidates = await tx
-    .select({ clientId: c.id, name: c.name, cnpj: c.cnpj, active: c.active, taxRegime: c.taxRegime, address: c.address, certStatus: cert.status })
+    .select({
+      clientId: c.id,
+      name: c.name,
+      cnpj: c.cnpj,
+      active: c.active,
+      taxRegime: c.taxRegime,
+      address: c.address,
+      certStatus: cert.status,
+      certStatusMessage: cert.statusMessage,
+      certCnpj: cert.certificateCnpj,
+      certValidUntil: cert.validUntil,
+      certUploadedAt: cert.uploadedAt,
+    })
     .from(c)
     .leftJoin(cert, and(eq(cert.orgId, c.orgId), eq(cert.clientId, c.id)))
     .where(eq(c.orgId, input.orgId))
     .orderBy(asc(c.name));
   const taken = new Set(issuers.map((issuer) => issuer.clientId));
+  const certificates = new Map<string, ClientCertificateView>(
+    candidates.flatMap((row) => row.certStatus && row.certUploadedAt ? [[row.clientId, {
+      status: row.certStatus,
+      statusMessage: row.certStatusMessage,
+      certificateCnpj: row.certCnpj,
+      validUntil: row.certValidUntil?.toISOString() ?? null,
+      uploadedAt: row.certUploadedAt.toISOString(),
+    }]] : []),
+  );
 
   return {
     issuers: issuers.map((issuer) => ({
@@ -199,6 +223,7 @@ export async function loadClientNfseWorkspace(
       nextDpsNumber: issuer.nextDpsNumber,
       template: parseNfseIssuerTemplate(issuer.template),
       cityLabel: cityLabelOf(parseNfseIssuerTemplate(issuer.template)?.cityCode),
+      certificate: certificates.get(issuer.clientId) ?? null,
       problem: readiness.get(issuer.id)?.problem ?? null,
     })),
     candidates: candidates
