@@ -66,7 +66,7 @@ export function replyBlockReason(input: {
   if (input.assignedUserId !== input.viewerId) return "Assuma a conversa para responder.";
   if (!input.channelActive) return "O número do WhatsApp não está ativo. Confira em Configurações.";
   if (!replyWindowIsOpen(input.lastCustomerMessageAt, input.now)) {
-    return "Passaram 24 horas desde a última mensagem do cliente. O WhatsApp só libera nova resposta quando ele escrever de novo.";
+    return "Passaram 24 horas desde a última mensagem do cliente: pela Guilda, só quando ele escrever de novo. Para falar antes, responda pelo celular ou pelo WhatsApp Web do escritório.";
   }
   return null;
 }

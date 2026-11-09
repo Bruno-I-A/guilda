@@ -14,6 +14,7 @@ const expectedTables = [
   "support_contacts",
   "support_conversation_events",
   "support_conversation_notes",
+  "support_ai_runs",
   "support_conversations",
   "support_inbound_events",
   "support_message_events",

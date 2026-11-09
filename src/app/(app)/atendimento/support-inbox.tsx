@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, Building2, CheckCheck, Clock, Hand, LoaderCircle, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Hand, LoaderCircle, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -84,6 +84,7 @@ function QueueItem({ row, active, filter, now }: { row: SupportQueueRow; active:
         {row.lastMessage ? <span className="truncate text-xs text-muted-foreground">{row.lastMessage}</span> : null}
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <StatusChip status={row.status} />
+          {row.aiUrgent ? <span className="inline-flex shrink-0 items-center rounded-md border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-xs text-warning">Urgente (IA)</span> : null}
           <span className="truncate text-xs text-muted-foreground">{row.assignedToMe ? "Com você" : (row.assigneeName ?? row.clanName ?? "Sem setor")}</span>
         </span>
       </Link>
@@ -207,6 +208,15 @@ function ConversationPanel({ conversation, filter, onContext }: { conversation: 
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" size="sm" variant="ghost" className="xl:hidden" onClick={onContext}><Building2 aria-hidden /> Empresa</Button>
+          {conversation.phone ? (
+            // Fora das 24 horas, só o aparelho do escritório responde (coexistência). Abre o
+            // WhatsApp logado neste navegador: precisa ser o do escritório, não o pessoal.
+            <Button asChild size="sm" variant="ghost">
+              <a href={`https://web.whatsapp.com/send?phone=${conversation.phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" title="Abre a conversa no WhatsApp Web logado neste navegador. Confira se é o do escritório.">
+                <ExternalLink aria-hidden /> WhatsApp Web
+              </a>
+            </Button>
+          ) : null}
           {resolved ? (
             <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => run(() => reopenConversation(id))}><RotateCcw aria-hidden /> Reabrir</Button>
           ) : (
@@ -223,6 +233,41 @@ function ConversationPanel({ conversation, filter, onContext }: { conversation: 
         <li ref={end} aria-hidden />
       </ol>
       <Composer key={`${conversation.id}-${conversation.replyBlocked ?? "ok"}`} conversation={conversation} />
+    </section>
+  );
+}
+
+const URGENCY_LABELS = { alta: "alta", media: "média", baixa: "baixa" } as const;
+
+/**
+ * O que a IA faria, em sombra. Nada disto foi enviado: serve para a equipe
+ * comparar com o que fez antes de qualquer resposta automática.
+ */
+function AiSuggestion({ conversation }: { conversation: SupportConversationView }) {
+  const { pending, run } = useCommand();
+  const suggestion = conversation.aiSuggestion;
+  if (!suggestion) return null;
+  const alreadyThere = suggestion.clan && conversation.assignedClanId === suggestion.clan.id;
+  return (
+    <section className="grid gap-1.5 rounded-md border border-dashed p-2.5 text-sm" aria-label="Leitura da IA">
+      <p className="flex items-center gap-1.5 hud-label"><Bot className="size-3.5" aria-hidden /> Leitura da IA · teste</p>
+      <p className="text-xs text-muted-foreground">Nada disto foi enviado ao cliente.</p>
+      {suggestion.fallbackReason === "confianca_baixa" ? (
+        <p>Não entendeu o assunto. Perguntaria ao cliente do que se trata.</p>
+      ) : (
+        <>
+          <p><span className="text-muted-foreground">Setor:</span> {suggestion.sectorLabel}{suggestion.clan ? ` → ${suggestion.clan.name}` : ""}</p>
+          <p><span className="text-muted-foreground">Urgência:</span> {URGENCY_LABELS[suggestion.urgency]} · <span className="font-mono tabular-nums">{Math.round(suggestion.confidence * 100)}%</span> de certeza</p>
+          {suggestion.summary ? <p>{suggestion.summary}</p> : null}
+        </>
+      )}
+      {suggestion.question ? <p className="rounded-sm bg-muted/40 px-2 py-1"><span className="text-muted-foreground">Perguntaria:</span> {suggestion.question}</p> : null}
+      {suggestion.directAnswer ? <p className="rounded-sm bg-muted/40 px-2 py-1"><span className="text-muted-foreground">Responderia:</span> {suggestion.directAnswer}</p> : null}
+      {suggestion.clan && !alreadyThere && conversation.status !== "resolved" ? (
+        <Button type="button" size="sm" variant="outline" className="justify-self-start" disabled={pending} onClick={() => run(() => transferConversation({ conversationId: conversation.id, clanId: suggestion.clan!.id, userId: null }))}>
+          Passar para {suggestion.clan.name}
+        </Button>
+      ) : null}
     </section>
   );
 }
@@ -322,6 +367,7 @@ function ContextPanel({ conversation, clients, clans, members, onClose }: { conv
         <span className="text-sm font-semibold">Empresa e setor</span>
         <Button type="button" size="icon-sm" variant="ghost" className="touch-target" aria-label="Voltar para a conversa" onClick={onClose}><X aria-hidden /></Button>
       </div>
+      <AiSuggestion conversation={conversation} />
       <section className="grid gap-1 text-sm">
         <p className="hud-label">Contato</p>
         <span className="font-medium">{conversation.contactName}</span>

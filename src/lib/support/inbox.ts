@@ -20,6 +20,10 @@ import {
 } from "@/domain/support-inbox";
 import { err, type ActionResult } from "@/lib/action-context";
 
+import { clanForSector, SECTOR_LABELS } from "./triage/sectors";
+import { loadLatestSuggestions, type SupportAiSuggestion } from "./triage/shadow";
+import type { SetorValido } from "./triage/classificacao";
+
 export { statusAfterCustomerMessage };
 
 const c = schema.supportConversations;
@@ -62,6 +66,8 @@ export interface SupportQueueRow {
   lastMessage: string | null;
   /** A última fala é do cliente: alguém ainda precisa responder. */
   waitingReply: boolean;
+  /** A IA, em sombra, leu como urgente. Só marca: a fila continua por ordem de chegada. */
+  aiUrgent: boolean;
 }
 
 export async function loadSupportQueue(
@@ -100,6 +106,7 @@ export async function loadSupportQueue(
         .orderBy(messages.conversationId, desc(messages.occurredAt))
     : [];
   const lastById = new Map(lastMessages.map((row) => [row.conversationId, row]));
+  const suggestions = await loadLatestSuggestions(tx, input.orgId, ids);
 
   const statusCounts = await tx.select({ status: c.status, total: count() }).from(c).where(and(eq(c.orgId, input.orgId), visible)).groupBy(c.status);
   const [mine] = await tx
@@ -123,6 +130,7 @@ export async function loadSupportQueue(
         lastMessageAt: row.lastMessageAt?.toISOString() ?? null,
         lastMessage: last ? messageLabel(last) : null,
         waitingReply: last?.actor === "customer" && row.status !== "resolved",
+        aiUrgent: row.status !== "resolved" && suggestions.get(row.id)?.urgency === "alta",
       };
     }),
     counts: {
@@ -157,6 +165,8 @@ export interface SupportConversationView {
   openTasks: { id: string; title: string; status: string }[];
   /** Para o resumo da missão criada a partir da conversa. */
   lastCustomerText: string | null;
+  /** O que a IA faria, em sombra: nunca foi enviado ao cliente. */
+  aiSuggestion: (SupportAiSuggestion & { sectorLabel: string; clan: { id: string; name: string } | null }) | null;
 }
 
 function eventLabel(eventType: string, actor: string | null, detail: Record<string, unknown>, status: string | undefined): string | null {
@@ -286,7 +296,17 @@ export async function loadSupportConversation(
         .limit(5)
     : [];
 
+  const suggestion = (await loadLatestSuggestions(tx, input.orgId, [row.id])).get(row.id);
+  const clanOptions = suggestion
+    ? await tx.select({ id: schema.clans.id, name: schema.clans.name, slug: schema.clans.slug }).from(schema.clans).where(and(eq(schema.clans.orgId, input.orgId), eq(schema.clans.active, true)))
+    : [];
+  const sector = (suggestion?.sector ?? "outro") as SetorValido;
+  const suggestedClan = suggestion ? clanForSector(sector, clanOptions) : null;
+
   return {
+    aiSuggestion: suggestion
+      ? { ...suggestion, sectorLabel: SECTOR_LABELS[sector] ?? suggestion.sector, clan: suggestedClan ? { id: suggestedClan.id, name: suggestedClan.name } : null }
+      : null,
     id: row.id,
     status: row.status,
     assignedToMe: row.assignedUserId === input.viewer.userId,

@@ -465,6 +465,49 @@ export const supportOutbox = pgTable(
   ],
 );
 
+/**
+ * Cada leitura da IA numa conversa (modo sombra, 2026-11-09): o que ela faria,
+ * com custo e versão do prompt. Nunca guarda o prompt nem a mensagem enviada à
+ * IA. A linha nasce "running" e o índice único por mensagem é a trava contra
+ * duas leituras do mesmo turno.
+ */
+export const supportAiRuns = pgTable(
+  "support_ai_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: uuid("conversation_id").notNull(),
+    triggerMessageId: uuid("trigger_message_id").notNull(),
+    status: varchar("status", { length: 16 }).notNull(),
+    model: varchar("model", { length: 80 }).notNull(),
+    promptVersion: varchar("prompt_version", { length: 40 }).notNull(),
+    result: jsonb("result").$type<Record<string, unknown>>(),
+    fallbackReason: varchar("fallback_reason", { length: 40 }),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    latencyMs: integer("latency_ms"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    foreignKey({
+      name: "support_ai_runs_org_conversation_fk",
+      columns: [t.orgId, t.conversationId],
+      foreignColumns: [supportConversations.orgId, supportConversations.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_ai_runs_org_message_fk",
+      columns: [t.orgId, t.triggerMessageId],
+      foreignColumns: [supportMessages.orgId, supportMessages.id],
+    }).onDelete("restrict"),
+    uniqueIndex("support_ai_runs_org_trigger_uidx").on(t.orgId, t.triggerMessageId),
+    index("support_ai_runs_org_conversation_time_idx").on(t.orgId, t.conversationId, t.createdAt),
+    check("support_ai_runs_status_check", sql`${t.status} IN ('running', 'done', 'failed')`),
+  ],
+);
+
 export type SupportWhatsAppChannel = typeof supportWhatsAppChannels.$inferSelect;
 export type SupportContact = typeof supportContacts.$inferSelect;
 export type SupportConversation = typeof supportConversations.$inferSelect;
