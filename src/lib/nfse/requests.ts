@@ -1,6 +1,8 @@
 import "server-only";
 
-import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+
+import { and, asc, desc, eq, gte, inArray, isNull, ne, sql } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -210,8 +212,15 @@ export async function enqueueNfseBatch(
         }),
       )
       .returning({ id: schema.nfseInvoices.id });
+    const batchId = randomUUID();
     await tx.insert(schema.nfseInvoiceEvents).values(
-      inserted.map((row) => ({ orgId: input.orgId, invoiceId: row.id, eventType: "requested" as const, actorId: input.actorId })),
+      inserted.map((row) => ({
+        orgId: input.orgId,
+        invoiceId: row.id,
+        eventType: "requested" as const,
+        actorId: input.actorId,
+        detail: { batchId },
+      })),
     );
     return { ok: true, data: { queued: inserted.length } };
   } catch (error) {
@@ -293,6 +302,7 @@ export async function requeueNfseInvoice(
     invoiceId: invoice.id,
     eventType: "retried",
     actorId: input.actorId,
+    detail: { batchId: randomUUID() },
   });
   return { ok: true, data: undefined };
 }
@@ -342,6 +352,92 @@ export interface NfseInvoiceRow {
   issuedAt: Date | null;
   lastError: string | null;
   environment: number | null;
+}
+
+export interface NfseEmissionRunRecord {
+  requestedAt: Date;
+  finishedAt: Date | null;
+  count: number;
+  issued: number;
+  failed: number;
+}
+
+/**
+ * Último lote pedido nesta competência. O `batchId` mora no evento para não
+ * criar tabela nem coluna só para apresentação; eventos antigos, anteriores
+ * ao cronômetro, continuam legíveis pelo instante compartilhado da transação.
+ */
+export async function loadLatestNfseEmissionRun(
+  tx: OrgTx,
+  input: { orgId: string; year: number; month: number },
+): Promise<NfseEmissionRunRecord | null> {
+  const events = schema.nfseInvoiceEvents;
+  const invoices = schema.nfseInvoices;
+  const markerTypes = ["requested", "retried"] as const;
+  const [latest] = await tx
+    .select({
+      eventType: events.eventType,
+      createdAt: events.createdAt,
+      batchId: sql<string | null>`${events.detail} ->> 'batchId'`,
+    })
+    .from(events)
+    .innerJoin(
+      invoices,
+      and(eq(invoices.orgId, events.orgId), eq(invoices.id, events.invoiceId)),
+    )
+    .where(and(
+      eq(events.orgId, input.orgId),
+      eq(invoices.periodYear, input.year),
+      eq(invoices.periodMonth, input.month),
+      inArray(events.eventType, markerTypes),
+    ))
+    .orderBy(desc(events.createdAt))
+    .limit(1);
+  if (!latest) return null;
+
+  const sameBatch = latest.batchId
+    ? sql`${events.detail} ->> 'batchId' = ${latest.batchId}`
+    : and(eq(events.eventType, latest.eventType), eq(events.createdAt, latest.createdAt));
+  const markers = await tx
+    .select({ invoiceId: events.invoiceId })
+    .from(events)
+    .innerJoin(
+      invoices,
+      and(eq(invoices.orgId, events.orgId), eq(invoices.id, events.invoiceId)),
+    )
+    .where(and(
+      eq(events.orgId, input.orgId),
+      eq(invoices.periodYear, input.year),
+      eq(invoices.periodMonth, input.month),
+      inArray(events.eventType, markerTypes),
+      sameBatch,
+    ));
+  const invoiceIds = [...new Set(markers.map((row) => row.invoiceId))];
+  if (invoiceIds.length === 0) return null;
+
+  const outcomes = await tx
+    .select({ invoiceId: events.invoiceId, eventType: events.eventType, createdAt: events.createdAt })
+    .from(events)
+    .where(and(
+      eq(events.orgId, input.orgId),
+      inArray(events.invoiceId, invoiceIds),
+      inArray(events.eventType, ["issued", "failed"]),
+      gte(events.createdAt, latest.createdAt),
+    ))
+    .orderBy(asc(events.createdAt));
+  const latestOutcome = new Map<string, (typeof outcomes)[number]>();
+  for (const outcome of outcomes) latestOutcome.set(outcome.invoiceId, outcome);
+  const completed = [...latestOutcome.values()];
+  const finishedAt = completed.length === invoiceIds.length
+    ? new Date(Math.max(...completed.map((outcome) => outcome.createdAt.getTime())))
+    : null;
+  return {
+    requestedAt: latest.createdAt,
+    finishedAt,
+    count: invoiceIds.length,
+    issued: completed.filter((outcome) => outcome.eventType === "issued").length,
+    failed: completed.filter((outcome) => outcome.eventType === "failed").length,
+  };
 }
 
 export async function loadNfseMonth(

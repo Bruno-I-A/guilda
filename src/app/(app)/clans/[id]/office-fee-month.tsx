@@ -1,9 +1,9 @@
 "use client";
 
-import { Check, ChevronLeft, ChevronRight, Download, FilePlus2, LoaderCircle, RefreshCw, CalendarPlus, FileCheck2, Clock3, ShieldCheck } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Download, FilePlus2, LoaderCircle, RefreshCw, CalendarPlus, FileCheck2, Clock3, ShieldCheck, Timer } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,64 @@ interface Step {
   label: string;
   detail: string;
   done: boolean;
+}
+
+export interface NfseEmissionRunView {
+  requestedAt: string;
+  finishedAt: string | null;
+  count: number;
+  issued: number;
+  failed: number;
+}
+
+function durationLabel(milliseconds: number): string {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1_000));
+  const hours = Math.floor(seconds / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  const remainder = seconds % 60;
+  return [hours, minutes, remainder].map((part) => String(part).padStart(2, "0")).join(":");
+}
+
+function EmissionTimer({ run, serverNow }: { run: NfseEmissionRunView; serverNow: string }) {
+  const active = run.finishedAt === null;
+  const [clock, setClock] = useState(() => Date.parse(serverNow));
+
+  useEffect(() => {
+    if (!active) return;
+    const offset = Date.parse(serverNow) - Date.now();
+    const interval = window.setInterval(() => setClock(Date.now() + offset), 1_000);
+    return () => window.clearInterval(interval);
+  }, [active, serverNow]);
+
+  const end = run.finishedAt ? Date.parse(run.finishedAt) : clock;
+  const elapsed = end - Date.parse(run.requestedAt);
+  const processed = run.issued + run.failed;
+  const label = active
+    ? `Emitindo ${run.count} ${run.count === 1 ? "nota" : "notas"} há`
+    : run.failed > 0
+      ? "Lote finalizado em"
+      : `${run.count} ${run.count === 1 ? "nota emitida" : "notas emitidas"} em`;
+  const detail = active
+    ? `${processed} de ${run.count} processadas`
+    : run.failed > 0
+      ? `${run.issued} emitidas · ${run.failed} com erro`
+      : "Emissão concluída";
+
+  return (
+    <section
+      className={cn(styles.runTimer, active ? styles.runTimerActive : run.failed > 0 ? styles.runTimerWarning : styles.runTimerDone)}
+      role="timer"
+      aria-live="off"
+      aria-label={`${label} ${durationLabel(elapsed)}`}
+    >
+      <Timer className={cn("size-6", active && "animate-pulse")} aria-hidden />
+      <span className={styles.runTimerCopy}>
+        <span>{label}</span>
+        <strong suppressHydrationWarning>{durationLabel(elapsed)}</strong>
+      </span>
+      <span className={styles.runTimerDetail}>{detail}</span>
+    </section>
+  );
 }
 
 function adjacentPeriod(year: number, month: number, delta: number) {
@@ -55,6 +113,8 @@ export function OfficeFeeMonth({
   members,
   rows,
   settings,
+  serverNow,
+  emissionRun,
   invoices,
 }: {
   clanId: string;
@@ -66,6 +126,8 @@ export function OfficeFeeMonth({
   members: readonly { userId: string; name: string }[];
   rows: readonly OfficeFeeControlRowView[];
   settings: NfseSettingsPanelView | null;
+  serverNow: string;
+  emissionRun: NfseEmissionRunView | null;
   invoices: readonly NfseInvoiceView[];
 }) {
   const router = useRouter();
@@ -156,6 +218,8 @@ export function OfficeFeeMonth({
           <div><dt>Pedidos na fila</dt><dd>{queuedCount}<span>{queuedCount === 1 ? "nota" : "notas"}</span></dd></div>
         </dl>
       </section>
+
+      {emissionRun ? <EmissionTimer run={emissionRun} serverNow={serverNow} /> : null}
 
       <ol className={styles.steps} aria-label={`Passos de ${monthName}`}>
         {steps.map((step, index) => {

@@ -5,7 +5,7 @@ import { SegmentedNav } from "@/components/segmented-nav";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
-import { loadNfseMonth, loadNfseSettings } from "@/lib/nfse/requests";
+import { loadLatestNfseEmissionRun, loadNfseMonth, loadNfseSettings } from "@/lib/nfse/requests";
 
 import { NfseSetupCard, type NfseSettingsPanelView } from "./nfse-parts";
 import type { OfficeFeeControlRowView } from "./office-fee-control-board";
@@ -206,7 +206,7 @@ export async function OfficeFeeTab({
   }
 
   const period = parsePeriod(requestedYear, requestedMonth);
-  const { rows, events, nfseSettings, nfseInvoices, profilesCount } = await withOrgTx(orgId, async (tx) => {
+  const { rows, events, nfseSettings, nfseInvoices, emissionRun, profilesCount } = await withOrgTx(orgId, async (tx) => {
     const rows = await tx
       .select({
         id: schema.officeFeeControlPeriods.id,
@@ -251,11 +251,12 @@ export async function OfficeFeeTab({
       : [];
     const nfseSettings = await loadNfseSettings(tx, orgId);
     const nfseInvoices = await loadNfseMonth(tx, { orgId, year: period.year, month: period.month });
+    const emissionRun = await loadLatestNfseEmissionRun(tx, { orgId, year: period.year, month: period.month });
     const [profiles] = await tx
       .select({ count: sql<number>`count(*)::int` })
       .from(schema.officeFeeProfiles)
       .where(eq(schema.officeFeeProfiles.orgId, orgId));
-    return { rows, events, nfseSettings, nfseInvoices, profilesCount: profiles?.count ?? 0 };
+    return { rows, events, nfseSettings, nfseInvoices, emissionRun, profilesCount: profiles?.count ?? 0 };
   });
   const historyByControl = new Map<string, typeof events>();
   for (const event of events) {
@@ -281,6 +282,12 @@ export async function OfficeFeeTab({
         members={memberships}
         rows={views}
         settings={settingsView(nfseSettings)}
+        serverNow={new Date().toISOString()}
+        emissionRun={emissionRun ? {
+          ...emissionRun,
+          requestedAt: emissionRun.requestedAt.toISOString(),
+          finishedAt: emissionRun.finishedAt?.toISOString() ?? null,
+        } : null}
         invoices={nfseInvoices.map((invoice) => ({ ...invoice, issuedAt: invoice.issuedAt?.toISOString() ?? null }))}
       />
     </FeeViews>
