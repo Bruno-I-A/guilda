@@ -1,6 +1,16 @@
 "use client";
 
-import { Check, Copy, MoreHorizontal, RefreshCw, ShieldCheck, ShieldOff, Trash2, UserPlus } from "lucide-react";
+import {
+  Check,
+  Copy,
+  KeyRound,
+  MoreHorizontal,
+  RefreshCw,
+  ShieldCheck,
+  ShieldOff,
+  Trash2,
+  UserPlus,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -34,7 +44,7 @@ import {
 import { authClient } from "@/lib/auth-client";
 import { authErrorMessage } from "@/lib/auth-errors";
 
-import { createMemberWithTempPassword } from "./actions";
+import { createMemberWithTempPassword, resetMemberPassword } from "./actions";
 
 /** Senha temporária legível (evita caracteres ambíguos tipo 0/O, l/1). */
 function generateTempPassword(): string {
@@ -226,19 +236,123 @@ export function InviteMemberDialog() {
   );
 }
 
+function ResetPasswordDialog({
+  open,
+  onOpenChange,
+  memberId,
+  memberName,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  memberId: string;
+  memberName: string;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ email: string; password: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function reset() {
+    setBusy(true);
+    const response = await resetMemberPassword({ memberId });
+    setBusy(false);
+    if (!response.ok) {
+      toast.error(response.error);
+      return;
+    }
+    if (response.data) setResult(response.data);
+    router.refresh();
+  }
+
+  async function copy() {
+    if (!result) return;
+    await navigator.clipboard.writeText(
+      `Guilda — senha redefinida\nE-mail: ${result.email}\nSenha temporária: ${result.password}\n\nAo entrar, você vai escolher uma senha nova.`,
+    );
+    setCopied(true);
+    toast.success("Senha copiada!");
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        onOpenChange(next);
+        if (!next) {
+          setResult(null);
+          setCopied(false);
+        }
+      }}
+    >
+      <DialogContent className="sm:max-w-sm">
+        {result ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Senha redefinida</DialogTitle>
+              <DialogDescription>
+                Repasse a senha temporária para {memberName} — ela só aparece aqui
+                uma vez. Ao entrar, a pessoa vai escolher uma senha nova.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="panel-cut panel-cut-sm grid gap-2 p-4 font-mono text-sm">
+              <div>
+                <span className="text-muted-foreground">E-mail: </span>
+                {result.email}
+              </div>
+              <div>
+                <span className="text-muted-foreground">Senha: </span>
+                <span className="font-semibold text-primary">{result.password}</span>
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={copy}>
+                {copied ? <Check aria-hidden /> : <Copy aria-hidden />} Copiar
+              </Button>
+              <Button onClick={() => onOpenChange(false)}>Concluído</Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Redefinir a senha de {memberName}?</DialogTitle>
+              <DialogDescription>
+                A Guilda gera uma senha temporária para você repassar. A senha
+                atual deixa de valer e {memberName} sai de todos os aparelhos em
+                que estiver conectado(a).
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancelar
+              </Button>
+              <Button disabled={busy} onClick={reset}>
+                {busy ? "Redefinindo…" : "Redefinir senha"}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function MemberActions({
   memberId,
   memberName,
   role,
   organizationId,
+  canResetPassword,
 }: {
   memberId: string;
   memberName: string;
   role: string;
   organizationId: string;
+  /** Só decide se o item aparece; o servidor confere de novo. */
+  canResetPassword: boolean;
 }) {
   const router = useRouter();
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function changeRole(nextRole: "member" | "admin") {
@@ -301,6 +415,11 @@ export function MemberActions({
               <ShieldCheck aria-hidden /> Promover a admin
             </DropdownMenuItem>
           )}
+          {canResetPassword ? (
+            <DropdownMenuItem disabled={busy} onSelect={() => setResetOpen(true)}>
+              <KeyRound aria-hidden /> Redefinir senha
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem
             variant="destructive"
             disabled={busy}
@@ -310,6 +429,13 @@ export function MemberActions({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <ResetPasswordDialog
+        open={resetOpen}
+        onOpenChange={setResetOpen}
+        memberId={memberId}
+        memberName={memberName}
+      />
 
       <Dialog open={confirmRemove} onOpenChange={setConfirmRemove}>
         <DialogContent className="sm:max-w-sm">

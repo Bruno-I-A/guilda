@@ -1,8 +1,19 @@
 "use server";
 
+import { randomInt } from "node:crypto";
+
+import { and, eq, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { db } from "@/db";
+import { withOrgTx } from "@/db/org-tx";
+import * as schema from "@/db/schema";
+import {
+  authorizePasswordReset,
+  generateTemporaryPassword,
+} from "@/domain/password-reset";
+import type { OrgRole } from "@/domain/task-state";
 import { auth } from "@/lib/auth";
 import { createUserWithPassword } from "@/lib/auth-admin";
 import { withAuthEmailLock } from "@/lib/auth-orphan";
@@ -88,4 +99,96 @@ export async function createMemberWithTempPassword(
 
   revalidatePath("/members");
   return result;
+}
+
+const resetPasswordSchema = z.object({ memberId: z.string().min(1).max(100) });
+
+/**
+ * Recuperação de senha esquecida (decisão de 2026-11-11): não há e-mail, então
+ * o admin gera uma senha temporária e a repassa. A antiga deixa de valer, a
+ * pessoa sai de todos os aparelhos e, ao entrar com a temporária, é obrigada a
+ * escolher outra — o mesmo caminho do cadastro direto.
+ *
+ * A senha nasce no servidor (`crypto.randomInt`) e volta só nesta resposta:
+ * não é gravada em claro nem registrada. A trilha `password_resets` guarda
+ * quem redefiniu a de quem, e quando. A régua de quem pode está em
+ * `authorizePasswordReset`.
+ */
+export async function resetMemberPassword(
+  input: z.input<typeof resetPasswordSchema>,
+): Promise<ActionResult<{ email: string; password: string }>> {
+  const ctx = await requireMemberContext();
+  if (!ctx.ok) return ctx;
+  const parsed = resetPasswordSchema.safeParse(input);
+  if (!parsed.success) return err("Integrante inválido.");
+
+  // `member` e `user` são tabelas do better-auth, sem RLS: o filtro por
+  // organização é explícito em cada consulta.
+  const [target] = await db
+    .select({
+      userId: schema.member.userId,
+      role: schema.member.role,
+      email: schema.user.email,
+    })
+    .from(schema.member)
+    .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+    .where(
+      and(
+        eq(schema.member.id, parsed.data.memberId),
+        eq(schema.member.organizationId, ctx.orgId),
+      ),
+    );
+  if (!target) return err("Integrante não encontrado.");
+
+  const [elsewhere] = await db
+    .select({ id: schema.member.id })
+    .from(schema.member)
+    .where(
+      and(
+        eq(schema.member.userId, target.userId),
+        ne(schema.member.organizationId, ctx.orgId),
+      ),
+    )
+    .limit(1);
+
+  const decision = authorizePasswordReset({
+    actorRole: ctx.role,
+    targetRole: target.role as OrgRole,
+    isSelf: target.userId === ctx.userId,
+    targetInOtherOrganization: Boolean(elsewhere),
+  });
+  if (!decision.allowed) return err(decision.reason);
+
+  const authContext = await auth.$context;
+  const accounts = await authContext.internalAdapter.findAccounts(target.userId);
+  if (!accounts.some((account) => account.providerId === "credential")) {
+    return err("Esta conta não entra por senha.");
+  }
+
+  const password = generateTemporaryPassword((n) => randomInt(n));
+  try {
+    await authContext.internalAdapter.updatePassword(
+      target.userId,
+      await authContext.password.hash(password),
+    );
+    // Quem estava logado com a senha antiga (ou quem a descobriu) sai agora.
+    await authContext.internalAdapter.deleteUserSessions(target.userId);
+    await withOrgTx(ctx.orgId, async (tx) => {
+      await tx
+        .update(schema.user)
+        .set({ mustChangePassword: true, updatedAt: new Date() })
+        .where(eq(schema.user.id, target.userId));
+      await tx.insert(schema.passwordResets).values({
+        orgId: ctx.orgId,
+        userId: target.userId,
+        resetBy: ctx.userId,
+      });
+    });
+  } catch (error) {
+    console.error("Falha ao redefinir a senha", error);
+    return err("Não foi possível redefinir a senha agora. Tente de novo.");
+  }
+
+  revalidatePath("/members");
+  return { ok: true, data: { email: target.email, password } };
 }

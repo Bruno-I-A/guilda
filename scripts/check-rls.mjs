@@ -42,6 +42,7 @@ const APPEND_ONLY_TABLES = [
   "office_fee_control_events",
   "company_flow_events",
   "nfse_invoice_events",
+  "password_resets",
 ];
 
 const SPLIT_POLICY_TABLES = new Set([

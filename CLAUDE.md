@@ -195,6 +195,23 @@ CREATE POLICY org_isolation ON tasks
 - **member**: criar tarefas (para si ou colegas da org), atualizar as suas,
   aprovar tarefas que criou
 
+## Recuperação de senha (decisão de 2026-11-11)
+
+Não há e-mail, então a recuperação é administrativa: em **Membros**, o menu do
+integrante tem **"Redefinir senha"** (`resetMemberPassword`). A Guilda gera uma
+senha temporária no servidor (`crypto.randomInt`), mostra uma vez para o admin
+repassar, derruba todas as sessões da pessoa e liga `mustChangePassword` — o
+mesmo caminho do cadastro direto, que leva a `/change-password` no próximo login.
+
+- **Régua** (`authorizePasswordReset`, puro e testado): só para baixo na
+  hierarquia (owner redefine admin e membro; admin, só membro), nunca a própria,
+  e **nunca de quem também é integrante de outra organização** — a conta é uma
+  só para todas, e a senha nova abriria a porta de um escritório alheio.
+- **Trilha** `password_resets` (quem redefiniu a de quem, quando; nunca a
+  senha), só inserção: o `guilda_app` não tem UPDATE nem DELETE.
+- Membros mostra "Ainda não trocou a senha temporária" para o admin; o login
+  diz "Esqueceu a senha? Peça a um admin da Guilda para redefinir."
+
 ## Desfazer: janela de arrependimento (decisão de 2026-09-03)
 
 Conclusão de missão mostra um aviso com **"Desfazer"** ao lado (`toastWithUndo`,
