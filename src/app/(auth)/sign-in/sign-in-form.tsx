@@ -95,6 +95,9 @@ export function SignInForm({ next }: { next?: string }) {
           <Button type="submit" disabled={submitting} className="w-full">
             {submitting ? "Entrando…" : "Entrar"}
           </Button>
+          <p className="text-center text-xs text-muted-foreground">
+            Esqueceu a senha? Peça a um admin da Guilda para redefinir.
+          </p>
         </form>
       </CardContent>
     </Card>

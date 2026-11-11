@@ -195,6 +195,23 @@ CREATE POLICY org_isolation ON tasks
 - **member**: criar tarefas (para si ou colegas da org), atualizar as suas,
   aprovar tarefas que criou
 
+## Recuperação de senha (decisão de 2026-11-11)
+
+Não há e-mail, então a recuperação é administrativa: em **Membros**, o menu do
+integrante tem **"Redefinir senha"** (`resetMemberPassword`). A Guilda gera uma
+senha temporária no servidor (`crypto.randomInt`), mostra uma vez para o admin
+repassar, derruba todas as sessões da pessoa e liga `mustChangePassword` — o
+mesmo caminho do cadastro direto, que leva a `/change-password` no próximo login.
+
+- **Régua** (`authorizePasswordReset`, puro e testado): só para baixo na
+  hierarquia (owner redefine admin e membro; admin, só membro), nunca a própria,
+  e **nunca de quem também é integrante de outra organização** — a conta é uma
+  só para todas, e a senha nova abriria a porta de um escritório alheio.
+- **Trilha** `password_resets` (quem redefiniu a de quem, quando; nunca a
+  senha), só inserção: o `guilda_app` não tem UPDATE nem DELETE.
+- Membros mostra "Ainda não trocou a senha temporária" para o admin; o login
+  diz "Esqueceu a senha? Peça a um admin da Guilda para redefinir."
+
 ## Desfazer: janela de arrependimento (decisão de 2026-09-03)
 
 Conclusão de missão mostra um aviso com **"Desfazer"** ao lado (`toastWithUndo`,
@@ -439,6 +456,21 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
 - **Mídia não abre**: a tela diz "Documento", "Áudio" etc. Baixar exige outra etapa.
 - **Vínculo com a empresa é manual**, com histórico. Nota interna não se edita nem se apaga
   (`support_conversation_notes`, REVOKE no `guilda_app`).
+- **Fora das 24 horas**: a coexistência não deixa a Guilda furar a janela: a API segue a regra,
+  e só o aparelho do escritório (celular ou WhatsApp Web) fala livre. Por isso a conversa tem
+  **"WhatsApp Web"**, que abre a conversa no WhatsApp logado no navegador (precisa ser o do
+  escritório). O app de Windows não é compatível com a coexistência.
+- **Triagem por IA em sombra (2026-11-09)**: portada do Scharff, o mesmo escritório
+  (`src/lib/support/triage/`: prompt, travas, mascaramento e testes vieram de lá; a
+  versão fica em `TRIAGE_PROMPT_VERSION`). O `support-worker` lê cada turno novo de
+  conversa sem dono, depois que o cliente para de escrever (`SUPPORT_TRIAGE_DEBOUNCE_SECONDS`),
+  e grava em `support_ai_runs` o que faria: setor → clã (pelo nome, `sectors.ts`), urgência,
+  resumo, pergunta ou resposta. **Nada vai ao cliente.** A conversa mostra "Leitura da IA ·
+  teste" e "Passar para <clã>"; a fila marca "Urgente (IA)" sem reordenar. **Desligada por
+  padrão**: só com `SUPPORT_AI_MODE=shadow` as mensagens vão à Anthropic, porque a chave já
+  existe no servidor pelos Informativos. Ligar exige o aviso de privacidade ao cliente
+  (transferência internacional), como no Scharff. Preços de certificado ainda estão no prompt
+  (`BLOCO_CONHECIMENTO`); a Base de conhecimento editável vem depois.
 
 ## Estrutura por clã (decisões de 2026-08-18)
 

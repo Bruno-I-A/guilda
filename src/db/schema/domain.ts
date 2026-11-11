@@ -3623,3 +3623,26 @@ export const nfseIssuedNotes = pgTable(
     ),
   ],
 );
+
+/**
+ * Trilha das senhas redefinidas pelo admin (recuperação de senha). Só
+ * inserção: o `guilda_app` não tem UPDATE nem DELETE (migração 0098). A senha
+ * temporária nunca é gravada aqui — só quem redefiniu a de quem, e quando.
+ */
+export const passwordResets = pgTable(
+  "password_resets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    resetBy: text("reset_by")
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("password_resets_org_user_idx").on(t.orgId, t.userId)],
+);

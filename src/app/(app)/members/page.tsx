@@ -1,7 +1,13 @@
+import { and, eq, inArray } from "drizzle-orm";
+import { KeyRound } from "lucide-react";
 import { headers } from "next/headers";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { db } from "@/db";
+import * as schema from "@/db/schema";
+import { authorizePasswordReset } from "@/domain/password-reset";
+import type { OrgRole } from "@/domain/task-state";
 import { initials, ROLE_LABELS } from "@/lib/people";
 import { PageHeader } from "@/components/page-header";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -33,6 +39,25 @@ export default async function MembersPage() {
       (roleRank[a.role] ?? 9) - (roleRank[b.role] ?? 9) ||
       a.user.name.localeCompare(b.user.name),
   );
+
+  // Quem ainda não trocou a senha temporária (cadastro novo ou senha
+  // redefinida). Só o admin vê: é ele quem repassa a senha e acompanha.
+  const pendingPassword = new Set<string>();
+  if (viewerIsAdmin && members.length > 0) {
+    const rows = await db
+      .select({ id: schema.user.id })
+      .from(schema.user)
+      .where(
+        and(
+          inArray(
+            schema.user.id,
+            members.map((member) => member.userId),
+          ),
+          eq(schema.user.mustChangePassword, true),
+        ),
+      );
+    for (const row of rows) pendingPassword.add(row.id);
+  }
 
   return (
     <div className="grid gap-5">
@@ -77,6 +102,12 @@ export default async function MembersPage() {
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">
                   {member.user.email}
                 </p>
+                {pendingPassword.has(member.userId) ? (
+                  <p className="mt-0.5 flex items-center gap-1 text-xs text-warning">
+                    <KeyRound className="size-3" aria-hidden />
+                    Ainda não trocou a senha temporária
+                  </p>
+                ) : null}
               </div>
               <Badge
                 variant={member.role === "member" ? "secondary" : "default"}
@@ -90,6 +121,15 @@ export default async function MembersPage() {
                   memberName={member.user.name}
                   role={member.role}
                   organizationId={org.id}
+                  canResetPassword={
+                    authorizePasswordReset({
+                      actorRole: viewer.role as OrgRole,
+                      targetRole: member.role as OrgRole,
+                      isSelf,
+                      // Conferido no servidor ao redefinir; aqui só decide o menu.
+                      targetInOtherOrganization: false,
+                    }).allowed
+                  }
                 />
               ) : null}
             </li>
