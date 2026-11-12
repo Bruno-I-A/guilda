@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, type SQL } from "drizzle-orm";
 import { Building2, Search } from "lucide-react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
@@ -24,7 +24,7 @@ import {
   ImportClientsButton,
   NewClientButton,
 } from "./client-actions";
-import { ExportClientsButton } from "./export-clients-button";
+import { ExportClientsButton, type RegimeCounts } from "./export-clients-button";
 
 export const metadata: Metadata = { title: "Clientes" };
 
@@ -60,11 +60,29 @@ export default async function ClientsPage({
     }),
   );
   const activeCount = clientList.filter((c) => c.active).length;
-  // A planilha segue os mesmos filtros da tela.
-  const exportQuery = new URLSearchParams();
-  if (regime !== "all") exportQuery.set("regime", regime);
-  if (q) exportQuery.set("q", q);
-  const exportFilterQuery = exportQuery.toString();
+
+  // Contagem por regime para a janela de exportação (só o admin exporta). É
+  // da base inteira, não da lista filtrada: a janela escolhe os regimes.
+  const exportCounts = Object.fromEntries(
+    TAX_REGIMES.map((key) => [key, { active: 0, total: 0 }]),
+  ) as RegimeCounts;
+  if (isAdmin) {
+    const grouped = await withOrgTx(session.orgId, (tx) =>
+      tx
+        .select({
+          taxRegime: schema.clients.taxRegime,
+          active: schema.clients.active,
+          value: count(),
+        })
+        .from(schema.clients)
+        .where(eq(schema.clients.orgId, session.orgId))
+        .groupBy(schema.clients.taxRegime, schema.clients.active),
+    );
+    for (const row of grouped) {
+      exportCounts[row.taxRegime].total += row.value;
+      if (row.active) exportCounts[row.taxRegime].active += row.value;
+    }
+  }
 
   function regimeHref(key: TaxRegime | "all"): string {
     const qs = new URLSearchParams();
@@ -100,9 +118,8 @@ export default async function ClientsPage({
           <>
             {isAdmin ? (
               <ExportClientsButton
-                filterQuery={exportFilterQuery}
-                activeCount={activeCount}
-                totalCount={clientList.length}
+                counts={exportCounts}
+                initialRegime={regime === "all" ? null : regime}
               />
             ) : null}
             {isAdmin ? <ImportClientsButton /> : null}

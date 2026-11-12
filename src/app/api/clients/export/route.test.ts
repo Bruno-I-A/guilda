@@ -59,8 +59,15 @@ beforeEach(() => {
 
 test("filtro inválido falha antes da sessão e do banco", async () => {
   expect((await GET(new Request(`${url}?regime=xpto`))).status).toBe(400);
+  expect((await GET(new Request(`${url}?regime=mei&regime=xpto`))).status).toBe(400);
   expect(mocks.member).not.toHaveBeenCalled();
   expect(mocks.tx).not.toHaveBeenCalled();
+});
+
+test("aceita vários regimes de uma vez", async () => {
+  const response = await GET(new Request(`${url}?regime=mei&regime=simples&regime=presumido`));
+  expect(response.status).toBe(200);
+  expect(mocks.tx).toHaveBeenCalledTimes(1);
 });
 
 test("sem sessão não acessa o banco", async () => {
