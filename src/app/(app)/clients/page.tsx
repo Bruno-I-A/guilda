@@ -24,6 +24,7 @@ import {
   ImportClientsButton,
   NewClientButton,
 } from "./client-actions";
+import { ExportClientsButton } from "./export-clients-button";
 
 export const metadata: Metadata = { title: "Clientes" };
 
@@ -59,6 +60,11 @@ export default async function ClientsPage({
     }),
   );
   const activeCount = clientList.filter((c) => c.active).length;
+  // A planilha segue os mesmos filtros da tela.
+  const exportQuery = new URLSearchParams();
+  if (regime !== "all") exportQuery.set("regime", regime);
+  if (q) exportQuery.set("q", q);
+  const exportFilterQuery = exportQuery.toString();
 
   function regimeHref(key: TaxRegime | "all"): string {
     const qs = new URLSearchParams();
@@ -92,6 +98,13 @@ export default async function ClientsPage({
         }
         action={
           <>
+            {isAdmin ? (
+              <ExportClientsButton
+                filterQuery={exportFilterQuery}
+                activeCount={activeCount}
+                totalCount={clientList.length}
+              />
+            ) : null}
             {isAdmin ? <ImportClientsButton /> : null}
             <NewClientButton />
           </>
