@@ -119,10 +119,10 @@ export function WhatsAppOnboardingPanel({
   const sessionInfoRef = useRef<EmbeddedSignupSessionInfo | null>(null);
   const completingRef = useRef(false);
 
-  const completeConnection = useCallback(async () => {
+  const completeConnection = useCallback(async (allowMissingSession = false) => {
     const code = codeRef.current;
     const sessionInfo = sessionInfoRef.current;
-    if (!code || !sessionInfo || completingRef.current) return;
+    if (!code || (!sessionInfo && !allowMissingSession) || completingRef.current) return;
 
     completingRef.current = true;
     codeRef.current = null;
@@ -132,7 +132,7 @@ export function WhatsAppOnboardingPanel({
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code, sessionInfo }),
+        body: JSON.stringify({ code, ...(sessionInfo ? { sessionInfo } : {}) }),
       });
       const result = await readApiResponse(response);
       if (!result.ok) {
@@ -234,6 +234,9 @@ export function WhatsAppOnboardingPanel({
       }
       codeRef.current = code;
       void completeConnection();
+      // A v5 da Meta pode devolver o code sem publicar WA_EMBEDDED_SIGNUP.
+      // Nesse caso o servidor identifica a conta pela permissão concedida.
+      window.setTimeout(() => void completeConnection(true), 3_000);
     }, embeddedSignupLoginOptions(config));
   };
 

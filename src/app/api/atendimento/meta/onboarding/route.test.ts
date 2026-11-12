@@ -109,3 +109,19 @@ test("POST usa organização e usuário da sessão, nunca do browser", async () 
     channel: { status: "active", phoneNumberId: "222222" },
   });
 });
+
+test("POST aceita apenas o code quando a Meta não publica a sessão", async () => {
+  const response = await POST(
+    new Request("https://guilda.example/api/atendimento/meta/onboarding", {
+      method: "POST",
+      headers: { origin: "https://guilda.example", "content-type": "application/json" },
+      body: JSON.stringify({ code: "code-temporario-valido" }),
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(mocks.complete).toHaveBeenCalledWith({
+    orgId: "org-a",
+    userId: "user-a",
+    code: "code-temporario-valido",
+  });
+});

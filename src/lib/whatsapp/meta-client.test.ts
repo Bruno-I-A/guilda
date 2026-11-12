@@ -4,6 +4,7 @@ vi.mock("server-only", () => ({}));
 
 import {
   exchangeEmbeddedSignupCode,
+  resolveEmbeddedSignupWabaId,
   resolveCoexistencePhone,
   subscribeWhatsAppWebhook,
 } from "./meta-client";
@@ -67,6 +68,43 @@ describe("cliente seguro da Meta", () => {
     });
     const [, init] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(new Headers(init.headers).get("authorization")).toBe("Bearer EA-token");
+  });
+
+  test("descobre uma única conta do WhatsApp pela permissão concedida", async () => {
+    const fetchMock = fetchReturning({
+      data: {
+        granular_scopes: [
+          { scope: "whatsapp_business_messaging", target_ids: ["999999"] },
+          { scope: "whatsapp_business_management", target_ids: ["111111"] },
+        ],
+      },
+    });
+    await expect(
+      resolveEmbeddedSignupWabaId("EA-access-token-valido", config, fetchMock),
+    ).resolves.toBe("111111");
+
+    const [url, init] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const parsed = new URL(String(url));
+    expect(parsed.pathname).toBe("/v24.0/debug_token");
+    expect(parsed.searchParams.get("input_token")).toBe("EA-access-token-valido");
+    expect(parsed.searchParams.get("access_token")).toBe("123456|app-secret-test");
+    expect(init).toMatchObject({ method: "GET", cache: "no-store" });
+  });
+
+  test("não escolhe arbitrariamente entre contas autorizadas", async () => {
+    const fetchMock = fetchReturning({
+      data: {
+        granular_scopes: [
+          {
+            scope: "whatsapp_business_management",
+            target_ids: ["111111", "222222"],
+          },
+        ],
+      },
+    });
+    await expect(
+      resolveEmbeddedSignupWabaId("EA-access-token-valido", config, fetchMock),
+    ).rejects.toMatchObject({ operation: "resolve_waba", httpStatus: 409 });
   });
 
   test("recusa número comum ou seleção ambígua", async () => {
