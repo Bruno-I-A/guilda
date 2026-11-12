@@ -20,7 +20,12 @@ type MetaErrorPayload = {
 
 export class MetaGraphError extends Error {
   constructor(
-    readonly operation: "exchange_code" | "list_phones" | "subscribe_webhook" | "send_message",
+    readonly operation:
+      | "exchange_code"
+      | "resolve_waba"
+      | "list_phones"
+      | "subscribe_webhook"
+      | "send_message",
     readonly httpStatus: number,
     readonly graphCode?: number,
     readonly graphType?: string,
@@ -73,6 +78,56 @@ export async function exchangeEmbeddedSignupCode(
     throw graphError("exchange_code", response, payload);
   }
   return token;
+}
+
+/**
+ * Descobre o WABA autorizado quando a Meta v5 devolve o code sem publicar o
+ * evento WA_EMBEDDED_SIGNUP. Nunca escolhe arbitrariamente entre contas.
+ */
+export async function resolveEmbeddedSignupWabaId(
+  accessToken: string,
+  config: MetaServerConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const url = graphUrl(config, "/debug_token");
+  url.search = new URLSearchParams({
+    input_token: accessToken,
+    access_token: `${config.appId}|${config.appSecret}`,
+  }).toString();
+  const response = await fetchImpl(url, {
+    method: "GET",
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const payload = await responsePayload(response);
+  const data = payload.data;
+  if (!response.ok || !data || typeof data !== "object" || Array.isArray(data)) {
+    throw graphError("resolve_waba", response, payload);
+  }
+
+  const granularScopes = (data as Record<string, unknown>).granular_scopes;
+  const wabaIds = new Set<string>();
+  if (Array.isArray(granularScopes)) {
+    for (const value of granularScopes) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const scope = value as Record<string, unknown>;
+      if (
+        scope.scope !== "whatsapp_business_management" ||
+        !Array.isArray(scope.target_ids)
+      ) {
+        continue;
+      }
+      for (const targetId of scope.target_ids) {
+        if (typeof targetId === "string" && /^\d{1,32}$/.test(targetId)) {
+          wabaIds.add(targetId);
+        }
+      }
+    }
+  }
+  if (wabaIds.size !== 1) {
+    throw new MetaGraphError("resolve_waba", 409);
+  }
+  return [...wabaIds][0];
 }
 
 export async function resolveCoexistencePhone(

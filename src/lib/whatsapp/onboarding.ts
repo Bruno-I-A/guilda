@@ -13,6 +13,7 @@ import {
 } from "./channel-repository";
 import {
   exchangeEmbeddedSignupCode,
+  resolveEmbeddedSignupWabaId,
   resolveCoexistencePhone,
   subscribeWhatsAppWebhook,
   type MetaServerConfig,
@@ -56,7 +57,7 @@ export async function completeEmbeddedSignup(input: {
   orgId: string;
   userId: string;
   code: string;
-  wabaId: string;
+  wabaId?: string;
   phoneNumberId?: string;
 }): Promise<WhatsAppChannelSummary> {
   const config = serverConfig();
@@ -64,9 +65,11 @@ export async function completeEmbeddedSignup(input: {
     throw new Error("Onboarding do WhatsApp não configurado.");
   }
   const accessToken = await exchangeEmbeddedSignupCode(input.code, config);
+  const wabaId =
+    input.wabaId ?? (await resolveEmbeddedSignupWabaId(accessToken, config));
   const phone = await resolveCoexistencePhone(
     {
-      wabaId: input.wabaId,
+      wabaId,
       ...(input.phoneNumberId ? { phoneNumberId: input.phoneNumberId } : {}),
       accessToken,
     },
@@ -75,12 +78,12 @@ export async function completeEmbeddedSignup(input: {
   const channel = await persistPendingWhatsAppChannel({
     orgId: input.orgId,
     userId: input.userId,
-    wabaId: input.wabaId,
+    wabaId,
     phone,
     accessToken,
   });
   try {
-    await subscribeWhatsAppWebhook({ wabaId: input.wabaId, accessToken }, config);
+    await subscribeWhatsAppWebhook({ wabaId, accessToken }, config);
   } catch (error) {
     throw new WhatsAppOnboardingActivationError(channel, { cause: error });
   }

@@ -24,7 +24,7 @@ const bodySchema = z.object({
       waba_id: metaId,
       phone_number_id: metaId.optional(),
     }).passthrough(),
-  }).passthrough(),
+  }).passthrough().optional(),
 });
 
 function json(payload: unknown, status = 200): Response {
@@ -101,8 +101,10 @@ export async function POST(request: Request): Promise<Response> {
       orgId: auth.ctx.orgId,
       userId: auth.ctx.userId,
       code: parsed.data.code,
-      wabaId: parsed.data.sessionInfo.data.waba_id,
-      ...(parsed.data.sessionInfo.data.phone_number_id
+      ...(parsed.data.sessionInfo?.data.waba_id
+        ? { wabaId: parsed.data.sessionInfo.data.waba_id }
+        : {}),
+      ...(parsed.data.sessionInfo?.data.phone_number_id
         ? { phoneNumberId: parsed.data.sessionInfo.data.phone_number_id }
         : {}),
     });
@@ -126,7 +128,15 @@ export async function POST(request: Request): Promise<Response> {
         graphCode: error.graphCode,
         graphType: error.graphType,
       });
-      return error.operation === "list_phones" && error.httpStatus === 409
+      return error.operation === "resolve_waba" && error.httpStatus === 409
+        ? json(
+            {
+              ok: false,
+              error: "Não foi possível identificar uma única conta do WhatsApp nessa autorização.",
+            },
+            409,
+          )
+        : error.operation === "list_phones" && error.httpStatus === 409
         ? json(
             {
               ok: false,
