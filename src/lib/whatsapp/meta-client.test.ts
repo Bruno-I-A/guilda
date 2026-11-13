@@ -121,19 +121,29 @@ describe("cliente seguro da Meta", () => {
     });
   });
 
-  test("assina o app no WABA sem mandar token no corpo", async () => {
+  test("assina o WABA com o callback e o token de verificação da Guilda", async () => {
     const fetchMock = fetchReturning({ success: true });
     await expect(
       subscribeWhatsAppWebhook(
-        { wabaId: "111111", accessToken: "EA-token" },
+        {
+          wabaId: "111111",
+          accessToken: "EA-token",
+          overrideCallbackUrl: "https://guilda.example/api/atendimento/meta/webhook",
+          verifyToken: "verify-token-guilda",
+        },
         config,
         fetchMock,
       ),
     ).resolves.toBeUndefined();
     const [url, init] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(String(url)).toContain("/v24.0/111111/subscribed_apps");
-    expect(init.body).toBeUndefined();
     expect(new Headers(init.headers).get("authorization")).toBe("Bearer EA-token");
+    expect(new Headers(init.headers).get("content-type")).toBe("application/json");
+    expect(JSON.parse(String(init.body))).toEqual({
+      override_callback_uri: "https://guilda.example/api/atendimento/meta/webhook",
+      verify_token: "verify-token-guilda",
+    });
+    expect(String(init.body)).not.toContain("EA-token");
   });
 
   test("erro da Graph API expõe somente metadados seguros", async () => {
