@@ -9,12 +9,27 @@ export type WhatsAppConfig = Readonly<{
   appSecret?: string;
   embeddedSignupConfigId?: string;
   graphApiVersion: string;
+  webhookCallbackUrl?: string;
   webhookVerifyToken?: string;
 }>;
 
 function optionalEnv(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized || undefined;
+}
+
+function webhookCallbackUrl(): string | undefined {
+  const appUrl =
+    optionalEnv(process.env.BETTER_AUTH_URL) ??
+    optionalEnv(process.env.NEXT_PUBLIC_APP_URL);
+  if (!appUrl) return undefined;
+  try {
+    const parsed = new URL(appUrl);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined;
+    return new URL("/api/atendimento/meta/webhook", parsed).toString();
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -33,6 +48,7 @@ export function getWhatsAppConfig(): WhatsAppConfig {
       configuredVersion && /^v\d+\.\d+$/.test(configuredVersion)
         ? configuredVersion
         : "v24.0",
+    webhookCallbackUrl: webhookCallbackUrl(),
     webhookVerifyToken: optionalEnv(process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN),
   };
 }

@@ -20,6 +20,12 @@ import {
 } from "./meta-client";
 import { isWhatsAppTokenVaultConfigured } from "./token-vault";
 
+type OnboardingServerConfig = MetaServerConfig &
+  Readonly<{
+    webhookCallbackUrl: string;
+    webhookVerifyToken: string;
+  }>;
+
 export class WhatsAppOnboardingActivationError extends Error {
   constructor(
     readonly channel: WhatsAppChannelSummary,
@@ -30,13 +36,18 @@ export class WhatsAppOnboardingActivationError extends Error {
   }
 }
 
-function serverConfig(): MetaServerConfig | null {
+function serverConfig(): OnboardingServerConfig | null {
   const config = getWhatsAppConfig();
-  return config.appId && config.appSecret
+  return config.appId &&
+    config.appSecret &&
+    config.webhookCallbackUrl &&
+    config.webhookVerifyToken
     ? {
         appId: config.appId,
         appSecret: config.appSecret,
         graphApiVersion: config.graphApiVersion,
+        webhookCallbackUrl: config.webhookCallbackUrl,
+        webhookVerifyToken: config.webhookVerifyToken,
       }
     : null;
 }
@@ -47,6 +58,7 @@ export function getReadyEmbeddedSignupConfig(): EmbeddedSignupClientConfig | nul
   const clientConfig = getEmbeddedSignupClientConfig();
   return clientConfig &&
     config.appSecret &&
+    config.webhookCallbackUrl &&
     config.webhookVerifyToken &&
     isWhatsAppTokenVaultConfigured()
     ? clientConfig
@@ -83,7 +95,15 @@ export async function completeEmbeddedSignup(input: {
     accessToken,
   });
   try {
-    await subscribeWhatsAppWebhook({ wabaId, accessToken }, config);
+    await subscribeWhatsAppWebhook(
+      {
+        wabaId,
+        accessToken,
+        overrideCallbackUrl: config.webhookCallbackUrl,
+        verifyToken: config.webhookVerifyToken,
+      },
+      config,
+    );
   } catch (error) {
     throw new WhatsAppOnboardingActivationError(channel, { cause: error });
   }
@@ -103,7 +123,12 @@ export async function retryWhatsAppChannelActivation(input: {
   const access = await loadWhatsAppChannelAccess(input);
   if (!access) return null;
   await subscribeWhatsAppWebhook(
-    { wabaId: access.channel.wabaId, accessToken: access.accessToken },
+    {
+      wabaId: access.channel.wabaId,
+      accessToken: access.accessToken,
+      overrideCallbackUrl: config.webhookCallbackUrl,
+      verifyToken: config.webhookVerifyToken,
+    },
     config,
   );
   return activateWhatsAppChannel(input.orgId, input.channelId);

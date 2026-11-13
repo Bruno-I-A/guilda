@@ -207,14 +207,26 @@ export async function sendWhatsAppText(
 }
 
 export async function subscribeWhatsAppWebhook(
-  input: { wabaId: string; accessToken: string },
+  input: {
+    wabaId: string;
+    accessToken: string;
+    overrideCallbackUrl: string;
+    verifyToken: string;
+  },
   config: MetaServerConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
   const url = graphUrl(config, `/${input.wabaId}/subscribed_apps`);
   const response = await fetchImpl(url, {
     method: "POST",
-    headers: { authorization: `Bearer ${input.accessToken}` },
+    headers: {
+      authorization: `Bearer ${input.accessToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      override_callback_uri: input.overrideCallbackUrl,
+      verify_token: input.verifyToken,
+    }),
     cache: "no-store",
     signal: AbortSignal.timeout(15_000),
   });

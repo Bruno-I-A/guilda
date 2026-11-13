@@ -57,7 +57,10 @@ do job bastam para concluir que houve ou não deploy.
 
 ## Variáveis do serviço de homologação
 
-Todas exclusivas. Nenhuma pode repetir valor da produção.
+Segredos e dados próprios do ambiente continuam exclusivos. A exceção é o app
+Meta Tech Provider aprovado da Shift: a Guilda reutiliza o ID, o segredo e a
+configuração de Embedded Signup desse app. O token de verificação e a chave do
+cofre continuam exclusivos de cada ambiente da Guilda.
 
 | Variável | Observação |
 | --- | --- |
@@ -69,12 +72,18 @@ Todas exclusivas. Nenhuma pode repetir valor da produção.
 | `NEXT_PUBLIC_APP_URL` | idêntica à anterior |
 | `TELEGRAM_BOT_TOKEN` | **bot exclusivo**; nunca o da produção |
 | `TELEGRAM_UPDATE_MODE` | vazio (`polling` é o padrão) |
-| `WHATSAPP_APP_SECRET` | segredo do app Meta exclusivo do ambiente |
-| `WHATSAPP_APP_ID` | ID público do app Meta do ambiente |
-| `WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID` | configuração Tech Provider com coexistência |
+| `WHATSAPP_APP_SECRET` | segredo do app Meta Tech Provider aprovado da Shift |
+| `WHATSAPP_APP_ID` | ID público do app Meta Tech Provider aprovado da Shift |
+| `WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID` | configuração de coexistência do mesmo app Tech Provider |
 | `WHATSAPP_GRAPH_API_VERSION` | versão fixada da Graph API (atualmente `v24.0`) |
 | `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | token aleatório definido por nós; nunca access token de número |
 | `WHATSAPP_TOKEN_KEY` | AES-256 exclusiva do ambiente; perder exige reconectar os números |
+
+Ao assinar cada WABA, a Guilda envia `override_callback_uri` com a sua própria
+rota `/api/atendimento/meta/webhook` e o `WHATSAPP_WEBHOOK_VERIFY_TOKEN`. Assim,
+as mensagens daquele número chegam à Guilda mesmo que o webhook padrão do app
+continue apontando para o CRM da Shift. Avisos globais da conta, como
+`account_update`, continuam no callback padrão e a Guilda não depende deles.
 
 ## Armadilhas já pagas (não repita)
 
