@@ -99,7 +99,7 @@ const TYPE_LABELS: Record<string, string> = {
   unsupported: "Mensagem não suportada",
 };
 
-/** O texto da mensagem ou, sem texto, o que ela é: mídia ainda não abre na Guilda. */
+/** O texto da mensagem ou, sem texto, o rótulo usado na fila de conversas. */
 export function messageLabel(message: { text: string | null; messageType: string }): string {
   return message.text ?? TYPE_LABELS[message.messageType] ?? "Mensagem";
 }
