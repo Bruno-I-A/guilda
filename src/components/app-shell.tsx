@@ -221,6 +221,7 @@ export function AppShell({
   const overflowActive = mobileOverflow.some((item) =>
     pathname.startsWith(item.href),
   );
+  const supportInbox = pathname === "/atendimento";
   const navByHref = new Map(navItems.map((item) => [item.href, item]));
   const accountItems = DESKTOP_ACCOUNT_HREFS
     .map((href) => navByHref.get(href))
@@ -384,8 +385,22 @@ export function AppShell({
           <UserMenu user={user} role={role} />
         </header>
 
-        <main className="flex-1 px-4 py-6 pb-24 md:px-8 md:pb-8">
-          <div className="mx-auto w-full max-w-5xl">{children}</div>
+        <main
+          className={cn(
+            "flex-1",
+            supportInbox
+              ? "min-h-0 overflow-hidden pb-16 md:pb-0"
+              : "px-4 py-6 pb-24 md:px-8 md:pb-8",
+          )}
+        >
+          <div
+            className={cn(
+              "w-full",
+              supportInbox ? "h-full max-w-none" : "mx-auto max-w-5xl",
+            )}
+          >
+            {children}
+          </div>
         </main>
 
         {/* Tab bar — mobile: 4 rotas fixas + a folha "Mais" */}
