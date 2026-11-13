@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCnpj } from "@/domain/cnpj";
 import { DELIVERY_LABELS, elapsedLabel, SUPPORT_FILTERS, SUPPORT_STATUS_LABELS, type DeliveryState, type SupportFilter, type SupportStatus } from "@/domain/support-inbox";
@@ -70,10 +71,10 @@ function QueueItem({ row, active, filter, now }: { row: SupportQueueRow; active:
         href={inboxHref(filter, row.id)}
         scroll={false}
         aria-current={active ? "true" : undefined}
-        className={cn("grid min-w-0 gap-1 border-l-2 px-3 py-2.5 transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", active ? "border-l-primary bg-primary/10" : "border-l-transparent")}
+        className={cn("grid min-w-0 gap-1.5 border-l-2 px-4 py-3.5 transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", active ? "border-l-primary bg-primary/10" : "border-l-transparent")}
       >
         <span className="flex min-w-0 items-baseline justify-between gap-2">
-          <span className="truncate text-sm font-medium">{row.contactName}</span>
+          <span className="truncate text-base font-semibold">{row.contactName}</span>
           {row.lastMessageAt ? (
             <span className={cn("flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums", row.waitingReply ? "text-foreground" : "text-muted-foreground")}>
               {row.waitingReply ? <Clock className="size-3" aria-label="Sem resposta há" /> : null}
@@ -81,8 +82,8 @@ function QueueItem({ row, active, filter, now }: { row: SupportQueueRow; active:
             </span>
           ) : null}
         </span>
-        {row.clientName ? <span className="truncate text-xs text-muted-foreground">{row.clientName}</span> : null}
-        {row.lastMessage ? <span className="truncate text-xs text-muted-foreground">{row.lastMessage}</span> : null}
+        {row.clientName ? <span className="truncate text-sm text-muted-foreground">{row.clientName}</span> : null}
+        {row.lastMessage ? <span className="truncate text-sm text-muted-foreground">{row.lastMessage}</span> : null}
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <StatusChip status={row.status} />
           {row.aiUrgent ? <span className="inline-flex shrink-0 items-center rounded-md border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-xs text-warning">Urgente (IA)</span> : null}
@@ -150,7 +151,7 @@ function TimelineItem({ item }: { item: SupportTimelineItem }) {
   const outbound = item.direction === "outbound";
   return (
     <li className={cn("flex", outbound ? "justify-end" : "justify-start")}>
-      <div className={cn("grid max-w-[88%] gap-2 rounded-md border px-3 py-2 text-sm shadow-sm sm:max-w-[76%]", outbound ? "border-primary/30 bg-primary/10" : "bg-card")}>
+      <div className={cn("grid max-w-[88%] gap-2 rounded-md border px-3.5 py-2.5 text-[0.95rem] leading-relaxed shadow-sm sm:max-w-[74%]", outbound ? "border-primary/30 bg-primary/10" : "bg-card")}>
         <span className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground"><span>{item.author}</span><span className="font-mono tabular-nums">{shortTime(item.at)}</span></span>
         {item.image ? (
           <>
@@ -191,14 +192,14 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
   }
 
   return (
-    <div className="grid gap-2 border-t bg-background/95 p-3">
+    <div className="grid gap-2 border-t bg-background/95 p-3 sm:px-5 sm:py-4">
       {conversation.replyBlocked ? <p className="text-xs text-muted-foreground">{conversation.replyBlocked} Você ainda pode deixar uma nota para a equipe.</p> : null}
       <div className="flex gap-1" role="group" aria-label="Tipo de texto">
         <Button type="button" size="sm" variant={effective === "reply" ? "secondary" : "ghost"} disabled={!canReply} aria-pressed={effective === "reply"} onClick={() => setMode("reply")}>Responder</Button>
         <Button type="button" size="sm" variant={effective === "note" ? "secondary" : "ghost"} aria-pressed={effective === "note"} onClick={() => setMode("note")}><StickyNote aria-hidden /> Nota interna</Button>
       </div>
       <Textarea
-        rows={2}
+        rows={3}
         maxLength={effective === "reply" ? 4096 : 4000}
         aria-label={effective === "reply" ? "Mensagem para o cliente" : "Nota interna para a equipe"}
         placeholder={effective === "reply" ? "Escreva para o cliente" : "Só a equipe vê esta nota"}
@@ -234,20 +235,20 @@ function ConversationPanel({ conversation, filter, onContext }: { conversation: 
   const resolved = conversation.status === "resolved";
 
   return (
-    <section className="panel-cut flex min-h-0 min-w-0 flex-col" aria-label={`Conversa com ${conversation.contactName}`}>
+    <section className="flex min-h-0 min-w-0 flex-col bg-background" aria-label={`Conversa com ${conversation.contactName}`}>
       <header className="grid border-b bg-background/95">
-        <div className="flex min-w-0 items-center gap-3 px-3 py-2.5">
+        <div className="flex min-h-16 min-w-0 items-center gap-3 px-4 py-2.5">
           <Button asChild size="icon-sm" variant="ghost" className="touch-target lg:hidden">
             <Link href={inboxHref(filter)} aria-label="Voltar para a fila"><ArrowLeft aria-hidden /></Link>
           </Button>
           <div className="grid min-w-0 flex-1 gap-1">
             <span className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="truncate font-semibold">{conversation.contactName}</span>
+              <span className="truncate text-base font-semibold">{conversation.contactName}</span>
               <StatusChip status={conversation.status} />
             </span>
             <span className="truncate text-xs text-muted-foreground">{conversation.phone ?? "Número não informado"} · {conversation.client?.name ?? "Empresa não vinculada"}{conversation.assigneeName ? ` · ${conversation.assignedToMe ? "com você" : `com ${conversation.assigneeName}`}` : ""}</span>
           </div>
-          <Button type="button" size="sm" variant="ghost" className="2xl:hidden" onClick={onContext}><Building2 aria-hidden /> Contexto</Button>
+          <Button type="button" size="sm" variant="ghost" onClick={onContext}><Building2 aria-hidden /> Contexto</Button>
         </div>
         <div className="flex min-w-0 items-center justify-end gap-1 overflow-x-auto border-t px-3 py-2">
           {conversation.phone ? (
@@ -270,7 +271,7 @@ function ConversationPanel({ conversation, filter, onContext }: { conversation: 
           )}
         </div>
       </header>
-      <ol className="mx-auto grid min-h-0 w-full max-w-5xl flex-1 content-start gap-3 overflow-y-auto bg-muted/10 p-4 sm:p-6" aria-label="Histórico da conversa">
+      <ol className="mx-auto grid min-h-0 w-full max-w-5xl flex-1 content-start gap-3 overflow-y-auto bg-muted/10 p-4 sm:p-6 lg:px-8" aria-label="Histórico da conversa">
         {conversation.timeline.map((item) => <TimelineItem key={`${item.kind}-${item.id}`} item={item} />)}
         <li ref={end} aria-hidden />
       </ol>
@@ -398,17 +399,13 @@ function TransferForm({ conversation, clans, members }: { conversation: SupportC
   );
 }
 
-function ContextPanel({ conversation, clients, clans, members, onClose }: { conversation: SupportConversationView; clients: readonly ClientOption[]; clans: readonly Option[]; members: readonly Option[]; onClose: () => void }) {
+function ContextPanel({ conversation, clients, clans, members }: { conversation: SupportConversationView; clients: readonly ClientOption[]; clans: readonly Option[]; members: readonly Option[] }) {
   const summary = conversation.lastCustomerText?.slice(0, 1000) ?? "";
   const params = new URLSearchParams({ title: `Atendimento: ${conversation.client?.name ?? conversation.contactName}`.slice(0, 200), description: summary ? `Pedido do cliente no WhatsApp:\n${summary}` : "" });
   if (conversation.client) params.set("clientId", conversation.client.id);
 
   return (
-    <aside className="panel-cut grid min-h-0 min-w-0 content-start gap-4 overflow-y-auto p-3" aria-label="Contexto da conversa">
-      <div className="flex items-center justify-between gap-2 2xl:hidden">
-        <span className="text-sm font-semibold">Empresa e setor</span>
-        <Button type="button" size="icon-sm" variant="ghost" className="touch-target" aria-label="Voltar para a conversa" onClick={onClose}><X aria-hidden /></Button>
-      </div>
+    <aside className="grid min-h-0 min-w-0 flex-1 content-start gap-5 overflow-y-auto px-5 pb-6" aria-label="Contexto da conversa">
       <AiSuggestion conversation={conversation} />
       <section className="grid gap-1 text-sm">
         <p className="hud-label">Contato</p>
@@ -492,15 +489,15 @@ export function SupportInbox({
 
   const selected = conversation !== null;
   return (
-    <div className="grid min-w-0 gap-3 lg:h-[calc(100dvh-11.5rem)] lg:min-h-[36rem] lg:grid-cols-[20rem_minmax(0,1fr)] 2xl:grid-cols-[20rem_minmax(0,1fr)_18rem]">
-      <section className={cn("panel-cut min-h-0 min-w-0 flex-col lg:flex", selected ? "hidden" : "flex")} aria-label="Fila de conversas">
-        <nav className="grid grid-cols-2 gap-1 border-b p-2" aria-label="Filtrar conversas">
+    <div className="grid h-full min-h-0 min-w-0 overflow-hidden border-y bg-card lg:grid-cols-[22rem_minmax(0,1fr)] lg:border-t-0">
+      <section className={cn("min-h-0 min-w-0 flex-col bg-card lg:flex lg:border-r", selected ? "hidden" : "flex")} aria-label="Fila de conversas">
+        <nav className="grid grid-cols-2 gap-1 border-b p-3" aria-label="Filtrar conversas">
           {SUPPORT_FILTERS.map((item) => (
             <Link
               key={item.key}
               href={inboxHref(item.key)}
               aria-current={filter === item.key ? "page" : undefined}
-              className={cn("flex min-h-9 items-center justify-between gap-2 rounded-md border px-2 py-1 text-xs transition-colors hover:bg-accent/30", filter === item.key ? "border-primary bg-primary/10" : "border-transparent text-muted-foreground")}
+              className={cn("flex min-h-10 items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-colors hover:bg-accent/30", filter === item.key ? "border-primary bg-primary/10" : "border-transparent text-muted-foreground")}
             >
               {item.label} <span className="font-mono tabular-nums">{counts[item.key]}</span>
             </Link>
@@ -517,17 +514,20 @@ export function SupportInbox({
 
       {conversation ? (
         <>
-          <div className={cn("min-h-0 min-w-0", contextOpen ? "hidden 2xl:contents" : "contents")}>
-            <div className="grid h-[calc(100dvh-11rem)] min-h-0 min-w-0 lg:h-auto">
-              <ConversationPanel key={conversation.id} conversation={conversation} filter={filter} onContext={() => setContextOpen(true)} />
-            </div>
+          <div className="grid min-h-0 min-w-0">
+            <ConversationPanel key={conversation.id} conversation={conversation} filter={filter} onContext={() => setContextOpen(true)} />
           </div>
-          <div className={cn("min-h-0 min-w-0", contextOpen ? "grid" : "hidden 2xl:grid", "lg:col-start-2 2xl:col-start-3")}>
-            <ContextPanel conversation={conversation} clients={clients} clans={clans} members={members} onClose={() => setContextOpen(false)} />
-          </div>
+          <Sheet open={contextOpen} onOpenChange={setContextOpen}>
+            <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">
+              <SheetHeader className="border-b px-5 py-4">
+                <SheetTitle>Empresa e setor</SheetTitle>
+              </SheetHeader>
+              <ContextPanel conversation={conversation} clients={clients} clans={clans} members={members} />
+            </SheetContent>
+          </Sheet>
         </>
       ) : (
-        <div className="hidden min-w-0 place-items-center rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground lg:col-span-1 lg:grid 2xl:col-span-2">
+        <div className="hidden min-w-0 place-items-center bg-muted/10 p-8 text-center text-base text-muted-foreground lg:grid">
           {notFound ? "Esta conversa não existe ou é de outro setor." : "Escolha uma conversa na fila."}
         </div>
       )}

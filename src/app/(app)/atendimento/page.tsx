@@ -49,8 +49,8 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
   ]);
 
   return (
-    <div className="grid min-w-0 gap-4">
-      <AtendimentoSectionHeader active="inbox" canManage={isAdminRole(role)} />
+    <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)]">
+      <AtendimentoSectionHeader active="inbox" canManage={isAdminRole(role)} compact />
       <SupportInbox
         now={now.toISOString()}
         filter={filter}
