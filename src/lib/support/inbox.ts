@@ -144,7 +144,7 @@ export async function loadSupportQueue(
 }
 
 export type SupportTimelineItem =
-  | { kind: "message"; id: string; at: string; direction: "inbound" | "outbound"; author: string; text: string; isText: boolean; delivery: DeliveryState | null; failure: string | null }
+  | { kind: "message"; id: string; at: string; direction: "inbound" | "outbound"; author: string; text: string; isText: boolean; image: { src: string; caption: string | null } | null; delivery: DeliveryState | null; failure: string | null }
   | { kind: "note"; id: string; at: string; author: string; text: string }
   | { kind: "event"; id: string; at: string; text: string };
 
@@ -216,6 +216,7 @@ export async function loadSupportConversation(
       source: messages.source,
       text: messages.text,
       messageType: messages.messageType,
+      content: messages.content,
       occurredAt: messages.occurredAt,
       sender: schema.user.name,
     })
@@ -260,6 +261,14 @@ export async function loadSupportConversation(
         author: message.direction === "inbound" ? contactName : message.source === "business_app" ? "Celular" : message.source === "guilda_ai" ? "IA" : (message.sender ?? "Equipe"),
         text: messageLabel(message),
         isText: message.text !== null,
+        image: message.messageType === "image" && typeof message.content.id === "string"
+          ? {
+              src: `/api/atendimento/media/${message.id}`,
+              caption: typeof message.content.caption === "string"
+                ? message.content.caption.slice(0, 1024)
+                : null,
+            }
+          : null,
         delivery: message.direction === "outbound" && message.source !== "business_app" ? deliveryState(own.map((event) => event.eventType)) : null,
         failure: failed && typeof failed.detail.message === "string" ? failed.detail.message : null,
       };
@@ -330,6 +339,55 @@ export async function loadSupportConversation(
     openTasks,
     lastCustomerText: lastCustomer?.text ?? null,
   };
+}
+
+export type SupportMediaReference = Readonly<{
+  channelId: string;
+  mediaId: string;
+}>;
+
+/**
+ * Autoriza uma foto pela mesma régua da conversa. O navegador fornece apenas o
+ * id interno da mensagem; media id e canal continuam presos à organização.
+ */
+export async function loadSupportMediaReference(
+  tx: OrgTx,
+  input: { orgId: string; viewer: SupportViewer; messageId: string },
+): Promise<SupportMediaReference | null> {
+  const [row] = await tx
+    .select({
+      channelId: messages.channelId,
+      messageType: messages.messageType,
+      content: messages.content,
+      assignedClanId: c.assignedClanId,
+      assignedUserId: c.assignedUserId,
+    })
+    .from(messages)
+    .innerJoin(
+      c,
+      and(
+        eq(c.orgId, messages.orgId),
+        eq(c.id, messages.conversationId),
+      ),
+    )
+    .where(
+      and(
+        eq(messages.orgId, input.orgId),
+        eq(messages.id, input.messageId),
+      ),
+    )
+    .limit(1);
+  if (
+    !row ||
+    row.messageType !== "image" ||
+    !canSeeConversation(input.viewer, row)
+  ) {
+    return null;
+  }
+  const mediaId = row.content.id;
+  return typeof mediaId === "string" && /^\d{1,32}$/.test(mediaId)
+    ? { channelId: row.channelId, mediaId }
+    : null;
 }
 
 /** Número conectado? Sem nenhum, a tela explica como conectar em vez de ficar vazia. */

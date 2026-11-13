@@ -25,7 +25,9 @@ export class MetaGraphError extends Error {
       | "resolve_waba"
       | "list_phones"
       | "subscribe_webhook"
-      | "send_message",
+      | "send_message"
+      | "get_media_url"
+      | "download_media",
     readonly httpStatus: number,
     readonly graphCode?: number,
     readonly graphType?: string,
@@ -35,7 +37,10 @@ export class MetaGraphError extends Error {
   }
 }
 
-function graphUrl(config: MetaServerConfig, path: string): URL {
+function graphUrl(
+  config: Pick<MetaServerConfig, "graphApiVersion">,
+  path: string,
+): URL {
   return new URL(`https://graph.facebook.com/${config.graphApiVersion}${path}`);
 }
 
@@ -204,6 +209,98 @@ export async function sendWhatsAppText(
     throw graphError("send_message", response, payload);
   }
   return sent.id;
+}
+
+const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
+const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png"]);
+
+export type WhatsAppImage = Readonly<{
+  bytes: ArrayBuffer;
+  mimeType: "image/jpeg" | "image/png";
+}>;
+
+function isMetaMediaHost(hostname: string): boolean {
+  return (
+    hostname === "lookaside.fbsbx.com" ||
+    hostname.endsWith(".fbsbx.com") ||
+    hostname.endsWith(".fbcdn.net") ||
+    hostname.endsWith(".facebook.com")
+  );
+}
+
+/**
+ * Resolve a URL temporária da Meta e baixa uma foto recebida. O token fica
+ * somente no servidor e a URL retornada pela Graph nunca chega ao navegador.
+ */
+export async function downloadWhatsAppImage(
+  input: {
+    mediaId: string;
+    phoneNumberId: string;
+    accessToken: string;
+  },
+  config: Pick<MetaServerConfig, "graphApiVersion">,
+  fetchImpl: typeof fetch = fetch,
+): Promise<WhatsAppImage> {
+  if (!/^\d{1,32}$/.test(input.mediaId)) {
+    throw new MetaGraphError("get_media_url", 400);
+  }
+  const metadataUrl = graphUrl(config, `/${input.mediaId}`);
+  metadataUrl.search = new URLSearchParams({
+    phone_number_id: input.phoneNumberId,
+  }).toString();
+  const auth = { authorization: `Bearer ${input.accessToken}` };
+  const metadataResponse = await fetchImpl(metadataUrl, {
+    method: "GET",
+    headers: auth,
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const metadata = await responsePayload(metadataResponse);
+  const mediaUrlValue = metadata.url;
+  const mimeType = metadata.mime_type;
+  const fileSize = metadata.file_size;
+  if (
+    !metadataResponse.ok ||
+    typeof mediaUrlValue !== "string" ||
+    typeof mimeType !== "string" ||
+    !IMAGE_MIME_TYPES.has(mimeType) ||
+    typeof fileSize !== "number" ||
+    !Number.isSafeInteger(fileSize) ||
+    fileSize < 0 ||
+    fileSize > MAX_IMAGE_BYTES
+  ) {
+    throw graphError("get_media_url", metadataResponse, metadata);
+  }
+
+  let mediaUrl: URL;
+  try {
+    mediaUrl = new URL(mediaUrlValue);
+  } catch {
+    throw new MetaGraphError("download_media", 502);
+  }
+  if (mediaUrl.protocol !== "https:" || !isMetaMediaHost(mediaUrl.hostname)) {
+    throw new MetaGraphError("download_media", 502);
+  }
+
+  const mediaResponse = await fetchImpl(mediaUrl, {
+    method: "GET",
+    headers: auth,
+    cache: "no-store",
+    redirect: "error",
+    signal: AbortSignal.timeout(20_000),
+  });
+  const declaredLength = Number(mediaResponse.headers.get("content-length") ?? "0");
+  if (
+    !mediaResponse.ok ||
+    (Number.isFinite(declaredLength) && declaredLength > MAX_IMAGE_BYTES)
+  ) {
+    throw new MetaGraphError("download_media", mediaResponse.status);
+  }
+  const bytes = await mediaResponse.arrayBuffer();
+  if (bytes.byteLength > MAX_IMAGE_BYTES) {
+    throw new MetaGraphError("download_media", 413);
+  }
+  return { bytes, mimeType: mimeType as WhatsAppImage["mimeType"] };
 }
 
 export async function subscribeWhatsAppWebhook(

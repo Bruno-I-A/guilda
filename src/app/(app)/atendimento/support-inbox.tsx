@@ -1,12 +1,13 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Hand, LoaderCircle, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Hand, ImageOff, LoaderCircle, Maximize2, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCnpj } from "@/domain/cnpj";
@@ -100,9 +101,41 @@ const DELIVERY_ICONS: Record<DeliveryState, React.ReactNode> = {
   failed: <AlertTriangle className="size-3 text-destructive" aria-hidden />,
 };
 
+function MessageImage({ src, caption }: { src: string; caption: string | null }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <div className="grid min-h-32 place-items-center gap-2 rounded-md border border-dashed bg-muted/20 p-5 text-center text-muted-foreground">
+        <ImageOff className="size-6" aria-hidden />
+        <span className="text-xs">Esta foto não está mais disponível na Meta.</span>
+      </div>
+    );
+  }
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button type="button" className="group relative block max-w-full overflow-hidden rounded-md border bg-muted/20 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          {/* A rota é autenticada; o otimizador do Next não receberia a sessão. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={src} alt={caption || "Foto recebida pelo WhatsApp"} loading="lazy" className="max-h-80 w-auto max-w-full object-contain" onError={() => setFailed(true)} />
+          <span className="absolute right-2 bottom-2 inline-flex size-9 items-center justify-center rounded-md border bg-background/90 text-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+            <Maximize2 className="size-4" aria-hidden />
+            <span className="sr-only">Ampliar foto</span>
+          </span>
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-[min(96vw,72rem)] overflow-hidden rounded-none border bg-background p-3 sm:max-w-[min(96vw,72rem)]">
+        <DialogTitle className="sr-only">Foto recebida pelo WhatsApp</DialogTitle>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={caption || "Foto recebida pelo WhatsApp"} className="max-h-[calc(100dvh-4rem)] w-full object-contain" />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function TimelineItem({ item }: { item: SupportTimelineItem }) {
   if (item.kind === "event") {
-    return <li className="py-1 text-center text-xs text-muted-foreground">{item.text} · {shortTime(item.at)}</li>;
+    return <li className="py-2 text-center text-xs text-muted-foreground"><span className="inline-flex rounded-md border bg-background/70 px-2 py-1">{item.text} · {shortTime(item.at)}</span></li>;
   }
   if (item.kind === "note") {
     return (
@@ -117,9 +150,16 @@ function TimelineItem({ item }: { item: SupportTimelineItem }) {
   const outbound = item.direction === "outbound";
   return (
     <li className={cn("flex", outbound ? "justify-end" : "justify-start")}>
-      <div className={cn("grid max-w-[85%] gap-1 rounded-md border px-3 py-2 text-sm sm:max-w-[70%]", outbound ? "border-primary/30 bg-primary/10" : "bg-card")}>
-        <span className="text-xs text-muted-foreground">{item.author} · {shortTime(item.at)}</span>
-        <p className={cn("whitespace-pre-wrap break-words", !item.isText && "italic text-muted-foreground")}>{item.text}</p>
+      <div className={cn("grid max-w-[88%] gap-2 rounded-md border px-3 py-2 text-sm shadow-sm sm:max-w-[76%]", outbound ? "border-primary/30 bg-primary/10" : "bg-card")}>
+        <span className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground"><span>{item.author}</span><span className="font-mono tabular-nums">{shortTime(item.at)}</span></span>
+        {item.image ? (
+          <>
+            <MessageImage src={item.image.src} caption={item.image.caption} />
+            {item.image.caption ? <p className="whitespace-pre-wrap break-words">{item.image.caption}</p> : null}
+          </>
+        ) : (
+          <p className={cn("whitespace-pre-wrap break-words", !item.isText && "italic text-muted-foreground")}>{item.text}</p>
+        )}
         {item.delivery ? (
           <span className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
             {DELIVERY_ICONS[item.delivery]} {item.failure ?? DELIVERY_LABELS[item.delivery]}
@@ -151,7 +191,7 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
   }
 
   return (
-    <div className="grid gap-2 border-t p-3">
+    <div className="grid gap-2 border-t bg-background/95 p-3">
       {conversation.replyBlocked ? <p className="text-xs text-muted-foreground">{conversation.replyBlocked} Você ainda pode deixar uma nota para a equipe.</p> : null}
       <div className="flex gap-1" role="group" aria-label="Tipo de texto">
         <Button type="button" size="sm" variant={effective === "reply" ? "secondary" : "ghost"} disabled={!canReply} aria-pressed={effective === "reply"} onClick={() => setMode("reply")}>Responder</Button>
@@ -195,19 +235,21 @@ function ConversationPanel({ conversation, filter, onContext }: { conversation: 
 
   return (
     <section className="panel-cut flex min-h-0 min-w-0 flex-col" aria-label={`Conversa com ${conversation.contactName}`}>
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2">
-        <Button asChild size="icon-sm" variant="ghost" className="touch-target lg:hidden">
-          <Link href={inboxHref(filter)} aria-label="Voltar para a fila"><ArrowLeft aria-hidden /></Link>
-        </Button>
-        <div className="grid min-w-0 flex-1 gap-0.5">
-          <span className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="truncate text-sm font-semibold">{conversation.contactName}</span>
-            <StatusChip status={conversation.status} />
-          </span>
-          <span className="truncate text-xs text-muted-foreground">{conversation.client?.name ?? "Empresa não vinculada"}{conversation.assigneeName ? ` · ${conversation.assignedToMe ? "com você" : `com ${conversation.assigneeName}`}` : ""}</span>
+      <header className="grid border-b bg-background/95">
+        <div className="flex min-w-0 items-center gap-3 px-3 py-2.5">
+          <Button asChild size="icon-sm" variant="ghost" className="touch-target lg:hidden">
+            <Link href={inboxHref(filter)} aria-label="Voltar para a fila"><ArrowLeft aria-hidden /></Link>
+          </Button>
+          <div className="grid min-w-0 flex-1 gap-1">
+            <span className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="truncate font-semibold">{conversation.contactName}</span>
+              <StatusChip status={conversation.status} />
+            </span>
+            <span className="truncate text-xs text-muted-foreground">{conversation.phone ?? "Número não informado"} · {conversation.client?.name ?? "Empresa não vinculada"}{conversation.assigneeName ? ` · ${conversation.assignedToMe ? "com você" : `com ${conversation.assigneeName}`}` : ""}</span>
+          </div>
+          <Button type="button" size="sm" variant="ghost" className="2xl:hidden" onClick={onContext}><Building2 aria-hidden /> Contexto</Button>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" size="sm" variant="ghost" className="xl:hidden" onClick={onContext}><Building2 aria-hidden /> Empresa</Button>
+        <div className="flex min-w-0 items-center justify-end gap-1 overflow-x-auto border-t px-3 py-2">
           {conversation.phone ? (
             // Fora das 24 horas, só o aparelho do escritório responde (coexistência). Abre o
             // WhatsApp logado neste navegador: precisa ser o do escritório, não o pessoal.
@@ -228,7 +270,7 @@ function ConversationPanel({ conversation, filter, onContext }: { conversation: 
           )}
         </div>
       </header>
-      <ol className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto p-3" aria-label="Histórico da conversa">
+      <ol className="mx-auto grid min-h-0 w-full max-w-5xl flex-1 content-start gap-3 overflow-y-auto bg-muted/10 p-4 sm:p-6" aria-label="Histórico da conversa">
         {conversation.timeline.map((item) => <TimelineItem key={`${item.kind}-${item.id}`} item={item} />)}
         <li ref={end} aria-hidden />
       </ol>
@@ -363,7 +405,7 @@ function ContextPanel({ conversation, clients, clans, members, onClose }: { conv
 
   return (
     <aside className="panel-cut grid min-h-0 min-w-0 content-start gap-4 overflow-y-auto p-3" aria-label="Contexto da conversa">
-      <div className="flex items-center justify-between gap-2 xl:hidden">
+      <div className="flex items-center justify-between gap-2 2xl:hidden">
         <span className="text-sm font-semibold">Empresa e setor</span>
         <Button type="button" size="icon-sm" variant="ghost" className="touch-target" aria-label="Voltar para a conversa" onClick={onClose}><X aria-hidden /></Button>
       </div>
@@ -450,15 +492,15 @@ export function SupportInbox({
 
   const selected = conversation !== null;
   return (
-    <div className="grid min-w-0 gap-3 lg:h-[calc(100dvh-13rem)] lg:min-h-[32rem] lg:grid-cols-[19rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)_17rem]">
+    <div className="grid min-w-0 gap-3 lg:h-[calc(100dvh-11.5rem)] lg:min-h-[36rem] lg:grid-cols-[20rem_minmax(0,1fr)] 2xl:grid-cols-[20rem_minmax(0,1fr)_18rem]">
       <section className={cn("panel-cut min-h-0 min-w-0 flex-col lg:flex", selected ? "hidden" : "flex")} aria-label="Fila de conversas">
-        <nav className="flex flex-wrap gap-1 border-b p-2" aria-label="Filtrar conversas">
+        <nav className="grid grid-cols-2 gap-1 border-b p-2" aria-label="Filtrar conversas">
           {SUPPORT_FILTERS.map((item) => (
             <Link
               key={item.key}
               href={inboxHref(item.key)}
               aria-current={filter === item.key ? "page" : undefined}
-              className={cn("rounded-md border px-2 py-1 text-xs transition-colors hover:bg-accent/30", filter === item.key ? "border-primary bg-primary/10" : "border-transparent text-muted-foreground")}
+              className={cn("flex min-h-9 items-center justify-between gap-2 rounded-md border px-2 py-1 text-xs transition-colors hover:bg-accent/30", filter === item.key ? "border-primary bg-primary/10" : "border-transparent text-muted-foreground")}
             >
               {item.label} <span className="font-mono tabular-nums">{counts[item.key]}</span>
             </Link>
@@ -475,17 +517,17 @@ export function SupportInbox({
 
       {conversation ? (
         <>
-          <div className={cn("min-h-0 min-w-0", contextOpen ? "hidden xl:contents" : "contents")}>
+          <div className={cn("min-h-0 min-w-0", contextOpen ? "hidden 2xl:contents" : "contents")}>
             <div className="grid h-[calc(100dvh-11rem)] min-h-0 min-w-0 lg:h-auto">
               <ConversationPanel key={conversation.id} conversation={conversation} filter={filter} onContext={() => setContextOpen(true)} />
             </div>
           </div>
-          <div className={cn("min-h-0 min-w-0", contextOpen ? "grid" : "hidden xl:grid", "lg:col-start-2 xl:col-start-3")}>
+          <div className={cn("min-h-0 min-w-0", contextOpen ? "grid" : "hidden 2xl:grid", "lg:col-start-2 2xl:col-start-3")}>
             <ContextPanel conversation={conversation} clients={clients} clans={clans} members={members} onClose={() => setContextOpen(false)} />
           </div>
         </>
       ) : (
-        <div className="hidden min-w-0 place-items-center rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground lg:col-span-1 lg:grid xl:col-span-2">
+        <div className="hidden min-w-0 place-items-center rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground lg:col-span-1 lg:grid 2xl:col-span-2">
           {notFound ? "Esta conversa não existe ou é de outro setor." : "Escolha uma conversa na fila."}
         </div>
       )}

@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import {
+  downloadWhatsAppImage,
   exchangeEmbeddedSignupCode,
   resolveEmbeddedSignupWabaId,
   resolveCoexistencePhone,
@@ -144,6 +145,59 @@ describe("cliente seguro da Meta", () => {
       verify_token: "verify-token-guilda",
     });
     expect(String(init.body)).not.toContain("EA-token");
+  });
+
+  test("baixa foto por uma URL temporária sem expor o token", async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            url: "https://lookaside.fbsbx.com/whatsapp_business/attachments/test",
+            mime_type: "image/jpeg",
+            file_size: bytes.byteLength,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(bytes, {
+          status: 200,
+          headers: { "content-type": "image/jpeg", "content-length": "4" },
+        }),
+      ) as unknown as typeof fetch;
+
+    const image = await downloadWhatsAppImage(
+      { mediaId: "987654321", phoneNumberId: "222222", accessToken: "EA-token" },
+      config,
+      fetchMock,
+    );
+    expect(new Uint8Array(image.bytes)).toEqual(bytes);
+    expect(image.mimeType).toBe("image/jpeg");
+
+    const calls = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(new URL(String(calls[0][0])).pathname).toBe("/v24.0/987654321");
+    expect(new URL(String(calls[0][0])).searchParams.get("phone_number_id")).toBe("222222");
+    expect(new Headers(calls[0][1].headers).get("authorization")).toBe("Bearer EA-token");
+    expect(String(calls[1][0])).toContain("lookaside.fbsbx.com");
+    expect(new Headers(calls[1][1].headers).get("authorization")).toBe("Bearer EA-token");
+  });
+
+  test("não segue URL de mídia fora dos hosts da Meta", async () => {
+    const fetchMock = fetchReturning({
+      url: "https://example.com/foto.jpg",
+      mime_type: "image/jpeg",
+      file_size: 123,
+    });
+    await expect(
+      downloadWhatsAppImage(
+        { mediaId: "987654321", phoneNumberId: "222222", accessToken: "EA-token" },
+        config,
+        fetchMock,
+      ),
+    ).rejects.toMatchObject({ operation: "download_media", httpStatus: 502 });
+    expect((fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
   });
 
   test("erro da Graph API expõe somente metadados seguros", async () => {
