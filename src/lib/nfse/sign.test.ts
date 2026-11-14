@@ -42,7 +42,8 @@ describe("assinatura XMLDSIG", () => {
     expect(signed).toMatch(/<\/infDPS><Signature xmlns="http:\/\/www\.w3\.org\/2000\/09\/xmldsig#">/);
     expect(signed).toContain("<X509Certificate>");
     expect(verify(signed, cert.certificatePem)).toBe(true);
-    expect(await nfseXsdErrors(signed, "DPS_v1.01.xsd")).toEqual([]);
+    // Produção restrita (tpAmb 2): leiaute da NT 009.
+    expect(await nfseXsdErrors(signed, "DPS_v1.01.xsd", "nt009")).toEqual([]);
   });
 
   test("qualquer alteração depois de assinar invalida", () => {

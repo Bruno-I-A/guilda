@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { validateXML } from "xmllint-wasm";
 
-const XSD_DIR = path.resolve(process.cwd(), "src/lib/nfse/xsd/1.01");
+/** "1.01": XSD de produção até 30/11/2026 (NT 004). "nt009": produção restrita de 20/10/2026 (NT 009). */
+export type XsdSet = "1.01" | "nt009";
+const xsdDir = (set: XsdSet) => path.resolve(process.cwd(), "src/lib/nfse/xsd", set);
 const SHARED = [
   "tiposComplexos_v1.01.xsd",
   "tiposSimples_v1.01.xsd",
@@ -20,8 +22,8 @@ const SHARED = [
  * libxml2 segue a especificação e recusaria toda série. Tiramos as âncoras
  * ao carregar, sem mexer no arquivo oficial.
  */
-function readXsd(fileName: string): string {
-  return readFileSync(path.join(XSD_DIR, fileName), "utf8")
+function readXsd(fileName: string, set: XsdSet): string {
+  return readFileSync(path.join(xsdDir(set), fileName), "utf8")
     .replace(/^﻿/, "")
     .replace(/<!DOCTYPE[\s\S]*?\]>/, "")
     .replace(/(<xs:pattern value=")\^([^"]*)\$(")/g, "$1$2$3");
@@ -30,11 +32,12 @@ function readXsd(fileName: string): string {
 export async function nfseXsdErrors(
   xml: string,
   rootXsd: "DPS_v1.01.xsd" | "NFSe_v1.01.xsd" | "pedRegEvento_v1.01.xsd",
+  set: XsdSet = "1.01",
 ): Promise<string[]> {
   const result = await validateXML({
     xml: [{ fileName: "documento.xml", contents: xml }],
-    schema: [{ fileName: rootXsd, contents: readXsd(rootXsd) }],
-    preload: SHARED.map((fileName) => ({ fileName, contents: readXsd(fileName) })),
+    schema: [{ fileName: rootXsd, contents: readXsd(rootXsd, set) }],
+    preload: SHARED.map((fileName) => ({ fileName, contents: readXsd(fileName, set) })),
   });
   return result.errors.map((error) => error.message);
 }
