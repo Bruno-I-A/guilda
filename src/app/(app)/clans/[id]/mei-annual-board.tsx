@@ -40,6 +40,7 @@ import { cn } from "@/lib/utils";
 
 import { ClanEmptyState, ClanSectionHeading, ClanStatusStrip } from "./clan-ui";
 import { saveMeiDeclaration } from "./mei-actions";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 export interface MeiAnnualRowView {
   clientId: string;
@@ -102,7 +103,7 @@ function DeclarationRow({
   return (
     <TableRow className={cn(status === "submitted" && "bg-success/5")}>
       <TableCell className="min-w-64">
-        <span className="block max-w-72 truncate font-medium">{row.clientName}</span>
+        <span className="block max-w-72 truncate font-medium">{companyDisplayName(row.clientName)}</span>
         {row.updatedAt ? (
           <span className="block text-[11px] text-muted-foreground">
             Atualizado por {row.updatedByName ?? "integrante"} em {formatUpdatedAt(row.updatedAt)}

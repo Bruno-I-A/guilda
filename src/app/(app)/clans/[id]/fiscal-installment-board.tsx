@@ -57,6 +57,7 @@ import {
   setFiscalInstallmentGenerated,
   type InstallmentImportPreview,
 } from "./fiscal-installment-actions";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 export interface FiscalInstallmentRowView {
   id: string;
@@ -187,7 +188,7 @@ function InstallmentFormDialog({
               </SelectTrigger>
               <SelectContent>
                 {clients.map((client) => (
-                  <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
+                  <SelectItem key={client.id} value={client.id}>{companyDisplayName(client.name)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -308,7 +309,7 @@ function DeleteInstallmentDialog({
         <DialogHeader>
           <DialogTitle>Excluir este parcelamento?</DialogTitle>
           <DialogDescription>
-            {row.clientName} · {row.installmentType}. Esta ação não pode ser desfeita.
+            {companyDisplayName(row.clientName)} · {row.installmentType}. Esta ação não pode ser desfeita.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -454,7 +455,7 @@ function InstallmentImportDialog({ clanId }: { clanId: string }) {
                           </SelectTrigger>
                           <SelectContent>
                             {preview.clients.map((client) => (
-                              <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
+                              <SelectItem key={client.id} value={client.id}>{companyDisplayName(client.name)}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -560,7 +561,7 @@ function InstallmentCard({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-heading text-base font-medium">{row.clientName}</h3>
+            <h3 className="font-heading text-base font-medium">{companyDisplayName(row.clientName)}</h3>
             {!row.clientActive ? <Badge variant="outline">Inativa</Badge> : null}
             {row.generatedThisMonth ? (
               <Badge className="border-success/30 bg-success/10 text-success">

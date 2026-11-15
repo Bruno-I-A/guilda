@@ -34,6 +34,7 @@ import {
   rollClosingChallenge,
   updateClosingChallengeSettings,
 } from "./closing-challenge-actions";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 export interface ChallengeCandidate {
   id: string;
@@ -350,7 +351,7 @@ export function ClosingChallenge({
             </p>
           ) : active && clock ? (
             <>
-              <p className="truncate font-semibold">{active.clientName}</p>
+              <p className="truncate font-semibold">{companyDisplayName(active.clientName)}</p>
               <p
                 className={cn(
                   "font-mono text-sm tabular-nums",
@@ -362,7 +363,7 @@ export function ClosingChallenge({
             </>
           ) : finished && result ? (
             <>
-              <p className="truncate font-semibold">{finished.clientName}</p>
+              <p className="truncate font-semibold">{companyDisplayName(finished.clientName)}</p>
               <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                 {result.xp ? <span className="chip-loot">+{result.xp} XP</span> : null}
                 {result.text}
@@ -434,7 +435,7 @@ export function ClosingChallenge({
                       className="flex min-w-0 items-center justify-between gap-2 py-1 text-sm"
                     >
                       <span className="min-w-0 truncate">
-                        {item.userName} · {item.clientName}
+                        {item.userName} · {companyDisplayName(item.clientName)}
                       </span>
                       <span className="flex shrink-0 items-center gap-1">
                         <span

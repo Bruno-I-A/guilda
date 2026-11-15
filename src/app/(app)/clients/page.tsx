@@ -25,6 +25,7 @@ import {
   NewClientButton,
 } from "./client-actions";
 import { ExportClientsButton, type RegimeCounts } from "./export-clients-button";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 export const metadata: Metadata = { title: "Clientes" };
 
@@ -181,7 +182,7 @@ export default async function ClientsPage({
               )}
             >
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium leading-snug">{client.name}</p>
+                <p className="truncate font-medium leading-snug">{companyDisplayName(client.name)}</p>
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   <Badge
                     className={cn(

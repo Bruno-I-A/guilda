@@ -17,7 +17,7 @@ export function LevelEmblem({
       role="img"
       aria-label={`Nível ${level}`}
     >
-      <div className="absolute inset-[9%] rotate-45 border-2 border-gold/55 bg-card shadow-[inset_0_0_0_1px_oklch(1_0_0_/_4%)]" />
+      <div className="absolute inset-[9%] rotate-45 border-2 border-gold/55 bg-card shadow-[inset_0_0_0_1px_var(--surface-highlight)]" />
       <div className="absolute inset-[18%] rotate-45 border border-gold/25" />
       <div className="relative flex h-full flex-col items-center justify-center">
         <span className="font-heading text-4xl font-bold leading-none text-gold">

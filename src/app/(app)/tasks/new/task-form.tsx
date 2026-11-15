@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { DifficultyPips } from "@/components/difficulty-pips-input";
 
 import { createTask } from "../actions";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 /** Prioridade como 3 botões segmentados. */
 function PrioritySegments({
@@ -323,7 +324,7 @@ export function TaskForm({
                           setClientPickerOpen(false);
                         }}
                       >
-                        <span>{client.name}</span>
+                        <span>{companyDisplayName(client.name)}</span>
                         {client.cnpj ? (
                           <span className="font-mono text-xs text-muted-foreground">
                             {client.cnpj}

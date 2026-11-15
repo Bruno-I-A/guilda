@@ -19,6 +19,7 @@ import type { SupportConversationView, SupportQueueRow, SupportTimelineItem } fr
 import { cn } from "@/lib/utils";
 
 import { addNote, linkContact, markWaiting, reopenConversation, resolveConversation, sendReply, takeConversation, transferConversation } from "./actions";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 const STATUS_CLASSES: Record<SupportStatus, string> = {
   ai_active: "border-border text-muted-foreground",
@@ -82,7 +83,7 @@ function QueueItem({ row, active, filter, now }: { row: SupportQueueRow; active:
             </span>
           ) : null}
         </span>
-        {row.clientName ? <span className="truncate text-sm text-muted-foreground">{row.clientName}</span> : null}
+        {row.clientName ? <span className="truncate text-sm text-muted-foreground">{companyDisplayName(row.clientName)}</span> : null}
         {row.lastMessage ? <span className="truncate text-sm text-muted-foreground">{row.lastMessage}</span> : null}
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <StatusChip status={row.status} />
@@ -336,7 +337,7 @@ function ClientLink({ conversation, clients }: { conversation: SupportConversati
     const { client } = conversation;
     return (
       <div className="grid gap-1 text-sm">
-        <Link href={`/clients/${client.id}`} className="font-medium underline-offset-4 hover:underline">{client.name}</Link>
+        <Link href={`/clients/${client.id}`} className="font-medium underline-offset-4 hover:underline">{companyDisplayName(client.name)}</Link>
         <span className="font-mono text-xs text-muted-foreground">{client.cnpj ? formatCnpj(client.cnpj) : "sem CNPJ"}</span>
         <span className="text-xs text-muted-foreground">Regime: {client.taxRegime}</span>
         <Button type="button" size="sm" variant="ghost" className="justify-self-start" disabled={pending} onClick={() => run(() => linkContact({ conversationId: conversation.id, clientId: null }))}><X aria-hidden /> Desfazer vínculo</Button>
@@ -355,7 +356,7 @@ function ClientLink({ conversation, clients }: { conversation: SupportConversati
           {matches.map((client) => (
             <li key={client.id}>
               <button type="button" disabled={pending} className="grid min-h-11 w-full gap-0.5 px-2 py-1.5 text-left text-sm hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" onClick={() => run(() => linkContact({ conversationId: conversation.id, clientId: client.id }))}>
-                <span className="truncate">{client.name}</span>
+                <span className="truncate">{companyDisplayName(client.name)}</span>
                 <span className="font-mono text-xs text-muted-foreground">{client.cnpj ? formatCnpj(client.cnpj) : "sem CNPJ"}</span>
               </button>
             </li>

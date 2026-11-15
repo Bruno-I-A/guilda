@@ -25,6 +25,7 @@ import {
   xmlRoutineStatusText,
   xmlTimeLabel,
 } from "./xml-routine-settings";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 const MONTHS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"] as const;
 
@@ -547,7 +548,7 @@ export function XmlNotesBoard({
             {visible.map((company) => (
               <li key={company.clientId} className={cn("grid min-w-0 gap-4 rounded-md border border-l-2 bg-card/60 p-4 transition-colors hover:bg-accent/10 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center", problemIds.has(company.clientId) ? "border-l-destructive" : company.notes.total > 0 ? "border-l-primary" : "border-l-border")}>
                 <div className="grid min-w-0 gap-0.5 text-sm">
-                  <span className="truncate font-medium">{company.name}</span>
+                  <span className="truncate font-medium">{companyDisplayName(company.name)}</span>
                   <span className="font-mono text-xs text-muted-foreground">{company.cnpj ? formatCnpj(company.cnpj) : "sem CNPJ no cadastro"}</span>
                   <span><CertificateStatus certificate={company.certificate} now={now} /></span>
                   <span className="text-xs"><SyncStatus company={company} now={now} /></span>

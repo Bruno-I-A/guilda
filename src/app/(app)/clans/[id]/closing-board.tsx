@@ -80,6 +80,7 @@ import {
   createMissionFromClosingObservation,
   setClosingObservationResolved,
 } from "./closing-actions";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 export interface ClosingView {
   id: string;
@@ -195,7 +196,7 @@ function ClosingFormDialog({
             {initial ? "Editar fechamento mensal" : "Registrar mês fechado"}
           </DialogTitle>
           <DialogDescription>
-            {company.name} · {year}.{" "}
+            {companyDisplayName(company.name)} · {year}.{" "}
             {initial?.periodMonth === null
               ? `Este registro antigo (“${initial.title}”) ainda não tem mês associado. Selecione o mês abaixo para habilitar o filtro mensal.`
               : "Cada mês fechado fica em um registro separado."}
@@ -1133,7 +1134,7 @@ function CompanyCard({
                   highlightedAsClosed && "text-success",
                 )}
               >
-                {company.name}
+                {companyDisplayName(company.name)}
               </h2>
               <Badge
                 className={cn(

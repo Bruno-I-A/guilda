@@ -28,6 +28,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 
 import { deleteOfficeFeeProfile, saveOfficeFeeProfile } from "./office-fee-actions";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 export interface OfficeFeeProfileHistoryView {
   id: string;
@@ -145,7 +146,7 @@ export function OfficeFeeProfileDialog({
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Honorário do escritório · {clientName}</DialogTitle>
+          <DialogTitle>Honorário do escritório · {companyDisplayName(clientName)}</DialogTitle>
           <DialogDescription>
             Esta regra é permanente. O fechamento de cada mês guarda um retrato
             dela antes de alguém marcar as etapas como concluídas.

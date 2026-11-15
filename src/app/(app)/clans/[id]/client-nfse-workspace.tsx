@@ -43,6 +43,7 @@ import { ClientNfseTakersDialog } from "./client-nfse-customers";
 import { ClientNfseEmitDialog, type EmitPrefill } from "./client-nfse-emit-dialog";
 import { ClientNfseIssuerDialog } from "./client-nfse-issuer-dialog";
 import { ClientNfseInvoiceDialog, clientNfsePdfHref, STATUS_CLASSES, STATUS_LABELS } from "./client-nfse-note-row";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 const MONTHS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"] as const;
 
@@ -204,7 +205,7 @@ function CompanyRow({
       <div className="flex flex-wrap items-center gap-3 border-b bg-muted/30 p-4">
         <div className="grid min-w-[14rem] flex-1 gap-0.5">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-            <h3 className="break-words">{issuer.name}</h3>
+            <h3 className="break-words">{companyDisplayName(issuer.name)}</h3>
             <span className="font-mono text-xs text-muted-foreground">{issuer.cnpj ? formatCnpj(issuer.cnpj) : "sem CNPJ"}</span>
           </div>
           {!issuer.active ? (
@@ -446,7 +447,7 @@ export function ClientNfseWorkspace({
           <section className="min-w-0 rounded-md border bg-card" aria-label="Carteira de empresas">
             <div className="border-b p-3"><h3>Empresas</h3><p className="mt-1 text-xs text-muted-foreground">{visible.length} no recorte · selecione para trabalhar</p></div>
             <ul className="max-h-72 divide-y overflow-y-auto lg:max-h-[65vh]">
-              {visible.map((issuer) => { const counts = summarizeNotes(issuer.notes); return <li key={issuer.id}><button type="button" aria-pressed={selected?.id === issuer.id} onClick={() => setSelectedId(issuer.id)} className={cn("grid w-full gap-2 border-l-2 p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selected?.id === issuer.id ? "border-primary bg-primary/10" : "border-transparent")}><span className="break-words text-sm font-medium">{issuer.name}</span><span className="font-mono text-xs text-muted-foreground">{issuer.cnpj ? formatCnpj(issuer.cnpj) : "Sem CNPJ"}</span><span className="text-xs text-muted-foreground">{counts.issued} emitidas · {money(counts.issuedCents)}</span>{counts.failed ? <span className="text-xs text-destructive">{counts.failed} nota(s) com erro</span> : null}{counts.working ? <span className="text-xs text-warning">{counts.working} em andamento</span> : null}{!issuer.active || issuer.problem ? <span className="text-xs text-warning">{!issuer.active ? "Empresa desativada" : "Cadastro precisa de atenção"}</span> : <span className="text-xs text-success">Cadastro pronto</span>}</button></li>; })}
+              {visible.map((issuer) => { const counts = summarizeNotes(issuer.notes); return <li key={issuer.id}><button type="button" aria-pressed={selected?.id === issuer.id} onClick={() => setSelectedId(issuer.id)} className={cn("grid w-full gap-2 border-l-2 p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selected?.id === issuer.id ? "border-primary bg-primary/10" : "border-transparent")}><span className="break-words text-sm font-medium">{companyDisplayName(issuer.name)}</span><span className="font-mono text-xs text-muted-foreground">{issuer.cnpj ? formatCnpj(issuer.cnpj) : "Sem CNPJ"}</span><span className="text-xs text-muted-foreground">{counts.issued} emitidas · {money(counts.issuedCents)}</span>{counts.failed ? <span className="text-xs text-destructive">{counts.failed} nota(s) com erro</span> : null}{counts.working ? <span className="text-xs text-warning">{counts.working} em andamento</span> : null}{!issuer.active || issuer.problem ? <span className="text-xs text-warning">{!issuer.active ? "Empresa desativada" : "Cadastro precisa de atenção"}</span> : <span className="text-xs text-success">Cadastro pronto</span>}</button></li>; })}
             </ul>
           </section>
           <div className="min-w-0" aria-live="polite">
