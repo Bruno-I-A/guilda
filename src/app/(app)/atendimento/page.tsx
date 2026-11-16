@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { isAdminRole } from "@/domain/guild-permissions";
-import { parseSupportFilter } from "@/domain/support-inbox";
+import { parseSupportFilter, parseSupportPage } from "@/domain/support-inbox";
 import type { OrgRole } from "@/domain/task-state";
 import { listActiveClans, listOrgMembers } from "@/lib/org";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
@@ -18,20 +18,21 @@ export const metadata: Metadata = { title: "Atendimento" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export default async function AtendimentoPage({ searchParams }: { searchParams: Promise<{ c?: string; f?: string }> }) {
+export default async function AtendimentoPage({ searchParams }: { searchParams: Promise<{ c?: string; f?: string; p?: string }> }) {
   const session = await requireOrgSession();
   const member = await getActiveMember();
   if (!member) redirect("/onboarding");
   const role = member.role as OrgRole;
   const params = await searchParams;
   const filter = parseSupportFilter(params.f);
+  const page = parseSupportPage(params.p);
   const selectedId = params.c && UUID.test(params.c) ? params.c : null;
   const now = new Date();
 
   const [data, clans, members] = await Promise.all([
     withOrgTx(session.orgId, async (tx) => {
       const viewer = await loadSupportViewer(tx, { orgId: session.orgId, userId: session.user.id, role });
-      const queue = await loadSupportQueue(tx, { orgId: session.orgId, viewer, filter });
+      const queue = await loadSupportQueue(tx, { orgId: session.orgId, viewer, filter, page });
       const conversation = selectedId ? await loadSupportConversation(tx, { orgId: session.orgId, viewer, conversationId: selectedId, now }) : null;
       const channels = await countActiveSupportChannels(tx, session.orgId);
       // A busca de empresa é local, como na criação de missão: só quando há conversa aberta.
@@ -54,6 +55,8 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
       <SupportInbox
         now={now.toISOString()}
         filter={filter}
+        page={data.queue.page}
+        hasMore={data.queue.hasMore}
         queue={data.queue.rows}
         counts={data.queue.counts}
         conversation={data.conversation}

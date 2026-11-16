@@ -1,18 +1,36 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Hand, ImageOff, LoaderCircle, Maximize2, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Hand, ImageOff, LoaderCircle, Maximize2, RotateCcw, Search, Send, Settings, StickyNote, Check as CheckIcon, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { SegmentedNav } from "@/components/segmented-nav";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCnpj } from "@/domain/cnpj";
-import { DELIVERY_LABELS, elapsedLabel, SUPPORT_FILTERS, SUPPORT_STATUS_LABELS, type DeliveryState, type SupportFilter, type SupportStatus } from "@/domain/support-inbox";
+import {
+  characterCount,
+  DELIVERY_LABELS,
+  elapsedLabel,
+  handoffPlan,
+  isScrolledToEnd,
+  NOTE_MAX_LENGTH,
+  queueLimitNotice,
+  REPLY_MAX_LENGTH,
+  SUPPORT_FILTERS,
+  SUPPORT_STATUS_LABELS,
+  takeIntent,
+  timelineUpdate,
+  type DeliveryState,
+  type SupportFilter,
+  type SupportNextActionKind,
+  type SupportStatus,
+} from "@/domain/support-inbox";
 import type { ActionResult } from "@/lib/action-context";
 import { APP_TIME_ZONE } from "@/lib/date-time";
 import type { SupportConversationView, SupportQueueRow, SupportTimelineItem } from "@/lib/support/inbox";
@@ -39,9 +57,10 @@ function shortTime(value: string): string {
   return TIME_FORMAT.format(new Date(value)).replace(",", "");
 }
 
-function inboxHref(filter: SupportFilter, conversationId?: string): string {
+function inboxHref(filter: SupportFilter, conversationId?: string, page = 1): string {
   const params = new URLSearchParams();
   if (filter !== "open") params.set("f", filter);
+  if (page > 1) params.set("p", String(page));
   if (conversationId) params.set("c", conversationId);
   const query = params.toString();
   return query ? `/atendimento?${query}` : "/atendimento";
@@ -65,15 +84,37 @@ function useCommand() {
   return { pending, run };
 }
 
-function QueueItem({ row, active, filter, now }: { row: SupportQueueRow; active: boolean; filter: SupportFilter; now: Date }) {
+/** Rótulos curtos dos filtros abaixo de sm: em 320px os cinco cabem melhor. */
+const FILTER_SHORT_LABELS: Record<SupportFilter, string> = {
+  open: "Agir",
+  needs_human: "Pessoa",
+  mine: "Minhas",
+  waiting: "Aguardando",
+  resolved: "Resolvidas",
+};
+
+/** O sinal dominante da linha é o texto da próxima ação; a cor só reforça. */
+const NEXT_ACTION_CLASSES: Record<SupportNextActionKind, string> = {
+  take: "border-destructive bg-destructive/15 text-foreground",
+  reply: "border-primary bg-primary/20 text-foreground",
+  review_ai: "border-warning/50 bg-warning/10 text-warning",
+  waiting: "border-border text-muted-foreground",
+  follow: "border-border text-muted-foreground",
+  done: "border-success/40 text-success",
+};
+
+function QueueItem({ row, active, filter, page, now }: { row: SupportQueueRow; active: boolean; filter: SupportFilter; page: number; now: Date }) {
   return (
     <li>
       <Link
-        href={inboxHref(filter, row.id)}
+        href={inboxHref(filter, row.id, page)}
         scroll={false}
         aria-current={active ? "true" : undefined}
         className={cn("grid min-w-0 gap-1.5 border-l-2 px-4 py-3.5 transition-colors hover:bg-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", active ? "border-l-primary bg-primary/20" : "border-l-transparent")}
       >
+        <span className={cn("inline-flex max-w-full items-center justify-self-start truncate rounded-md border px-2 py-0.5 text-sm font-medium", NEXT_ACTION_CLASSES[row.nextAction.kind])}>
+          {row.nextAction.label}
+        </span>
         <span className="flex min-w-0 items-baseline justify-between gap-2">
           <span className="truncate text-base font-semibold">{row.contactName}</span>
           {row.lastMessageAt ? (
@@ -172,14 +213,112 @@ function TimelineItem({ item }: { item: SupportTimelineItem }) {
   );
 }
 
-function Composer({ conversation }: { conversation: SupportConversationView }) {
+/**
+ * Ação que muda de quem é a conversa: diz o efeito ANTES de mutar. Sem
+ * `effects`, é um clique só (não tira a conversa de ninguém).
+ */
+function ConfirmAction({
+  label,
+  icon,
+  title,
+  effects,
+  confirmLabel,
+  disabled,
+  variant = "default",
+  className,
+  onConfirm,
+}: {
+  label: string;
+  icon?: React.ReactNode;
+  title: string;
+  effects: readonly string[] | null;
+  confirmLabel: string;
+  disabled?: boolean;
+  variant?: "default" | "outline";
+  className?: string;
+  onConfirm: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!effects) {
+    return <Button type="button" size="sm" variant={variant} className={className} disabled={disabled} onClick={onConfirm}>{icon}{label}</Button>;
+  }
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button type="button" size="sm" variant={variant} className={className} disabled={disabled}>{icon}{label}</Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>O que acontece ao confirmar:</DialogDescription>
+        </DialogHeader>
+        <ul className="grid list-disc gap-1 pl-5 text-sm">
+          {effects.map((effect) => <li key={effect}>{effect}</li>)}
+        </ul>
+        <DialogFooter>
+          <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
+          <Button type="button" disabled={disabled} onClick={() => { setOpen(false); onConfirm(); }}>{confirmLabel}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Assumir com rótulo do contexto: da IA e de outra pessoa pedem confirmação. */
+function TakeButton({ conversation, pending, run, variant = "default" }: { conversation: SupportConversationView; pending: boolean; run: ReturnType<typeof useCommand>["run"]; variant?: "default" | "outline" }) {
+  const intent = takeIntent(conversation);
+  if (!intent) return null;
+  return (
+    <ConfirmAction
+      label={intent.label}
+      icon={<Hand aria-hidden />}
+      title={intent.confirm?.title ?? intent.label}
+      effects={intent.confirm?.effects ?? null}
+      confirmLabel="Assumir"
+      variant={variant}
+      disabled={pending}
+      onConfirm={() => run(() => takeConversation({ conversationId: conversation.id }))}
+    />
+  );
+}
+
+function whatsappWebHref(phone: string): string {
+  return `https://web.whatsapp.com/send?phone=${phone.replace(/\D/g, "")}`;
+}
+
+/** Bloqueado: o motivo e o caminho de saída, lado a lado. */
+function ReplyRecovery({ conversation, pending, run }: { conversation: SupportConversationView; pending: boolean; run: ReturnType<typeof useCommand>["run"] }) {
+  const block = conversation.replyBlock;
+  if (!block) return null;
+  return (
+    <div className="grid gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm" role="note" aria-label="Resposta ao cliente bloqueada">
+      <p className="flex items-start gap-2"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden /><span><span className="font-medium">Não dá para responder ao cliente agora.</span> {block.message}</span></p>
+      <div className="flex flex-wrap items-center gap-2">
+        {block.kind === "resolved" ? <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => run(() => reopenConversation({ conversationId: conversation.id }))}><RotateCcw aria-hidden /> Reabrir</Button> : null}
+        {block.kind === "not_assigned" ? <TakeButton conversation={conversation} pending={pending} run={run} variant="outline" /> : null}
+        {block.kind === "channel_inactive" ? <Button asChild size="sm" variant="outline"><Link href="/atendimento/configuracoes"><Settings aria-hidden /> Configurações do Atendimento</Link></Button> : null}
+        {block.kind === "window_closed" && conversation.phone ? (
+          <Button asChild size="sm" variant="outline">
+            <a href={whatsappWebHref(conversation.phone)} target="_blank" rel="noopener noreferrer"><ExternalLink aria-hidden /> Abrir no WhatsApp Web</a>
+          </Button>
+        ) : null}
+        <span className="text-xs text-muted-foreground">A nota interna continua liberada.</span>
+      </div>
+    </div>
+  );
+}
+
+function Composer({ conversation, onSent }: { conversation: SupportConversationView; onSent: () => void }) {
   const { pending, run } = useCommand();
-  const [mode, setMode] = useState<"reply" | "note">(conversation.replyBlocked ? "note" : "reply");
+  const [mode, setMode] = useState<"reply" | "note">(conversation.replyBlock ? "note" : "reply");
+  // Rascunho só em memória: pode conter dado pessoal, então nada vai para o navegador.
   const [text, setText] = useState("");
   // Chave do envio: clicar duas vezes não manda a mensagem em dobro.
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
-  const canReply = !conversation.replyBlocked;
+  const canReply = !conversation.replyBlock;
   const effective = canReply ? mode : "note";
+  const isReply = effective === "reply";
+  const counter = characterCount(text, effective);
 
   function submit() {
     const body = text.trim();
@@ -187,24 +326,31 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
     const done = () => {
       setText("");
       setRequestId(crypto.randomUUID());
+      onSent();
     };
-    if (effective === "reply") run(() => sendReply({ conversationId: conversation.id, requestId, text: body }), done);
+    if (isReply) run(() => sendReply({ conversationId: conversation.id, requestId, text: body }), done);
     else run(() => addNote({ conversationId: conversation.id, text: body }), done);
   }
 
+  const hintId = `composer-hint-${conversation.id}`;
+  const countId = `composer-count-${conversation.id}`;
   return (
-    <div className="grid shrink-0 gap-2 border-t bg-card p-3 sm:px-5 sm:py-3">
-      {conversation.replyBlocked ? <p className="text-xs text-muted-foreground">{conversation.replyBlocked} Você ainda pode deixar uma nota para a equipe.</p> : null}
-      <div className="flex gap-1" role="group" aria-label="Tipo de texto">
-        <Button type="button" size="sm" variant={effective === "reply" ? "secondary" : "ghost"} disabled={!canReply} aria-pressed={effective === "reply"} onClick={() => setMode("reply")}>Responder</Button>
-        <Button type="button" size="sm" variant={effective === "note" ? "secondary" : "ghost"} aria-pressed={effective === "note"} onClick={() => setMode("note")}><StickyNote aria-hidden /> Nota interna</Button>
+    <div className={cn("grid shrink-0 gap-2 border-t p-3 sm:px-5 sm:py-3", isReply ? "bg-card" : "bg-warning/5")}>
+      <ReplyRecovery conversation={conversation} pending={pending} run={run} />
+      <div className="grid grid-cols-2 gap-1 sm:flex" role="group" aria-label="Para quem é o texto">
+        <Button type="button" size="sm" variant={isReply ? "secondary" : "ghost"} disabled={!canReply} aria-pressed={isReply} onClick={() => setMode("reply")}><Send aria-hidden /> Responder ao cliente</Button>
+        <Button type="button" size="sm" variant={!isReply ? "secondary" : "ghost"} aria-pressed={!isReply} onClick={() => setMode("note")}><StickyNote aria-hidden /> Nota interna</Button>
       </div>
+      <p id={hintId} className={cn("text-xs", isReply ? "text-muted-foreground" : "text-warning")}>
+        {isReply ? "Vai para o cliente pelo WhatsApp do escritório." : "Só a equipe vê. Não vai para o cliente."}
+      </p>
       <Textarea
         rows={2}
-        maxLength={effective === "reply" ? 4096 : 4000}
-        aria-label={effective === "reply" ? "Mensagem para o cliente" : "Nota interna para a equipe"}
-        placeholder={effective === "reply" ? "Escreva para o cliente" : "Só a equipe vê esta nota"}
-        className={cn(effective === "note" && "border-warning/40")}
+        maxLength={isReply ? REPLY_MAX_LENGTH : NOTE_MAX_LENGTH}
+        aria-label={isReply ? "Mensagem para o cliente" : "Nota interna para a equipe"}
+        aria-describedby={`${hintId} ${countId}`}
+        placeholder={isReply ? "Escreva para o cliente" : "Escreva a nota para a equipe"}
+        className={cn(!isReply && "border-warning/50")}
         value={text}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
@@ -214,49 +360,122 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
           }
         }}
       />
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span id={countId} className={cn("font-mono text-xs tabular-nums", counter.nearLimit ? "text-warning" : "text-muted-foreground")}>
+          {counter.text}<span className="sr-only"> caracteres</span>
+        </span>
         <span className="hidden text-xs text-muted-foreground sm:inline">Ctrl + Enter envia</span>
-        <Button type="button" size="sm" className="ml-auto" disabled={pending || !text.trim()} onClick={submit}>
-          {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : effective === "reply" ? <Send aria-hidden /> : <StickyNote aria-hidden />}
-          {effective === "reply" ? "Enviar ao cliente" : "Salvar nota"}
+        <Button type="button" size="sm" className="ml-auto" variant={isReply ? "default" : "outline"} disabled={pending || !text.trim()} onClick={submit}>
+          {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : isReply ? <Send aria-hidden /> : <StickyNote aria-hidden />}
+          {isReply ? "Enviar ao cliente" : "Salvar nota interna"}
         </Button>
       </div>
     </div>
   );
 }
 
-function ConversationPanel({ conversation, filter, onContext }: { conversation: SupportConversationView; filter: SupportFilter; onContext: () => void }) {
+function HeaderFact({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs">
+      <span className="text-muted-foreground">{label}:</span>
+      <span className="truncate">{value}</span>
+    </span>
+  );
+}
+
+/**
+ * Histórico que respeita a leitura: a atualização de 5 s só desce sozinha
+ * quando a pessoa já está no fim. Lendo mensagens antigas, aparece
+ * "Novas mensagens" para voltar quando ela quiser.
+ */
+function useTimelineFollow(lastId: string | null) {
+  const scroller = useRef<HTMLOListElement>(null);
+  // Espelho do "no fim" para o efeito (que roda depois do DOM mudar); o estado é para a tela.
+  const atEndRef = useRef(true);
+  const previousLastId = useRef<string | null>(null);
+  const forceFollow = useRef(true);
+  const [atEnd, setAtEnd] = useState(true);
+  // Última mensagem que a pessoa viu (estando no fim). Diferente disso e fora do fim: há novidade.
+  const [seenLastId, setSeenLastId] = useState(lastId);
+  const hasNew = !atEnd && lastId !== seenLastId;
+
+  // Só mexe na rolagem; quem atualiza o estado é o evento de rolagem que isto dispara.
+  useLayoutEffect(() => {
+    const decision = forceFollow.current ? "follow" : timelineUpdate({ previousLastId: previousLastId.current, nextLastId: lastId, atEnd: atEndRef.current });
+    previousLastId.current = lastId;
+    forceFollow.current = false;
+    const node = scroller.current;
+    if (decision === "follow" && node) {
+      node.scrollTop = node.scrollHeight;
+      atEndRef.current = true;
+    }
+  }, [lastId]);
+
+  function onScroll() {
+    const node = scroller.current;
+    if (!node) return;
+    const end = isScrolledToEnd(node);
+    atEndRef.current = end;
+    setAtEnd(end);
+    if (end) setSeenLastId(lastId);
+  }
+
+  function scrollToEnd() {
+    const node = scroller.current;
+    if (node) node.scrollTop = node.scrollHeight;
+    atEndRef.current = true;
+    setAtEnd(true);
+    setSeenLastId(lastId);
+  }
+
+  // Quem acabou de enviar quer ver a própria mensagem, mesmo lendo o histórico.
+  function followNext() {
+    forceFollow.current = true;
+  }
+
+  return { scroller, hasNew, onScroll, scrollToEnd, followNext };
+}
+
+function ConversationPanel({ conversation, filter, page, onContext }: { conversation: SupportConversationView; filter: SupportFilter; page: number; onContext: () => void }) {
   const { pending, run } = useCommand();
-  const end = useRef<HTMLLIElement>(null);
-  const size = conversation.timeline.length;
-  useEffect(() => {
-    end.current?.scrollIntoView({ block: "end" });
-  }, [size, conversation.id]);
+  const last = conversation.timeline[conversation.timeline.length - 1];
+  const lastId = last ? `${last.kind}-${last.id}` : null;
+  const { scroller, hasNew, onScroll, scrollToEnd, followNext } = useTimelineFollow(lastId);
   const id = { conversationId: conversation.id };
   const resolved = conversation.status === "resolved";
+  const owner = conversation.assignedToMe ? "você" : (conversation.assigneeName ?? "ninguém");
+  const replyState = conversation.replyBlock?.short ?? "Pode responder";
 
   return (
     <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background" aria-label={`Conversa com ${conversation.contactName}`}>
       <header className="grid shrink-0 border-b bg-card">
         <div className="flex min-h-16 min-w-0 items-center gap-3 px-4 py-2.5">
           <Button asChild size="icon-sm" variant="ghost" className="touch-target lg:hidden">
-            <Link href={inboxHref(filter)} aria-label="Voltar para a fila"><ArrowLeft aria-hidden /></Link>
+            <Link href={inboxHref(filter, undefined, page)} aria-label="Voltar para a fila"><ArrowLeft aria-hidden /></Link>
           </Button>
           <div className="grid min-w-0 flex-1 gap-1">
-            <span className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="truncate text-base font-semibold">{conversation.contactName}</span>
-              <StatusChip status={conversation.status} />
-            </span>
-            <span className="truncate text-xs text-muted-foreground">{conversation.phone ?? "Número não informado"} · {conversation.client?.name ?? "Empresa não vinculada"}{conversation.assigneeName ? ` · ${conversation.assignedToMe ? "com você" : `com ${conversation.assigneeName}`}` : ""}</span>
+            <span className="truncate text-base font-semibold">{conversation.contactName}</span>
+            <span className="truncate text-xs text-muted-foreground">{conversation.phone ?? "Número não informado"} · {conversation.client ? companyDisplayName(conversation.client.name) : "Empresa não vinculada"}</span>
           </div>
-          <Button type="button" size="sm" variant="ghost" onClick={onContext}><Building2 aria-hidden /> Contexto</Button>
+          <Button type="button" size="sm" variant="ghost" className="shrink-0" onClick={onContext}><Building2 aria-hidden /> Contexto</Button>
         </div>
-        <div className="flex min-w-0 items-center justify-end gap-1 overflow-x-auto border-t px-3 py-2">
+        {/* Status, dono, setor e resposta sempre à vista: nada disso exige abrir o Contexto. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-t px-4 py-2" aria-label="Situação da conversa">
+          <StatusChip status={conversation.status} />
+          <HeaderFact label="Responsável" value={owner} />
+          <HeaderFact label="Setor" value={conversation.clanName ?? "sem setor"} />
+          <span className={cn("inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs", conversation.replyBlock ? "border-warning/40 bg-warning/10 text-warning" : "border-success/40 text-success")}>
+            {conversation.replyBlock ? <AlertTriangle className="size-3" aria-hidden /> : <CheckIcon className="size-3" aria-hidden />}
+            Resposta: {replyState}
+          </span>
+        </div>
+        {/* Quebra de linha, não rolagem: em 320px nenhuma ação fica escondida. */}
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 border-t px-3 py-2">
           {conversation.phone ? (
             // Fora das 24 horas, só o aparelho do escritório responde (coexistência). Abre o
             // WhatsApp logado neste navegador: precisa ser o do escritório, não o pessoal.
             <Button asChild size="sm" variant="ghost">
-              <a href={`https://web.whatsapp.com/send?phone=${conversation.phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" title="Abre a conversa no WhatsApp Web logado neste navegador. Confira se é o do escritório.">
+              <a href={whatsappWebHref(conversation.phone)} target="_blank" rel="noopener noreferrer" title="Abre a conversa no WhatsApp Web logado neste navegador. Confira se é o do escritório.">
                 <ExternalLink aria-hidden /> WhatsApp Web
               </a>
             </Button>
@@ -265,18 +484,26 @@ function ConversationPanel({ conversation, filter, onContext }: { conversation: 
             <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => run(() => reopenConversation(id))}><RotateCcw aria-hidden /> Reabrir</Button>
           ) : (
             <>
-              {!conversation.assignedToMe ? <Button type="button" size="sm" disabled={pending} onClick={() => run(() => takeConversation(id))}><Hand aria-hidden /> Assumir</Button> : null}
+              <TakeButton conversation={conversation} pending={pending} run={run} />
               {conversation.assignedToMe && conversation.status === "human_active" ? <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => run(() => markWaiting(id))}><Clock aria-hidden /> Aguardar cliente</Button> : null}
               <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => run(() => resolveConversation(id))}><CheckIcon aria-hidden /> Resolver</Button>
             </>
           )}
         </div>
       </header>
-      <ol className="mx-auto grid min-h-0 w-full max-w-5xl flex-1 content-start gap-3 overflow-y-auto bg-muted/35 p-4 sm:p-6 lg:px-8" aria-label="Histórico da conversa">
-        {conversation.timeline.map((item) => <TimelineItem key={`${item.kind}-${item.id}`} item={item} />)}
-        <li ref={end} aria-hidden />
-      </ol>
-      <Composer key={`${conversation.id}-${conversation.replyBlocked ?? "ok"}`} conversation={conversation} />
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <ol ref={scroller} onScroll={onScroll} className="mx-auto grid min-h-0 w-full max-w-5xl flex-1 content-start gap-3 overflow-y-auto bg-muted/35 p-4 sm:p-6 lg:px-8" aria-label="Histórico da conversa">
+          {conversation.timeline.map((item) => <TimelineItem key={`${item.kind}-${item.id}`} item={item} />)}
+        </ol>
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center" aria-live="polite">
+          {hasNew ? (
+            <Button type="button" size="sm" className="pointer-events-auto shadow-md" onClick={scrollToEnd}>
+              <ArrowDown aria-hidden /> Novas mensagens
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      <Composer key={`${conversation.id}-${conversation.replyBlock?.kind ?? "ok"}`} conversation={conversation} onSent={followNext} />
     </section>
   );
 }
@@ -291,7 +518,9 @@ function AiSuggestion({ conversation }: { conversation: SupportConversationView 
   const { pending, run } = useCommand();
   const suggestion = conversation.aiSuggestion;
   if (!suggestion) return null;
-  const alreadyThere = suggestion.clan && conversation.assignedClanId === suggestion.clan.id;
+  const plan = suggestion.clan
+    ? handoffPlan({ clanId: suggestion.clan.id, userId: null, current: { clanId: conversation.assignedClanId, userId: conversation.assignedUserId }, clans: [suggestion.clan], people: [] })
+    : null;
   return (
     <section className="grid gap-1.5 rounded-md border border-dashed p-2.5 text-sm" aria-label="Leitura da IA">
       <p className="flex items-center gap-1.5 hud-label"><Bot className="size-3.5" aria-hidden /> Leitura da IA · teste</p>
@@ -307,10 +536,17 @@ function AiSuggestion({ conversation }: { conversation: SupportConversationView 
       )}
       {suggestion.question ? <p className="rounded-sm bg-muted/40 px-2 py-1"><span className="text-muted-foreground">Perguntaria:</span> {suggestion.question}</p> : null}
       {suggestion.directAnswer ? <p className="rounded-sm bg-muted/40 px-2 py-1"><span className="text-muted-foreground">Responderia:</span> {suggestion.directAnswer}</p> : null}
-      {suggestion.clan && !alreadyThere && conversation.status !== "resolved" ? (
-        <Button type="button" size="sm" variant="outline" className="justify-self-start" disabled={pending} onClick={() => run(() => transferConversation({ conversationId: conversation.id, clanId: suggestion.clan!.id, userId: null }))}>
-          Passar para {suggestion.clan.name}
-        </Button>
+      {plan?.ok && conversation.status !== "resolved" ? (
+        <ConfirmAction
+          label={`Passar para ${suggestion.clan!.name}`}
+          title={`Passar para ${suggestion.clan!.name}?`}
+          effects={[plan.summary]}
+          confirmLabel="Confirmar passagem"
+          variant="outline"
+          className="justify-self-start"
+          disabled={pending}
+          onConfirm={() => run(() => transferConversation({ conversationId: conversation.id, clanId: plan.clanId, userId: plan.userId }))}
+        />
       ) : null}
     </section>
   );
@@ -367,35 +603,60 @@ function ClientLink({ conversation, clients }: { conversation: SupportConversati
   );
 }
 
-function TransferForm({ conversation, clans, members }: { conversation: SupportConversationView; clans: readonly Option[]; members: readonly Option[] }) {
+/**
+ * Passar adiante em um passo só: escolher não muda nada; o resumo diz o que vai
+ * acontecer e só "Confirmar passagem" chama o servidor, que confere tudo de novo.
+ */
+function HandoffForm({ conversation, clans, members }: { conversation: SupportConversationView; clans: readonly Option[]; members: readonly Option[] }) {
   const { pending, run } = useCommand();
-  const selectClass = "h-9 w-full min-w-0 rounded-md border bg-transparent px-2 text-sm";
+  const [clanId, setClanId] = useState("");
+  const [userId, setUserId] = useState("");
+  const selectClass = "h-9 w-full min-w-0 rounded-md border bg-transparent px-2 text-sm text-foreground";
+  const touched = clanId !== "" || userId !== "";
+  const plan = handoffPlan({
+    clanId: clanId || null,
+    userId: userId || null,
+    current: { clanId: conversation.assignedClanId, userId: conversation.assignedUserId },
+    clans,
+    people: members,
+  });
+
+  if (conversation.status === "resolved") return <p className="text-xs text-muted-foreground">Conversa resolvida. Reabra para passar adiante.</p>;
+
   return (
     <div className="grid gap-2">
+      <p className="text-xs text-muted-foreground">Agora: {conversation.clanName ?? "sem setor"} · {conversation.assignedToMe ? "com você" : (conversation.assigneeName ?? "sem responsável")}</p>
       <label className="grid gap-1 text-xs text-muted-foreground">
-        Passar para o clã
-        <select
-          className={selectClass}
-          disabled={pending}
-          value={conversation.assignedClanId ?? ""}
-          onChange={(event) => { if (event.target.value) run(() => transferConversation({ conversationId: conversation.id, clanId: event.target.value, userId: null })); }}
-        >
-          <option value="" disabled>Sem setor</option>
+        Clã
+        <select className={selectClass} disabled={pending} value={clanId} onChange={(event) => setClanId(event.target.value)}>
+          <option value="">Manter o clã</option>
           {clans.map((clan) => <option key={clan.id} value={clan.id}>{clan.name}</option>)}
         </select>
       </label>
       <label className="grid gap-1 text-xs text-muted-foreground">
-        Passar para a pessoa
-        <select
-          className={selectClass}
-          disabled={pending}
-          value={conversation.assignedUserId ?? ""}
-          onChange={(event) => { if (event.target.value) run(() => transferConversation({ conversationId: conversation.id, clanId: null, userId: event.target.value })); }}
-        >
-          <option value="" disabled>Ninguém</option>
+        Pessoa
+        <select className={selectClass} disabled={pending} value={userId} onChange={(event) => setUserId(event.target.value)}>
+          <option value="">Ninguém (fila do clã)</option>
           {members.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
         </select>
       </label>
+      <p className={cn("rounded-md border px-2 py-1.5 text-sm", plan.ok ? "border-primary/40 bg-primary/10" : "border-dashed text-muted-foreground")} aria-live="polite">
+        {plan.ok ? plan.summary : touched ? plan.reason : "Escolha para onde a conversa vai. Nada muda até confirmar."}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          disabled={pending || !plan.ok}
+          onClick={() => {
+            if (!plan.ok) return;
+            run(() => transferConversation({ conversationId: conversation.id, clanId: plan.clanId, userId: plan.userId }), () => { setClanId(""); setUserId(""); });
+          }}
+        >
+          Confirmar passagem
+        </Button>
+        {touched ? <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => { setClanId(""); setUserId(""); }}>Limpar</Button> : null}
+      </div>
     </div>
   );
 }
@@ -418,8 +679,8 @@ function ContextPanel({ conversation, clients, clans, members }: { conversation:
         <ClientLink conversation={conversation} clients={clients} />
       </section>
       <section className="grid gap-1.5">
-        <p className="hud-label">Setor e responsável</p>
-        <TransferForm conversation={conversation} clans={clans} members={members} />
+        <p className="hud-label">Passar adiante</p>
+        <HandoffForm conversation={conversation} clans={clans} members={members} />
       </section>
       <section className="grid gap-1.5">
         <p className="hud-label">Missões abertas da empresa</p>
@@ -442,6 +703,8 @@ function ContextPanel({ conversation, clients, clans, members }: { conversation:
 export function SupportInbox({
   now,
   filter,
+  page,
+  hasMore,
   queue,
   counts,
   conversation,
@@ -454,6 +717,8 @@ export function SupportInbox({
 }: {
   now: string;
   filter: SupportFilter;
+  page: number;
+  hasMore: boolean;
   queue: readonly SupportQueueRow[];
   counts: Record<SupportFilter, number>;
   conversation: SupportConversationView | null;
@@ -483,40 +748,46 @@ export function SupportInbox({
         <p className="max-w-prose text-muted-foreground">
           {isAdmin ? "Conecte o número do escritório em Configurações. As conversas passam a aparecer aqui assim que o cliente escrever." : "Peça a um administrador para conectar o número do escritório. As conversas passam a aparecer aqui."}
         </p>
-        {isAdmin ? <Button asChild size="sm" variant="outline"><Link href="/settings">Abrir Configurações</Link></Button> : null}
+        {isAdmin ? <Button asChild size="sm" variant="outline"><Link href="/atendimento/configuracoes">Abrir Configurações do Atendimento</Link></Button> : null}
       </div>
     );
   }
 
   const selected = conversation !== null;
+  const limitNotice = queueLimitNotice(queue.length, counts[filter], page);
   return (
     <div className="grid h-full min-h-0 min-w-0 overflow-hidden border-y bg-card lg:grid-cols-[22rem_minmax(0,1fr)] lg:border-t-0">
       <section className={cn("min-h-0 min-w-0 flex-col bg-card lg:flex lg:border-r", selected ? "hidden" : "flex")} aria-label="Fila de conversas">
-        <nav className="grid shrink-0 grid-cols-2 gap-1 border-b bg-background/45 p-3" aria-label="Filtrar conversas">
-          {SUPPORT_FILTERS.map((item) => (
-            <Link
-              key={item.key}
-              href={inboxHref(item.key)}
-              aria-current={filter === item.key ? "page" : undefined}
-              className={cn("flex min-h-10 items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-colors hover:bg-accent/45", filter === item.key ? "border-primary bg-primary/20 text-foreground" : "border-transparent text-muted-foreground")}
-            >
-              {item.label} <span className="font-mono tabular-nums">{counts[item.key]}</span>
-            </Link>
-          ))}
-        </nav>
+        <SegmentedNav
+          label="Filtrar conversas"
+          active={filter}
+          className="shrink-0 bg-background/45 px-1"
+          items={SUPPORT_FILTERS.map((item) => ({ key: item.key, label: item.label, shortLabel: FILTER_SHORT_LABELS[item.key], href: inboxHref(item.key), count: counts[item.key] }))}
+        />
+        {limitNotice ? <p className="shrink-0 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning" role="status">{limitNotice}</p> : null}
+        {filter === "open" && queue.length > 0 ? <p className="shrink-0 border-b px-4 py-2 text-xs text-muted-foreground">Primeiro quem precisa de pessoa, depois as suas para responder, depois urgência da IA.</p> : null}
         {queue.length === 0 ? (
           <p className="p-4 text-sm text-muted-foreground">{filter === "open" ? "Nenhuma conversa aberta para você. As de outros setores aparecem para quem atende neles." : "Nenhuma conversa nesta situação."}</p>
         ) : (
-          <ul className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto">
-            {queue.map((row) => <QueueItem key={row.id} row={row} active={conversation?.id === row.id} filter={filter} now={clock} />)}
-          </ul>
+          <>
+            <ul className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto">
+              {queue.map((row) => <QueueItem key={row.id} row={row} active={conversation?.id === row.id} filter={filter} page={page} now={clock} />)}
+            </ul>
+            {(page > 1 || hasMore) ? (
+              <nav className="flex shrink-0 items-center justify-between gap-2 border-t px-3 py-2" aria-label="Páginas da fila">
+                {page > 1 ? <Button asChild size="sm" variant="outline"><Link href={inboxHref(filter, undefined, page - 1)}>Página anterior</Link></Button> : <span />}
+                <span className="font-mono text-xs text-muted-foreground">Página {page}</span>
+                {hasMore ? <Button asChild size="sm" variant="outline"><Link href={inboxHref(filter, undefined, page + 1)}>Próxima página</Link></Button> : <span />}
+              </nav>
+            ) : null}
+          </>
         )}
       </section>
 
       {conversation ? (
         <>
           <div className="grid min-h-0 min-w-0">
-            <ConversationPanel key={conversation.id} conversation={conversation} filter={filter} onContext={() => setContextOpen(true)} />
+            <ConversationPanel key={conversation.id} conversation={conversation} filter={filter} page={page} onContext={() => setContextOpen(true)} />
           </div>
           <Sheet open={contextOpen} onOpenChange={setContextOpen}>
             <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">

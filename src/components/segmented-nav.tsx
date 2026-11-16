@@ -8,6 +8,8 @@ export type SegmentedNavItem = {
   /** Rótulo alternativo abaixo de sm. Sem isto, usa `label` sempre. */
   shortLabel?: string;
   href: string;
+  /** Contagem ao lado do rótulo (ex.: conversas em cada filtro). Número, nunca só cor. */
+  count?: number;
 };
 
 /**
@@ -84,6 +86,9 @@ export function SegmentedNav({
             ) : (
               item.label
             )}
+            {item.count !== undefined ? (
+              <span className={cn("ml-1.5 font-mono text-xs tabular-nums", isActive ? "text-foreground" : "text-muted-foreground")}>{item.count}</span>
+            ) : null}
           </Link>
         );
       })}

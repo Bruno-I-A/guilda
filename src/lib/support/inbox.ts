@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, ne, notInArray, or, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -11,9 +11,15 @@ import {
   canSeeConversation,
   deliveryState,
   messageLabel,
+  replyBlock,
   replyBlockReason,
+  sortForAction,
   statusAfterCustomerMessage,
+  SUPPORT_QUEUE_LIMIT,
+  supportNextAction,
   type DeliveryState,
+  type ReplyBlock,
+  type SupportNextAction,
   type SupportFilter,
   type SupportStatus,
   type SupportViewer,
@@ -30,7 +36,6 @@ const c = schema.supportConversations;
 const contacts = schema.supportContacts;
 const messages = schema.supportMessages;
 
-const QUEUE_LIMIT = 200;
 const MESSAGE_LIMIT = 200;
 
 export async function loadSupportViewer(tx: OrgTx, input: { orgId: string; userId: string; role: SupportViewer["role"] }): Promise<SupportViewer> {
@@ -66,16 +71,85 @@ export interface SupportQueueRow {
   lastMessage: string | null;
   /** A última fala é do cliente: alguém ainda precisa responder. */
   waitingReply: boolean;
-  /** A IA, em sombra, leu como urgente. Só marca: a fila continua por ordem de chegada. */
+  /** A IA, em sombra, leu como urgente. Pesa na ordem de Para agir, depois de quem precisa de pessoa e das minhas para responder. */
   aiUrgent: boolean;
+  /** O que fazer com a linha, em texto (sortForAction usa a mesma regra). */
+  nextAction: SupportNextAction;
+}
+
+/**
+ * Os ids de uma página da fila, já na ordem de Para agir. A ordem é a mesma de
+ * sortForAction (tier de supportNextAction; no tier de ação, urgência IA e a
+ * espera mais longa primeiro; no resto, a mais recente), mas calculada no banco,
+ * ANTES do LIMIT: conversa antiga que pede ação nunca fica atrás de 200 mais novas
+ * que não pedem nada. Última fala e urgência da IA vêm por subconsulta correlata
+ * (índices por conversa e tempo em support_messages e support_ai_runs).
+ * Paginação por OFFSET: a fila muda entre leituras, então uma linha pode trocar
+ * de página, mas nenhuma fica inalcançável; com centenas de conversas, o custo é baixo.
+ */
+async function rankQueuePage(
+  tx: OrgTx,
+  input: { orgId: string; viewer: SupportViewer; filter: SupportFilter; page: number },
+  visible: SQL | undefined,
+): Promise<{ ids: string[]; hasMore: boolean }> {
+  const runs = schema.supportAiRuns;
+  const facts = tx
+    .select({
+      id: c.id,
+      status: c.status,
+      assignedUserId: c.assignedUserId,
+      lastMessageAt: c.lastMessageAt,
+      lastActor: sql<string | null>`(select ${messages.actor} from ${messages} where ${messages.orgId} = ${c.orgId} and ${messages.conversationId} = ${c.id} order by ${messages.occurredAt} desc limit 1)`.as("last_actor"),
+      aiUrgency: sql<string | null>`(select ${runs.result}->>'urgency' from ${runs} where ${runs.orgId} = ${c.orgId} and ${runs.conversationId} = ${c.id} and ${runs.status} = 'done' order by ${runs.createdAt} desc limit 1)`.as("ai_urgency"),
+    })
+    .from(c)
+    .where(and(eq(c.orgId, input.orgId), filterWhere(input.filter, input.viewer), visible))
+    .as("facts");
+
+  const waiting = sql`(${facts.status} <> 'resolved' and ${facts.lastActor} = 'customer' and ${facts.status} <> 'waiting_customer')`;
+  const urgent = sql`(${facts.status} <> 'resolved' and ${facts.aiUrgency} = 'alta')`;
+  const keyed = tx
+    .select({
+      id: facts.id,
+      at: sql<Date | null>`${facts.lastMessageAt}`.as("at"),
+      urgent: sql<boolean>`coalesce(${urgent}, false)`.as("urgent"),
+      // Espelho de supportNextAction → ACTION_TIER: take 0, reply 1, review_ai 2, o resto 3.
+      tier: sql<number>`case
+        when ${facts.status} = 'resolved' then 3
+        when ${facts.status} = 'needs_human' then 0
+        when ${facts.status} = 'ai_active' then case when ${urgent} then 2 else 3 end
+        when ${facts.assignedUserId} = ${input.viewer.userId} then case when ${waiting} then 1 else 3 end
+        when ${facts.assignedUserId} is null and ${waiting} then 0
+        when ${urgent} then 2
+        else 3 end`.as("tier"),
+    })
+    .from(facts)
+    .as("keyed");
+
+  const rows = await tx
+    .select({ id: keyed.id })
+    .from(keyed)
+    .orderBy(
+      asc(keyed.tier),
+      sql`case when ${keyed.tier} < 3 and ${keyed.urgent} then 0 else 1 end`,
+      sql`case when ${keyed.tier} < 3 then ${keyed.at} end asc nulls last`,
+      sql`case when ${keyed.tier} = 3 then ${keyed.at} end desc nulls last`,
+      asc(keyed.id),
+    )
+    .limit(SUPPORT_QUEUE_LIMIT + 1)
+    .offset((input.page - 1) * SUPPORT_QUEUE_LIMIT);
+  return { ids: rows.slice(0, SUPPORT_QUEUE_LIMIT).map((row) => row.id), hasMore: rows.length > SUPPORT_QUEUE_LIMIT };
 }
 
 export async function loadSupportQueue(
   tx: OrgTx,
-  input: { orgId: string; viewer: SupportViewer; filter: SupportFilter },
-): Promise<{ rows: SupportQueueRow[]; counts: Record<SupportFilter, number> }> {
+  input: { orgId: string; viewer: SupportViewer; filter: SupportFilter; page?: number },
+): Promise<{ rows: SupportQueueRow[]; counts: Record<SupportFilter, number>; page: number; hasMore: boolean }> {
   const visible = visibleTo(input.viewer);
-  const rows = await tx
+  const page = Math.max(1, Math.trunc(input.page ?? 1));
+  const ranked = await rankQueuePage(tx, { ...input, page }, visible);
+  const rank = new Map(ranked.ids.map((id, index) => [id, index]));
+  const rows = !ranked.ids.length ? [] : await tx
     .select({
       id: c.id,
       status: c.status,
@@ -93,9 +167,9 @@ export async function loadSupportQueue(
     .leftJoin(schema.clients, and(eq(schema.clients.orgId, contacts.orgId), eq(schema.clients.id, contacts.clientId)))
     .leftJoin(schema.clans, and(eq(schema.clans.orgId, c.orgId), eq(schema.clans.id, c.assignedClanId)))
     .leftJoin(schema.user, eq(schema.user.id, c.assignedUserId))
-    .where(and(eq(c.orgId, input.orgId), filterWhere(input.filter, input.viewer), visible))
-    .orderBy(desc(c.lastMessageAt))
-    .limit(QUEUE_LIMIT);
+    // Os mesmos filtros de novo: a página só detalha o que a régua já deixou ver.
+    .where(and(eq(c.orgId, input.orgId), inArray(c.id, ranked.ids), filterWhere(input.filter, input.viewer), visible));
+  rows.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
 
   const ids = rows.map((row) => row.id);
   const lastMessages = ids.length
@@ -115,24 +189,33 @@ export async function loadSupportQueue(
     .where(and(eq(c.orgId, input.orgId), filterWhere("mine", input.viewer), visible));
   const of = (status: SupportStatus) => statusCounts.find((row) => row.status === status)?.total ?? 0;
 
+  const queue = rows.map((row): SupportQueueRow => {
+    const last = lastById.get(row.id);
+    const base = {
+      status: row.status,
+      assignedToMe: row.assignedUserId === input.viewer.userId,
+      assigneeName: row.assigneeName,
+      lastMessageAt: row.lastMessageAt?.toISOString() ?? null,
+      waitingReply: last?.actor === "customer" && row.status !== "resolved",
+      aiUrgent: row.status !== "resolved" && suggestions.get(row.id)?.urgency === "alta",
+    };
+    return {
+      ...base,
+      id: row.id,
+      contactName: row.displayName ?? row.phone ?? row.whatsappId,
+      phone: row.phone,
+      clientName: row.clientName,
+      clanName: row.clanName,
+      lastMessage: last ? messageLabel(last) : null,
+      nextAction: supportNextAction(base),
+    };
+  });
+
   return {
-    rows: rows.map((row) => {
-      const last = lastById.get(row.id);
-      return {
-        id: row.id,
-        status: row.status,
-        contactName: row.displayName ?? row.phone ?? row.whatsappId,
-        phone: row.phone,
-        clientName: row.clientName,
-        clanName: row.clanName,
-        assigneeName: row.assigneeName,
-        assignedToMe: row.assignedUserId === input.viewer.userId,
-        lastMessageAt: row.lastMessageAt?.toISOString() ?? null,
-        lastMessage: last ? messageLabel(last) : null,
-        waitingReply: last?.actor === "customer" && row.status !== "resolved",
-        aiUrgent: row.status !== "resolved" && suggestions.get(row.id)?.urgency === "alta",
-      };
-    }),
+    // O banco já ordenou antes do corte; sortForAction (estável) confirma a mesma régua dentro da página.
+    rows: sortForAction(queue),
+    page,
+    hasMore: ranked.hasMore,
     counts: {
       open: statusCounts.filter((row) => row.status !== "resolved").reduce((sum, row) => sum + row.total, 0),
       needs_human: of("needs_human"),
@@ -162,6 +245,8 @@ export interface SupportConversationView {
   client: { id: string; name: string; cnpj: string | null; taxRegime: string } | null;
   timeline: SupportTimelineItem[];
   replyBlocked: string | null;
+  /** O mesmo bloqueio, com tipo e rótulo curto para o cabeçalho e a ação de recuperação. */
+  replyBlock: ReplyBlock | null;
   openTasks: { id: string; title: string; status: string }[];
   /** Para o resumo da missão criada a partir da conversa. */
   lastCustomerText: string | null;
@@ -312,6 +397,15 @@ export async function loadSupportConversation(
   const sector = (suggestion?.sector ?? "outro") as SetorValido;
   const suggestedClan = suggestion ? clanForSector(sector, clanOptions) : null;
 
+  const block = replyBlock({
+    status: row.status,
+    assignedUserId: row.assignedUserId,
+    viewerId: input.viewer.userId,
+    channelActive: row.channelStatus === "active",
+    lastCustomerMessageAt: lastCustomer?.occurredAt ?? null,
+    now: input.now,
+  });
+
   return {
     aiSuggestion: suggestion
       ? { ...suggestion, sectorLabel: SECTOR_LABELS[sector] ?? suggestion.sector, clan: suggestedClan ? { id: suggestedClan.id, name: suggestedClan.name } : null }
@@ -328,14 +422,8 @@ export async function loadSupportConversation(
     phone: row.phone,
     client: client ?? null,
     timeline,
-    replyBlocked: replyBlockReason({
-      status: row.status,
-      assignedUserId: row.assignedUserId,
-      viewerId: input.viewer.userId,
-      channelActive: row.channelStatus === "active",
-      lastCustomerMessageAt: lastCustomer?.occurredAt ?? null,
-      now: input.now,
-    }),
+    replyBlocked: block?.message ?? null,
+    replyBlock: block,
     openTasks,
     lastCustomerText: lastCustomer?.text ?? null,
   };
