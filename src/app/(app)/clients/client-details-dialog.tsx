@@ -24,6 +24,7 @@ import {
   TAX_REGIME_LABELS,
   type TaxRegime,
 } from "@/lib/clients-ui";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 interface ClientAddress {
   street: string | null;
@@ -121,7 +122,7 @@ export function ClientDetailsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>{client.name}</DialogTitle>
+          <DialogTitle>{companyDisplayName(client.name)}</DialogTitle>
           <DialogDescription className="flex flex-wrap items-center gap-2">
             {client.cnpj ? <span className="font-mono">{formatCnpj(client.cnpj)}</span> : "CNPJ não informado"}
             <Badge variant="outline">{TAX_REGIME_LABELS[client.taxRegime]}</Badge>

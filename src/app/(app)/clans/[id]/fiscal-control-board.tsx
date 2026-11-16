@@ -67,6 +67,7 @@ import {
 
 import type { XmlRoutineView } from "@/lib/nfse/xml-requests";
 import { XmlRoutinePanel } from "./xml-routine-panel";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 export interface FiscalControlRowView {
   xmlNotes: { total: number; cancelled: number };
@@ -285,7 +286,7 @@ function ControlDetailsDialog({
       </DialogTrigger>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>{row.clientName} · {periodLabel}</DialogTitle>
+          <DialogTitle>{companyDisplayName(row.clientName)} · {periodLabel}</DialogTitle>
           <DialogDescription>
             Snapshot da Ficha Fiscal v{row.profileVersion}. Forma de entrega: {row.profileSnapshot.deliveryChannel ?? "não definida"}.
           </DialogDescription>
@@ -478,7 +479,7 @@ export function FiscalControlBoard({
             <TableBody>
               {visible.map((row) => (
                 <TableRow key={row.id} className={cn(row.status === "blocked" && "bg-destructive/5")}>
-                  <TableCell><span className="block max-w-64 truncate font-medium">{row.clientName}</span><span className="text-[11px] text-muted-foreground">{TAX_REGIME_LABELS[row.taxRegime]} · ficha v{row.profileVersion}</span></TableCell>
+                  <TableCell><span className="block max-w-64 truncate font-medium">{companyDisplayName(row.clientName)}</span><span className="text-[11px] text-muted-foreground">{TAX_REGIME_LABELS[row.taxRegime]} · ficha v{row.profileVersion}</span></TableCell>
                   <TableCell>{row.responsibleName ?? <span className="text-destructive">Sem responsável</span>}</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-2">

@@ -25,6 +25,7 @@ import {
   NewClientButton,
 } from "./client-actions";
 import { ExportClientsButton, type RegimeCounts } from "./export-clients-button";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 export const metadata: Metadata = { title: "Clientes" };
 
@@ -103,7 +104,10 @@ export default async function ClientsPage({
   );
 
   return (
-    <div className="grid gap-5">
+    // `grid-cols-1` (trilho minmax(0,1fr)): sem ele, a largura mínima das abas
+    // de regime alargava a grade e a página inteira vazava para a direita no
+    // celular, levando junto os botões do cabeçalho. As abas rolam sozinhas.
+    <div className="grid min-w-0 grid-cols-1 gap-5">
       <PageHeader
         title="Clientes"
         description={
@@ -171,7 +175,7 @@ export default async function ClientsPage({
           </p>
         </div>
       ) : (
-        <ul className="grid gap-1.5">
+        <ul className="grid grid-cols-1 gap-1.5">
           {clientList.map((client) => (
             <li
               key={client.id}
@@ -181,7 +185,7 @@ export default async function ClientsPage({
               )}
             >
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium leading-snug">{client.name}</p>
+                <p className="truncate font-medium leading-snug">{companyDisplayName(client.name)}</p>
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   <Badge
                     className={cn(
@@ -192,7 +196,7 @@ export default async function ClientsPage({
                     {TAX_REGIME_LABELS[client.taxRegime]}
                   </Badge>
                   {client.cnpj ? (
-                    <span className="font-mono">{formatCnpj(client.cnpj)}</span>
+                    <span className="whitespace-nowrap font-mono">{formatCnpj(client.cnpj)}</span>
                   ) : null}
                   {client.dominioCode ? (
                     <span className="font-mono" title="Código na Domínio">Domínio {client.dominioCode}</span>
@@ -205,7 +209,7 @@ export default async function ClientsPage({
                     </span>
                   ) : null}
                   {!client.active ? (
-                    <Badge className="h-4 border-transparent bg-muted px-1.5 text-muted-foreground/70">
+                    <Badge className="h-4 border-transparent bg-muted px-1.5 text-muted-foreground-dim">
                       Inativa
                     </Badge>
                   ) : null}

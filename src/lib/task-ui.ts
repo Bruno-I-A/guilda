@@ -19,7 +19,7 @@ export const STATUS_BADGE_CLASSES: Record<TaskStatus, string> = {
   awaiting_approval: "bg-warning/10 text-warning border-transparent",
   completed: "bg-gold/15 text-gold border-transparent",
   rejected: "bg-destructive/15 text-destructive border-transparent",
-  cancelled: "bg-muted text-muted-foreground/70 border-transparent",
+  cancelled: "bg-muted text-muted-foreground-dim border-transparent",
 };
 
 /**
@@ -36,7 +36,7 @@ export const STATUS_TEXT_CLASSES: Record<TaskStatus, string> = {
   awaiting_approval: "text-warning",
   completed: "text-gold",
   rejected: "text-destructive",
-  cancelled: "text-muted-foreground/70",
+  cancelled: "text-muted-foreground-dim",
 };
 
 /** Trilho de cor na borda esquerda das linhas de missão (atrasada usa destructive). */

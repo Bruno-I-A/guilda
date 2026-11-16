@@ -47,6 +47,7 @@ import {
   reopenNoticeWork,
   unarchiveNotice,
 } from "./actions";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 export interface NoticeView {
   id: string;
@@ -386,7 +387,7 @@ export function NoticeBoard({
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {notice.authorName} · {formatPublished(notice.publishedAt)}
-                      {notice.clientName ? ` · ${notice.clientName}` : ""}
+                      {notice.clientName ? ` · ${companyDisplayName(notice.clientName)}` : ""}
                     </p>
                   </div>
 

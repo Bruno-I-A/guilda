@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { ClosingHealthReading } from "./closing-health";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 /** Cartões visíveis por coluna; o resto vai para o filtro da coluna. */
 const CARDS_POR_COLUNA = 6;
@@ -89,7 +90,7 @@ function CompanyCard({
         href={href}
         className="flex min-w-0 items-center justify-between gap-2 py-1.5 text-sm transition-colors hover:text-primary"
       >
-        <span className="min-w-0 truncate">{company.name}</span>
+        <span className="min-w-0 truncate">{companyDisplayName(company.name)}</span>
         {trailing}
       </Link>
     </li>

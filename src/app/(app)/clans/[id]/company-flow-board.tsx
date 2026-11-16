@@ -82,6 +82,7 @@ import {
   revealCompanyFlowGovPassword,
   type CompanyFlowClientLookupView,
 } from "./company-flow-actions";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 export interface CompanyFlowView {
   id: string;
@@ -1161,7 +1162,7 @@ function NewCompanyFlowDialog({
                             className="flex min-h-11 w-full flex-col rounded-sm px-2 py-2 text-left text-sm hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
                             onClick={() => selectFlowCompany(client)}
                           >
-                            <span>{client.name}</span>
+                            <span>{companyDisplayName(client.name)}</span>
                             <span className="text-xs text-muted-foreground">
                               {client.cnpj ? formatCnpj(client.cnpj) : "CNPJ não informado"}
                               {" · "}

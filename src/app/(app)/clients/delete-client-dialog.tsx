@@ -22,6 +22,7 @@ import {
   getClientDeletionSummary,
   type ClientDeletionSummary,
 } from "./actions";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 /**
  * Botão + dialog de exclusão permanente. O resumo (quantas missões,
@@ -90,7 +91,7 @@ export function DeleteClientButton({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Excluir &quot;{clientName}&quot; permanentemente</DialogTitle>
+            <DialogTitle>Excluir &quot;{companyDisplayName(clientName)}&quot; permanentemente</DialogTitle>
             <DialogDescription>
               Esta ação não pode ser desfeita. Apaga a empresa e tudo relacionado a
               ela.

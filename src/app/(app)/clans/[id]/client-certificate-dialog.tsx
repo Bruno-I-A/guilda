@@ -17,6 +17,7 @@ import { sealCertificate } from "@/lib/nfse/vault-browser";
 import type { ClientCertificateView } from "@/lib/nfse/xml-requests";
 
 import { listClientXmlMonths, removeClientCertificate, uploadClientCertificate } from "./nfse-xml-actions";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 const MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
@@ -159,7 +160,7 @@ export function ClientCertificateDialog({
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto break-words sm:max-w-lg" aria-busy={pending}>
         <DialogHeader className="pr-8">
-          <DialogTitle>Certificado e pasta de XML · {clientName}</DialogTitle>
+          <DialogTitle>Certificado e pasta de XML · {companyDisplayName(clientName)}</DialogTitle>
           <DialogDescription>
             Com o certificado A1 da empresa, a rotina busca no Sistema Nacional as NFS-e que ela emitiu e guarda os XML aqui.
           </DialogDescription>

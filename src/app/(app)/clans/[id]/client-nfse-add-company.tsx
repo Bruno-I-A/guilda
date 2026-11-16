@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 
 import { saveIssuer, suggestIssuerSetup } from "./client-nfse-actions";
 import { FiscalFields, FiscalSummary, fiscalFormToTemplate, initialFiscalForm, type FiscalForm } from "./client-nfse-fiscal-form";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 
 const CERTIFICATE: Record<ClientNfseCandidateView["certificate"], { label: string; className: string }> = {
@@ -129,7 +130,7 @@ export function ClientNfseAddCompany({ clanId, candidates }: { clanId: string; c
           {company ? (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
               <span className="grid min-w-0">
-                <span className="truncate font-medium">{company.name}</span>
+                <span className="truncate font-medium">{companyDisplayName(company.name)}</span>
                 <span className="font-mono text-xs text-muted-foreground">{formatCnpj(company.cnpj)}</span>
               </span>
               <span className="flex items-center gap-2">
@@ -159,7 +160,7 @@ export function ClientNfseAddCompany({ clanId, candidates }: { clanId: string; c
                     {item.blocked ? (
                       <div className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-sm text-muted-foreground" aria-disabled="true">
                         <span className="grid min-w-0">
-                          <span className="truncate">{item.name}</span>
+                          <span className="truncate">{companyDisplayName(item.name)}</span>
                           <span className="font-mono text-xs">{item.cnpj ? formatCnpj(item.cnpj) : "sem CNPJ"}</span>
                         </span>
                         <span className="shrink-0 text-right text-xs text-warning">{item.blocked}</span>
@@ -167,7 +168,7 @@ export function ClientNfseAddCompany({ clanId, candidates }: { clanId: string; c
                     ) : (
                     <button type="button" className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none" onClick={() => pick(item)}>
                       <span className="grid min-w-0">
-                        <span className="truncate">{item.name}</span>
+                        <span className="truncate">{companyDisplayName(item.name)}</span>
                         <span className="font-mono text-xs text-muted-foreground">{formatCnpj(item.cnpj)}</span>
                       </span>
                       <Badge variant="outline" className={cn("shrink-0 text-xs", CERTIFICATE[item.certificate].className)}>{CERTIFICATE[item.certificate].label}</Badge>

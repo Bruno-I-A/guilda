@@ -30,6 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { FiscalApplicability } from "@/domain/fiscal-control";
 
 import { saveFiscalClientProfile } from "./fiscal-actions";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 export interface FiscalProfileHistoryView {
   id: string;
@@ -211,7 +212,7 @@ export function FiscalProfileDialog({
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Ficha Fiscal · {clientName}</DialogTitle>
+          <DialogTitle>Ficha Fiscal · {companyDisplayName(clientName)}</DialogTitle>
           <DialogDescription>
             Regras permanentes da empresa. Trocar o responsável da carteira
             não altera estas informações.

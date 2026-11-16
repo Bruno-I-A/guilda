@@ -19,6 +19,7 @@ import { formatAppDate } from "@/lib/date-time";
 
 import { saveIssuer, suggestIssuerSetup } from "./client-nfse-actions";
 import { FiscalFields, FiscalSummary, fiscalFormToTemplate, initialFiscalForm, type FiscalForm } from "./client-nfse-fiscal-form";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 /** Dados fiscais de uma empresa já cadastrada: resumo, formulário e "preencher pela última nota". */
 export function ClientNfseIssuerDialog({
@@ -86,7 +87,7 @@ export function ClientNfseIssuerDialog({
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Dados fiscais · {issuer.name}</DialogTitle>
+          <DialogTitle>Dados fiscais · {companyDisplayName(issuer.name)}</DialogTitle>
           <DialogDescription>O que não muda de uma nota para outra desta empresa.</DialogDescription>
         </DialogHeader>
         <div className="flex flex-wrap items-center gap-2 text-sm" aria-live="polite">

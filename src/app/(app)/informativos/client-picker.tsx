@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatCnpj } from "@/domain/cnpj";
 import { TAX_REGIME_LABELS, type TaxRegime } from "@/lib/clients-ui";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 export interface InformativeClientOption {
   id: string;
@@ -72,7 +73,7 @@ export function ClientPicker({
                   setOpen(false);
                 }}
               >
-                <span>{client.name}</span>
+                <span>{companyDisplayName(client.name)}</span>
                 <span className="text-xs text-muted-foreground">
                   {client.cnpj ? formatCnpj(client.cnpj) : "CNPJ não informado"} · {TAX_REGIME_LABELS[client.taxRegime]}
                 </span>

@@ -2,7 +2,6 @@
 
 import {
   Building2,
-  ChevronRight,
   CircleUser,
   Flag,
   Home,
@@ -11,19 +10,24 @@ import {
   ListTodo,
   LogOut,
   MessagesSquare,
+  Monitor,
+  Moon,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
   ScrollText,
   Settings,
+  Sun,
   Trophy,
   Users,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import { useMemo, useState, useSyncExternalStore } from "react";
 
 import { GuildSeal } from "@/components/guild-crest";
+import { THEME_OPTIONS } from "@/components/theme-provider";
 import { isAdminRole } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -33,6 +37,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -79,10 +85,10 @@ const MOBILE_PRIMARY_HREFS = [
  * e, por fim, os espaços da Guilda. Perfil e ajustes vivem junto da identidade.
  */
 const DESKTOP_NAV_GROUPS = [
-  { code: "01", label: "Jornada", hrefs: ["/dashboard", "/tasks", "/mural"] },
-  { code: "02", label: "Gestão", hrefs: ["/clans", "/informativos", "/clients"] },
-  { code: "03", label: "Atendimento", hrefs: ["/atendimento"] },
-  { code: "04", label: "Guilda", hrefs: ["/leaderboard", "/members"] },
+  { label: "Jornada", hrefs: ["/dashboard", "/tasks", "/mural"] },
+  { label: "Gestão", hrefs: ["/clans", "/informativos", "/clients"] },
+  { label: "Atendimento", hrefs: ["/atendimento"] },
+  { label: "Guilda", hrefs: ["/leaderboard", "/members"] },
 ] as const;
 
 const DESKTOP_ACCOUNT_HREFS = ["/profile", "/settings"] as const;
@@ -113,6 +119,8 @@ function navItemsFor(role: string) {
   return NAV_ITEMS.filter((item) => !("adminOnly" in item) || admin);
 }
 
+const THEME_ICONS = { dark: Moon, light: Sun, system: Monitor } as const;
+
 function UserMenu({
   user,
   role,
@@ -121,6 +129,8 @@ function UserMenu({
   role: string;
 }) {
   const router = useRouter();
+  // O conteúdo do menu só monta ao abrir, já no cliente: `theme` está definido.
+  const { theme, setTheme } = useTheme();
 
   async function handleSignOut() {
     await authClient.signOut();
@@ -159,6 +169,24 @@ function UserMenu({
             <KeyRound aria-hidden /> Alterar senha
           </Link>
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="hud-label">Aparência</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={theme ?? "dark"} onValueChange={setTheme}>
+          {THEME_OPTIONS.map(({ value, label }) => {
+            const Icon = THEME_ICONS[value];
+            return (
+              <DropdownMenuRadioItem
+                key={value}
+                value={value}
+                // Trocar de tema não deve fechar o menu: a pessoa compara antes de decidir.
+                onSelect={(event) => event.preventDefault()}
+              >
+                <Icon aria-hidden /> {label}
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={handleSignOut}>
           <LogOut aria-hidden /> Sair
         </DropdownMenuItem>
@@ -167,13 +195,18 @@ function UserMenu({
   );
 }
 
-/** Contador de pendências numa entrada da navegação (mural, missões). */
+/**
+ * Contador de pendências numa entrada da navegação (mural, missões).
+ * Em `--primary`, não em vermelho (2026-11-15): pendência é trabalho na fila,
+ * não erro. Vermelho fixo na barra lateral passava sensação de dívida o dia
+ * inteiro, e gastava a cor que precisa sobrar para atraso e falha.
+ */
 function PendingBadge({ count, label }: { count: number; label: string }) {
   if (count <= 0) return null;
   return (
     <span
       aria-label={`${count} ${label}`}
-      className="inline-flex min-w-5 items-center justify-center border border-destructive/80 bg-destructive px-1 font-mono text-hud leading-4 text-destructive-foreground [clip-path:polygon(0.2rem_0,100%_0,100%_calc(100%-0.2rem),calc(100%-0.2rem)_100%,0_100%,0_0.2rem)]"
+      className="inline-flex min-w-5 items-center justify-center bg-primary px-1 font-mono text-hud leading-4 text-primary-foreground [clip-path:polygon(0.2rem_0,100%_0,100%_calc(100%-0.2rem),calc(100%-0.2rem)_100%,0_100%,0_0.2rem)]"
     >
       {count > 9 ? "9+" : count}
     </span>
@@ -250,9 +283,16 @@ export function AppShell({
               <span className="grid size-10 shrink-0 place-items-center border border-primary/50 bg-primary/10 [clip-path:polygon(0.45rem_0,100%_0,100%_calc(100%-0.45rem),calc(100%-0.45rem)_100%,0_100%,0_0.45rem)]">
                 <GuildSeal className="size-7" />
               </span>
+              {/*
+                * Enxugado em 2026-11-15: "Mesa de comando", o cartão de
+                * "Organização ativa · ambiente de trabalho", a numeração 01–05
+                * dos grupos e o "agora" no item ativo saíram. Nada disso dizia
+                * algo que o destaque do item e o nome da organização já não
+                * dissessem, e a barra competia com o conteúdo.
+                */}
               <span className="grid min-w-0 leading-none">
-                <span className="hud-label truncate text-hud tracking-[0.28em]">Mesa de comando</span>
-                <span className="mt-1 font-heading text-xl font-semibold tracking-[0.11em]">Guilda</span>
+                <span className="font-heading text-xl font-semibold tracking-[0.11em]">Guilda</span>
+                <span className="mt-1 truncate text-xs text-muted-foreground" title="Organização ativa">{orgName}</span>
               </span>
             </Link>
             <button
@@ -267,28 +307,12 @@ export function AppShell({
           </div>
         </div>
 
-        <div className="mx-4 border border-sidebar-border bg-[linear-gradient(120deg,oklch(0.3_0.04_245_/_35%),transparent_65%)] px-3 py-3 [clip-path:polygon(0.55rem_0,100%_0,100%_calc(100%-0.55rem),calc(100%-0.55rem)_100%,0_100%,0_0.55rem)]">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="hud-label text-hud">Organização ativa</p>
-              <p className="mt-1 truncate font-heading text-base font-medium tracking-wide">{orgName}</p>
-            </div>
-            <span className="mt-1 size-2 shrink-0 border border-primary/80 bg-primary/40 [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]" aria-label="Organização ativa" />
-          </div>
-          <p className="mt-2 border-t border-sidebar-border pt-2 font-mono text-hud uppercase tracking-[0.16em] text-muted-foreground">ambiente de trabalho</p>
-        </div>
-
-        <nav className="flex flex-1 flex-col overflow-y-auto px-4 py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Principal">
+        <nav className="flex flex-1 flex-col overflow-y-auto px-4 pt-2 pb-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Principal">
           <div className="grid gap-5">
             {DESKTOP_NAV_GROUPS.map((group) => (
-              <section key={group.code}>
-                <div className="flex items-center gap-2 px-1">
-                  <span className="font-mono text-hud text-primary/80">{group.code}</span>
-                  <p className="hud-label text-hud">{group.label}</p>
-                  <span className="h-px flex-1 bg-sidebar-border" aria-hidden />
-                </div>
-                <div className="relative mt-2 grid gap-1">
-                  <span aria-hidden className="absolute top-4 bottom-4 left-4 w-px bg-gradient-to-b from-primary/40 via-sidebar-border to-transparent" />
+              <section key={group.label}>
+                <p className="hud-label px-1 text-hud">{group.label}</p>
+                <div className="relative mt-1.5 grid gap-0.5">
                   {group.hrefs.map((href) => {
                     const item = navByHref.get(href);
                     if (!item) return null;
@@ -316,7 +340,6 @@ export function AppShell({
                         {href === "/tasks" ? (
                           <PendingBadge count={pendingMissions} label="missão(ões) esperando por você" />
                         ) : null}
-                        {active ? <span className="font-mono text-hud uppercase tracking-[0.16em] text-primary">agora</span> : <ChevronRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-70" aria-hidden />}
                       </Link>
                     );
                   })}
@@ -326,12 +349,7 @@ export function AppShell({
           </div>
 
           <div className="mt-auto pt-6">
-            <div className="divider-rune mb-4" />
-            <div className="flex items-center gap-2 px-1">
-              <span className="font-mono text-hud text-primary/80">05</span>
-              <p className="hud-label text-hud">Conta</p>
-              <span className="h-px flex-1 bg-sidebar-border" aria-hidden />
-            </div>
+            <p className="hud-label px-1 text-hud">Conta</p>
             <div className="mt-2 grid gap-1">
               {accountItems.map(({ href, label, icon: Icon }) => {
                 const active = pathname.startsWith(href);
@@ -352,9 +370,8 @@ export function AppShell({
             <UserMenu user={user} role={role} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{user.name}</p>
-              <p className="mt-0.5 truncate font-mono text-hud uppercase tracking-[0.12em] text-muted-foreground">{ROLE_LABELS[role] ?? role}</p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">{ROLE_LABELS[role] ?? role}</p>
             </div>
-            <span className="size-1.5 bg-success [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]" aria-label="Conectado" />
           </div>
         </div>
       </aside>
