@@ -71,7 +71,7 @@ function QueueItem({ row, active, filter, now }: { row: SupportQueueRow; active:
         href={inboxHref(filter, row.id)}
         scroll={false}
         aria-current={active ? "true" : undefined}
-        className={cn("grid min-w-0 gap-1.5 border-l-2 px-4 py-3.5 transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", active ? "border-l-primary bg-primary/10" : "border-l-transparent")}
+        className={cn("grid min-w-0 gap-1.5 border-l-2 px-4 py-3.5 transition-colors hover:bg-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", active ? "border-l-primary bg-primary/20" : "border-l-transparent")}
       >
         <span className="flex min-w-0 items-baseline justify-between gap-2">
           <span className="truncate text-base font-semibold">{row.contactName}</span>
@@ -151,7 +151,7 @@ function TimelineItem({ item }: { item: SupportTimelineItem }) {
   const outbound = item.direction === "outbound";
   return (
     <li className={cn("flex", outbound ? "justify-end" : "justify-start")}>
-      <div className={cn("grid max-w-[88%] gap-2 rounded-md border px-3.5 py-2.5 text-[0.95rem] leading-relaxed shadow-sm sm:max-w-[74%]", outbound ? "border-primary/30 bg-primary/10" : "bg-card")}>
+      <div className={cn("grid max-w-[88%] gap-2 rounded-md border px-3.5 py-2.5 text-[0.95rem] leading-relaxed shadow-sm sm:max-w-[74%]", outbound ? "border-primary/60 bg-primary/20" : "border-silver/25 bg-accent/70")}>
         <span className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground"><span>{item.author}</span><span className="font-mono tabular-nums">{shortTime(item.at)}</span></span>
         {item.image ? (
           <>
@@ -192,14 +192,14 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
   }
 
   return (
-    <div className="grid gap-2 border-t bg-background/95 p-3 sm:px-5 sm:py-4">
+    <div className="grid shrink-0 gap-2 border-t bg-card p-3 sm:px-5 sm:py-3">
       {conversation.replyBlocked ? <p className="text-xs text-muted-foreground">{conversation.replyBlocked} Você ainda pode deixar uma nota para a equipe.</p> : null}
       <div className="flex gap-1" role="group" aria-label="Tipo de texto">
         <Button type="button" size="sm" variant={effective === "reply" ? "secondary" : "ghost"} disabled={!canReply} aria-pressed={effective === "reply"} onClick={() => setMode("reply")}>Responder</Button>
         <Button type="button" size="sm" variant={effective === "note" ? "secondary" : "ghost"} aria-pressed={effective === "note"} onClick={() => setMode("note")}><StickyNote aria-hidden /> Nota interna</Button>
       </div>
       <Textarea
-        rows={3}
+        rows={2}
         maxLength={effective === "reply" ? 4096 : 4000}
         aria-label={effective === "reply" ? "Mensagem para o cliente" : "Nota interna para a equipe"}
         placeholder={effective === "reply" ? "Escreva para o cliente" : "Só a equipe vê esta nota"}
@@ -235,8 +235,8 @@ function ConversationPanel({ conversation, filter, onContext }: { conversation: 
   const resolved = conversation.status === "resolved";
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-col bg-background" aria-label={`Conversa com ${conversation.contactName}`}>
-      <header className="grid border-b bg-background/95">
+    <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background" aria-label={`Conversa com ${conversation.contactName}`}>
+      <header className="grid shrink-0 border-b bg-card">
         <div className="flex min-h-16 min-w-0 items-center gap-3 px-4 py-2.5">
           <Button asChild size="icon-sm" variant="ghost" className="touch-target lg:hidden">
             <Link href={inboxHref(filter)} aria-label="Voltar para a fila"><ArrowLeft aria-hidden /></Link>
@@ -271,7 +271,7 @@ function ConversationPanel({ conversation, filter, onContext }: { conversation: 
           )}
         </div>
       </header>
-      <ol className="mx-auto grid min-h-0 w-full max-w-5xl flex-1 content-start gap-3 overflow-y-auto bg-muted/10 p-4 sm:p-6 lg:px-8" aria-label="Histórico da conversa">
+      <ol className="mx-auto grid min-h-0 w-full max-w-5xl flex-1 content-start gap-3 overflow-y-auto bg-muted/35 p-4 sm:p-6 lg:px-8" aria-label="Histórico da conversa">
         {conversation.timeline.map((item) => <TimelineItem key={`${item.kind}-${item.id}`} item={item} />)}
         <li ref={end} aria-hidden />
       </ol>
@@ -491,13 +491,13 @@ export function SupportInbox({
   return (
     <div className="grid h-full min-h-0 min-w-0 overflow-hidden border-y bg-card lg:grid-cols-[22rem_minmax(0,1fr)] lg:border-t-0">
       <section className={cn("min-h-0 min-w-0 flex-col bg-card lg:flex lg:border-r", selected ? "hidden" : "flex")} aria-label="Fila de conversas">
-        <nav className="grid grid-cols-2 gap-1 border-b p-3" aria-label="Filtrar conversas">
+        <nav className="grid shrink-0 grid-cols-2 gap-1 border-b bg-background/45 p-3" aria-label="Filtrar conversas">
           {SUPPORT_FILTERS.map((item) => (
             <Link
               key={item.key}
               href={inboxHref(item.key)}
               aria-current={filter === item.key ? "page" : undefined}
-              className={cn("flex min-h-10 items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-colors hover:bg-accent/30", filter === item.key ? "border-primary bg-primary/10" : "border-transparent text-muted-foreground")}
+              className={cn("flex min-h-10 items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-colors hover:bg-accent/45", filter === item.key ? "border-primary bg-primary/20 text-foreground" : "border-transparent text-muted-foreground")}
             >
               {item.label} <span className="font-mono tabular-nums">{counts[item.key]}</span>
             </Link>
