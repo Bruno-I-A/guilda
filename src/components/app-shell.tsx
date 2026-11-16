@@ -228,7 +228,12 @@ export function AppShell({
     .filter((item): item is (typeof navItems)[number] => Boolean(item));
 
   return (
-    <div className="flex min-h-svh w-full">
+    <div
+      className={cn(
+        "flex w-full",
+        supportInbox ? "h-svh overflow-hidden" : "min-h-svh",
+      )}
+    >
       {/* Sidebar — desktop */}
       <aside
         inert={sidebarCollapsed}
@@ -373,11 +378,12 @@ export function AppShell({
       <div
         className={cn(
           "flex min-w-0 flex-1 flex-col transition-[padding] duration-300 ease-out",
+          supportInbox && "h-svh overflow-hidden",
           sidebarCollapsed ? "md:pl-0" : "md:pl-72",
         )}
       >
         {/* Header — mobile */}
-        <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background/95 px-4 backdrop-blur md:hidden">
+        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b bg-background/95 px-4 backdrop-blur md:hidden">
           <div className="flex min-w-0 items-center gap-2 font-semibold">
             <GuildSeal className="size-7" />
             <span className="truncate">{orgName}</span>
@@ -389,7 +395,7 @@ export function AppShell({
           className={cn(
             "flex-1",
             supportInbox
-              ? "min-h-0 overflow-hidden pb-16 md:pb-0"
+              ? "h-0 min-h-0 overflow-hidden pb-16 md:pb-0"
               : "px-4 py-6 pb-24 md:px-8 md:pb-8",
           )}
         >
