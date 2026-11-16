@@ -114,8 +114,15 @@ em `[data-theme="light"]`. Consequências para quem escreve tela:
   invisível no claro. Use os tokens de superfície: `--surface-edge` (aresta),
   `--surface-highlight` (fio de luz), `--surface-inset-shadow` (sombra interna),
   `--page-glow`, `--xp-tick`.
+- **O claro é papel, não neve (2026-11-16)**: superfícies e texto quentes, na
+  paleta do Tero (fundo `#F6F1EA`, texto `#1A1612`, bordas de argila); os
+  acentos continuam os da Guilda. A **barra lateral é escura nos dois temas**:
+  ela declara `data-theme="dark"`, que redeclara os tokens do escuro para tudo
+  dentro dela. Um elemento que precise do mesmo truque também tem de pôr a cor
+  do texto (`text-sidebar-foreground`): a cor herdada do `<body>` já vem
+  resolvida com o tema da página.
 - **Contraste conferido nos dois**: texto ≥ 4,5:1 sobre fundo, card e sidebar.
-  No claro os acentos são mais escuros (o azul-gelo de L 0.66 some na neve).
+  No claro os acentos são mais escuros (o azul-gelo de L 0.66 some no papel).
   Rótulo sobre fundo tingido da própria cor (`bg-warning/10 text-warning`,
   aba ativa em `bg-primary/15`) é o caso mais apertado: confira esse também.
 - **Texto apagado de propósito** (cancelada, inativa) usa

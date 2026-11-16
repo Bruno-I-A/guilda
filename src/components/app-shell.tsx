@@ -267,12 +267,19 @@ export function AppShell({
         supportInbox ? "h-svh overflow-hidden" : "min-h-svh",
       )}
     >
-      {/* Sidebar — desktop */}
+      {/*
+        * Sidebar — desktop. Escura nos dois temas (2026-11-16, referência do
+        * Tero): `data-theme="dark"` faz ela e tudo dentro dela usarem os
+        * tokens do escuro também com o tema claro ligado.
+        */}
       <aside
+        data-theme="dark"
         inert={sidebarCollapsed}
         aria-hidden={sidebarCollapsed || undefined}
         className={cn(
-          "fixed inset-y-0 left-0 z-30 hidden w-72 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar/95 transition-transform duration-300 ease-out md:flex",
+          // `text-sidebar-foreground`: a cor herdada do <body> já vem resolvida
+          // com o tema da página, e no claro seria tinta sobre fundo escuro.
+          "fixed inset-y-0 left-0 z-30 hidden w-72 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar/95 text-sidebar-foreground transition-transform duration-300 ease-out md:flex",
           sidebarCollapsed ? "-translate-x-full" : "translate-x-0",
         )}
       >
@@ -378,6 +385,7 @@ export function AppShell({
 
       <button
         type="button"
+        data-theme="dark"
         onClick={() => setSidebarVisibility(false)}
         aria-label="Mostrar navegação lateral"
         title="Mostrar navegação lateral"
