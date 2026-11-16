@@ -116,6 +116,11 @@ em `[data-theme="light"]`. Consequências para quem escreve tela:
   `--page-glow`, `--xp-tick`.
 - **Contraste conferido nos dois**: texto ≥ 4,5:1 sobre fundo, card e sidebar.
   No claro os acentos são mais escuros (o azul-gelo de L 0.66 some na neve).
+  Rótulo sobre fundo tingido da própria cor (`bg-warning/10 text-warning`,
+  aba ativa em `bg-primary/15`) é o caso mais apertado: confira esse também.
+- **Texto apagado de propósito** (cancelada, inativa) usa
+  `text-muted-foreground-dim`, não `text-muted-foreground/70`: transparência
+  sobre o fundo claro cai para 3:1. No escuro os dois são idênticos.
 - O fundo da página não tem mais o tramado diagonal (saiu em 2026-11-15, nos
   dois temas): atrás de listas densas era ruído. Textura só onde é vitrine.
 - Não use variantes `dark:` do Tailwind para tematizar: o tema vem de

@@ -206,7 +206,7 @@ export default async function ClientsPage({
                     </span>
                   ) : null}
                   {!client.active ? (
-                    <Badge className="h-4 border-transparent bg-muted px-1.5 text-muted-foreground/70">
+                    <Badge className="h-4 border-transparent bg-muted px-1.5 text-muted-foreground-dim">
                       Inativa
                     </Badge>
                   ) : null}
