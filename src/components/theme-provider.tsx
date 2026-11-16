@@ -19,9 +19,22 @@ export const THEME_OPTIONS = [
   { value: "system", label: "Automático (do aparelho)" },
 ] as const;
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
+/**
+ * `nonce`: o script que aplica o tema antes da primeira pintura é inline, e a
+ * CSP de produção (`script-src 'nonce-…' 'strict-dynamic'`, ver proxy.ts)
+ * bloqueia inline sem o nonce da requisição. Sem ele, quem usa o claro via a
+ * tela piscar escura a cada carregamento — o dev não tem essa CSP e não mostra.
+ */
+export function ThemeProvider({
+  children,
+  nonce,
+}: {
+  children: React.ReactNode;
+  nonce?: string;
+}) {
   return (
     <NextThemesProvider
+      nonce={nonce}
       attribute="data-theme"
       themes={["dark", "light"]}
       defaultTheme="dark"
