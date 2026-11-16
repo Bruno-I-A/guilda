@@ -183,7 +183,61 @@ test("passadas 24 horas, a Guilda não tenta responder", async () => {
   await tx((t) => takeSupportConversation(t, base));
   expect(await tx((t) => sendSupportReply(t, { ...base, text: "x", requestId: uuid(4) }))).toEqual({ ok: false, error: expect.stringContaining("24 horas") });
   expect((await tx((t) => loadSupportConversation(t, base)))?.replyBlocked).toMatch(/24 horas/);
+  expect((await tx((t) => loadSupportConversation(t, base)))?.replyBlock).toMatchObject({ kind: "window_closed" });
 });
+
+test("Para agir põe quem precisa de pessoa acima da conversa mais recente, e cada linha diz a próxima ação", async () => {
+  const { takeSupportConversation, sendSupportReply, loadSupportQueue } = await import("./inbox");
+  const waiting = await customerSays("5554911110090", "Ninguém me respondeu", new Date(NOW.getTime() - 120_000));
+  const answered = await customerSays("5554911110091", "Obrigado", new Date(NOW.getTime() - 30_000));
+  const base = { orgId: ORG, viewer: admin, conversationId: answered.id, now: NOW };
+  await tx((t) => takeSupportConversation(t, base));
+  expect((await tx((t) => sendSupportReply(t, { ...base, text: "Por nada", requestId: uuid(90) }))).ok).toBe(true);
+
+  const pick = (rows: { id: string }[]) => rows.filter((row) => row.id === waiting.id || row.id === answered.id).map((row) => row.id);
+  const open = await tx((t) => loadSupportQueue(t, { orgId: ORG, viewer: admin, filter: "open" }));
+  expect(pick(open.rows)).toEqual([waiting.id, answered.id]);
+  expect(open.rows.find((row) => row.id === waiting.id)?.nextAction).toMatchObject({ kind: "take", label: "Assumir atendimento" });
+  expect(open.rows.find((row) => row.id === answered.id)?.nextAction).toMatchObject({ kind: "waiting", label: "Aguardando cliente" });
+});
+
+test("a prioridade vem antes do corte: a antiga que precisa de pessoa passa à frente de 200 mais novas, e as demais estão na página seguinte", async () => {
+  const { loadSupportQueue } = await import("./inbox");
+  const { SUPPORT_QUEUE_LIMIT } = await import("@/domain/support-inbox");
+  const older = await customerSays("5554911110300", "Esperando há dias", new Date(NOW.getTime() - 10 * 86_400_000));
+
+  // 200 conversas mais novas, com a Ana, e a Guilda falou por último: nada a fazer para o admin.
+  const passive = Array.from({ length: SUPPORT_QUEUE_LIMIT }, (_, i) => i);
+  await tx(async (t) => {
+    const contactRows = await t
+      .insert(schema.supportContacts)
+      .values(passive.map((i) => ({ orgId: ORG, whatsappId: `55549200${String(i).padStart(5, "0")}`, displayName: `Passiva ${i}` })))
+      .returning({ id: schema.supportContacts.id });
+    const at = (i: number) => new Date(NOW.getTime() - (i + 1) * 1_000);
+    const conversationRows = await t
+      .insert(schema.supportConversations)
+      .values(contactRows.map((row, i) => ({ orgId: ORG, channelId, contactId: row.id, status: "human_active" as const, assignedUserId: "ana", lastMessageAt: at(i) })))
+      .returning({ id: schema.supportConversations.id });
+    await t.insert(schema.supportMessages).values(
+      conversationRows.map((row, i) => ({ orgId: ORG, channelId, conversationId: row.id, direction: "outbound" as const, actor: "attendant" as const, source: "guilda_attendant" as const, messageType: "text" as const, text: "Feito", sentByUserId: "ana", occurredAt: at(i) })),
+    );
+  });
+
+  const first = await tx((t) => loadSupportQueue(t, { orgId: ORG, viewer: admin, filter: "open" }));
+  expect(first.rows).toHaveLength(SUPPORT_QUEUE_LIMIT);
+  expect(first.rows.map((row) => row.id)).toContain(older.id);
+  expect(first.rows.find((row) => row.id === older.id)?.nextAction.kind).toBe("take");
+  expect(first.counts.open).toBeGreaterThan(SUPPORT_QUEUE_LIMIT);
+  expect(first.hasMore).toBe(true);
+
+  // Quem não coube na primeira página continua alcançável, sem repetir linha.
+  const second = await tx((t) => loadSupportQueue(t, { orgId: ORG, viewer: admin, filter: "open", page: 2 }));
+  expect(second.page).toBe(2);
+  expect(second.rows.length).toBe(first.counts.open - SUPPORT_QUEUE_LIMIT);
+  const seen = new Set(first.rows.map((row) => row.id));
+  expect(second.rows.every((row) => !seen.has(row.id))).toBe(true);
+  expect(second.hasMore).toBe(false);
+}, 60_000);
 
 test("aguardar, voltar quando o cliente escreve, resolver e reabrir", async () => {
   const { takeSupportConversation, markSupportWaiting, resolveSupportConversation, reopenSupportConversation } = await import("./inbox");

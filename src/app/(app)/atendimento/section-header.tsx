@@ -40,7 +40,6 @@ export function AtendimentoSectionHeader({
         icon={MessagesSquare}
         description={compact ? undefined : "Conversas, equipe e automações do atendimento do escritório."}
         className={compact ? "shrink-0 py-2" : undefined}
-        titleClassName={compact ? "text-lg" : undefined}
       />
       <SegmentedNav
         items={items}
