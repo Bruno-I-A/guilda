@@ -104,7 +104,10 @@ export default async function ClientsPage({
   );
 
   return (
-    <div className="grid gap-5">
+    // `grid-cols-1` (trilho minmax(0,1fr)): sem ele, a largura mínima das abas
+    // de regime alargava a grade e a página inteira vazava para a direita no
+    // celular, levando junto os botões do cabeçalho. As abas rolam sozinhas.
+    <div className="grid min-w-0 grid-cols-1 gap-5">
       <PageHeader
         title="Clientes"
         description={
@@ -172,7 +175,7 @@ export default async function ClientsPage({
           </p>
         </div>
       ) : (
-        <ul className="grid gap-1.5">
+        <ul className="grid grid-cols-1 gap-1.5">
           {clientList.map((client) => (
             <li
               key={client.id}
@@ -193,7 +196,7 @@ export default async function ClientsPage({
                     {TAX_REGIME_LABELS[client.taxRegime]}
                   </Badge>
                   {client.cnpj ? (
-                    <span className="font-mono">{formatCnpj(client.cnpj)}</span>
+                    <span className="whitespace-nowrap font-mono">{formatCnpj(client.cnpj)}</span>
                   ) : null}
                   {client.dominioCode ? (
                     <span className="font-mono" title="Código na Domínio">Domínio {client.dominioCode}</span>
