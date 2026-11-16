@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 
 import { cancelNfseInvoice, emitNfseBatch, previewNfseEmission, retryNfseInvoice } from "./nfse-actions";
 import { NfseSettingsDialog } from "./nfse-settings-dialog";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 export interface NfseInvoiceView {
   id: string;
@@ -232,7 +233,7 @@ export function NfseEmitDialog({ clanId, year, month, monthLabel, disabledReason
                       <li key={key}>
                         <label className={cn("flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-muted/30", !selected.has(key) && "text-muted-foreground")}>
                           <input type="checkbox" className="size-4 shrink-0 accent-primary" checked={selected.has(key)} disabled={sending} onChange={() => toggle(key)} />
-                          <span className="min-w-0 flex-1 truncate">{item.clientName}{item.kind === "additional_installment" ? <span className="ml-2 text-xs text-muted-foreground">PA</span> : null}</span>
+                          <span className="min-w-0 flex-1 truncate">{companyDisplayName(item.clientName)}{item.kind === "additional_installment" ? <span className="ml-2 text-xs text-muted-foreground">PA</span> : null}</span>
                           <span className="font-mono tabular-nums">{cents(item.amountCents)}</span>
                         </label>
                       </li>
@@ -246,7 +247,7 @@ export function NfseEmitDialog({ clanId, year, month, monthLabel, disabledReason
                   <p className="hud-label">Ficam de fora ({preview.excluded.length})</p>
                   <ul className="grid gap-1 text-xs text-muted-foreground">
                     {preview.excluded.map((item) => (
-                      <li key={`${item.controlPeriodId}-${item.kind}`}>{item.clientName}{item.kind === "additional_installment" ? " (PA)" : ""} — {NFSE_EXCLUSION_LABELS[item.reason]}</li>
+                      <li key={`${item.controlPeriodId}-${item.kind}`}>{companyDisplayName(item.clientName)}{item.kind === "additional_installment" ? " (PA)" : ""} — {NFSE_EXCLUSION_LABELS[item.reason]}</li>
                     ))}
                   </ul>
                 </section>
@@ -308,7 +309,7 @@ export function NfseInvoiceCell({ clanId, year, month, invoice, canManage }: { c
       </button>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{invoice.kind === "additional_installment" ? "PA" : "Nota"} de {invoice.clientName}</DialogTitle>
+          <DialogTitle>{invoice.kind === "additional_installment" ? "PA" : "Nota"} de {companyDisplayName(invoice.clientName)}</DialogTitle>
           <DialogDescription>
             {STATUS_LABELS[invoice.status]} · {formatBRLCurrency(invoice.amount)}
             {invoice.nfseNumber ? ` · nº ${invoice.nfseNumber}` : ""}

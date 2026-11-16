@@ -12,6 +12,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ClosingFigures } from "@/domain/closing-from-task";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 /**
  * Gerar o fechamento a partir da missão.
@@ -60,7 +61,7 @@ export function ClosingFromTaskCard({
       <div className="panel-cut flex flex-wrap items-center gap-x-3 gap-y-1 border border-success/30 bg-success/5 px-4 py-3 text-sm">
         <CalendarRange className="size-4 shrink-0 text-success" aria-hidden />
         <span>
-          Vinculada ao fechamento de <strong>{clientName}</strong>.
+          Vinculada ao fechamento de <strong>{companyDisplayName(clientName)}</strong>.
         </span>
         <Link
           href={`/clans/${linkedClosing.clanId}?tab=closings&year=${linkedClosing.year}&q=${encodeURIComponent(clientName)}`}
@@ -100,7 +101,7 @@ export function ClosingFromTaskCard({
     return (
       <div className="panel-cut flex flex-wrap items-center justify-between gap-3 border border-border/70 bg-card/40 px-4 py-3">
         <p className="min-w-0 text-sm text-muted-foreground">
-          Esta missão é de <strong className="text-foreground">{clientName}</strong>.
+          Esta missão é de <strong className="text-foreground">{companyDisplayName(clientName)}</strong>.
           Gere o período nos Fechamentos para não anotar o mesmo trabalho duas vezes.
         </p>
         <Button type="button" variant="outline" onClick={() => setAberto(true)}>
@@ -113,7 +114,7 @@ export function ClosingFromTaskCard({
   return (
     <div className="panel-cut grid gap-3 border border-primary/30 bg-card/40 p-4">
       <div>
-        <h3>Gerar fechamento de {clientName}</h3>
+        <h3>Gerar fechamento de {companyDisplayName(clientName)}</h3>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {leuNumeros
             ? "Os valores vieram do retorno da missão — confira antes de gerar."

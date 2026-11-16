@@ -210,7 +210,7 @@ export function McpKeyManager({
                 />
                 <span className="grid">
                   <span>{SCOPE_LABELS[scope]}</span>
-                  <span className="text-xs text-muted-foreground/80">
+                  <span className="text-xs text-muted-foreground">
                     {SCOPE_TOOLS[scope]}
                   </span>
                 </span>

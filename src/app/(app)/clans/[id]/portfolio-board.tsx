@@ -38,6 +38,7 @@ import {
   type FiscalProfileView,
 } from "./fiscal-profile-dialog";
 import { FiscalImportDialog } from "./fiscal-import-dialog";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 export interface PortfolioClientView {
   certificate: ClientCertificateView | null;
@@ -112,7 +113,7 @@ function ClientRow({
             onChange={() => onToggle(client.id)}
           />
         ) : null}
-        <span className="min-w-0 basis-36 flex-1 break-words">{client.name}</span>
+        <span className="min-w-0 basis-36 flex-1 break-words">{companyDisplayName(client.name)}</span>
         <CertificateBadge certificate={client.certificate} href={`/clans/${clanId}?tab=xml`} />
         {!client.active ? (
           <Badge variant="outline" className="shrink-0 text-[10px]">inativa</Badge>
@@ -432,7 +433,8 @@ export function PortfolioBoard({
           </h3>
           <ul className="grid gap-1">
             {visibleStranded.map(({ client, holderName }) => (
-              <ClientRow                key={client.id}
+              <ClientRow
+                key={client.id}
                 clanId={clanId}
                 client={client}
                 selected={selected.has(client.id)}
@@ -475,7 +477,8 @@ export function PortfolioBoard({
         ) : (
           <ul className="grid gap-1">
             {visibleOrphans.map((client) => (
-              <ClientRow                key={client.id}
+              <ClientRow
+                key={client.id}
                 clanId={clanId}
                 client={client}
                 selected={selected.has(client.id)}
@@ -528,7 +531,8 @@ export function PortfolioBoard({
             ) : (
               <ul className="grid gap-1">
                 {bucket.visible.map((client) => (
-                  <ClientRow                    key={client.id}
+                  <ClientRow
+                    key={client.id}
                     clanId={clanId}
                     client={client}
                     selected={selected.has(client.id)}

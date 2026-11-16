@@ -18,7 +18,7 @@ function Progress({
         // mas preenchido em azul-gelo: progresso NEUTRO não pode usar ouro,
         // que é exclusivo de recompensa. As duas barras passam a falar a
         // mesma língua sem que uma roube o sinal da outra.
-        "relative flex h-1 w-full items-center overflow-x-hidden border border-border bg-secondary shadow-[inset_0_1px_2px_oklch(0_0_0_/_35%)]",
+        "relative flex h-1 w-full items-center overflow-x-hidden border border-border bg-secondary shadow-[inset_0_1px_2px_var(--surface-inset-shadow)]",
         className
       )}
       {...props}

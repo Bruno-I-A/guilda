@@ -27,7 +27,7 @@ export function XpBar({
       aria-valuenow={current}
       aria-label={label ?? "Progresso de XP"}
     >
-      <div className="relative h-5 overflow-hidden border border-border bg-secondary shadow-[inset_0_1px_2px_oklch(0_0_0_/_35%)]">
+      <div className="relative h-5 overflow-hidden border border-border bg-secondary shadow-[inset_0_1px_2px_var(--surface-inset-shadow)]">
         <div
           className="h-full bg-gradient-to-b from-gold to-gold/75 transition-[width]"
           style={{ width: `${ratio * 100}%` }}
@@ -38,7 +38,7 @@ export function XpBar({
           className="absolute inset-0"
           style={{
             background:
-              "repeating-linear-gradient(to right, transparent 0 calc(10% - 1px), oklch(0.14 0.02 252 / 45%) calc(10% - 1px) 10%)",
+              "repeating-linear-gradient(to right, transparent 0 calc(10% - 1px), var(--xp-tick) calc(10% - 1px) 10%)",
           }}
         />
         <span className="absolute inset-0 flex items-center justify-center">

@@ -61,7 +61,14 @@ Numeral que o usuário compara ou soma vai em `font-mono`. Se ele vive numa
 coluna (ranking, valores empilhados), acrescente `tabular-nums` — sem isso a
 coluna treme entre linhas.
 
-### 1.4 Medida de leitura
+### 1.4 Nome de empresa
+
+Nome de empresa-cliente na tela passa por `companyDisplayName(name)`: sem a
+raiz do CNPJ do MEI e sem CAIXA ALTA. É só exibição: o valor gravado continua
+o oficial. Exceções em que o nome oficial é o certo: conciliação com planilha
+importada, e qualquer texto que vá para fora (nota, XML, arquivo exportado).
+
+### 1.5 Medida de leitura
 
 Texto corrido leva `max-w-prose`. A coluna de conteúdo é `max-w-5xl` (1024px), e
 14px atravessando isso dá ~150 caracteres por linha, o dobro do legível.
@@ -96,6 +103,36 @@ mais categorias, crie tokens `--category-*` em vez de espalhar paleta crua.
 Sem glow, sem neon, sem sombra colorida. Profundidade vem de elevação escura e
 borda.
 
+### 2.1 Dois temas (desde 2026-11-15)
+
+O escuro é o padrão e mora no `:root`; o claro sobrescreve **os mesmos tokens**
+em `[data-theme="light"]`. Consequências para quem escreve tela:
+
+- **Todo token novo ganha valor nos dois blocos.** Um token só no `:root`
+  aparece com a cor do escuro no tema claro.
+- **Nada de luz/sombra crua.** `oklch(1 0 0 / 5%)` é brilho no escuro e
+  invisível no claro. Use os tokens de superfície: `--surface-edge` (aresta),
+  `--surface-highlight` (fio de luz), `--surface-inset-shadow` (sombra interna),
+  `--page-glow`, `--xp-tick`.
+- **O claro é papel, não neve (2026-11-16)**: superfícies e texto quentes, na
+  paleta do Tero (fundo `#F6F1EA`, texto `#1A1612`, bordas de argila); os
+  acentos continuam os da Guilda. A **barra lateral é escura nos dois temas**:
+  ela declara `data-theme="dark"`, que redeclara os tokens do escuro para tudo
+  dentro dela. Um elemento que precise do mesmo truque também tem de pôr a cor
+  do texto (`text-sidebar-foreground`): a cor herdada do `<body>` já vem
+  resolvida com o tema da página.
+- **Contraste conferido nos dois**: texto ≥ 4,5:1 sobre fundo, card e sidebar.
+  No claro os acentos são mais escuros (o azul-gelo de L 0.66 some no papel).
+  Rótulo sobre fundo tingido da própria cor (`bg-warning/10 text-warning`,
+  aba ativa em `bg-primary/15`) é o caso mais apertado: confira esse também.
+- **Texto apagado de propósito** (cancelada, inativa) usa
+  `text-muted-foreground-dim`, não `text-muted-foreground/70`: transparência
+  sobre o fundo claro cai para 3:1. No escuro os dois são idênticos.
+- O fundo da página não tem mais o tramado diagonal (saiu em 2026-11-15, nos
+  dois temas): atrás de listas densas era ruído. Textura só onde é vitrine.
+- Não use variantes `dark:` do Tailwind para tematizar: o tema vem de
+  `data-theme`, e `dark:` olha para `.dark`, que não existe. Tematize por token.
+
 ---
 
 ## 3. Componentes de chrome
@@ -126,6 +163,10 @@ O estado ativo é **trilho sublinhado em `--primary`** — mesmo vocabulário do
 ativo da sidebar. A pílula `bg-background shadow-sm` está proibida: era o
 artefato mais genérico do app, numa interface cuja tese é placa de ferro
 chanfrada.
+
+O rótulo é **texto normal** (`text-sm font-medium`), não mono maiúsculo com
+tracking largo (2026-11-15): é lido dezenas de vezes por dia, e o estilo HUD
+é mais lento de ler. HUD fica para rótulo de dado.
 
 Passe `busy` quando a navegação for round-trip de servidor.
 
@@ -252,6 +293,7 @@ merece próximo passo explícito, não uma caixa de alerta padrão.
 ## 7. Antes de abrir PR
 
 - [ ] Nenhuma cor crua do Tailwind nova em `.tsx`
+- [ ] Token de cor novo tem valor no `:root` E em `[data-theme="light"]`; tela conferida nos dois temas
 - [ ] Nenhum heading com classe de tamanho
 - [ ] Nenhum `.hud-label` em heading
 - [ ] Nenhum tamanho de texto abaixo de `text-xs`

@@ -608,7 +608,37 @@ Se você está prestes a copiar classes de outra tela, o componente já existe.
   `docs/superpowers/specs/2026-07-06-viking-theme-design.md`): paleta fria
   azul-gelo/prata, títulos em Cinzel, tipografia mono para números de XP/nível,
   ouro EXCLUSIVO para recompensa. **Sem brilho/glow/neon** (decisão de 2026-07-06,
-  substitui a ideia anterior de "acentos neon"). Dark é o tema único, sem toggle.
+  substitui a ideia anterior de "acentos neon").
+
+- **Tema claro opcional (decisão de 2026-11-15, pedido do Bruno)**: substitui o
+  "dark é o tema único, sem toggle". O escuro continua o PADRÃO e a identidade;
+  o claro ("neve e ferro") existe porque o dia inteiro de leitura de lista num
+  escritório iluminado cansa menos com texto escuro sobre fundo claro. A escolha
+  fica no menu do avatar (Aparência: Escuro / Claro / Automático), via
+  `next-themes` com `data-theme` no `<html>` (`theme-provider.tsx`), guardada
+  por aparelho no localStorage. Regras: toda cor nova é token com valor nos DOIS
+  temas (`:root` e `[data-theme="light"]` no `globals.css`); nada de `oklch()`
+  solto em `.tsx`; não trocar o atributo por `class="dark"` — isso ligaria as
+  ~30 variantes `dark:` do shadcn que nunca estiveram ativas e mudaria o escuro.
+  **Papel em vez de neve (2026-11-16, pedido do Bruno)**: o primeiro claro, frio
+  e azulado, ficou "branco demais, incomoda". Ele pediu o claro do Tero (o app
+  de notas da Shift): fundo papel `#F6F1EA`, cards quase brancos, bordas de
+  argila, texto tinta `#1A1612` e **barra lateral escura nos dois temas**
+  (`data-theme="dark"` no `<aside>`). Os acentos continuam os da Guilda (azul,
+  ouro de recompensa, cobre de alerta). Não voltar ao claro frio sem ele pedir.
+
+- **Limpeza visual (2026-11-15, pedido do Bruno: "muito poluído")**:
+  (1) nome de empresa na tela passa por `companyDisplayName`
+  (`src/domain/company-display-name.ts`, puro e testado): tira a raiz do CNPJ
+  do MEI e troca CAIXA ALTA por nome próprio. **Só exibição** — o nome gravado
+  segue o oficial (NFS-e, XML, pasta da Domínio, busca, conciliação de
+  planilha); nunca gravar o resultado. (2) O selo de pendências da navegação é
+  `--primary`, não vermelho: pendência não é erro. (3) `SegmentedNav` em texto
+  normal (`text-sm`), não mono maiúsculo espaçado; o estilo HUD fica para
+  rótulos de dado. (4) A barra lateral perdeu "Mesa de comando", o cartão
+  "Organização ativa · ambiente de trabalho", a numeração dos grupos e o
+  "agora"; a organização aparece sob "Guilda". (5) O tramado diagonal do fundo
+  saiu. Não recolocar nada disso sem o Bruno pedir.
 
 - **Escala tipográfica (2026-08-26)**: "títulos em Cinzel" vale para os DOIS
   passos de display, não para todo heading — `h1` 24px Cinzel, `h2` 18px Cinzel,

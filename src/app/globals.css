@@ -38,6 +38,7 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
+  --color-muted-foreground-dim: var(--muted-foreground-dim);
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
@@ -63,12 +64,18 @@
 }
 
 /*
- * Tema único "Gelo e Ferro" (dark, sem toggle — decisão de design).
- * Fiorde à noite: fundos frios azulados, acento azul-gelo, prata fosca.
+ * Tema "Gelo e Ferro". Dois modos desde 2026-11-15 (pedido do Bruno): o
+ * escuro continua o padrão e mora no :root; o claro sobrescreve os mesmos
+ * tokens em [data-theme="light"] (next-themes, ver theme-provider.tsx).
+ * Escuro = fiorde à noite: fundos frios azulados, acento azul-gelo, prata fosca.
  * Ouro é EXCLUSIVO de XP/nível/recompensa — nunca usar como decoração.
  * Sem glow/sombra colorida: profundidade vem de elevação escura e borda.
+ *
+ * `[data-theme="dark"]` também casa elementos internos: a barra lateral
+ * declara o atributo e fica escura nos dois temas (ver o bloco do claro).
  */
-:root {
+:root,
+[data-theme="dark"] {
   --background: oklch(0.17 0.02 252);
   --foreground: oklch(0.92 0.012 240);
   --card: oklch(0.21 0.022 252);
@@ -81,9 +88,19 @@
   --secondary-foreground: oklch(0.9 0.012 240);
   --muted: oklch(0.25 0.02 250);
   --muted-foreground: oklch(0.71 0.02 245);
+  /*
+   * Texto apagado de propósito (missão cancelada, empresa inativa). No escuro
+   * é exatamente o antigo `text-muted-foreground/70`; no claro, transparência
+   * sobre neve caía para 3:1, então lá vira cor sólida.
+   */
+  --muted-foreground-dim: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
   --accent: oklch(0.29 0.03 245);
   --accent-foreground: oklch(0.93 0.012 240);
-  --destructive: oklch(0.58 0.13 25);
+  /*
+   * 0.58 dava 3,9:1 sobre o card — abaixo do AA para texto pequeno, e
+   * `text-destructive` aparece em quase cem lugares. 0.65 passa com folga.
+   */
+  --destructive: oklch(0.65 0.13 25);
   --border: oklch(0.75 0.03 240 / 18%);
   --input: oklch(0.75 0.03 240 / 24%);
   --ring: oklch(0.62 0.06 235);
@@ -128,6 +145,87 @@
   --sidebar-accent-foreground: oklch(0.93 0.012 240);
   --sidebar-border: oklch(0.75 0.03 240 / 18%);
   --sidebar-ring: oklch(0.62 0.06 235);
+
+  /*
+   * Luz e sombra da superfície. Antes eram valores soltos no CSS e no TSX,
+   * calibrados só para fundo escuro; como token, cada tema dá os seus.
+   */
+  --surface-edge: oklch(0.75 0.03 240 / 16%);
+  --surface-highlight: oklch(1 0 0 / 5%);
+  --surface-inset-shadow: oklch(0 0 0 / 35%);
+  --page-glow: oklch(0.26 0.035 250 / 55%);
+  --xp-tick: oklch(0.14 0.02 252 / 45%);
+  --scrollbar-thumb: oklch(0.75 0.03 240 / 28%);
+  color-scheme: dark;
+}
+
+/*
+ * Claro = "papel e ferro" (2026-11-16, pedido do Bruno): a primeira versão,
+ * "neve" fria e azulada, ficou "branca demais" e incomodava no dia inteiro.
+ * A referência é o Tero, o app de notas da Shift: fundo papel quente
+ * (#F6F1EA), cards quase brancos, bordas de argila, texto tinta (#1A1612) e
+ * a barra lateral escura. As superfícies e o texto ficam quentes; os acentos
+ * continuam os da Guilda (azul-gelo, ouro de recompensa, cobre de alerta).
+ *
+ * Cada cor de texto foi conferida contra fundo, card, muted e secondary, e
+ * contra o fundo tingido da própria cor: tudo ≥ 4,5:1 (AA). Os acentos ficam
+ * mais ESCUROS que no tema escuro — o azul-gelo de 0.66 some sobre papel.
+ *
+ * O ouro continua exclusivo de recompensa e fosco; o alerta continua cobre
+ * saturado. A distinção por saturação vale nos dois temas.
+ *
+ * A barra lateral NÃO tem tokens aqui: ela declara `data-theme="dark"` e usa
+ * os do escuro nos dois temas, como no Tero. O brasão vive nela e é um objeto
+ * de ferro, desenhado para fundo escuro.
+ */
+[data-theme="light"] {
+  --background: oklch(0.96 0.011 77);
+  --foreground: oklch(0.205 0.011 67);
+  --card: oklch(0.995 0.003 85);
+  --card-foreground: oklch(0.205 0.011 67);
+  --popover: oklch(0.995 0.003 85);
+  --popover-foreground: oklch(0.205 0.011 67);
+  /*
+   * Rótulos sobre fundo tingido da própria cor (selo "Lucro Real", aba ativa,
+   * "Concluída", aviso laranja) são o caso mais apertado; estes valores passam
+   * de 4,5:1 também ali.
+   */
+  --primary: oklch(0.45 0.1 240);
+  --primary-foreground: oklch(0.985 0.004 85);
+  --secondary: oklch(0.925 0.017 77);
+  --secondary-foreground: oklch(0.25 0.012 67);
+  --muted: oklch(0.935 0.015 77);
+  --muted-foreground: oklch(0.46 0.013 70);
+  --muted-foreground-dim: oklch(0.5 0.012 70);
+  --accent: oklch(0.928 0.017 77);
+  --accent-foreground: oklch(0.205 0.011 67);
+  --destructive: oklch(0.5 0.17 25);
+  --border: oklch(0.886 0.022 77);
+  --input: oklch(0.82 0.029 77);
+  --ring: oklch(0.55 0.09 240);
+  --gold: oklch(0.47 0.095 75);
+  --silver: oklch(0.47 0.015 245);
+  --bronze: oklch(0.49 0.09 50);
+  --success: oklch(0.47 0.1 165);
+  --warning: oklch(0.48 0.14 52);
+  --category-societario: oklch(0.5 0.1 255);
+  --category-contabilidade: oklch(0.5 0.09 220);
+  --category-fiscal: oklch(0.5 0.08 185);
+  --category-rh: oklch(0.52 0.12 330);
+  --category-financeiro: oklch(0.5 0.12 290);
+  --category-sucesso-do-cliente: oklch(0.5 0.09 160);
+  --chart-1: oklch(0.5 0.1 240);
+  --chart-2: oklch(0.6 0.015 245);
+  --chart-3: oklch(0.6 0.1 80);
+  --chart-4: oklch(0.72 0.04 245);
+  --chart-5: oklch(0.82 0.03 250);
+  --surface-edge: oklch(0.4 0.03 70 / 16%);
+  --surface-highlight: oklch(1 0 0 / 80%);
+  --surface-inset-shadow: oklch(0.3 0.02 60 / 12%);
+  --page-glow: oklch(0.975 0.012 80 / 50%);
+  --xp-tick: oklch(1 0 0 / 60%);
+  --scrollbar-thumb: oklch(0.4 0.03 70 / 28%);
+  color-scheme: light;
 }
 
 @layer base {
@@ -136,19 +234,20 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* Profundidade: luz fria vinda de cima + tramado nórdico quase imperceptível. */
-    background-image:
-      radial-gradient(ellipse 90% 55% at 50% -12%, oklch(0.26 0.035 250 / 55%), transparent 65%),
-      repeating-linear-gradient(45deg, oklch(0.8 0.03 240 / 1.8%) 0 1px, transparent 1px 56px),
-      repeating-linear-gradient(-45deg, oklch(0.8 0.03 240 / 1.8%) 0 1px, transparent 1px 56px);
+    /*
+     * Profundidade: só a luz fria vinda de cima. O tramado diagonal que
+     * existia aqui saiu em 2026-11-15 (pedido do Bruno): atrás de listas
+     * densas ele era ruído que o olho filtrava o dia inteiro. A textura de
+     * vitrine continua onde é vitrine (`.texture-iron`).
+     */
+    background-image: radial-gradient(ellipse 90% 55% at 50% -12%, var(--page-glow), transparent 65%);
     background-attachment: fixed;
   }
   html {
     @apply font-sans;
-    /* Dark é o tema único: sem isto o navegador desenha barras de rolagem claras. */
-    color-scheme: dark;
+    /* `color-scheme` vem do tema (:root / [data-theme]): barras e controles nativos acompanham. */
     scrollbar-width: thin;
-    scrollbar-color: oklch(0.75 0.03 240 / 28%) transparent;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
   /*
    * Escala display de quatro passos. Antes disto só h1/h2 eram temáticos, e
@@ -269,8 +368,8 @@
     border: 0;
     background-color: var(--card);
     box-shadow:
-      inset 0 0 0 1px oklch(0.75 0.03 240 / 16%),
-      inset 0 1px 0 oklch(1 0 0 / 5%);
+      inset 0 0 0 1px var(--surface-edge),
+      inset 0 1px 0 var(--surface-highlight);
   }
   .panel-cut-sm {
     --cut: 0.5rem;
@@ -285,8 +384,8 @@
     outline: none;
     box-shadow:
       inset 0 0 0 2px var(--ring),
-      inset 0 0 0 1px oklch(0.75 0.03 240 / 16%),
-      inset 0 1px 0 oklch(1 0 0 / 5%);
+      inset 0 0 0 1px var(--surface-edge),
+      inset 0 1px 0 var(--surface-highlight);
   }
 
   /*
@@ -386,7 +485,7 @@
     background: color-mix(in oklab, var(--primary) 10%, var(--card));
     box-shadow:
       inset 0 0 0 1px color-mix(in oklab, var(--primary) 45%, transparent),
-      inset 0 1px 0 oklch(1 0 0 / 6%);
+      inset 0 1px 0 var(--surface-highlight);
   }
   .dice-tile[data-state="rolling"] {
     animation: dice-tumble 380ms linear infinite;

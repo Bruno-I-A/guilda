@@ -16,6 +16,7 @@ import { formatBRLCurrency } from "@/lib/currency";
 import { importTakers, listIssuerCustomers, readIssuerHistory } from "./client-nfse-actions";
 import type { EmitPrefill } from "./client-nfse-emit-dialog";
 import { retentionLabel, TakerRetentionsDialog } from "./client-nfse-retentions";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 function normalize(value: string): string {
   return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -143,7 +144,7 @@ export function ClientNfseTakersDialog({
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-3xl" aria-busy={loading || saving}>
         <DialogHeader>
-          <DialogTitle>Clientes / tomadores · {issuer.name}</DialogTitle>
+          <DialogTitle>Clientes / tomadores · {companyDisplayName(issuer.name)}</DialogTitle>
           <DialogDescription>
             Clientes encontrados nas notas anteriores desta empresa. Você pode emitir direto para eles ou salvar os selecionados no cadastro.
           </DialogDescription>

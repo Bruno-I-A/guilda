@@ -22,6 +22,7 @@ import { emitNote, lookupTakerCnpj } from "./client-nfse-actions";
 import { useIssuerCustomers } from "./client-nfse-customers";
 import { formToRetentions, RetentionFields, retentionForm, retentionProblem, RetentionSummary, type RetentionForm } from "./client-nfse-retentions";
 import { Choice, Field } from "./nfse-settings-dialog";
+import { companyDisplayName } from "@/domain/company-display-name";
 
 const REFERENCES = [["previous", "Ao mês anterior"], ["current", "Ao próprio mês"]] as const;
 
@@ -222,7 +223,7 @@ export function ClientNfseEmitDialog({
       <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-xl" aria-busy={sending}>
         <DialogHeader>
           <DialogTitle>{confirming ? "Confira antes de emitir" : step === 0 ? "Para quem é a nota?" : "Preencha a nota"}</DialogTitle>
-          <DialogDescription>{issuer.name} · {issuer.cnpj ? formatCnpj(issuer.cnpj) : ""}</DialogDescription>
+          <DialogDescription>{companyDisplayName(issuer.name)} · {issuer.cnpj ? formatCnpj(issuer.cnpj) : ""}</DialogDescription>
         </DialogHeader>
         <ol className="grid grid-cols-3 gap-2 border-b pb-3 text-sm" aria-label="Etapas da emissão">
           {["Cliente", "Nota", "Conferência"].map((label, index) => <li key={label} aria-current={(confirming ? 2 : step) === index ? "step" : undefined} className={cn("flex items-center gap-2", (confirming ? 2 : step) === index ? "font-medium text-primary" : "text-muted-foreground")}><span className="font-mono">{index + 1}.</span>{label}</li>)}

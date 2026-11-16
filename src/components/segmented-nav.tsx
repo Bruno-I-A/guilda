@@ -66,7 +66,10 @@ export function SegmentedNav({
               // com -bottom-px, o pixel que passava da borda criava rolagem
               // vertical no <nav> (overflow-x-auto força overflow-y) e o
               // Windows mostrava setas de barra de rolagem ao lado das abas.
-              "relative shrink-0 whitespace-nowrap px-3 py-2.5 font-mono text-hud font-medium uppercase tracking-hud transition-colors",
+              // Texto normal, não mono maiúsculo espaçado (2026-11-15): estas abas são
+              // lidas dezenas de vezes por dia, e o rótulo HUD é mais lento de ler.
+              // O estilo HUD continua para RÓTULOS de dado (`.hud-label`).
+              "relative shrink-0 whitespace-nowrap px-3 py-2.5 text-sm font-medium transition-colors",
               "after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:transition-colors",
               isActive
                 ? "text-foreground after:bg-primary"
