@@ -55,9 +55,62 @@ jobs:
       - name: Gerar build de produção
         run: npm run build
 
+  # Isolamento entre organizações no Postgres de verdade, com o role da
+  # aplicação: os testes usam PGlite, que roda como superusuário e por isso
+  # ignora o RLS. Sem este job o `check:rls` quebrou em silêncio por semanas
+  # (coluna removida na 0084, tabelas novas fora das listas).
+  rls:
+    name: Isolamento entre organizações
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: guilda
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/guilda
+      DATABASE_URL: postgresql://guilda_app:guilda_app_dev@127.0.0.1:5432/guilda
+      BETTER_AUTH_SECRET: segredo-apenas-para-validacao-do-rls-no-ci-32ch
+      BETTER_AUTH_URL: http://localhost:4000
+      NEXT_PUBLIC_APP_URL: http://localhost:4000
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v7.0.1
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Criar o role da aplicação
+        run: psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -f docker/dev/init/01-roles.sql
+
+      - name: Aplicar migrações
+        run: node node_modules/drizzle-kit/bin.cjs migrate
+
+      - name: Dados de demonstração
+        run: npm run seed
+
+      - name: Conferir RLS e isolamento
+        run: npm run check:rls
+
   deploy-staging:
     name: Publicar homologação
-    needs: quality
+    needs: [quality, rls]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -75,7 +128,7 @@ jobs:
           curl --fail-with-body --silent --show-error --request POST "$DEPLOY_URL"
   deploy-production:
     name: Publicar produção
-    needs: quality
+    needs: [quality, rls]
     if: >-
       github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/main' &&
