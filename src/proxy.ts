@@ -68,6 +68,9 @@ export default function proxy(request: NextRequest) {
 // só perde o redirect antecipado. NÃO tratar a presença aqui como autorização.
 export const config = {
   matcher: [
+    // /atendimento ficou de fora quando nasceu e rodava SEM CSP — justamente a
+    // tela que mostra texto e foto vindos de fora (revisão de 2026-11-16).
+    "/atendimento/:path*",
     "/dashboard/:path*",
     "/tasks/:path*",
     "/clients/:path*",
