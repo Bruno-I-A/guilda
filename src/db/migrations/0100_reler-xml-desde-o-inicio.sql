@@ -1,0 +1,14 @@
+-- Releitura completa da distribuição do ADN (2026-11-17).
+--
+-- A rotina de XML pedia ao ADN "último NSU + 1", mas o ADN devolve os
+-- documentos DEPOIS do número pedido: perdia-se o documento logo após o
+-- cursor no começo de cada leitura e em cada troca de lote de 50. Caso que
+-- revelou: DA TERRA, nota 8 de 10/2026, ausente entre as notas 7 e 9.
+-- Documento perdido pode ser nota prestada ou cancelamento.
+--
+-- Voltar o cursor ao zero faz a próxima rodada reler tudo com a regra
+-- corrigida. Nada é apagado: nota já guardada é ignorada (único por
+-- org_id + access_key), cancelamento só marca nota ainda não cancelada e o
+-- "guardar a partir de" continua valendo. A tela não muda: ela mostra
+-- initial_sync_at e last_synced_at, que ficam como estão.
+UPDATE nfse_dfe_cursors SET last_nsu = 0, updated_at = now();
