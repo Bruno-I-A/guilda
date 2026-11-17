@@ -212,6 +212,27 @@ mesmo caminho do cadastro direto, que leva a `/change-password` no próximo logi
 - Membros mostra "Ainda não trocou a senha temporária" para o admin; o login
   diz "Esqueceu a senha? Peça a um admin da Guilda para redefinir."
 
+## Revisão de segurança (2026-11-16)
+
+Falha achada e corrigida: quem criava uma organização própria antes de ser
+removido do escritório continuava com sessão e lia missões e ranking. As travas
+que fecharam isso, e que não devem ser desfeitas:
+
+- **Organização não se cria pelo app** (`allowUserToCreateOrganization: false`
+  em `auth.ts`). A primeira nasce pelo `scripts/bootstrap-owner.ts`. A tela
+  `/onboarding` só explica e oferece sair; não tem mais formulário.
+- **Vínculo conferido em `requireOrgSession()`**, não só no layout `(app)`: na
+  navegação pelo app o Next renderiza só a página que mudou e o layout não roda
+  de novo. Página nova que leia dado da organização passa por ele.
+- **Remover alguém derruba as sessões dessa pessoa naquela organização**
+  (`revokeOrganizationSessions`, no `afterRemoveMember`).
+- `/atendimento` entrou no matcher do `proxy.ts` (estava sem CSP).
+- Os processos do app, dos workers e do serviço fiscal não herdam
+  `MIGRATION_DATABASE_URL` (`start-production.mjs`); só a migração a usa.
+- A função `reset_org_operational_data_for_launch` foi apagada (migração 0099).
+- `npm run check:rls` voltou a passar. Tabela nova só de inserção entra nas
+  listas `APPEND_ONLY_TABLES` e `SPLIT_POLICY_TABLES` do script.
+
 ## Desfazer: janela de arrependimento (decisão de 2026-09-03)
 
 Conclusão de missão mostra um aviso com **"Desfazer"** ao lado (`toastWithUndo`,

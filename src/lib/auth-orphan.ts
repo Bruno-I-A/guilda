@@ -6,6 +6,7 @@ import { db } from "@/db";
 import {
   releaseOrphanedUserEmailInDb,
   retireUserIfOrphanedInDb,
+  revokeOrganizationSessionsInDb,
 } from "@/lib/auth-orphan-db";
 
 function normalizeEmail(email: string): string {
@@ -24,6 +25,14 @@ export function releaseOrphanedUserEmail(email: string): Promise<boolean> {
 /** Desativa credenciais quando a pessoa perde seu último vínculo organizacional. */
 export function retireUserIfOrphaned(userId: string): Promise<boolean> {
   return retireUserIfOrphanedInDb(db, userId);
+}
+
+/** Derruba as sessões da pessoa que apontam para a organização de onde saiu. */
+export function revokeOrganizationSessions(
+  userId: string,
+  organizationId: string,
+): Promise<number> {
+  return revokeOrganizationSessionsInDb(db, userId, organizationId);
 }
 
 /**

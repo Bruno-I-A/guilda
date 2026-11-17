@@ -14,7 +14,10 @@ import {
   prepareOrganizationMemberRemoval,
 } from "@/lib/clans/bootstrap";
 import { organizationRoleIncludesOwner } from "@/lib/clans/rules";
-import { retireUserIfOrphaned } from "@/lib/auth-orphan";
+import {
+  retireUserIfOrphaned,
+  revokeOrganizationSessions,
+} from "@/lib/auth-orphan";
 
 export const auth = betterAuth({
   appName: "Guilda",
@@ -92,6 +95,14 @@ export const auth = betterAuth({
   },
   plugins: [
     organization({
+      // Organização não se cria pelo app (revisão de segurança, 2026-11-16).
+      // O padrão do better-auth deixa qualquer conta logada criar a própria;
+      // com isso um integrante abria uma organização só dele, e ao ser
+      // removido do escritório escapava da aposentadoria de credenciais
+      // (`retireUserIfOrphaned` para no primeiro vínculo) e da redefinição de
+      // senha pelo admin. A primeira organização nasce pelo
+      // scripts/bootstrap-owner.ts, que grava direto no banco.
+      allowUserToCreateOrganization: false,
       // Convites são compartilhados por LINK (sem e-mail na v1) —
       // a página de membros exibe a URL /invite/<id> para copiar.
       async sendInvitationEmail() {
@@ -127,6 +138,10 @@ export const auth = betterAuth({
             member.organizationId,
             member.userId,
           );
+          // O better-auth só limpa a organização ativa da sessão de QUEM
+          // remove. As sessões da pessoa removida continuariam apontando para
+          // o escritório; derrubá-las fecha a porta na hora.
+          await revokeOrganizationSessions(member.userId, member.organizationId);
           // A linha de user permanece para preservar autoria, XP e auditoria.
           // Sem outro vínculo organizacional, as credenciais são revogadas e o
           // e-mail fica livre para uma nova pessoa.

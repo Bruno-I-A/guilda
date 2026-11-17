@@ -83,3 +83,26 @@ export function retireUserIfOrphanedInDb(
 ): Promise<boolean> {
   return retireOrphanedUser(database, { userId });
 }
+
+/**
+ * Apaga as sessões da pessoa cuja organização ativa é a de onde ela saiu.
+ * Quem tem outra organização não passa pela aposentadoria acima, e a sessão
+ * seguiria com o escritório antigo ativo. As sessões em outras organizações
+ * ficam; no próximo login o hook de sessão escolhe uma organização válida.
+ */
+export async function revokeOrganizationSessionsInDb(
+  database: AuthDatabase,
+  userId: string,
+  organizationId: string,
+): Promise<number> {
+  const removed = await database
+    .delete(schema.session)
+    .where(
+      and(
+        eq(schema.session.userId, userId),
+        eq(schema.session.activeOrganizationId, organizationId),
+      ),
+    )
+    .returning({ id: schema.session.id });
+  return removed.length;
+}
