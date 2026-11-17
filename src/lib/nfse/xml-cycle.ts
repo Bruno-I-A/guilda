@@ -90,8 +90,8 @@ export async function runXmlRoutineCycle(orgId: string, vault: VaultKey, environ
   const results = await runXmlRoutine(clients, {
     // "Guardar a partir de" é um dia de Brasília.
     keepSince: state.keepSince ? new Date(`${state.keepSince}T00:00:00-03:00`) : null,
-    fetchBatch: async (client, fromNsu) =>
-      fetchAdnBatch(transportFor(client.clientId), environment, { fromNsu, cnpj: client.cnpj }),
+    fetchBatch: async (client, afterNsu) =>
+      fetchAdnBatch(transportFor(client.clientId), environment, { afterNsu, cnpj: client.cnpj }),
     saveProgress: (progress) => saveAdnProgress(orgId, progress, new Date()),
     saveError: (clientId, message) => saveAdnError(orgId, clientId, message, new Date()),
   });

@@ -9,6 +9,14 @@ lê o ADN por NSU com o certificado de cada empresa e guarda os XML compactados
 em `nfse_issued_notes`, inclusive os cancelamentos. Esta é uma exceção consciente
 à regra das notas de honorário, cujos XML continuam sem armazenamento.
 
+**NSU do caminho é o último já lido (2026-11-17)**: o ADN devolve os documentos
+DEPOIS do número de `GET /DFe/{NSU}`, como o ultNSU da NF-e. A rotina pedia
+"último + 1" e perdia o documento seguinte ao cursor no começo de cada leitura e
+em cada troca de lote (DA TERRA, nota 8 de 10/2026). `syncClient` pede o último
+lido e descarta NSU repetido; a migração 0100 zerou os cursores para reler tudo.
+Teste de rotina simula a API pela regra real (`fakeAdn` em `xml-routine.test.ts`),
+não com lotes prontos que ignoram o número pedido.
+
 O mês é o da emissão em Brasília. O controle de 09/2026 baixa as emitidas de
 01/09 a 30/09. O download `/api/nfse/xml` lê o banco com sessão e permissão do
 Fiscal; não passa pelo serviço fiscal. Certificados e senhas nunca chegam em
