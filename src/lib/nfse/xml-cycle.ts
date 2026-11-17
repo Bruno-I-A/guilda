@@ -2,10 +2,10 @@ import "server-only";
 
 import { isXmlRoutineDue } from "@/domain/nfse-xml";
 
-import { fetchAdnBatch } from "./adn-client";
+import { fetchAdnBatch, withTransientRetry } from "./adn-client";
 import { loadNfseCertificate, NfseCertificateError } from "./certificate";
 import { checkClientCertificate } from "./certificate-check";
-import { createMtlsTransport, type HttpTransport, type NfseEnvironmentName } from "./sefin-client";
+import { createMtlsTransport, type HttpTransport, type NfseEnvironmentName, NfseTransientError } from "./sefin-client";
 import { type VaultEnvelope, VaultError, type VaultKey } from "./vault";
 import {
   listPendingCertificates,
@@ -69,7 +69,12 @@ function openClientTransport(vault: VaultKey, envelope: VaultEnvelope): HttpTran
  * antes, a rodada fica sem fim registrado e isXmlRoutineDue a trata como
  * interrompida (roda de novo depois de XML_ROUTINE_STALE_MS).
  */
-export async function runXmlRoutineCycle(orgId: string, vault: VaultKey, environment: NfseEnvironmentName): Promise<void> {
+export async function runXmlRoutineCycle(
+  orgId: string,
+  vault: VaultKey,
+  environment: NfseEnvironmentName,
+  options: { retryDelaysMs?: readonly number[] } = {},
+): Promise<void> {
   const startedAt = new Date();
   await markXmlRoutineRun(orgId, { startedAt });
   const state = await loadXmlRoutineState(orgId);
@@ -90,8 +95,20 @@ export async function runXmlRoutineCycle(orgId: string, vault: VaultKey, environ
   const results = await runXmlRoutine(clients, {
     // "Guardar a partir de" é um dia de Brasília.
     keepSince: state.keepSince ? new Date(`${state.keepSince}T00:00:00-03:00`) : null,
-    fetchBatch: async (client, afterNsu) =>
-      fetchAdnBatch(transportFor(client.clientId), environment, { afterNsu, cnpj: client.cnpj }),
+    fetchBatch: async (client, afterNsu) => {
+      try {
+        return await withTransientRetry(
+          () => fetchAdnBatch(transportFor(client.clientId), environment, { afterNsu, cnpj: client.cnpj }),
+          { delaysMs: options.retryDelaysMs },
+        );
+      } catch (error) {
+        // Esgotadas as tentativas: o que já veio está gravado, e a tela diz isso.
+        if (error instanceof NfseTransientError) {
+          throw new NfseTransientError(`${error.message} A próxima leitura continua de onde parou.`);
+        }
+        throw error;
+      }
+    },
     saveProgress: (progress) => saveAdnProgress(orgId, progress, new Date()),
     saveError: (clientId, message) => saveAdnError(orgId, clientId, message, new Date()),
   });

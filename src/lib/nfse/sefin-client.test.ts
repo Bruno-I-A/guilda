@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   createSefinClient,
+  networkErrorMessage,
   NFSE_ENDPOINTS,
   NfseTransientError,
   type HttpRequest,
@@ -77,5 +78,28 @@ describe("cliente do Sistema Nacional", () => {
     expect(calls[0]).toMatchObject({ method: "GET", url: `${NFSE_ENDPOINTS.restrita.sefin}/nfse/${KEY}` });
     await expect(client.getNfseXml(KEY)).rejects.toThrow(NfseTransientError);
     await expect(client.getNfseXml(KEY)).rejects.toThrow(/Não encontrada/);
+  });
+});
+
+describe("mensagem de erro de rede", () => {
+  const withCode = (message: string, code?: string) => Object.assign(new Error(message), code ? { code } : {});
+
+  test("ECONNRESET vira português com o código para diagnóstico", () => {
+    expect(networkErrorMessage(withCode("read ECONNRESET", "ECONNRESET"))).toBe(
+      "O Sistema Nacional fechou a conexão no meio do pedido (ECONNRESET).",
+    );
+  });
+
+  test("'socket hang up' sem código é a mesma queda de conexão", () => {
+    expect(networkErrorMessage(withCode("socket hang up"))).toBe(
+      "O Sistema Nacional fechou a conexão no meio do pedido (ECONNRESET).",
+    );
+  });
+
+  test("erro sem código conhecido fica como veio (o tempo esgotado já é português)", () => {
+    expect(networkErrorMessage(withCode("Tempo esgotado falando com o Sistema Nacional."))).toBe(
+      "Tempo esgotado falando com o Sistema Nacional.",
+    );
+    expect(networkErrorMessage(withCode("algo raro", "EWHATEVER"))).toBe("algo raro");
   });
 });

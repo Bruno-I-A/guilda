@@ -34,6 +34,35 @@ export interface AdnBatch {
 /** O Sistema Nacional recusou a consulta, ou devolveu algo que não dá para ler com segurança. */
 export class AdnRejectionError extends Error {}
 
+/**
+ * Espera antes de cada nova tentativa de um lote: 3 tentativas ao todo.
+ * Na releitura completa de 2026-11-17, 35 de 113 empresas pararam em
+ * "read ECONNRESET": muitos lotes seguidos pela mesma conexão, e o ADN a
+ * derruba no meio. A consulta só lê, então repetir não tem efeito colateral.
+ */
+export const ADN_RETRY_DELAYS_MS: readonly number[] = [2_000, 10_000];
+
+/**
+ * Repete `run` quando a falha é passageira (`NfseTransientError`: rede,
+ * timeout, 408, 429, 5xx). Recusa do ADN e documento ilegível não se repetem.
+ * Na nova tentativa o transporte abre outra conexão: a que caiu foi destruída.
+ */
+export async function withTransientRetry<T>(
+  run: () => Promise<T>,
+  options: { delaysMs?: readonly number[]; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<T> {
+  const delays = options.delaysMs ?? ADN_RETRY_DELAYS_MS;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run();
+    } catch (error) {
+      if (!(error instanceof NfseTransientError) || attempt >= delays.length) throw error;
+      await sleep(delays[attempt]);
+    }
+  }
+}
+
 const MAX_DESCRIPTION = 200;
 const MAX_MESSAGE = 500;
 
