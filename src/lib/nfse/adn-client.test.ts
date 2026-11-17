@@ -26,7 +26,7 @@ const CNPJ = "33000167000101";
 describe("distribuição do ADN para contribuintes", () => {
   test("pede o lote a partir do NSU, com o CNPJ consultado, e descompacta os XML", async () => {
     const { calls, transport } = fake([json(200, testAdnBatchBody([{ nsu: 5, xml: "<NFSe/>" }, { nsu: 6, xml: "<evento/>" }]))]);
-    const batch = await fetchAdnBatch(transport, "producao", { fromNsu: 5, cnpj: CNPJ });
+    const batch = await fetchAdnBatch(transport, "producao", { afterNsu: 5, cnpj: CNPJ });
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
       method: "GET",
@@ -37,7 +37,7 @@ describe("distribuição do ADN para contribuintes", () => {
 
   test("a homologação usa o endereço da produção restrita", async () => {
     const { calls, transport } = fake([json(200, testAdnBatchBody([]))]);
-    await fetchAdnBatch(transport, "restrita", { fromNsu: 0, cnpj: CNPJ });
+    await fetchAdnBatch(transport, "restrita", { afterNsu: 0, cnpj: CNPJ });
     expect(calls[0].url).toBe(
       "https://adn.producaorestrita.nfse.gov.br/contribuintes/DFe/0?lote=true&cnpjConsulta=33000167000101",
     );
@@ -45,14 +45,14 @@ describe("distribuição do ADN para contribuintes", () => {
 
   test("nenhum documento encerra a leitura", async () => {
     const { transport } = fake([json(200, testAdnBatchBody([])), json(404, testAdnBatchBody([]))]);
-    expect(await fetchAdnBatch(transport, "producao", { fromNsu: 9, cnpj: CNPJ })).toEqual({ documents: [], done: true });
-    expect(await fetchAdnBatch(transport, "producao", { fromNsu: 9, cnpj: CNPJ })).toEqual({ documents: [], done: true });
+    expect(await fetchAdnBatch(transport, "producao", { afterNsu: 9, cnpj: CNPJ })).toEqual({ documents: [], done: true });
+    expect(await fetchAdnBatch(transport, "producao", { afterNsu: 9, cnpj: CNPJ })).toEqual({ documents: [], done: true });
   });
 
   test("200 com contrato desconhecido nao marca leitura completa", async () => {
     const { transport } = fake([json(200, "{}"), json(200, JSON.stringify({ StatusProcessamento: "OK", LoteDFe: null }))]);
-    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow(AdnRejectionError);
-    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow(AdnRejectionError);
+    await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow(AdnRejectionError);
+    await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow(AdnRejectionError);
   });
 
   test("instabilidade é transitória; recusa vem com o motivo", async () => {
@@ -61,21 +61,21 @@ describe("distribuição do ADN para contribuintes", () => {
       json(403, "{}"),
       json(400, JSON.stringify({ StatusProcessamento: "REJEICAO", Erros: [{ Codigo: "E2230", Descricao: "CNPJ sem relação" }] })),
     ]);
-    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow(NfseTransientError);
-    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow(/certificado/);
-    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow(AdnRejectionError);
+    await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow(NfseTransientError);
+    await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow(/certificado/);
+    await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow(AdnRejectionError);
   });
 
   test("a recusa traz código e descrição do Sistema Nacional", async () => {
     const body = JSON.stringify({ StatusProcessamento: "REJEICAO", Erros: [{ Codigo: "E2230", Descricao: "CNPJ sem relação" }] });
     const { transport } = fake([json(400, body)]);
-    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow("E2230 — CNPJ sem relação");
+    await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow("E2230 — CNPJ sem relação");
   });
 
   test("429, 408 e status 0 também são transitórios", async () => {
     const { transport } = fake([json(429, ""), json(408, ""), { status: 0, body: Buffer.alloc(0), contentType: null }]);
     for (let i = 0; i < 3; i += 1) {
-      await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow(NfseTransientError);
+      await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow(NfseTransientError);
     }
   });
 
@@ -83,7 +83,7 @@ describe("distribuição do ADN para contribuintes", () => {
     const transport = async () => {
       throw new NfseTransientError("Tempo esgotado falando com o Sistema Nacional.");
     };
-    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow(/Tempo esgotado/);
+    await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow(/Tempo esgotado/);
   });
 
   test("os nomes dos campos valem em qualquer combinação de maiúsculas e minúsculas", async () => {
@@ -92,7 +92,7 @@ describe("distribuição do ADN para contribuintes", () => {
       lotedfe: [{ nsu: 3, arquivoXml: gzipBase64("<NFSe/>") }, { NSU: "4", ARQUIVOXML: gzipBase64("<evento/>") }],
     });
     const { transport } = fake([json(200, body)]);
-    expect(await fetchAdnBatch(transport, "producao", { fromNsu: 3, cnpj: CNPJ })).toEqual({
+    expect(await fetchAdnBatch(transport, "producao", { afterNsu: 3, cnpj: CNPJ })).toEqual({
       documents: [{ nsu: 3, xml: "<NFSe/>" }, { nsu: 4, xml: "<evento/>" }],
       done: false,
     });
@@ -101,7 +101,7 @@ describe("distribuição do ADN para contribuintes", () => {
   test("a recusa em minúsculas também é reconhecida", async () => {
     const body = JSON.stringify({ statusprocessamento: "REJEICAO", erros: [{ codigo: "E1", descricao: "Motivo qualquer" }] });
     const { transport } = fake([json(200, body)]);
-    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow("E1 — Motivo qualquer");
+    await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow("E1 — Motivo qualquer");
   });
 
   test("documento que não descompacta derruba o lote inteiro, sem pular nota", async () => {
@@ -114,9 +114,9 @@ describe("distribuição do ADN para contribuintes", () => {
       ],
     });
     const { transport } = fake([json(200, body), json(200, body)]);
-    const attempt = fetchAdnBatch(transport, "producao", { fromNsu: 7, cnpj: CNPJ });
+    const attempt = fetchAdnBatch(transport, "producao", { afterNsu: 7, cnpj: CNPJ });
     await expect(attempt).rejects.toThrow(AdnRejectionError);
-    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 7, cnpj: CNPJ })).rejects.toThrow(/NSU 8/);
+    await expect(fetchAdnBatch(transport, "producao", { afterNsu: 7, cnpj: CNPJ })).rejects.toThrow(/NSU 8/);
   });
 
   test("item sem NSU válido ou sem XML derruba o lote, sem pular nota", async () => {
@@ -138,13 +138,13 @@ describe("distribuição do ADN para contribuintes", () => {
       bad.map((item) => json(200, JSON.stringify({ StatusProcessamento: "DOCUMENTOS_LOCALIZADOS", LoteDFe: [{ NSU: 1, ArquivoXml: xml }, item] }))),
     );
     for (let i = 0; i < bad.length; i += 1) {
-      await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow(/sem NSU ou sem XML/);
+      await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow(/sem NSU ou sem XML/);
     }
   });
 
   test("lote que não é lista não é lido como vazio", async () => {
     const { transport } = fake([json(200, JSON.stringify({ StatusProcessamento: "DOCUMENTOS_LOCALIZADOS", LoteDFe: "estranho" }))]);
-    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow(AdnRejectionError);
+    await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow(AdnRejectionError);
   });
 
   test("a mensagem da recusa não carrega o corpo cru da resposta", async () => {
@@ -155,7 +155,7 @@ describe("distribuição do ADN para contribuintes", () => {
     };
     const { transport } = fake([json(400, JSON.stringify(raw)), json(422, "<html>SEGREDO-DO-CORPO</html>"), json(401, "SEGREDO-DO-CORPO")]);
     for (let i = 0; i < 3; i += 1) {
-      const error = await fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ }).catch((caught: unknown) => caught);
+      const error = await fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ }).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(AdnRejectionError);
       const message = (error as Error).message;
       expect(message).not.toContain("SEGREDO");
@@ -166,7 +166,7 @@ describe("distribuição do ADN para contribuintes", () => {
 
   test("recusa sem detalhe cita só o status HTTP", async () => {
     const { transport } = fake([json(422, "{}")]);
-    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow("(HTTP 422)");
+    await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow("(HTTP 422)");
   });
 
   test("descrições longas são cortadas, cada uma e o total", async () => {
@@ -177,41 +177,41 @@ describe("distribuição do ADN para contribuintes", () => {
       Erros: Array.from({ length: 10 }, (_, index) => ({ Codigo: `E${index}`, Descricao: "y".repeat(190) })),
     });
     const { transport } = fake([json(400, one), json(400, many)]);
-    const first = await fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ }).catch((caught: unknown) => caught);
+    const first = await fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ }).catch((caught: unknown) => caught);
     expect((first as Error).message.length).toBeLessThanOrEqual(260);
-    const second = await fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ }).catch((caught: unknown) => caught);
+    const second = await fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ }).catch((caught: unknown) => caught);
     expect((second as Error).message.length).toBeLessThanOrEqual(500);
   });
 
   test("404 que não é JSON (endereço errado, proxy) é recusa, não fim da leitura", async () => {
     const { transport } = fake([json(404, "<html>Not Found</html>")]);
-    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow(AdnRejectionError);
+    await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow(AdnRejectionError);
   });
 
   test("404 com rejeição declarada não é fim da leitura", async () => {
     const { transport } = fake([json(404, JSON.stringify({ StatusProcessamento: "REJEICAO", Erros: [{ Codigo: "E7", Descricao: "Empresa desconhecida" }] }))]);
-    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow("E7 — Empresa desconhecida");
+    await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow("E7 — Empresa desconhecida");
   });
 
   test("200 que não é JSON é instabilidade, não fim da leitura", async () => {
     const { transport } = fake([json(200, "<html>manutenção</html>")]);
-    await expect(fetchAdnBatch(transport, "producao", { fromNsu: 1, cnpj: CNPJ })).rejects.toThrow(NfseTransientError);
+    await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow(NfseTransientError);
   });
 
   test("NSU e CNPJ inválidos falham antes de chamar o transporte", async () => {
     const { calls, transport } = fake([]);
-    const invalid: { fromNsu: number; cnpj: string }[] = [
-      { fromNsu: -1, cnpj: CNPJ },
-      { fromNsu: 1.5, cnpj: CNPJ },
-      { fromNsu: Number.NaN, cnpj: CNPJ },
-      { fromNsu: Number.POSITIVE_INFINITY, cnpj: CNPJ },
-      { fromNsu: Number.MAX_SAFE_INTEGER + 1, cnpj: CNPJ },
-      { fromNsu: 1, cnpj: "" },
-      { fromNsu: 1, cnpj: "3300016700010" },
-      { fromNsu: 1, cnpj: "330001670001011" },
-      { fromNsu: 1, cnpj: "33.000.167/0001-01" },
-      { fromNsu: 1, cnpj: "3300016700010a" },
-      { fromNsu: 1, cnpj: "33000167000101&lote=false" },
+    const invalid: { afterNsu: number; cnpj: string }[] = [
+      { afterNsu: -1, cnpj: CNPJ },
+      { afterNsu: 1.5, cnpj: CNPJ },
+      { afterNsu: Number.NaN, cnpj: CNPJ },
+      { afterNsu: Number.POSITIVE_INFINITY, cnpj: CNPJ },
+      { afterNsu: Number.MAX_SAFE_INTEGER + 1, cnpj: CNPJ },
+      { afterNsu: 1, cnpj: "" },
+      { afterNsu: 1, cnpj: "3300016700010" },
+      { afterNsu: 1, cnpj: "330001670001011" },
+      { afterNsu: 1, cnpj: "33.000.167/0001-01" },
+      { afterNsu: 1, cnpj: "3300016700010a" },
+      { afterNsu: 1, cnpj: "33000167000101&lote=false" },
     ];
     for (const input of invalid) {
       await expect(fetchAdnBatch(transport, "producao", input)).rejects.toThrow(/NSU|CNPJ/);

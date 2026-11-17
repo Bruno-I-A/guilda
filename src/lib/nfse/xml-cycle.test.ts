@@ -62,18 +62,19 @@ function seal(key: VaultKey = vault) {
 }
 
 /**
- * ADN falso: para cada CNPJ, o primeiro pedido devolve um documento no NSU
- * pedido e o segundo, nenhum. Duas leituras (dois lotes) por empresa.
+ * ADN falso: para cada CNPJ, o primeiro pedido devolve o documento seguinte
+ * ao NSU do caminho (como o ADN de verdade) e o segundo, nenhum. Duas
+ * leituras (dois lotes) por empresa.
  */
 function fakeAdn() {
   const calls = new Map<string, number>();
   const transport: HttpTransport = async (req) => {
     const url = new URL(req.url);
-    const fromNsu = Number(url.pathname.split("/").pop());
+    const afterNsu = Number(url.pathname.split("/").pop());
     const cnpj = url.searchParams.get("cnpjConsulta") ?? "";
     const count = (calls.get(cnpj) ?? 0) + 1;
     calls.set(cnpj, count);
-    const body = testAdnBatchBody(count === 1 ? [{ nsu: fromNsu, xml: "<outro/>" }] : []);
+    const body = testAdnBatchBody(count === 1 ? [{ nsu: afterNsu + 1, xml: "<outro/>" }] : []);
     return { status: 200, body: Buffer.from(body), contentType: "application/json" };
   };
   return transport;

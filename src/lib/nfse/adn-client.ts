@@ -112,23 +112,30 @@ function readDocuments(items: unknown): AdnDocument[] {
 }
 
 /**
- * Pede UM lote da distribuição, a partir do NSU, e devolve os XML já
- * descompactados. Erro de rede e timeout chegam como `NfseTransientError`
- * (é o que o transporte real rejeita); 429, 408 e 5xx também.
+ * Pede UM lote da distribuição e devolve os XML já descompactados. Erro de
+ * rede e timeout chegam como `NfseTransientError` (é o que o transporte real
+ * rejeita); 429, 408 e 5xx também.
+ *
+ * `afterNsu` é o último NSU JÁ LIDO: o ADN devolve os documentos DEPOIS do
+ * número do caminho, como o ultNSU da NF-e (começa em 0). Verificado em
+ * produção por terceiros (bitize/bitmde, PR #20: com lote=false o ADN
+ * devolve o documento seguinte ao do caminho) e pela nota que a Guilda perdeu
+ * quando pedia "último + 1" (DA TERRA, nota 8 de 10/2026). Quem chama ainda
+ * descarta NSU repetido, para o caso de a API passar a incluir o número.
  */
 export async function fetchAdnBatch(
   transport: HttpTransport,
   environment: NfseEnvironmentName,
-  input: { fromNsu: number; cnpj: string },
+  input: { afterNsu: number; cnpj: string },
 ): Promise<AdnBatch> {
-  if (!Number.isSafeInteger(input.fromNsu) || input.fromNsu < 0) {
-    throw new Error("O NSU inicial da consulta precisa ser um inteiro não negativo.");
+  if (!Number.isSafeInteger(input.afterNsu) || input.afterNsu < 0) {
+    throw new Error("O NSU da consulta precisa ser um inteiro não negativo.");
   }
   if (!/^\d{14}$/.test(input.cnpj)) {
     throw new Error("O CNPJ da consulta precisa ter 14 dígitos, só números.");
   }
   const url =
-    `${ADN_CONTRIBUINTES[environment]}/DFe/${encodeURIComponent(String(input.fromNsu))}` +
+    `${ADN_CONTRIBUINTES[environment]}/DFe/${encodeURIComponent(String(input.afterNsu))}` +
     `?lote=true&cnpjConsulta=${encodeURIComponent(input.cnpj)}`;
 
   const res = await transport({ method: "GET", url });

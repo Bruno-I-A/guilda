@@ -49,9 +49,18 @@ function runMigrations() {
 const children = new Set();
 let shuttingDown = false;
 
+/**
+ * Ambiente dos processos que servem e trabalham: sem a URL do dono do banco.
+ * Ela só serve à migração (acima); o dono ignora o RLS, então um processo do
+ * app que a herdasse teria, a um vazamento de distância, a base inteira de
+ * todas as organizações (revisão de segurança de 2026-11-16).
+ */
+const runtimeEnv = { ...process.env };
+delete runtimeEnv.MIGRATION_DATABASE_URL;
+
 function start(name, args) {
   const child = spawn(process.execPath, args, {
-    env: process.env,
+    env: runtimeEnv,
     stdio: "inherit",
   });
   children.add(child);

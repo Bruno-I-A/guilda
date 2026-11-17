@@ -6,6 +6,7 @@ import * as schema from "@/db/schema";
 import {
   releaseOrphanedUserEmailInDb,
   retireUserIfOrphanedInDb,
+  revokeOrganizationSessionsInDb,
   type AuthDatabase,
 } from "@/lib/auth-orphan-db";
 import { applyMigrations } from "@/lib/nfse/testing/pglite";
@@ -136,6 +137,45 @@ describe("liberação de e-mail de usuário removido", () => {
         where: (account, { eq }) => eq(account.userId, "active-user"),
       }),
     ).toHaveLength(1);
+  });
+
+  test("remoção derruba só as sessões que apontam para a organização de onde a pessoa saiu", async () => {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 60_000);
+    await database.insert(schema.user).values({
+      id: "two-orgs-user",
+      name: "Pessoa com duas organizações",
+      email: originalEmail,
+    });
+    await database.insert(schema.organization).values([
+      { id: "org-office", name: "Escritório", slug: "escritorio", createdAt: now },
+      { id: "org-own", name: "Própria", slug: "propria", createdAt: now },
+    ]);
+    await database.insert(schema.member).values({
+      id: "member-own",
+      organizationId: "org-own",
+      userId: "two-orgs-user",
+      role: "owner",
+      createdAt: now,
+    });
+    await database.insert(schema.session).values([
+      { id: "s-office-1", token: "t-office-1", userId: "two-orgs-user", activeOrganizationId: "org-office", expiresAt, createdAt: now, updatedAt: now },
+      { id: "s-office-2", token: "t-office-2", userId: "two-orgs-user", activeOrganizationId: "org-office", expiresAt, createdAt: now, updatedAt: now },
+      { id: "s-own", token: "t-own", userId: "two-orgs-user", activeOrganizationId: "org-own", expiresAt, createdAt: now, updatedAt: now },
+      { id: "s-none", token: "t-none", userId: "two-orgs-user", activeOrganizationId: null, expiresAt, createdAt: now, updatedAt: now },
+    ]);
+
+    // Ainda tem a organização própria: a aposentadoria não age...
+    await expect(retireUserIfOrphanedInDb(authDatabase, "two-orgs-user")).resolves.toBe(false);
+    // ...então são as sessões do escritório que precisam cair.
+    await expect(
+      revokeOrganizationSessionsInDb(authDatabase, "two-orgs-user", "org-office"),
+    ).resolves.toBe(2);
+
+    const remaining = await database.query.session.findMany({
+      where: (session, { eq }) => eq(session.userId, "two-orgs-user"),
+    });
+    expect(remaining.map((session) => session.id).sort()).toEqual(["s-none", "s-own"]);
   });
 
   test("a remoção do último vínculo libera as credenciais pelo userId", async () => {

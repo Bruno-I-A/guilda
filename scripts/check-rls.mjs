@@ -43,6 +43,11 @@ const APPEND_ONLY_TABLES = [
   "company_flow_events",
   "nfse_invoice_events",
   "password_resets",
+  "client_nfse_invoice_events",
+  "support_messages",
+  "support_message_events",
+  "support_conversation_events",
+  "support_conversation_notes",
 ];
 
 const SPLIT_POLICY_TABLES = new Set([
@@ -53,6 +58,13 @@ const SPLIT_POLICY_TABLES = new Set([
   "office_fee_control_events",
   "company_flow_events",
   "nfse_invoice_events",
+  // Atendimento e notas dos clientes: mensagem, nota interna e evento são
+  // imutáveis, então a política é só de leitura e inserção (como acima).
+  "client_nfse_invoice_events",
+  "support_messages",
+  "support_message_events",
+  "support_conversation_events",
+  "support_conversation_notes",
 ]);
 
 let failures = 0;
@@ -122,21 +134,16 @@ console.log("\n== 3b. Ledger de XP imutavel ==");
 }
 
 console.log("\n== 4. Isolamento entre tenants (tudo com ROLLBACK) ==");
-const organizations = await client.query(`SELECT id FROM organization ORDER BY created_at`);
-let orgId;
-for (const candidate of organizations.rows) {
-  await client.query(`SELECT set_config('app.org_id', $1, false)`, [candidate.id]);
-  const profile = await client.query(`SELECT id FROM fiscal_client_profiles LIMIT 1`);
-  const member = await client.query(
-    `SELECT user_id FROM member WHERE organization_id = $1 LIMIT 1`,
-    [candidate.id],
-  );
-  if (profile.rowCount > 0 && member.rowCount > 0) {
-    orgId = candidate.id;
-    break;
-  }
-}
-if (!orgId) throw new Error("Nenhuma organização com ficha fiscal e integrante foi encontrada.");
+// Basta uma organização com integrante: a ficha fiscal, se faltar, nasce
+// dentro da transação abaixo (o banco novo do CI só tem o seed, sem fichas).
+const organizations = await client.query(
+  `SELECT o.id FROM organization AS o
+    WHERE EXISTS (SELECT 1 FROM member AS m WHERE m.organization_id = o.id)
+    ORDER BY o.created_at
+    LIMIT 1`,
+);
+const orgId = organizations.rows[0]?.id;
+if (!orgId) throw new Error("Nenhuma organização com integrante foi encontrada. Rode o seed.");
 const usr = await client.query(
   `SELECT user_id FROM member WHERE organization_id = $1 LIMIT 1`, [orgId]);
 const userId = usr.rows[0].user_id;
@@ -196,6 +203,20 @@ try {
     `viu ${clientesAlheios.rows[0].n} empresa(s)`);
 
   await client.query(`SELECT set_config('app.org_id', $1, true)`, [orgId]);
+  const existingProfile = await client.query(`SELECT id FROM fiscal_client_profiles LIMIT 1`);
+  if (existingProfile.rowCount === 0) {
+    // Tudo dentro do ROLLBACK desta auditoria: nada fica no banco.
+    await client.query(
+      `WITH company AS (
+         INSERT INTO clients (org_id, name, tax_regime)
+         VALUES ($1, 'Empresa da auditoria de RLS', 'simples')
+         RETURNING org_id, id
+       )
+       INSERT INTO fiscal_client_profiles (org_id, client_id)
+       SELECT org_id, id FROM company`,
+      [orgId],
+    );
+  }
   const fiscalMine = await client.query(`SELECT id FROM fiscal_client_profiles`);
   check("fichas fiscais visiveis no proprio tenant", fiscalMine.rowCount > 0,
     `viu ${fiscalMine.rowCount} ficha(s)`);
@@ -281,10 +302,10 @@ try {
   if (!officeProfile) {
     const createdOfficeProfile = await client.query(
       `INSERT INTO office_fee_profiles (
-         org_id, client_id, billing_method, charges_additional_installment,
+         org_id, client_id, charges_additional_installment,
          monthly_fee, created_by, updated_by
        )
-       SELECT p.org_id, p.client_id, 'asaas', false, 1, $1, $1
+       SELECT p.org_id, p.client_id, false, 1, $1, $1
          FROM fiscal_client_profiles AS p
         WHERE p.org_id = $2
         LIMIT 1

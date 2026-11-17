@@ -30,6 +30,53 @@ function deps(batches: Record<string, AdnBatch[]>, overrides: { keepSince?: Date
   };
 }
 
+/**
+ * ADN de mentira com a regra do de verdade: devolve os documentos DEPOIS do
+ * NSU do caminho, em lotes. `inclusive` simula a outra leitura possível do
+ * número (o próprio NSU vem junto), que a rotina também tem de aguentar.
+ */
+function fakeAdn(available: number[], options: { inclusive?: boolean; batchSize?: number } = {}) {
+  const batchSize = options.batchSize ?? 50;
+  return vi.fn<XmlRoutineDeps["fetchBatch"]>(async (_client, afterNsu) => {
+    const documents = available
+      .filter((nsu) => (options.inclusive ? nsu >= afterNsu : nsu > afterNsu))
+      .slice(0, batchSize)
+      .map((nsu) => ({ nsu, xml: testNfseXml() }));
+    return { documents, done: documents.length === 0 };
+  });
+}
+
+function storedNsus(saved: ClientProgress[]): number[] {
+  return saved.flatMap((progress) => progress.issued.map((note) => note.nsu));
+}
+
+describe("rotina de XML contra o ADN de verdade (NSU do caminho é o último lido)", () => {
+  test("a nota logo depois do cursor entra (caso DA TERRA, nota 8 de outubro)", async () => {
+    // Uma rodada parou no NSU 7 (nota 7). Depois saem as notas 8 a 11.
+    const { saved, deps: d } = deps({});
+    const fetchBatch = fakeAdn([8, 9, 10, 11]);
+    await runXmlRoutine([{ clientId: "a", cnpj: PRESTADOR, lastNsu: 7 }], { ...d, fetchBatch });
+    expect(storedNsus(saved)).toEqual([8, 9, 10, 11]);
+    expect(fetchBatch.mock.calls[0][1]).toBe(7);
+  });
+
+  test("nada se perde entre um lote e outro da mesma rodada", async () => {
+    const { saved, deps: d } = deps({});
+    const fetchBatch = fakeAdn([1, 2, 3, 4, 5, 6, 7], { batchSize: 3 });
+    await runXmlRoutine([{ clientId: "a", cnpj: PRESTADOR, lastNsu: 0 }], { ...d, fetchBatch });
+    expect(storedNsus(saved)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(saved.at(-1)).toMatchObject({ lastNsu: 7, finished: true });
+  });
+
+  test("se a API incluir o próprio NSU, nada se perde nem se repete", async () => {
+    const { saved, deps: d } = deps({});
+    const fetchBatch = fakeAdn([3, 4, 5, 6, 7], { inclusive: true, batchSize: 2 });
+    await runXmlRoutine([{ clientId: "a", cnpj: PRESTADOR, lastNsu: 3 }], { ...d, fetchBatch });
+    expect(storedNsus(saved)).toEqual([4, 5, 6, 7]);
+    expect(saved.at(-1)).toMatchObject({ lastNsu: 7, finished: true });
+  });
+});
+
 describe("rodada da rotina de XML", () => {
   test("guarda as prestadas e os cancelamentos, lote a lote, e encerra no lote vazio", async () => {
     const { saved, deps: d } = deps({
@@ -47,7 +94,8 @@ describe("rodada da rotina de XML", () => {
     });
     const results = await runXmlRoutine([{ clientId: "a", cnpj: PRESTADOR, lastNsu: 0 }], d);
     expect(results).toEqual([{ clientId: "a", ok: true }]);
-    expect(d.fetchBatch.mock.calls.map((call) => call[1])).toEqual([1, 3, 4]);
+    // Pede sempre o último NSU já lido: o ADN devolve o que vem depois dele.
+    expect(d.fetchBatch.mock.calls.map((call) => call[1])).toEqual([0, 2, 3]);
     expect(saved.map((p) => [p.issued.length, p.cancellations.length, p.lastNsu, p.finished])).toEqual([
       [1, 0, 2, false],
       [0, 1, 3, false],
@@ -87,7 +135,7 @@ describe("rodada da rotina de XML", () => {
       { keepSince: new Date("2026-11-01T00:00:00-03:00") },
     );
     await runXmlRoutine([{ clientId: "a", cnpj: PRESTADOR, lastNsu: 40, historyFromNsu: 0 }], d);
-    expect(d.fetchBatch.mock.calls.map((call) => call[1])).toEqual([1, 2]);
+    expect(d.fetchBatch.mock.calls.map((call) => call[1])).toEqual([0, 1]);
     expect(saved.map((p) => [p.issued.length, p.lastNsu, p.finished, p.history])).toEqual([
       [1, 1, false, true],
       [0, 1, true, true],
@@ -110,10 +158,13 @@ describe("rodada da rotina de XML", () => {
     expect(errors).toEqual([{ clientId: "a", message: "Sistema Nacional não respondeu." }]);
   });
 
-  test("lote que não avança o NSU é erro, não laço infinito", async () => {
-    const { errors, deps: d } = deps({ a: [{ documents: [{ nsu: 5, xml: "<x/>" }], done: false }] });
-    await runXmlRoutine([{ clientId: "a", cnpj: PRESTADOR, lastNsu: 5 }], d);
-    expect(errors[0].message).toMatch(/NSU/);
+  test("lote só com NSU já lido é o fim da leitura, não laço infinito nem erro", async () => {
+    // É o que viria se a API passasse a incluir o próprio número do caminho.
+    const { saved, errors, deps: d } = deps({ a: [{ documents: [{ nsu: 5, xml: "<x/>" }], done: false }] });
+    const results = await runXmlRoutine([{ clientId: "a", cnpj: PRESTADOR, lastNsu: 5 }], d);
+    expect(results).toEqual([{ clientId: "a", ok: true }]);
+    expect(errors).toEqual([]);
+    expect(saved).toEqual([{ clientId: "a", issued: [], cancellations: [], lastNsu: 5, finished: true }]);
   });
 
   test("lote sem documentos mas sem 'done' é tratado como fim, não como erro", async () => {
@@ -130,8 +181,8 @@ describe("rodada da rotina de XML", () => {
     const endless = {
       ...d,
       maxBatchesPerClient: 2,
-      fetchBatch: vi.fn(async (_client: XmlRoutineClient, fromNsu: number): Promise<AdnBatch> => ({
-        documents: [{ nsu: fromNsu, xml: "<outro/>" }],
+      fetchBatch: vi.fn(async (_client: XmlRoutineClient, afterNsu: number): Promise<AdnBatch> => ({
+        documents: [{ nsu: afterNsu + 1, xml: "<outro/>" }],
         done: false,
       })),
     };

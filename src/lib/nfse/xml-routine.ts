@@ -44,7 +44,8 @@ export interface ClientProgress {
 }
 
 export interface XmlRoutineDeps {
-  fetchBatch(client: XmlRoutineClient, fromNsu: number): Promise<AdnBatch>;
+  /** Lote com os documentos DEPOIS de `afterNsu` (ver `fetchAdnBatch`). */
+  fetchBatch(client: XmlRoutineClient, afterNsu: number): Promise<AdnBatch>;
   saveProgress(progress: ClientProgress): Promise<void>;
   saveError(clientId: string, message: string): Promise<void>;
   /** "Guardar notas a partir de": nota emitida antes fica de fora. */
@@ -75,20 +76,23 @@ async function syncClient(client: XmlRoutineClient, deps: XmlRoutineDeps): Promi
   const keepSince = history ? null : deps.keepSince;
   let lastNsu = history ? client.historyFromNsu! : client.lastNsu;
   for (let round = 0; round < (deps.maxBatchesPerClient ?? DEFAULT_MAX_BATCHES); round++) {
-    const batch = await deps.fetchBatch(client, lastNsu + 1);
-    // Lote sem documentos é o fim, mesmo que não venha marcado: Math.max de
-    // lista vazia daria -Infinity.
-    if (batch.done || batch.documents.length === 0) {
+    // Pede o ÚLTIMO NSU já lido, não o seguinte: o ADN devolve o que vem
+    // depois do número do caminho. Pedir `lastNsu + 1` perdia o documento
+    // `lastNsu + 1` toda vez que ele existia (a nota 8 de outubro da DA TERRA,
+    // 2026-11-17). Se um dia a API incluir o próprio número, o filtro abaixo
+    // descarta o repetido: os dois jeitos ficam sem perda.
+    const batch = await deps.fetchBatch(client, lastNsu);
+    const fresh = batch.documents.filter((doc) => doc.nsu > lastNsu);
+    // Lote sem documento novo é o fim, mesmo que não venha marcado: Math.max
+    // de lista vazia daria -Infinity.
+    if (batch.done || fresh.length === 0) {
       await deps.saveProgress({ clientId: client.clientId, issued: [], cancellations: [], lastNsu, finished: true, ...(history ? { history } : {}) });
       return;
     }
-    const highest = Math.max(...batch.documents.map((doc) => doc.nsu));
-    if (highest <= lastNsu) {
-      throw new Error(`O Sistema Nacional devolveu o NSU ${highest} de novo; leitura interrompida.`);
-    }
+    const highest = Math.max(...fresh.map((doc) => doc.nsu));
     const issued: IssuedToStore[] = [];
     const cancellations: CancellationToStore[] = [];
-    for (const doc of batch.documents) {
+    for (const doc of fresh) {
       const reading = readAdnDocument(doc.xml, client.cnpj);
       if (reading.kind === "issued" && (!keepSince || reading.issuedAt >= keepSince)) {
         issued.push({

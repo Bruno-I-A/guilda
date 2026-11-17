@@ -9,6 +9,14 @@ lê o ADN por NSU com o certificado de cada empresa e guarda os XML compactados
 em `nfse_issued_notes`, inclusive os cancelamentos. Esta é uma exceção consciente
 à regra das notas de honorário, cujos XML continuam sem armazenamento.
 
+**NSU do caminho é o último já lido (2026-11-17)**: o ADN devolve os documentos
+DEPOIS do número de `GET /DFe/{NSU}`, como o ultNSU da NF-e. A rotina pedia
+"último + 1" e perdia o documento seguinte ao cursor no começo de cada leitura e
+em cada troca de lote (DA TERRA, nota 8 de 10/2026). `syncClient` pede o último
+lido e descarta NSU repetido; a migração 0100 zerou os cursores para reler tudo.
+Teste de rotina simula a API pela regra real (`fakeAdn` em `xml-routine.test.ts`),
+não com lotes prontos que ignoram o número pedido.
+
 O mês é o da emissão em Brasília. O controle de 09/2026 baixa as emitidas de
 01/09 a 30/09. O download `/api/nfse/xml` lê o banco com sessão e permissão do
 Fiscal; não passa pelo serviço fiscal. Certificados e senhas nunca chegam em
@@ -211,6 +219,27 @@ mesmo caminho do cadastro direto, que leva a `/change-password` no próximo logi
   senha), só inserção: o `guilda_app` não tem UPDATE nem DELETE.
 - Membros mostra "Ainda não trocou a senha temporária" para o admin; o login
   diz "Esqueceu a senha? Peça a um admin da Guilda para redefinir."
+
+## Revisão de segurança (2026-11-16)
+
+Falha achada e corrigida: quem criava uma organização própria antes de ser
+removido do escritório continuava com sessão e lia missões e ranking. As travas
+que fecharam isso, e que não devem ser desfeitas:
+
+- **Organização não se cria pelo app** (`allowUserToCreateOrganization: false`
+  em `auth.ts`). A primeira nasce pelo `scripts/bootstrap-owner.ts`. A tela
+  `/onboarding` só explica e oferece sair; não tem mais formulário.
+- **Vínculo conferido em `requireOrgSession()`**, não só no layout `(app)`: na
+  navegação pelo app o Next renderiza só a página que mudou e o layout não roda
+  de novo. Página nova que leia dado da organização passa por ele.
+- **Remover alguém derruba as sessões dessa pessoa naquela organização**
+  (`revokeOrganizationSessions`, no `afterRemoveMember`).
+- `/atendimento` entrou no matcher do `proxy.ts` (estava sem CSP).
+- Os processos do app, dos workers e do serviço fiscal não herdam
+  `MIGRATION_DATABASE_URL` (`start-production.mjs`); só a migração a usa.
+- A função `reset_org_operational_data_for_launch` foi apagada (migração 0099).
+- `npm run check:rls` voltou a passar. Tabela nova só de inserção entra nas
+  listas `APPEND_ONLY_TABLES` e `SPLIT_POLICY_TABLES` do script.
 
 ## Desfazer: janela de arrependimento (decisão de 2026-09-03)
 

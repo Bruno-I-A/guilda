@@ -694,6 +694,20 @@
       "when": 1794419493474,
       "tag": "0098_password-resets",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1794881391350,
+      "tag": "0099_drop-launch-reset",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1794923042318,
+      "tag": "0100_reler-xml-desde-o-inicio",
+      "breakpoints": true
     }
   ]
 }

@@ -37,6 +37,15 @@ export async function requireOrgSession() {
   if (!orgId) {
     redirect("/onboarding");
   }
+  // O vínculo é conferido AQUI, e não só no layout (app): na navegação pelo
+  // app o Next renderiza apenas a página que mudou, e o layout não roda de
+  // novo. Sem isto, quem foi removido e ainda tinha sessão continuava lendo
+  // as páginas que não perguntam o papel (/tasks, /leaderboard...).
+  // Revisão de segurança de 2026-11-16, medida no `next start`.
+  const member = await getActiveMember();
+  if (!member) {
+    redirect("/onboarding");
+  }
   return { ...session, orgId };
 }
 
