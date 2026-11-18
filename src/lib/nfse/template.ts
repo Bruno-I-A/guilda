@@ -6,6 +6,46 @@ const digits = (length: number, label: string) =>
 const percent = (label: string) =>
   z.string().regex(/^(0|0\.[0-9]{2}|[1-9][0-9]?(\.[0-9]{2})?)$/, `${label} no formato 6.00.`);
 
+/** Texto do leiaute: sem espaço nas pontas; vazio vira ausente nos opcionais. */
+const text = (max: number, label: string) => z.string().trim().min(1, `Informe ${label}.`).max(max, `${label} com até ${max} caracteres.`);
+const optionalText = (max: number, label: string) =>
+  z.preprocess((value) => (typeof value === "string" && value.trim() === "" ? undefined : value), text(max, label).optional());
+
+/**
+ * A obra da nota (TCInfoObra, E0370): identificada pelo CNO/CEI, pelo CIB ou
+ * pelo endereço da obra, com a inscrição imobiliária opcional. Varia de nota
+ * para nota, então só existe no modelo congelado no pedido.
+ */
+export const nfseConstructionSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("cno"),
+    code: z
+      .string()
+      .transform((value) => value.replace(/\D/g, ""))
+      .pipe(z.string().min(1, "Informe o número do CNO ou do CEI da obra.").max(30, "CNO ou CEI com até 30 dígitos.")),
+    propertyRegistration: optionalText(30, "a inscrição imobiliária"),
+  }),
+  z.object({
+    kind: z.literal("cib"),
+    code: z.string().trim().length(8, "O CIB tem 8 caracteres."),
+    propertyRegistration: optionalText(30, "a inscrição imobiliária"),
+  }),
+  z.object({
+    kind: z.literal("address"),
+    zipCode: z
+      .string()
+      .transform((value) => value.replace(/\D/g, ""))
+      .pipe(z.string().length(8, "O CEP da obra tem 8 dígitos.")),
+    street: text(255, "a rua da obra"),
+    number: text(60, "o número da obra"),
+    complement: optionalText(156, "o complemento"),
+    district: text(60, "o bairro da obra"),
+    propertyRegistration: optionalText(30, "a inscrição imobiliária"),
+  }),
+]);
+
+export type NfseConstruction = z.infer<typeof nfseConstructionSchema>;
+
 /**
  * O modelo fiscal de quem emite: tudo que não muda de uma nota para outra. Os
  * campos espelham a DPS do leiaute nacional v1.01. Serve ao escritório (nota
@@ -77,6 +117,8 @@ export const nfseIssuerTemplateSchema = z.object({
         .optional(),
     })
     .optional(),
+  /** A obra desta nota (serviços de obra, E0370). Só no modelo congelado no pedido. */
+  construction: nfseConstructionSchema.optional(),
 });
 
 /** O modelo da nota de honorário do escritório: o fiscal mais as descrições. */
@@ -95,6 +137,17 @@ export function nfseServiceRequiresOperationType(nationalTaxCode: string): boole
 }
 
 export const NFSE_OPERATION_TYPE_REQUIRED = "Este serviço exige o tipo de operação: informe nos dados fiscais da empresa, em Reforma tributária.";
+
+/** Subitens em que o Sistema Nacional exige o grupo da obra (E0370, lista da própria mensagem). */
+const CONSTRUCTION_SERVICES = new Set([
+  "070201", "070202", "070401", "070501", "070502", "070601", "070602", "070701", "070801", "071701", "071901", "141403", "141404",
+]);
+
+export function nfseServiceRequiresConstruction(nationalTaxCode: string): boolean {
+  return CONSTRUCTION_SERVICES.has(nationalTaxCode);
+}
+
+export const NFSE_CONSTRUCTION_REQUIRED = "Este serviço é de obra: informe o CNO (ou CEI), o CIB ou o endereço da obra.";
 
 /**
  * Regras do leiaute que o tipo sozinho não pega e que o Sistema Nacional

@@ -16,9 +16,11 @@ import { clientNfseMonthDescription, type ClientNfseReference } from "@/domain/c
 import type { NfseRetentions } from "@/domain/nfse-retentions";
 import type { ClientNfseIssuerView } from "@/lib/client-nfse/loaders";
 import { formatBRLCurrency } from "@/lib/currency";
+import { nfseServiceRequiresConstruction, type NfseConstruction } from "@/lib/nfse/template";
 import { cn } from "@/lib/utils";
 
 import { emitNote, lookupTakerCnpj } from "./client-nfse-actions";
+import { ConstructionFields, constructionForm, constructionSummary, readConstruction } from "./client-nfse-construction";
 import { useIssuerCustomers } from "./client-nfse-customers";
 import { formToRetentions, RetentionFields, retentionForm, retentionProblem, RetentionSummary, type RetentionForm } from "./client-nfse-retentions";
 import { Choice, Field } from "./nfse-settings-dialog";
@@ -38,6 +40,8 @@ export interface EmitPrefill {
   description: string | null;
   /** As retenções do tomador (cliente das notas do Portal ainda não tem). */
   retentions?: NfseRetentions | null;
+  /** A obra da nota repetida ("Nova igual" de um serviço de obra). */
+  construction?: NfseConstruction | null;
 }
 
 function addressForm(address: AddressValue | null): Address {
@@ -98,6 +102,8 @@ export function ClientNfseEmitDialog({
     nbsCode: issuer.template?.service.nbsCode ?? "",
   });
   const [confirming, setConfirming] = useState(false);
+  // Serviço de obra (E0370): a obra é desta nota; "Nova igual" traz a da nota repetida.
+  const [construction, setConstruction] = useState(() => constructionForm(prefill?.construction));
   // Retenções: vêm do tomador; ajustar aqui vale para esta nota e, marcado, vira o padrão dele.
   const [retention, setRetention] = useState<RetentionForm>(() => retentionForm(prefill?.retentions));
   const [retentionOpen, setRetentionOpen] = useState(Boolean(prefill?.retentions));
@@ -167,7 +173,9 @@ export function ClientNfseEmitDialog({
   const requiresAddress = Boolean(issuer.template?.ibsCbs);
   const addressReady = !requiresAddress || Boolean(address.street.trim() && address.district.trim() && address.city.trim() && address.state.trim() && address.zipCode.replace(/\D/g, "").length === 8);
   const retentionError = retentionProblem(retention);
-  const ready = documentOk && name.trim() && amount && Number(amount) > 0 && text.trim() && addressReady && !retentionError;
+  const serviceCode = ownService ? service.nationalTaxCode.trim() : (issuer.template?.service.nationalTaxCode ?? "");
+  const constructionRead = nfseServiceRequiresConstruction(serviceCode) ? readConstruction(construction) : null;
+  const ready = documentOk && name.trim() && amount && Number(amount) > 0 && text.trim() && addressReady && !retentionError && (constructionRead === null || constructionRead.ok);
 
   function emit() {
     startSending(async () => {
@@ -196,6 +204,7 @@ export function ClientNfseEmitDialog({
         service: ownService
           ? { nationalTaxCode: service.nationalTaxCode.trim(), municipalTaxCode: service.municipalTaxCode.trim() || undefined, nbsCode: service.nbsCode.trim() || undefined }
           : null,
+        construction: constructionRead?.ok ? constructionRead.value : null,
         retentions: formToRetentions(retention),
         rememberRetentions,
       });
@@ -240,6 +249,12 @@ export function ClientNfseEmitDialog({
             <span>{finalText}</span>
             <span className="hud-label">Valor</span>
             <span className="font-mono text-lg tabular-nums">{formatBRLCurrency(amount)}</span>
+            {constructionRead?.ok ? (
+              <>
+                <span className="hud-label">Obra</span>
+                <span>{constructionSummary(constructionRead.value)}</span>
+              </>
+            ) : null}
             {formToRetentions(retention) ? <RetentionSummary form={retention} amount={amount} /> : <span className="text-xs text-muted-foreground">Sem retenções.</span>}
             <p className="border-t pt-2 text-xs text-muted-foreground">Ao confirmar, a nota será enviada ao Sistema Nacional. Depois de emitida, alterações exigem cancelamento.</p>
           </div>
@@ -322,6 +337,8 @@ export function ClientNfseEmitDialog({
                 </Field>
               </div>
             ) : null}
+            {constructionRead ? <ConstructionFields id={`${id}-obra`} form={construction} onChange={setConstruction} /> : null}
+            {constructionRead && !constructionRead.ok ? <p role="status" className="text-sm text-warning">{constructionRead.error}</p> : null}
             <Button type="button" variant="ghost" size="sm" className="justify-self-start" aria-expanded={retentionOpen} onClick={() => setRetentionOpen((value) => !value)}>
               <ChevronDown className={cn("transition-transform", retentionOpen && "rotate-180")} aria-hidden /> Retenções{formToRetentions(retention) ? " · esta nota retém" : ""}
             </Button>

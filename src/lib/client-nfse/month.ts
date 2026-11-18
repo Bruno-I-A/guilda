@@ -21,7 +21,15 @@ import {
 import { nfseRetentionGroups, type NfseRetentions } from "@/domain/nfse-retentions";
 import { err, type ActionResult } from "@/lib/action-context";
 import { ibgeCityCode } from "@/lib/nfse/municipios";
-import { NFSE_OPERATION_TYPE_REQUIRED, nfseIssuerTemplateRulesSchema, nfseServiceRequiresOperationType, parseNfseIssuerTemplate, type NfseIssuerTemplate } from "@/lib/nfse/template";
+import {
+  NFSE_CONSTRUCTION_REQUIRED,
+  NFSE_OPERATION_TYPE_REQUIRED,
+  nfseIssuerTemplateRulesSchema,
+  nfseServiceRequiresConstruction,
+  nfseServiceRequiresOperationType,
+  parseNfseIssuerTemplate,
+  type NfseIssuerTemplate,
+} from "@/lib/nfse/template";
 
 import type { ServiceOverride } from "./registry";
 
@@ -505,6 +513,10 @@ export async function requeueClientNfseInvoice(tx: OrgTx, input: Actor & { invoi
   }
   if (template.ibsCbs && !template.ibsCbs.operationType && nfseServiceRequiresOperationType(template.service.nationalTaxCode)) {
     return err(NFSE_OPERATION_TYPE_REQUIRED);
+  }
+  // Sem a obra, o Sistema Nacional recusaria de novo (E0370): a obra se informa em "Corrigir serviço".
+  if (nfseServiceRequiresConstruction(template.service.nationalTaxCode) && !template.construction) {
+    return err(NFSE_CONSTRUCTION_REQUIRED);
   }
   let renumber: { dpsSeries: string; dpsNumber: number; dpsId: string } | null = null;
   if (issuer && issuer.dpsSeries !== invoice.dpsSeries) {

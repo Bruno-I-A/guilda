@@ -413,6 +413,13 @@ que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
   fosse a de novembro (nada foi emitido; cancelar cancelaria a verdadeira). `verify.ts`
   compara também a data com o pedido; `repairAdoptedClientNfse` devolve as adotadas
   a "com erro" uma vez ao subir o serviço fiscal, sem reemitir sozinho.
+- **Obra (2026-11-18, E0370)**: os subitens de obra da LC 116 que o Sistema Nacional lista
+  na mensagem (07.02.01 … 14.14.04, `nfseServiceRequiresConstruction`) exigem o grupo
+  `<obra>` na DPS: CNO/CEI, CIB ou endereço da obra, com a inscrição imobiliária opcional.
+  A obra muda de nota para nota, então fica só no modelo congelado no pedido
+  (`template.construction`), nunca nos dados fiscais da empresa. Informa-se em "Nova nota"
+  (aparece quando o serviço é de obra), em "Corrigir serviço" da nota com erro, e "Nova
+  igual" repete a da nota anterior. Sem obra, emitir e "Tentar de novo" recusam na Guilda.
 - **Descartar nota com erro (2026-11-04, pedido do Bruno)**: `discardClientNfseInvoice`
   tira da lista a nota que não deve sair (`discarded_at`, status `cancelled` sem chave).
   Não é cancelamento fiscal: só vale para nota com erro. A nota padrão que já gerou

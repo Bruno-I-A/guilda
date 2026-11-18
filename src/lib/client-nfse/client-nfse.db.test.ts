@@ -488,6 +488,61 @@ test("nota com erro: corrigir o serviço muda o pedido, opcionalmente a empresa,
   await withOrgTx(ORG, (tx) => tx.update(issuers).set({ template: before.template }).where(eq(issuers.id, before.id)));
 }, 60_000);
 
+test("obra (E0370): serviço de obra exige a obra na emissão e na correção, e ela fica só na nota", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const { emitClientNfseNote, retryClientNfseWithService } = await import("./emit");
+  const { NFSE_CONSTRUCTION_REQUIRED } = await import("@/lib/nfse/template");
+  const invoices = schema.clientNfseInvoices;
+  const issuers = schema.clientNfseIssuers;
+  const [issuer] = await withOrgTx(ORG, (tx) => tx.select().from(issuers).where(eq(issuers.clientId, MERCADO)));
+  const cno = { kind: "cno" as const, code: "900191153471" };
+  const emit = (requestId: string, construction: typeof cno | null) =>
+    withOrgTx(ORG, (tx) =>
+      emitClientNfseNote(tx, {
+        ...ACTOR,
+        issuerId: issuer.id,
+        requestId,
+        taker: { document: "11222333000181", name: "Oficina Nova", address: null },
+        amount: "500.00",
+        description: "EXECUÇÃO DE OBRA",
+        reference: "previous",
+        service: { nationalTaxCode: "070201" },
+        construction,
+        retentions: null,
+        rememberRetentions: false,
+        period: { year: 2026, month: 11 },
+        now: NOW,
+      }),
+    );
+
+  expect(await emit("00000000-0000-4000-8000-0000000000b0", null)).toEqual({ ok: false, error: NFSE_CONSTRUCTION_REQUIRED });
+  const done = await emit("00000000-0000-4000-8000-0000000000b1", cno);
+  if (!done.ok) throw new Error(done.error);
+  const [row] = await withOrgTx(ORG, (tx) => tx.select().from(invoices).where(eq(invoices.id, done.data!.invoiceId)));
+  expect(row.template).toMatchObject({ service: { nationalTaxCode: "070201" }, construction: cno });
+  const [stored] = await withOrgTx(ORG, (tx) => tx.select().from(issuers).where(eq(issuers.id, issuer.id)));
+  expect((stored.template as { construction?: unknown }).construction).toBeUndefined();
+
+  const fail = () => withOrgTx(ORG, (tx) => tx.update(invoices).set({ status: "failed", lastError: "E0370" }).where(eq(invoices.id, row.id)));
+  const retry = (nationalTaxCode: string, construction?: { kind: "cib"; code: string } | null) =>
+    withOrgTx(ORG, (tx) => retryClientNfseWithService(tx, { ...ACTOR, invoiceId: row.id, service: { nationalTaxCode }, construction, applyToIssuer: false }));
+  const templateOf = async () => (await withOrgTx(ORG, (tx) => tx.select().from(invoices).where(eq(invoices.id, row.id))))[0].template as { construction?: unknown };
+
+  // Sem obra no pedido de correção: mantém a da nota.
+  await fail();
+  expect(await retry("070202")).toEqual({ ok: true });
+  expect((await templateOf()).construction).toEqual(cno);
+  // Serviço que não é de obra: a obra sai da nota.
+  await fail();
+  expect(await retry("171901")).toEqual({ ok: true });
+  expect((await templateOf()).construction).toBeUndefined();
+  // De volta a obra sem informar a obra: recusa e a nota continua com erro.
+  await fail();
+  expect(await retry("070202", null)).toEqual({ ok: false, error: NFSE_CONSTRUCTION_REQUIRED });
+  expect(await retry("070202", { kind: "cib", code: "ABC12345" })).toEqual({ ok: true });
+  expect((await templateOf()).construction).toEqual({ kind: "cib", code: "ABC12345" });
+}, 60_000);
+
 test("reparo: nota antiga adotada volta para com erro; a emitida depois do pedido fica", async () => {
   const { withOrgTx } = await import("@/db/org-tx");
   const { gzipSync } = await import("node:zlib");
