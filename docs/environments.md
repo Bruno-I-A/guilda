@@ -78,6 +78,17 @@ cofre continuam exclusivos de cada ambiente da Guilda.
 | `WHATSAPP_GRAPH_API_VERSION` | versão fixada da Graph API (atualmente `v24.0`) |
 | `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | token aleatório definido por nós; nunca access token de número |
 | `WHATSAPP_TOKEN_KEY` | AES-256 exclusiva do ambiente; perder exige reconectar os números |
+| `ANTHROPIC_API_KEY` | chave usada pela triagem em sombra; nunca entra no banco nem no repositório |
+| `ANTHROPIC_MODEL` | modelo da sugestão interna; o padrão atual é `claude-sonnet-5` |
+| `SUPPORT_AI_MODE` | `shadow` para produzir somente sugestões internas; vazio ou `off` desliga a leitura |
+| `SUPPORT_TRIAGE_DEBOUNCE_SECONDS` | espera para agrupar mensagens seguidas do cliente; recomendado: `20` |
+
+No piloto de produção, `SUPPORT_AI_MODE` aceita somente `shadow` ou fica
+desligado. A triagem não insere nada em `support_outbox`, e o worker de saída
+tem uma segunda trava que recusa qualquer mensagem com ator `ai` ou origem
+`guilda_ai` antes de chamar a API da Meta. Liberar resposta automática exige
+uma alteração explícita de código e testes; não existe variável de ambiente que
+ative isso acidentalmente.
 
 Ao assinar cada WABA, a Guilda envia `override_callback_uri` com a sua própria
 rota `/api/atendimento/meta/webhook` e o `WHATSAPP_WEBHOOK_VERIFY_TOKEN`. Assim,

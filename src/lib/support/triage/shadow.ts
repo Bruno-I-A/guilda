@@ -10,6 +10,7 @@ import { getAiConfig } from "@/lib/ai/config";
 
 import { classificarMensagem, type OpcoesClassificacao, type ResultadoClassificacao } from "./classificacao";
 import type { MensagemHistoricoClassificacao } from "./contexto";
+import { retrieveApprovedKnowledge } from "./knowledge";
 
 /**
  * Modo sombra da triagem (decisão de 2026-11-09): a IA lê cada conversa nova e
@@ -26,7 +27,7 @@ export function supportAiMode(): SupportAiMode {
 }
 
 /** Bump quando o prompt mudar de verdade: a leitura antiga fica marcada com a versão dela. */
-export const TRIAGE_PROMPT_VERSION = "scharff-2026-08-04";
+export const TRIAGE_PROMPT_VERSION = "guilda-2026-11-18-v2";
 
 /** Espera o cliente terminar de escrever: várias mensagens seguidas viram um turno só. */
 function debounceMs(): number {
@@ -103,12 +104,18 @@ async function triageOne(orgId: string, candidate: Candidate, options: OpcoesCla
       .values({ orgId, conversationId: candidate.conversationId, triggerMessageId: candidate.messageId, status: "running", model: options.modelo, promptVersion: TRIAGE_PROMPT_VERSION })
       .onConflictDoNothing()
       .returning({ id: runs.id });
-    return run ? { runId: run.id, input: await loadInput(tx, orgId, candidate) } : null;
+    if (!run) return null;
+    const input = await loadInput(tx, orgId, candidate);
+    const knowledge = await retrieveApprovedKnowledge(tx, orgId, input.current);
+    return { runId: run.id, input, knowledge };
   });
   if (!claimed) return false;
 
   const started = Date.now();
-  const result = await classify(claimed.input.current, claimed.input.history, options);
+  const result = await classify(claimed.input.current, claimed.input.history, {
+    ...options,
+    knowledge: claimed.knowledge,
+  });
   const fallback = result.classificacao.fallback?.motivo ?? null;
   await withOrgTx(orgId, (tx) =>
     tx
@@ -122,6 +129,7 @@ async function triageOne(orgId: string, candidate: Candidate, options: OpcoesCla
           summary: result.classificacao.resumo,
           question: result.perguntaEsclarecimento,
           directAnswer: result.respostaDireta,
+          sources: result.fontesConhecimento,
         },
         fallbackReason: fallback,
         model: result.modelo,
@@ -163,6 +171,7 @@ export interface SupportAiSuggestion {
   summary: string;
   question: string | null;
   directAnswer: string | null;
+  sources: Array<{ id: string; title: string; version: number }>;
   fallbackReason: string | null;
   at: string;
 }
@@ -186,6 +195,17 @@ export async function loadLatestSuggestions(tx: OrgTx, orgId: string, conversati
       summary: typeof result.summary === "string" ? result.summary : "",
       question: typeof result.question === "string" ? result.question : null,
       directAnswer: typeof result.directAnswer === "string" ? result.directAnswer : null,
+      sources: Array.isArray(result.sources)
+        ? result.sources.flatMap((source) => {
+            if (!source || typeof source !== "object") return [];
+            const candidate = source as Record<string, unknown>;
+            return typeof candidate.id === "string" &&
+              typeof candidate.title === "string" &&
+              typeof candidate.version === "number"
+              ? [{ id: candidate.id, title: candidate.title, version: candidate.version }]
+              : [];
+          })
+        : [],
       fallbackReason: row.fallbackReason,
       at: (row.finishedAt ?? new Date()).toISOString(),
     });

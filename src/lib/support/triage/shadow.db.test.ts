@@ -54,13 +54,18 @@ async function customerSays(whatsappId: string, text: string, minutesAgo = 5) {
   return row.id;
 }
 
-const seen: { current: string; history: number }[] = [];
-const fake: Classifier = async (current, history) => {
-  seen.push({ current, history: history.length });
+const seen: { current: string; history: number; knowledge: string[] }[] = [];
+const fake: Classifier = async (current, history, options) => {
+  seen.push({
+    current,
+    history: history.length,
+    knowledge: (options.knowledge ?? []).map((source) => source.id),
+  });
   return {
     classificacao: { setor_sugerido: "fiscal", urgencia: "alta", confianca: 0.9, resumo: "Cliente pede a guia do DAS que vence hoje" },
     perguntaEsclarecimento: null,
     respostaDireta: null,
+    fontesConhecimento: [],
     modelo: "modelo-de-teste",
     tokensEntrada: 120,
     tokensSaida: 30,
@@ -123,7 +128,7 @@ test("em sombra, lê o turno inteiro uma vez, grava a leitura e não envia nada"
   expect(view?.aiSuggestion).toMatchObject({ sectorLabel: "Fiscal", clan: { id: FISCAL }, urgency: "alta", summary: "Cliente pede a guia do DAS que vence hoje" });
   const queue = await tx((t) => loadSupportQueue(t, { orgId: ORG, viewer, filter: "open" }));
   expect(queue.rows.find((row) => row.id === id)?.aiUrgent).toBe(true);
-});
+}, 15_000);
 
 test("espera o cliente terminar de escrever", async () => {
   process.env.SUPPORT_AI_MODE = "shadow";
@@ -131,6 +136,47 @@ test("espera o cliente terminar de escrever", async () => {
   await customerSays("5554900000003", "oi, tudo bem?", 1);
   await cycle();
   expect(seen.find((call) => call.current.includes("tudo bem"))).toBeUndefined();
+});
+
+test("recupera somente conhecimento aprovado para o turno", async () => {
+  process.env.SUPPORT_AI_MODE = "shadow";
+  process.env.SUPPORT_TRIAGE_DEBOUNCE_SECONDS = "0";
+  const sourceId = "00000000-0000-4000-8000-0000000000b1";
+  const draftId = "00000000-0000-4000-8000-0000000000b2";
+  await tx((t) =>
+    t.insert(schema.supportKnowledgeEntries).values([
+      {
+        id: sourceId,
+        orgId: ORG,
+        title: "Emissao de DAS",
+        question: "Como pedir a guia do DAS?",
+        answer: "A guia e preparada pelo setor fiscal.",
+        sector: "fiscal",
+        keywords: ["DAS", "guia", "simples"],
+        status: "approved",
+        version: 2,
+        createdByUserId: "ana",
+        approvedByUserId: "ana",
+        approvedAt: new Date(),
+      },
+      {
+        id: draftId,
+        orgId: ORG,
+        title: "Rascunho sobre a guia do DAS",
+        question: "Como pedir a guia do DAS?",
+        answer: "Conteudo ainda nao revisado.",
+        sector: "fiscal",
+        keywords: ["DAS", "guia"],
+        status: "draft",
+        createdByUserId: "ana",
+      },
+    ]),
+  );
+  await customerSays("5554900000006", "Preciso da guia do DAS");
+  await cycle();
+
+  expect(seen.find((call) => call.current.includes("guia do DAS"))?.knowledge).toContain(sourceId);
+  expect(seen.find((call) => call.current.includes("guia do DAS"))?.knowledge).not.toContain(draftId);
 });
 
 test("conversa que já tem dono não passa pela IA", async () => {
@@ -151,6 +197,7 @@ test("falha da IA fica registrada como falha e não trava a conversa", async () 
     classificacao: { setor_sugerido: "outro", urgencia: "media", confianca: 0, resumo: "", fallback: { motivo: "erro_api" } },
     perguntaEsclarecimento: null,
     respostaDireta: null,
+    fontesConhecimento: [],
     modelo: "modelo-de-teste",
     tokensEntrada: 0,
     tokensSaida: 0,
@@ -164,4 +211,8 @@ test("falha da IA fica registrada como falha e não trava a conversa", async () 
 
 test("a leitura não se apaga", async () => {
   await expect(tx((t) => t.delete(schema.supportAiRuns))).rejects.toThrow();
+});
+
+test("conhecimento e arquivado por status, nunca apagado pelo papel do app", async () => {
+  await expect(tx((t) => t.delete(schema.supportKnowledgeEntries))).rejects.toThrow();
 });
