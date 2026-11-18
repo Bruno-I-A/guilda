@@ -336,6 +336,59 @@ test("o envio chega à Meta com o token do canal, e o recibo acha a mensagem pel
   expect(await delivery()).toMatchObject({ delivery: "read" });
 });
 
+test("a trava final nunca envia mensagem criada pela IA", async () => {
+  const { runSupportOutboxCycle } = await import("@/lib/whatsapp/outbound-worker");
+  const whatsappId = "5554911110098";
+  const { id: conversationId } = await customerSays(whatsappId, "Qual e o prazo?");
+  const [message] = await tx((t) =>
+    t
+      .insert(schema.supportMessages)
+      .values({
+        orgId: ORG,
+        channelId,
+        conversationId,
+        direction: "outbound",
+        actor: "ai",
+        source: "guilda_ai",
+        messageType: "text",
+        text: "Esta e apenas uma sugestao interna.",
+        occurredAt: NOW,
+      })
+      .returning({ id: schema.supportMessages.id }),
+  );
+  await tx((t) =>
+    t.insert(schema.supportOutbox).values({
+      orgId: ORG,
+      channelId,
+      messageId: message.id,
+      payload: { to: whatsappId, text: "Esta e apenas uma sugestao interna." },
+    }),
+  );
+
+  const destinations: string[] = [];
+  const fetchSpy = (async (_url: URL, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as { to?: string };
+    if (body.to) destinations.push(body.to);
+    return new Response(JSON.stringify({ messages: [{ id: "wamid.nao-deveria-sair" }] }), {
+      status: 200,
+    });
+  }) as unknown as typeof fetch;
+
+  await runSupportOutboxCycle(50, fetchSpy);
+
+  expect(destinations).not.toContain(whatsappId);
+  const [outbox] = await tx((t) =>
+    t
+      .select({ status: schema.supportOutbox.status, lastError: schema.supportOutbox.lastError })
+      .from(schema.supportOutbox)
+      .where(eq(schema.supportOutbox.messageId, message.id)),
+  );
+  expect(outbox).toEqual({
+    status: "failed",
+    lastError: "Mensagem da IA bloqueada pelo modo sombra.",
+  });
+});
+
 test("recusa definitiva da Meta aparece na hora, sem novas tentativas; falha passageira tenta de novo", async () => {
   const { takeSupportConversation, sendSupportReply, loadSupportConversation } = await import("./inbox");
   const { runSupportOutboxCycle } = await import("@/lib/whatsapp/outbound-worker");
@@ -358,5 +411,5 @@ test("recusa definitiva da Meta aparece na hora, sem novas tentativas; falha pas
   expect(last).toMatchObject({ delivery: "failed", failure: expect.stringContaining("24 horas") });
   expect(await tx((t) => t.select().from(schema.supportOutbox).where(eq(schema.supportOutbox.status, "pending")))).toEqual([]);
   const failed = await tx((t) => t.select().from(schema.supportOutbox).where(eq(schema.supportOutbox.status, "failed")));
-  expect(failed).toHaveLength(1);
+  expect(failed.filter((row) => row.payload.text === "Passageira")).toHaveLength(1);
 });

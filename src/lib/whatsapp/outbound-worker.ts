@@ -40,13 +40,55 @@ async function finishOutbox(claim: OutboxClaim, success: boolean, detail: string
 
 async function loadItem(claim: OutboxClaim) {
   const o = schema.supportOutbox;
+  const m = schema.supportMessages;
   return withOrgTx(claim.orgId, async (tx) => {
     const [item] = await tx
-      .select({ messageId: o.messageId, payload: o.payload, attemptCount: o.attemptCount })
+      .select({
+        messageId: o.messageId,
+        payload: o.payload,
+        attemptCount: o.attemptCount,
+        actor: m.actor,
+        source: m.source,
+      })
       .from(o)
+      .innerJoin(m, and(eq(m.orgId, o.orgId), eq(m.id, o.messageId)))
       .where(and(eq(o.id, claim.id), eq(o.orgId, claim.orgId), eq(o.status, "processing"), eq(o.lockToken, claim.claimToken)))
       .limit(1);
     return item ?? null;
+  });
+}
+
+/**
+ * Trava de producao do piloto: a IA so escreve sugestoes internas. Mesmo que
+ * outro trecho crie outbox por engano, ator/origem de IA nunca chega a Meta.
+ * Liberar automacao no futuro exige mudar esta guarda e seus testes.
+ */
+async function blockAutomatedDelivery(claim: OutboxClaim, messageId: string): Promise<void> {
+  await withOrgTx(claim.orgId, async (tx) => {
+    const o = schema.supportOutbox;
+    await tx
+      .update(o)
+      .set({
+        status: "failed",
+        lockedAt: null,
+        lockToken: null,
+        lastError: "Mensagem da IA bloqueada pelo modo sombra.",
+      })
+      .where(
+        and(
+          eq(o.id, claim.id),
+          eq(o.orgId, claim.orgId),
+          eq(o.status, "processing"),
+          eq(o.lockToken, claim.claimToken),
+        ),
+      );
+    await tx.insert(schema.supportMessageEvents).values({
+      orgId: claim.orgId,
+      messageId,
+      eventType: "failed",
+      detail: { message: "Sugestão da IA mantida somente dentro da Guilda." },
+      occurredAt: new Date(),
+    });
   });
 }
 
@@ -73,6 +115,10 @@ async function recordFailed(claim: OutboxClaim, messageId: string, message: stri
 async function deliver(claim: OutboxClaim, config: MetaServerConfig, fetchImpl: typeof fetch): Promise<boolean> {
   const item = await loadItem(claim);
   if (!item) return false;
+  if (item.actor === "ai" || item.source === "guilda_ai") {
+    await blockAutomatedDelivery(claim, item.messageId);
+    return false;
+  }
   const to = typeof item.payload.to === "string" ? item.payload.to : "";
   const text = typeof item.payload.text === "string" ? item.payload.text : "";
   try {
