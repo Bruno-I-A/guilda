@@ -71,7 +71,10 @@ rotina de XML e à fila das notas dos clientes. Se estiver ausente ou vencido, a
 empresas por procuração ficam com erro "O A1 do escritório não está disponível".
 
 **Leitura (aba XML).** `listRoutineClients` passa a incluir:
-- quem tem modo efetivo `proxy`, sem exigir certificado da empresa;
+- quem tem modo efetivo `proxy`, sem exigir certificado da empresa, desde que seja de
+  serviço (a marcação "É de serviço?" da aba XML) ou tenha o modo `proxy` marcado nela.
+  Sem essa trava, virar o padrão faria a rotina ler as 275 empresas, inclusive o
+  comércio que não emite NFS-e;
 - quem tem modo efetivo `certificate` e certificado válido, como hoje.
 
 Por procuração, o transporte é o do A1 do escritório e `cnpjConsulta` é o CNPJ da
@@ -79,8 +82,11 @@ empresa. Cursor, regra do NSU, novas tentativas e gravação por lote são os me
 Recusa E2245 marca `proxy_status = invalid` e grava o erro da empresa.
 
 **Teste de procuração.** O app só registra o pedido (para todas ou para uma), como o
-"Rodar agora". No ciclo, o serviço faz `GET /DFe/0?lote=true&cnpjConsulta={empresa}`
-com o A1 do escritório e classifica a resposta:
+"Rodar agora". No ciclo, o serviço faz `GET /DFe/{n}?lote=true&cnpjConsulta={empresa}`
+com o A1 do escritório e classifica a resposta. `n` é o NSU da nota mais antiga já
+guardada da empresa menos 1 (0 se não houver nenhuma): assim o primeiro documento que
+volta é uma nota que a Guilda já tem, e dá para medir se a sequência é a mesma.
+A classificação é esta:
 - lote legível ou `NENHUM_DOCUMENTO_LOCALIZADO` é `confirmed`;
 - recusa (E2245, 401, 403, `REJEICAO`) é `invalid`;
 - rede, 5xx, 429 ou formato desconhecido é `technical_failure`, que nunca vira `invalid`.
