@@ -8,7 +8,13 @@ import { clientNfseMonthDescription, type ClientNfseReference } from "@/domain/c
 import { amountToCents, buildDpsId, buildNfseTakerAddress, centsToNfseAmount, type NfseClientAddress } from "@/domain/nfse";
 import { err, type ActionResult } from "@/lib/action-context";
 import { ibgeCityCode } from "@/lib/nfse/municipios";
-import { NFSE_OPERATION_TYPE_REQUIRED, nfseServiceRequiresOperationType } from "@/lib/nfse/template";
+import {
+  NFSE_CONSTRUCTION_REQUIRED,
+  NFSE_OPERATION_TYPE_REQUIRED,
+  nfseServiceRequiresConstruction,
+  nfseServiceRequiresOperationType,
+  type NfseConstruction,
+} from "@/lib/nfse/template";
 
 import { hasNfseRetentions, type NfseRetentions } from "@/domain/nfse-retentions";
 
@@ -36,6 +42,8 @@ export async function emitClientNfseNote(
     description: string;
     reference: ClientNfseReference;
     service: ServiceOverride | null;
+    /** A obra desta nota: obrigatória nos serviços de obra (E0370), ignorada nos demais. */
+    construction?: NfseConstruction | null;
     /**
      * Retenções desta nota (nulo = nenhuma). Ausente: valem as gravadas no
      * tomador. `rememberRetentions` grava as desta nota como as do tomador.
@@ -100,10 +108,16 @@ export async function emitClientNfseNote(
       .set({ retentions: hasNfseRetentions(retentions) ? retentions : null, updatedBy: input.actorId, updatedAt: input.now })
       .where(and(eq(schema.clientNfseTakers.orgId, input.orgId), eq(schema.clientNfseTakers.id, takerId)));
   }
-  const template = withRetentions(issuerTemplateFor(issuer.template, input.service), hasNfseRetentions(retentions) ? retentions : null, cents);
+  const template = withConstruction(
+    withRetentions(issuerTemplateFor(issuer.template, input.service), hasNfseRetentions(retentions) ? retentions : null, cents),
+    input.construction ?? null,
+  );
   // Serviço próprio da nota escapa da regra dos dados fiscais: confere aqui.
   if (template.ibsCbs && !template.ibsCbs.operationType && nfseServiceRequiresOperationType(template.service.nationalTaxCode)) {
     return err(NFSE_OPERATION_TYPE_REQUIRED);
+  }
+  if (nfseServiceRequiresConstruction(template.service.nationalTaxCode) && !template.construction) {
+    return err(NFSE_CONSTRUCTION_REQUIRED);
   }
   if (template.issqn.withholding === "2" && !template.issqn.rate) {
     return err("Com ISS retido, informe a alíquota do ISS.");
@@ -197,7 +211,13 @@ export async function retryClientNfseWithAddress(
  */
 export async function retryClientNfseWithService(
   tx: OrgTx,
-  input: Actor & { invoiceId: string; service: ServiceOverride; applyToIssuer: boolean },
+  input: Actor & {
+    invoiceId: string;
+    service: ServiceOverride;
+    /** A obra da nota. Ausente: mantém a que a nota já tem; nulo: tira. */
+    construction?: NfseConstruction | null;
+    applyToIssuer: boolean;
+  },
 ): Promise<ActionResult> {
   const n = schema.clientNfseInvoices;
   const [invoice] = await tx
@@ -207,9 +227,17 @@ export async function retryClientNfseWithService(
     .for("update");
   if (!invoice) return err("Nota não encontrada.");
   if (invoice.status !== "failed") return err("Só uma nota com erro volta para a fila.");
+  const frozen = invoice.template as { service: ServiceOverride; construction?: NfseConstruction };
+  const template = withConstruction(
+    { ...frozen, service: input.service },
+    input.construction === undefined ? (frozen.construction ?? null) : input.construction,
+  );
+  if (nfseServiceRequiresConstruction(input.service.nationalTaxCode) && !template.construction) {
+    return err(NFSE_CONSTRUCTION_REQUIRED);
+  }
   await tx
     .update(n)
-    .set({ template: { ...(invoice.template as object), service: input.service }, updatedAt: new Date() })
+    .set({ template, updatedAt: new Date() })
     .where(and(eq(n.orgId, input.orgId), eq(n.id, input.invoiceId)));
   if (input.applyToIssuer) {
     const issuers = schema.clientNfseIssuers;
@@ -226,6 +254,19 @@ export async function retryClientNfseWithService(
     }
   }
   return requeueClientNfseInvoice(tx, { orgId: input.orgId, actorId: input.actorId, invoiceId: input.invoiceId });
+}
+
+/**
+ * A obra só fica no modelo congelado quando o serviço é de obra: nos demais
+ * ela não vai à DPS e não deve sobreviver a uma troca de serviço.
+ */
+function withConstruction<T extends { service: ServiceOverride; construction?: NfseConstruction }>(
+  template: T,
+  construction: NfseConstruction | null,
+): T {
+  const rest = { ...template };
+  delete rest.construction;
+  return construction && nfseServiceRequiresConstruction(template.service.nationalTaxCode) ? { ...rest, construction } : rest;
 }
 
 async function existingTakerId(tx: OrgTx, orgId: string, issuerId: string, document: string): Promise<string | null> {

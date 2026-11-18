@@ -1,6 +1,6 @@
 import { buildDpsId, centsToNfseAmount, normalizeDpsSeries, type NfseTakerAddress } from "@/domain/nfse";
 
-import { nfseServiceRequiresOperationType, type NfseIssuerTemplate } from "./template";
+import { nfseServiceRequiresConstruction, nfseServiceRequiresOperationType, type NfseIssuerTemplate } from "./template";
 import {
   element,
   NFSE_APP_VERSION,
@@ -60,7 +60,19 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
     `${element("cTribMun", t.service.municipalTaxCode)}` +
     `${element("xDescServ", input.description)}` +
     `${element("cNBS", t.service.nbsCode)}</cServ>`;
-  const serv = `<serv><locPrest>${element("cLocPrestacao", t.cityCode)}</locPrest>${cServ}</serv>`;
+  // E0370: serviço de obra leva o grupo da obra logo depois do cServ (TCServ:
+  // locPrest, cServ, comExt, obra). Fora desses serviços ele não vai.
+  const c = nfseServiceRequiresConstruction(t.service.nationalTaxCode) ? t.construction : undefined;
+  const obra = !c
+    ? ""
+    : `<obra>${element("inscImobFisc", c.propertyRegistration)}` +
+      (c.kind === "cno"
+        ? element("cObra", c.code)
+        : c.kind === "cib"
+          ? element("cCIB", c.code)
+          : `<end>${element("CEP", c.zipCode)}${element("xLgr", c.street)}${element("nro", c.number)}${element("xCpl", c.complement)}${element("xBairro", c.district)}</end>`) +
+      `</obra>`;
+  const serv = `<serv><locPrest>${element("cLocPrestacao", t.cityCode)}</locPrest>${cServ}${obra}</serv>`;
   // A alíquota só vai quando o Sistema Nacional não a tira do cadastro do
   // município. E0625: ME/EPP que apura o ISS pelo Simples, sem retenção (ela
   // está no DAS). E0617: não optante do Simples, com o município ativo no

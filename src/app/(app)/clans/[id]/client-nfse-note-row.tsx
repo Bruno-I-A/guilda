@@ -30,9 +30,11 @@ import {
 import type { ClientNfseInvoiceView } from "@/lib/client-nfse/loaders";
 import { formatBRLCurrency } from "@/lib/currency";
 import { formatAppDateTime } from "@/lib/date-time";
+import { nfseServiceRequiresConstruction } from "@/lib/nfse/template";
 import { cn } from "@/lib/utils";
 
 import { cancelInvoice, discardInvoice, fixInvoiceAddress, fixInvoiceService, retryInvoice } from "./client-nfse-actions";
+import { ConstructionFields, constructionForm, readConstruction } from "./client-nfse-construction";
 import { Field } from "./nfse-settings-dialog";
 
 export const STATUS_LABELS: Record<NfseInvoiceStatus, string> = {
@@ -102,14 +104,18 @@ export function ClientNfseInvoiceDialog({
     city: takerAddress?.city ?? "",
     state: takerAddress?.state ?? "",
   }));
-  // Erro que aponta o código do serviço já abre a correção dele.
-  const [fixingService, setFixingService] = useState(invoice.status === "failed" && canFix && !fixing && /E03\d\d|c[oó]digo de tributa|NBS/i.test(invoice.lastError ?? ""));
+  // Erro que aponta o código do serviço (ou a obra, E0370) já abre a correção dele.
+  const [fixingService, setFixingService] = useState(invoice.status === "failed" && canFix && !fixing && /E03\d\d|c[oó]digo de tributa|NBS|\bobra\b/i.test(invoice.lastError ?? ""));
   const [service, setService] = useState({
     nationalTaxCode: invoice.service?.nationalTaxCode ?? "",
     municipalTaxCode: invoice.service?.municipalTaxCode ?? "",
     nbsCode: invoice.service?.nbsCode ?? "",
   });
   const [applyToIssuer, setApplyToIssuer] = useState(true);
+  // A obra é desta nota: aparece quando o serviço digitado é de obra.
+  const [construction, setConstruction] = useState(() => constructionForm(invoice.construction));
+  const needsConstruction = nfseServiceRequiresConstruction(service.nationalTaxCode.trim());
+  const constructionRead = needsConstruction ? readConstruction(construction) : null;
   const [discarding, setDiscarding] = useState(false);
   const field = (key: keyof typeof address) => (event: React.ChangeEvent<HTMLInputElement>) => setAddress((current) => ({ ...current, [key]: event.target.value }));
   const blank = (value: string) => value.trim() || null;
@@ -166,6 +172,8 @@ export function ClientNfseInvoiceDialog({
               <input type="checkbox" className="size-4 accent-primary" checked={applyToIssuer} onChange={(event) => setApplyToIssuer(event.target.checked)} />
               Usar também nas próximas notas desta empresa
             </label>
+            {needsConstruction ? <ConstructionFields id={`${invoice.id}-obra`} form={construction} onChange={setConstruction} /> : null}
+            {constructionRead && !constructionRead.ok ? <p role="status" className="text-sm text-warning">{constructionRead.error}</p> : null}
           </fieldset>
         ) : null}
         {fixing && !cancelling && !discarding ? (
@@ -237,7 +245,7 @@ export function ClientNfseInvoiceDialog({
                   <Button type="button" variant="outline" disabled={pending} onClick={() => setFixingService(false)}>Voltar</Button>
                   <Button
                     type="button"
-                    disabled={pending}
+                    disabled={pending || (constructionRead !== null && !constructionRead.ok)}
                     onClick={() =>
                       run(
                         () =>
@@ -249,6 +257,7 @@ export function ClientNfseInvoiceDialog({
                               municipalTaxCode: service.municipalTaxCode.trim() || undefined,
                               nbsCode: service.nbsCode.trim() || undefined,
                             },
+                            construction: constructionRead?.ok ? constructionRead.value : null,
                             applyToIssuer,
                           }),
                         "Serviço corrigido. A nota voltou à fila.",
