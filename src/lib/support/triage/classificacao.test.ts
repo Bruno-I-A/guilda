@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { test, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
 import {
   LIMITE_PERGUNTAS_ESCLARECIMENTO,
   aplicarGuardaEsclarecimento,

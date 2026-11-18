@@ -307,6 +307,11 @@ function AiSuggestion({ conversation }: { conversation: SupportConversationView 
       )}
       {suggestion.question ? <p className="rounded-sm bg-muted/40 px-2 py-1"><span className="text-muted-foreground">Perguntaria:</span> {suggestion.question}</p> : null}
       {suggestion.directAnswer ? <p className="rounded-sm bg-muted/40 px-2 py-1"><span className="text-muted-foreground">Responderia:</span> {suggestion.directAnswer}</p> : null}
+      {suggestion.directAnswer && suggestion.sources.length > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Fontes: {suggestion.sources.map((source) => `${source.title} · v${source.version}`).join(" · ")}
+        </p>
+      ) : null}
       {suggestion.clan && !alreadyThere && conversation.status !== "resolved" ? (
         <Button type="button" size="sm" variant="outline" className="justify-self-start" disabled={pending} onClick={() => run(() => transferConversation({ conversationId: conversation.id, clanId: suggestion.clan!.id, userId: null }))}>
           Passar para {suggestion.clan.name}

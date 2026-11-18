@@ -466,6 +466,64 @@ export const supportOutbox = pgTable(
 );
 
 /**
+ * Conhecimento revisado do escritorio para o atendimento. Conversas reais
+ * nunca entram aqui automaticamente: uma pessoa escreve, revisa e aprova cada
+ * resposta antes de ela poder sustentar uma sugestao da IA.
+ */
+export const supportKnowledgeEntries = pgTable(
+  "support_knowledge_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 180 }).notNull(),
+    question: text("question").notNull(),
+    answer: text("answer").notNull(),
+    sector: varchar("sector", { length: 32 }).notNull(),
+    keywords: text("keywords")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    status: varchar("status", { length: 16 }).notNull().default("draft"),
+    version: integer("version").notNull().default(1),
+    validFrom: timestamp("valid_from", { withTimezone: true }),
+    validUntil: timestamp("valid_until", { withTimezone: true }),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    approvedByUserId: text("approved_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("support_knowledge_entries_org_id_uidx").on(t.orgId, t.id),
+    index("support_knowledge_entries_org_status_idx").on(
+      t.orgId,
+      t.status,
+      t.validFrom,
+      t.validUntil,
+    ),
+    check(
+      "support_knowledge_entries_status_check",
+      sql`${t.status} IN ('draft', 'approved', 'archived')`,
+    ),
+    check("support_knowledge_entries_version_check", sql`${t.version} >= 1`),
+    check(
+      "support_knowledge_entries_validity_check",
+      sql`${t.validUntil} IS NULL OR ${t.validFrom} IS NULL OR ${t.validUntil} > ${t.validFrom}`,
+    ),
+    check(
+      "support_knowledge_entries_approval_check",
+      sql`(${t.status} = 'approved' AND ${t.approvedAt} IS NOT NULL AND ${t.approvedByUserId} IS NOT NULL) OR (${t.status} <> 'approved')`,
+    ),
+  ],
+);
+
+/**
  * Cada leitura da IA numa conversa (modo sombra, 2026-11-09): o que ela faria,
  * com custo e versão do prompt. Nunca guarda o prompt nem a mensagem enviada à
  * IA. A linha nasce "running" e o índice único por mensagem é a trava contra
@@ -512,3 +570,4 @@ export type SupportWhatsAppChannel = typeof supportWhatsAppChannels.$inferSelect
 export type SupportContact = typeof supportContacts.$inferSelect;
 export type SupportConversation = typeof supportConversations.$inferSelect;
 export type SupportMessage = typeof supportMessages.$inferSelect;
+export type SupportKnowledgeEntry = typeof supportKnowledgeEntries.$inferSelect;
