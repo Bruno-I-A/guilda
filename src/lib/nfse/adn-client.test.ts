@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { AdnRejectionError, fetchAdnBatch } from "./adn-client";
+import { AdnRejectionError, fetchAdnBatch, withTransientRetry } from "./adn-client";
 import type { HttpRequest, HttpResponse } from "./sefin-client";
 import { NfseTransientError } from "./sefin-client";
 import { testAdnBatchBody } from "./testing/adn";
@@ -217,5 +217,51 @@ describe("distribuição do ADN para contribuintes", () => {
       await expect(fetchAdnBatch(transport, "producao", input)).rejects.toThrow(/NSU|CNPJ/);
     }
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("nova tentativa de lote quando a falha é passageira", () => {
+  test("conexão derrubada é tentada de novo e o lote chega", async () => {
+    const waits: number[] = [];
+    let calls = 0;
+    const result = await withTransientRetry(
+      async () => {
+        calls += 1;
+        if (calls < 3) throw new NfseTransientError("O Sistema Nacional fechou a conexão no meio do pedido (ECONNRESET).");
+        return "lote";
+      },
+      { delaysMs: [2_000, 10_000], sleep: async (ms) => void waits.push(ms) },
+    );
+    expect(result).toBe("lote");
+    expect(calls).toBe(3);
+    expect(waits).toEqual([2_000, 10_000]);
+  });
+
+  test("esgotadas as tentativas, a última falha passageira sobe", async () => {
+    let calls = 0;
+    await expect(
+      withTransientRetry(
+        async () => {
+          calls += 1;
+          throw new NfseTransientError(`queda ${calls}`);
+        },
+        { delaysMs: [0, 0], sleep: async () => {} },
+      ),
+    ).rejects.toThrow("queda 3");
+    expect(calls).toBe(3);
+  });
+
+  test("recusa do Sistema Nacional não se repete", async () => {
+    let calls = 0;
+    await expect(
+      withTransientRetry(
+        async () => {
+          calls += 1;
+          throw new AdnRejectionError("E2230 — CNPJ sem relação");
+        },
+        { delaysMs: [0, 0], sleep: async () => {} },
+      ),
+    ).rejects.toThrow(AdnRejectionError);
+    expect(calls).toBe(1);
   });
 });

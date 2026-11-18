@@ -30,6 +30,25 @@ export type HttpTransport = (req: HttpRequest) => Promise<HttpResponse>;
 /** Rede, timeout, 5xx: vale tentar de novo mais tarde. */
 export class NfseTransientError extends Error {}
 
+const NETWORK_MESSAGES: Record<string, string> = {
+  ECONNRESET: "O Sistema Nacional fechou a conexão no meio do pedido",
+  EPIPE: "O Sistema Nacional fechou a conexão no meio do pedido",
+  ECONNREFUSED: "O Sistema Nacional recusou a conexão",
+  ETIMEDOUT: "O Sistema Nacional demorou demais para responder",
+  ENOTFOUND: "Não foi possível achar o endereço do Sistema Nacional",
+  EAI_AGAIN: "Não foi possível achar o endereço do Sistema Nacional",
+};
+
+/**
+ * Erro de rede em português, com o código entre parênteses para diagnóstico.
+ * "read ECONNRESET" cru ia para a tela da aba XML (35 empresas em 17/11).
+ */
+export function networkErrorMessage(error: Error & { code?: string }): string {
+  const code = error.code ?? (/socket hang up/i.test(error.message) ? "ECONNRESET" : undefined);
+  const text = code ? NETWORK_MESSAGES[code] : undefined;
+  return text ? `${text} (${code}).` : error.message;
+}
+
 export interface NfseApiError {
   code: string;
   message: string;
@@ -80,11 +99,11 @@ export function createMtlsTransport(input: {
               contentType: res.headers["content-type"] ?? null,
             }),
           );
-          res.on("error", (error) => reject(new NfseTransientError(error.message)));
+          res.on("error", (error) => reject(new NfseTransientError(networkErrorMessage(error))));
         },
       );
       call.on("timeout", () => call.destroy(new Error("Tempo esgotado falando com o Sistema Nacional.")));
-      call.on("error", (error) => reject(new NfseTransientError(error.message)));
+      call.on("error", (error) => reject(new NfseTransientError(networkErrorMessage(error))));
       if (payload) call.write(payload);
       call.end();
     });

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi, type MockInstance } 
 
 import { XML_ROUTINE_DEFAULTS } from "@/domain/nfse-xml";
 
-import { createMtlsTransport, type HttpTransport } from "./sefin-client";
+import { createMtlsTransport, type HttpTransport, networkErrorMessage, NfseTransientError } from "./sefin-client";
 import { testAdnBatchBody } from "./testing/adn";
 import { createTestCertificate } from "./testing/certificate";
 import { loadVaultKey, type VaultKey } from "./vault";
@@ -213,5 +213,49 @@ describe("rodada da rotina de XML no serviço fiscal", () => {
     await expect(runXmlRoutineCycle(ORG, vault, "producao")).rejects.toThrow("banco caiu");
 
     expect(vi.mocked(markXmlRoutineRun).mock.calls.map(([, mark]) => Object.keys(mark))).toEqual([["startedAt"]]);
+  });
+
+  test("conexão derrubada no meio da leitura é tentada de novo e a empresa termina sem erro", async () => {
+    vi.mocked(listRoutineClients).mockResolvedValue([
+      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, envelope: await seal() },
+    ]);
+    const real = fakeAdn();
+    let dropped = false;
+    adn = async (req) => {
+      if (!dropped) {
+        dropped = true;
+        throw new NfseTransientError(networkErrorMessage(Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })));
+      }
+      return real(req);
+    };
+
+    await runXmlRoutineCycle(ORG, vault, "producao", { retryDelaysMs: [0, 0] });
+
+    expect(saveAdnError).not.toHaveBeenCalled();
+    expect(vi.mocked(saveAdnProgress).mock.calls.map(([, p]) => [p.clientId, p.lastNsu, p.finished])).toEqual([
+      ["a", 1, false],
+      ["a", 1, true],
+    ]);
+  });
+
+  test("queda que se repete vira erro em português e avisa que a próxima leitura continua", async () => {
+    vi.mocked(listRoutineClients).mockResolvedValue([
+      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, envelope: await seal() },
+    ]);
+    let attempts = 0;
+    adn = async () => {
+      attempts += 1;
+      throw new NfseTransientError(networkErrorMessage(Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })));
+    };
+
+    await runXmlRoutineCycle(ORG, vault, "producao", { retryDelaysMs: [0, 0] });
+
+    expect(attempts).toBe(3);
+    expect(saveAdnError).toHaveBeenCalledWith(
+      ORG,
+      "a",
+      "O Sistema Nacional fechou a conexão no meio do pedido (ECONNRESET). A próxima leitura continua de onde parou.",
+      expect.any(Date),
+    );
   });
 });
