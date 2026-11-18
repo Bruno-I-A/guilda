@@ -34,7 +34,7 @@ import {
   saveClientNfseNote,
 } from "@/lib/client-nfse/registry";
 import { lookupCnpj, type CnpjAddress } from "@/lib/cnpj-lookup";
-import { nfseIssuerTemplateRulesSchema } from "@/lib/nfse/template";
+import { nfseConstructionSchema, nfseIssuerTemplateRulesSchema } from "@/lib/nfse/template";
 import { nfseToday } from "@/lib/nfse/time";
 import { asFiscalOperator } from "@/lib/office-fees/fiscal-operator";
 
@@ -269,6 +269,8 @@ const emitNoteSchema = z.object({
       nbsCode: digits(9, "O código NBS").optional(),
     })
     .nullable(),
+  /** A obra desta nota (serviços de obra, E0370). */
+  construction: nfseConstructionSchema.nullable().optional(),
   // Ausente: valem as retenções gravadas no tomador.
   retentions: retentionsSchema.optional(),
   rememberRetentions: z.boolean().optional(),
@@ -413,6 +415,8 @@ const fixServiceSchema = z.object({
     municipalTaxCode: digits(3, "O código municipal").optional(),
     nbsCode: digits(9, "O código NBS").optional(),
   }),
+  /** Ausente: mantém a obra da nota; nulo: tira. */
+  construction: nfseConstructionSchema.nullable().optional(),
   applyToIssuer: z.boolean(),
 });
 
@@ -422,7 +426,14 @@ export async function fixInvoiceService(input: z.input<typeof fixServiceSchema>)
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Serviço inválido.");
   const data = parsed.data;
   const result = await asFiscalOperator(data.clanId, (tx, ctx) =>
-    retryClientNfseWithService(tx, { orgId: ctx.orgId, actorId: ctx.userId, invoiceId: data.id, service: data.service, applyToIssuer: data.applyToIssuer }),
+    retryClientNfseWithService(tx, {
+      orgId: ctx.orgId,
+      actorId: ctx.userId,
+      invoiceId: data.id,
+      service: data.service,
+      construction: data.construction,
+      applyToIssuer: data.applyToIssuer,
+    }),
   );
   if (result.ok) revalidateClan();
   return result;

@@ -11,7 +11,7 @@ import type { NfseRetentions } from "@/domain/nfse-retentions";
 import { ibgeCity, ibgeCityCode } from "@/lib/nfse/municipios";
 import { firstElementText } from "@/lib/nfse/xml";
 import type { ClientCertificateView } from "@/lib/nfse/xml-requests";
-import { parseNfseIssuerTemplate, type NfseIssuerTemplate } from "@/lib/nfse/template";
+import { parseNfseIssuerTemplate, type NfseConstruction, type NfseIssuerTemplate } from "@/lib/nfse/template";
 
 import { readIssuedNoteFacts, type IssuedNoteFacts } from "./from-xml";
 import { loadIssuerReadiness } from "./month";
@@ -33,6 +33,8 @@ export interface ClientNfseInvoiceView {
   /** O município congelado no pedido: é onde o Sistema Nacional procura o código municipal. */
   cityCode: string | null;
   cityLabel: string | null;
+  /** A obra congelada no pedido (serviços de obra): corrige-se com o serviço e se repete no "Nova igual". */
+  construction: NfseConstruction | null;
 }
 
 /** Uma nota pedida no mês, da mais recente para a mais antiga. */
@@ -137,6 +139,7 @@ export async function loadClientNfseWorkspace(
   const notesByIssuer = new Map<string, ClientNfseMonthNoteView[]>();
   for (const row of monthNotes) {
     const list = notesByIssuer.get(row.issuerId) ?? [];
+    const frozen = parseNfseIssuerTemplate(row.template);
     list.push({
       takerId: row.takerId,
       takerName: row.takerName,
@@ -152,9 +155,10 @@ export async function loadClientNfseWorkspace(
         lastError: row.lastError,
         dpsSeries: row.dpsSeries,
         dpsNumber: row.dpsNumber,
-        service: parseNfseIssuerTemplate(row.template)?.service ?? null,
-        cityCode: parseNfseIssuerTemplate(row.template)?.cityCode ?? null,
-        cityLabel: cityLabelOf(parseNfseIssuerTemplate(row.template)?.cityCode),
+        service: frozen?.service ?? null,
+        cityCode: frozen?.cityCode ?? null,
+        cityLabel: cityLabelOf(frozen?.cityCode),
+        construction: frozen?.construction ?? null,
       },
     });
     notesByIssuer.set(row.issuerId, list);

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { nfseIssuerTemplateRulesSchema, nfseServiceRequiresOperationType, parseNfseTemplate } from "./template";
+import { nfseConstructionSchema, nfseIssuerTemplateRulesSchema, nfseServiceRequiresConstruction, nfseServiceRequiresOperationType, parseNfseTemplate } from "./template";
 import { TEST_TEMPLATE } from "./testing/fixtures";
 import { nfseIssueDate, nfseIssueTimestamp, nfseToday } from "./time";
 import { escapeXml, firstElementText, gunzipBase64, gzipBase64 } from "./xml";
@@ -87,5 +87,25 @@ describe("tipo de operação (E0903)", () => {
     }
     expect(nfseServiceRequiresOperationType("171901")).toBe(false);
     expect(nfseIssuerTemplateRulesSchema.safeParse(issuer("171901")).success).toBe(true);
+  });
+});
+
+describe("obra (E0370)", () => {
+  test("os subitens de obra da mensagem do Sistema Nacional exigem a obra; os demais, não", () => {
+    for (const code of ["070201", "070202", "070401", "070501", "070502", "070601", "070602", "070701", "070801", "071701", "071901", "141403", "141404"]) {
+      expect(nfseServiceRequiresConstruction(code)).toBe(true);
+    }
+    for (const code of ["070301", "071201", "171901", "141401"]) expect(nfseServiceRequiresConstruction(code)).toBe(false);
+  });
+
+  test("obra pelo CNO guarda só os dígitos; CIB tem 8 caracteres; endereço exige CEP, rua, número e bairro", () => {
+    expect(nfseConstructionSchema.parse({ kind: "cno", code: "90.019.11534/71" })).toEqual({ kind: "cno", code: "900191153471" });
+    expect(nfseConstructionSchema.safeParse({ kind: "cno", code: "--" }).success).toBe(false);
+    expect(nfseConstructionSchema.safeParse({ kind: "cib", code: "ABC1234" }).success).toBe(false);
+    expect(nfseConstructionSchema.parse({ kind: "cib", code: "ABC12345" })).toEqual({ kind: "cib", code: "ABC12345" });
+    expect(
+      nfseConstructionSchema.parse({ kind: "address", zipCode: "99900-000", street: " Rua A ", number: "10", complement: "", district: "Centro", propertyRegistration: " 123 " }),
+    ).toEqual({ kind: "address", zipCode: "99900000", street: "Rua A", number: "10", district: "Centro", propertyRegistration: "123" });
+    expect(nfseConstructionSchema.safeParse({ kind: "address", zipCode: "99900000", street: "Rua A", number: "", district: "Centro" }).success).toBe(false);
   });
 });

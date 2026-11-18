@@ -273,7 +273,15 @@ function CompanyRow({
               blockedReason={blockedReason}
               onRepeat={() => {
                 const taker = issuer.takers.find((row) => row.id === note.takerId);
-                emitFrom({ document: note.takerDocument, name: note.takerName, address: taker?.address ?? null, amount: note.amount, description: note.description, retentions: taker?.retentions ?? null });
+                emitFrom({
+                  document: note.takerDocument,
+                  name: note.takerName,
+                  address: taker?.address ?? null,
+                  amount: note.amount,
+                  description: note.description,
+                  retentions: taker?.retentions ?? null,
+                  construction: note.invoice.construction,
+                });
               }}
             />
           ))}

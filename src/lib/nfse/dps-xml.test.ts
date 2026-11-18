@@ -139,4 +139,24 @@ describe("XML da DPS", () => {
     expect(xml).toContain("<vServ>850.50</vServ>");
     expect(xml).toContain("<tpEmit>1</tpEmit>");
   });
+
+  test("E0370: serviço de obra leva o grupo obra depois do código do serviço, nas três formas do XSD", async () => {
+    const service = { nationalTaxCode: "070201", municipalTaxCode: "001", nbsCode: "101056000" };
+    const cno = buildDpsXml(input({ template: { ...TEST_TEMPLATE, service, construction: { kind: "cno", code: "900191153471", propertyRegistration: "12345" } } })).xml;
+    expect(cno).toContain("</cServ><obra><inscImobFisc>12345</inscImobFisc><cObra>900191153471</cObra></obra></serv>");
+    expect(await nfseXsdErrors(cno, "DPS_v1.01.xsd")).toEqual([]);
+    const cib = buildDpsXml(input({ template: { ...TEST_TEMPLATE, service, construction: { kind: "cib", code: "ABC12345" } } })).xml;
+    expect(cib).toContain("</cServ><obra><cCIB>ABC12345</cCIB></obra></serv>");
+    expect(await nfseXsdErrors(cib, "DPS_v1.01.xsd")).toEqual([]);
+    const address = buildDpsXml(
+      input({ template: { ...TEST_TEMPLATE, service, construction: { kind: "address", zipCode: "99900000", street: "Rua A & B", number: "10", district: "Centro" } } }),
+    ).xml;
+    expect(address).toContain("</cServ><obra><end><CEP>99900000</CEP><xLgr>Rua A &amp; B</xLgr><nro>10</nro><xBairro>Centro</xBairro></end></obra></serv>");
+    expect(await nfseXsdErrors(address, "DPS_v1.01.xsd")).toEqual([]);
+  });
+
+  test("serviço que não é de obra não leva o grupo obra, mesmo com ele no modelo", () => {
+    const { xml } = buildDpsXml(input({ template: { ...TEST_TEMPLATE, construction: { kind: "cno", code: "900191153471" } } }));
+    expect(xml).not.toContain("<obra>");
+  });
 });
