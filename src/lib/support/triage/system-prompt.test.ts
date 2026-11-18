@@ -5,12 +5,15 @@
  * edição futura — cada teste aqui trava uma delas.
  */
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { test, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
 import {
   LIMITE_PERGUNTAS_ESCLARECIMENTO,
   montarSystemPrompt,
   type AtendenteRoster,
 } from "./classificacao";
+import type { SupportKnowledgeSource } from "./knowledge";
 
 const ROSTER: AtendenteRoster[] = [
   {
@@ -21,8 +24,23 @@ const ROSTER: AtendenteRoster[] = [
   },
 ];
 
-function prompt(perguntasFeitas = 0, temImagem = false, roster: AtendenteRoster[] = []): string {
-  return montarSystemPrompt(roster, perguntasFeitas, temImagem);
+const SOURCE: SupportKnowledgeSource = {
+  id: "kb-certificado-preco",
+  title: "Preco do certificado A1",
+  question: "Quanto custa o certificado digital A1?",
+  answer: "O valor aprovado para pessoa fisica e R$ X e para pessoa juridica e R$ Y.",
+  sector: "societario",
+  keywords: ["certificado", "A1", "preco"],
+  version: 3,
+};
+
+function prompt(
+  perguntasFeitas = 0,
+  temImagem = false,
+  roster: AtendenteRoster[] = [],
+  knowledge: SupportKnowledgeSource[] = [],
+): string {
+  return montarSystemPrompt(roster, perguntasFeitas, temImagem, knowledge);
 }
 
 /** Recorta uma seção "## TITULO" até o próximo "##", para afirmar que uma regra está no lugar certo. */
@@ -104,6 +122,7 @@ test("(2) não pede o tipo da certidão — roteia pelo responsável", () => {
 
 test("(2) manda o certificado digital pelo mesmo caminho da certidão", () => {
   assert.match(prompt(), /Certificado digital: preco segue RESPOSTA DIRETA/);
+  assert.match(prompt(), /Nenhuma fonte aprovada foi encontrada/);
 });
 
 test("(2) instrui a adotar o setor da pessoa quando o responsável define o encaminhamento", () => {
@@ -112,13 +131,14 @@ test("(2) instrui a adotar o setor da pessoa quando o responsável define o enca
   assert.match(texto, /id=u-1/);
 });
 
-test("(3) não há mais contradição sobre perguntar pessoa física ou jurídica", () => {
-  const texto = prompt();
-  assert.match(texto, /informe os DOIS precos de uma vez — NAO pergunte/);
-  assert.ok(
-    !/ex\.: pessoa fisica ou juridica/i.test(texto),
-    "o exemplo que mandava perguntar PF/PJ contradizia a regra (b) da resposta direta",
-  );
+test("(3) resposta direta exige fonte aprovada recuperada e citada", () => {
+  const semFonte = prompt();
+  assert.match(semFonte, /Deixe resposta_direta vazia/);
+
+  const comFonte = prompt(0, false, [], [SOURCE]);
+  assert.match(comFonte, /kb-certificado-preco/);
+  assert.match(comFonte, /"versao":3/);
+  assert.match(comFonte, /liste em fontes_ids/);
 });
 
 test("(3) não há mais contradição sobre perguntar o período", () => {
