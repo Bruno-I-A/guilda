@@ -490,7 +490,9 @@ export function readDanfse(nfseXml: string): Danfse {
   }
   sections.push({ kind: "block", title: "TRIBUTAÇÃO FEDERAL (EXCETO CBS)", rows: federalRows });
 
-  const classification = at(ibsCbsDps, "valores/trib/gIBSCBS");
+  // NT 009: CST/cClassTrib direto no trib; NT 004: dentro do gIBSCBS.
+  const tribIbsCbsDps = at(ibsCbsDps, "valores/trib");
+  const classification = read(tribIbsCbsDps, "CST") ? tribIbsCbsDps : at(ibsCbsDps, "valores/trib/gIBSCBS");
   const incidenceCode = read(ibsCbs, "cLocalidadeIncid");
   const cst = read(classification, "CST");
   const classTrib = read(classification, "cClassTrib");
@@ -619,7 +621,8 @@ export function readDanfse(nfseXml: string): Danfse {
       [
         { label: "EMITENTE DA NFS-e", value: labelOf(ISSUER, issuer), shaded: true },
         { label: "SITUAÇÃO DA NFS-e", value: labelOf(STATUS, read(inf, "cStat")) },
-        { label: "FINALIDADE", value: labelOf(PURPOSE, read(ibsCbsDps, "finNFSe")) },
+        // NT 009: finNFSe no infDPS; NT 004: no IBSCBS.
+        { label: "FINALIDADE", value: labelOf(PURPOSE, read(dps, "finNFSe") ?? read(ibsCbsDps, "finNFSe")) },
       ],
     ],
     sections,

@@ -157,6 +157,7 @@ com `GUILDA_SERVICE=fiscal`: o `start-production.mjs` sobe só
 | `NFSE_CERT_PFX_BASE64` | fiscal | o `.pfx` A1 em base64 (`base64 -w0 certificado.pfx`) |
 | `NFSE_CERT_PASSWORD` | fiscal | senha do `.pfx` |
 | `NFSE_AMBIENTE` | fiscal | vazio = produção restrita; `producao` só na produção |
+| `NFSE_LEIAUTE` | fiscal | **deixar vazio**. Leiaute da DPS: a produção restrita usa sempre a NT 009, e a produção troca sozinha da NT 004 para a NT 009 em 01/12/2026, 00h de Brasília. `nt004` ou `nt009` força um dos dois se o governo adiar ou antecipar a virada (apagar quando a data oficial bater) |
 | `FISCAL_SERVICE_TOKEN` | fiscal **e** app | 32+ caracteres aleatórios, iguais nos dois |
 | `FISCAL_SERVICE_URL` | app | endereço interno do serviço fiscal |
 | `NFSE_VAULT_PRIVATE_KEY` | fiscal | chave privada do cofre dos A1 das empresas, gerada pelo Bruno com `node scripts/nfse-vault-key.mjs`; nunca no app |

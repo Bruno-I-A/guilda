@@ -18,6 +18,16 @@ describe("leitura do DANFSe a partir do XML da NFS-e", () => {
     expect(await nfseXsdErrors(testNfseXml(), "NFSe_v1.01.xsd")).toEqual([]);
   });
 
+  test("a fixture no leiaute da NT 009 segue o XSD da NT 009", async () => {
+    expect(await nfseXsdErrors(testNfseXml({ layout: "nt009" }), "NFSe_v1.01.xsd", "nt009")).toEqual([]);
+  });
+
+  test("nota no leiaute da NT 009: CST/classificação e finalidade continuam no DANFSe", () => {
+    const danfse = readDanfse(testNfseXml({ layout: "nt009" }));
+    expect(danfse.identification[2][2].value).toBe("NFS-e regular");
+    expect(values(block(danfse.sections, "TRIBUTAÇÃO IBS/CBS"))[0]).toEqual(["200 / 200052", "100301 / 4308904 / Getúlio Vargas / RS"]);
+  });
+
   test("formata cada campo como o DANFSe que o Portal gerou para a nota 104", () => {
     const danfse = readDanfse(testNfseXml());
 
