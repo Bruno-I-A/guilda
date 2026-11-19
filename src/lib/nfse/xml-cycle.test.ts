@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi, type MockInstance } 
 
 import { XML_ROUTINE_DEFAULTS } from "@/domain/nfse-xml";
 
+import { resetCursorForMode, saveProxyStatus } from "./credentials-repository";
 import { createMtlsTransport, type HttpTransport, networkErrorMessage, NfseTransientError } from "./sefin-client";
 import { testAdnBatchBody } from "./testing/adn";
 import { createTestCertificate } from "./testing/certificate";
@@ -32,6 +33,10 @@ vi.mock("./xml-repository", () => ({
   listRoutineClients: vi.fn(),
   saveAdnProgress: vi.fn(),
   saveAdnError: vi.fn(),
+}));
+vi.mock("./credentials-repository", () => ({
+  resetCursorForMode: vi.fn(),
+  saveProxyStatus: vi.fn(),
 }));
 // Só o transporte é falso: nenhuma chamada de rede de verdade.
 vi.mock("./sefin-client", async (importOriginal) => ({
@@ -152,8 +157,8 @@ describe("rodada da rotina de XML no serviço fiscal", () => {
 
   test("marca início e fim, abre o certificado uma vez por empresa e guarda a partir do dia de Brasília", async () => {
     vi.mocked(listRoutineClients).mockResolvedValue([
-      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, envelope: await seal() },
-      { clientId: "b", cnpj: "33000167000282", lastNsu: 10, historyFromNsu: null, envelope: await seal() },
+      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, mode: "certificate", readMode: null, envelope: await seal() },
+      { clientId: "b", cnpj: "33000167000282", lastNsu: 10, historyFromNsu: null, mode: "certificate", readMode: null, envelope: await seal() },
     ]);
 
     await runXmlRoutineCycle(ORG, vault, "producao");
@@ -192,8 +197,8 @@ describe("rodada da rotina de XML no serviço fiscal", () => {
 
   test("envelope de outra chave fica como erro da empresa e não para a outra", async () => {
     vi.mocked(listRoutineClients).mockResolvedValue([
-      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, envelope: await seal(otherVault) },
-      { clientId: "b", cnpj: "33000167000282", lastNsu: 10, historyFromNsu: null, envelope: await seal() },
+      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, mode: "certificate", readMode: null, envelope: await seal(otherVault) },
+      { clientId: "b", cnpj: "33000167000282", lastNsu: 10, historyFromNsu: null, mode: "certificate", readMode: null, envelope: await seal() },
     ]);
 
     await runXmlRoutineCycle(ORG, vault, "producao");
@@ -217,7 +222,7 @@ describe("rodada da rotina de XML no serviço fiscal", () => {
 
   test("conexão derrubada no meio da leitura é tentada de novo e a empresa termina sem erro", async () => {
     vi.mocked(listRoutineClients).mockResolvedValue([
-      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, envelope: await seal() },
+      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, mode: "certificate", readMode: null, envelope: await seal() },
     ]);
     const real = fakeAdn();
     let dropped = false;
@@ -240,7 +245,7 @@ describe("rodada da rotina de XML no serviço fiscal", () => {
 
   test("queda que se repete vira erro em português e avisa que a próxima leitura continua", async () => {
     vi.mocked(listRoutineClients).mockResolvedValue([
-      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, envelope: await seal() },
+      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, mode: "certificate", readMode: null, envelope: await seal() },
     ]);
     let attempts = 0;
     adn = async () => {
@@ -257,5 +262,74 @@ describe("rodada da rotina de XML no serviço fiscal", () => {
       "O Sistema Nacional fechou a conexão no meio do pedido (ECONNRESET). A próxima leitura continua de onde parou.",
       expect.any(Date),
     );
+  });
+
+  test("empresa por procuração lê com o A1 do escritório, sem abrir certificado, e recomeça do zero na troca", async () => {
+    vi.mocked(listRoutineClients).mockResolvedValue([
+      { clientId: "a", cnpj: "33000167000101", lastNsu: 50, historyFromNsu: null, mode: "proxy", readMode: null, envelope: null },
+    ]);
+    const urls: string[] = [];
+    const real = fakeAdn();
+    const office: HttpTransport = async (req) => {
+      urls.push(req.url);
+      return real(req);
+    };
+
+    await runXmlRoutineCycle(ORG, vault, "producao", { retryDelaysMs: [0, 0], office });
+
+    expect(createMtlsTransport).not.toHaveBeenCalled();
+    expect(resetCursorForMode).toHaveBeenCalledWith(ORG, "a", "proxy", expect.any(Date));
+    // Zerado: pede depois do NSU 0, não do 50, com o CNPJ da empresa.
+    expect(urls[0]).toBe("https://adn.nfse.gov.br/contribuintes/DFe/0?lote=true&cnpjConsulta=33000167000101");
+    expect(saveAdnError).not.toHaveBeenCalled();
+  });
+
+  test("cursor já construído com a mesma credencial continua de onde parou", async () => {
+    vi.mocked(listRoutineClients).mockResolvedValue([
+      { clientId: "a", cnpj: "33000167000101", lastNsu: 50, historyFromNsu: null, mode: "proxy", readMode: "proxy", envelope: null },
+    ]);
+    const urls: string[] = [];
+    const real = fakeAdn();
+    await runXmlRoutineCycle(ORG, vault, "producao", { retryDelaysMs: [0, 0], office: async (req) => (urls.push(req.url), real(req)) });
+    expect(resetCursorForMode).not.toHaveBeenCalled();
+    expect(urls[0]).toContain("/DFe/50?");
+  });
+
+  test("procuração recusada (E2245) vira selo e erro da empresa", async () => {
+    vi.mocked(listRoutineClients).mockResolvedValue([
+      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, mode: "proxy", readMode: "proxy", envelope: null },
+    ]);
+    const office: HttpTransport = async () => ({
+      status: 400,
+      body: Buffer.from(JSON.stringify({ StatusProcessamento: "REJEICAO", Erros: [{ Codigo: "E2245", Descricao: "Não há procuração da inscrição X para a Y" }] })),
+      contentType: "application/json",
+    });
+
+    await runXmlRoutineCycle(ORG, vault, "producao", { retryDelaysMs: [0, 0], office });
+
+    expect(saveProxyStatus).toHaveBeenCalledWith(ORG, "a", expect.objectContaining({ status: "invalid", code: "E2245" }));
+    expect(saveAdnError).toHaveBeenCalledWith(ORG, "a", expect.stringContaining("Procuração recusada"), expect.any(Date));
+  });
+
+  test("por procuração, lote em formato estranho é erro da empresa, não procuração recusada", async () => {
+    vi.mocked(listRoutineClients).mockResolvedValue([
+      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, mode: "proxy", readMode: "proxy", envelope: null },
+    ]);
+    const office: HttpTransport = async () => ({ status: 200, body: Buffer.from("{}"), contentType: "application/json" });
+
+    await runXmlRoutineCycle(ORG, vault, "producao", { retryDelaysMs: [0, 0], office });
+
+    expect(saveProxyStatus).not.toHaveBeenCalled();
+    expect(saveAdnError).toHaveBeenCalledWith(ORG, "a", expect.stringContaining("formato inesperado"), expect.any(Date));
+  });
+
+  test("por procuração sem o A1 do escritório, a empresa fica com erro claro", async () => {
+    vi.mocked(listRoutineClients).mockResolvedValue([
+      { clientId: "a", cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, mode: "proxy", readMode: "proxy", envelope: null },
+    ]);
+
+    await runXmlRoutineCycle(ORG, vault, "producao", { retryDelaysMs: [0, 0], office: null });
+
+    expect(saveAdnError).toHaveBeenCalledWith(ORG, "a", expect.stringContaining("A1 do escritório"), expect.any(Date));
   });
 });

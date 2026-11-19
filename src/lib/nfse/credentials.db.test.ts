@@ -101,3 +101,18 @@ test("o app não apaga configuração nem credencial", async () => {
   await expect(withOrgTx(ORG, (tx) => tx.delete(schema.nfseClientCredentials))).rejects.toMatchObject(denied);
   await expect(withOrgTx(ORG, (tx) => tx.delete(schema.nfseCredentialSettings))).rejects.toMatchObject(denied);
 });
+
+test("rotina: por procuração lê as de serviço sem certificado; o comércio só com a procuração marcada", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const repo = await import("./credentials-repository");
+  const xml = await import("./xml-repository");
+  const now = new Date("2026-11-18T12:00:00Z");
+  // Padrão certificado e nenhuma empresa com A1: ninguém é lido.
+  expect(await xml.listRoutineClients(ORG, now)).toEqual([]);
+  await withOrgTx(ORG, (tx) => repo.setDefaultModeIn(tx, ORG, { mode: "proxy", actorId: "u1", now }));
+  expect(await xml.listRoutineClients(ORG, now)).toEqual([
+    { clientId: PADARIA, cnpj: "33000167000101", lastNsu: 0, historyFromNsu: 0, mode: "proxy", readMode: "proxy", envelope: null },
+  ]);
+  await withOrgTx(ORG, (tx) => repo.setClientModeIn(tx, ORG, { clientId: MERCADO, mode: "proxy", actorId: "u1", now }));
+  expect((await xml.listRoutineClients(ORG, now)).map((row) => row.clientId)).toEqual([MERCADO, PADARIA]);
+});
