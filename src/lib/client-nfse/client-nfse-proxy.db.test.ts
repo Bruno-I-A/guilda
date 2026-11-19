@@ -203,3 +203,32 @@ test("sem o A1 do escritório no serviço fiscal, a nota por procuração falha 
 
   expect(await invoice()).toMatchObject({ status: "failed", lastError: "O A1 do escritório não está disponível no serviço fiscal." });
 }, 60_000);
+
+test("prontidão: por procuração a empresa sem certificado emite; recusada bloqueia com o motivo; por certificado volta a pedir o A1", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const month = await import("./month");
+  const credentials = await import("@/lib/nfse/credentials-repository");
+  const problem = async () => (await withOrgTx(ORG, (tx) => month.loadIssuerReadiness(tx, { orgId: ORG, now: new Date() }))).get(ISSUER)?.problem;
+
+  await credentials.saveProxyStatus(ORG, EMPRESA, { status: "untested", code: null, message: null, checkedAt: new Date() });
+  expect(await problem()).toBeNull();
+  await credentials.saveProxyStatus(ORG, EMPRESA, { status: "invalid", code: "E2245", message: "Não há procuração", checkedAt: new Date() });
+  expect(await problem()).toMatch(/Procuração recusada/);
+  await withOrgTx(ORG, (tx) => credentials.setClientModeIn(tx, ORG, { clientId: EMPRESA, mode: "certificate", actorId: "u1", now: new Date() }));
+  expect(await problem()).toMatch(/Sem certificado A1/);
+  await withOrgTx(ORG, (tx) => credentials.setClientModeIn(tx, ORG, { clientId: EMPRESA, mode: null, actorId: "u1", now: new Date() }));
+}, 60_000);
+
+test("buscar notas antigas e o cartão da empresa seguem a procuração", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const loaders = await import("./loaders");
+  const credentials = await import("@/lib/nfse/credentials-repository");
+
+  await credentials.saveProxyStatus(ORG, EMPRESA, { status: "confirmed", code: null, message: null, checkedAt: new Date() });
+  expect((await withOrgTx(ORG, (tx) => loaders.loadIssuerCustomers(tx, { orgId: ORG, issuerId: ISSUER })))?.canReadHistory).toBe(true);
+  const workspace = await withOrgTx(ORG, (tx) => loaders.loadClientNfseWorkspace(tx, { orgId: ORG, year: 2026, month: 11, now: new Date() }));
+  expect(workspace.issuers.find((issuer) => issuer.id === ISSUER)?.credential).toEqual({ mode: "proxy", proxyStatus: "confirmed" });
+
+  await credentials.saveProxyStatus(ORG, EMPRESA, { status: "invalid", code: "E2245", message: "Não há procuração", checkedAt: new Date() });
+  expect((await withOrgTx(ORG, (tx) => loaders.loadIssuerCustomers(tx, { orgId: ORG, issuerId: ISSUER })))?.canReadHistory).toBe(false);
+}, 60_000);
