@@ -16,6 +16,20 @@ export type MemberNotificationPayload = Readonly<{
   url: string;
 }>;
 
+/**
+ * Conversa do Atendimento que o agente encaminhou ao clã (2026-11-19). Só sai
+ * dentro da janela de 24 horas: o modelo Utility aprovado fala de "novo
+ * cliente", e o de conversa fica para quando o agente atender cliente real.
+ */
+export type MemberSupportPayload = Readonly<{
+  version: 2;
+  kind: "support_conversation";
+  contactName: string;
+  clanName: string;
+  summary: string;
+  url: string;
+}>
+
 export function normalizeWhatsAppPhone(value: unknown): string | null {
   const digits = String(value ?? "").replace(/\D/g, "");
   return /^[1-9][0-9]{7,14}$/.test(digits) ? `+${digits}` : null;
@@ -67,19 +81,25 @@ export function memberNewClientTemplateParams(payload: MemberNotificationPayload
   return [payload.companyName.slice(0, 80), payload.clanName.slice(0, 60), payload.url.slice(0, 200)];
 }
 
-export function hasOpenMemberWhatsAppWindow(lastInboundAt: Date | null, now = new Date()): boolean {
-  return Boolean(lastInboundAt && now.getTime() - lastInboundAt.getTime() < WINDOW_MS);
+export function memberSupportHandoffMessage(payload: MemberSupportPayload): string {
+  return [
+    "Nova conversa no Atendimento",
+    "",
+    `Cliente: ${payload.contactName}`,
+    `Clã: ${payload.clanName}`,
+    ...(payload.summary ? [`Assunto: ${payload.summary}`] : []),
+    "",
+    `Abrir: ${payload.url}`,
+  ].join("\n");
 }
 
-/**
- * Enfileira para cada integrante ativo do clã. A unicidade por fluxo+usuário
- * evita aviso duplicado quando o formulário é reenviado.
- */
-export async function enqueueMemberNewClientNotifications(
-  tx: OrgTx,
-  input: { orgId: string; clanId: string; companyFlowId: string; companyName: string; clanName: string },
-): Promise<void> {
-  const members = await tx
+function appBaseUrl(): string | null {
+  return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") || null;
+}
+
+/** Integrantes do clã que conectaram o WhatsApp no Perfil e deixaram os avisos ligados. */
+async function clanMembersWithWhatsApp(tx: OrgTx, orgId: string, clanId: string): Promise<{ userId: string }[]> {
+  return tx
     .selectDistinct({ userId: schema.clanMemberships.userId })
     .from(schema.clanMemberships)
     .innerJoin(schema.member, and(
@@ -92,11 +112,56 @@ export async function enqueueMemberNewClientNotifications(
       eq(schema.memberWhatsAppConnections.enabled, true),
     ))
     .where(and(
-      eq(schema.clanMemberships.orgId, input.orgId),
-      eq(schema.clanMemberships.clanId, input.clanId),
+      eq(schema.clanMemberships.orgId, orgId),
+      eq(schema.clanMemberships.clanId, clanId),
     ));
+}
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "");
+/**
+ * Enfileira o aviso de conversa encaminhada pelo agente para cada integrante
+ * do clã. A chave inclui a rodada: encaminhar de novo numa rodada nova avisa
+ * de novo; repetir a mesma gravação, não.
+ */
+export async function enqueueMemberSupportHandoffNotifications(
+  tx: OrgTx,
+  input: { orgId: string; clanId: string; conversationId: string; roundKey: string; clanName: string; contactName: string; summary: string },
+): Promise<void> {
+  const members = await clanMembersWithWhatsApp(tx, input.orgId, input.clanId);
+  const appUrl = appBaseUrl();
+  const payload: MemberSupportPayload = {
+    version: 2,
+    kind: "support_conversation",
+    contactName: input.contactName.slice(0, 120),
+    clanName: input.clanName.slice(0, 100),
+    summary: input.summary.slice(0, 280),
+    url: appUrl ? `${appUrl}/atendimento?c=${input.conversationId}` : "Abra o Atendimento da Guilda para ver a conversa.",
+  };
+  for (const member of members) {
+    await tx.insert(schema.memberWhatsAppOutbox).values({
+      orgId: input.orgId,
+      userId: member.userId,
+      supportConversationId: input.conversationId,
+      dedupeKey: `support-conversation:${input.conversationId}:${input.roundKey}:user:${member.userId}`,
+      payload,
+    }).onConflictDoNothing();
+  }
+}
+
+export function hasOpenMemberWhatsAppWindow(lastInboundAt: Date | null, now = new Date()): boolean {
+  return Boolean(lastInboundAt && now.getTime() - lastInboundAt.getTime() < WINDOW_MS);
+}
+
+/**
+ * Enfileira para cada integrante ativo do clã. A unicidade por fluxo+usuário
+ * evita aviso duplicado quando o formulário é reenviado.
+ */
+export async function enqueueMemberNewClientNotifications(
+  tx: OrgTx,
+  input: { orgId: string; clanId: string; companyFlowId: string; companyName: string; clanName: string },
+): Promise<void> {
+  const members = await clanMembersWithWhatsApp(tx, input.orgId, input.clanId);
+
+  const appUrl = appBaseUrl();
   const payload: MemberNotificationPayload = {
     version: 1,
     title: "Novo cliente",

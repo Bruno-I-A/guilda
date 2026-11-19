@@ -1666,14 +1666,20 @@ export const memberWhatsAppNotificationConfig = pgTable(
 
 export const memberWhatsAppOutboxStatus = pgEnum("member_whatsapp_outbox_status", ["pending", "processing", "sent", "failed"]);
 
-/** Fila idempotente: avisar a equipe nunca segura a criação do Fluxo. */
+/**
+ * Fila idempotente: avisar a equipe nunca segura a criação do Fluxo nem o
+ * encaminhamento do Atendimento. Cada aviso vem de um Fluxo (novo cliente) OU
+ * de uma conversa encaminhada pelo agente (2026-11-19); a FK composta da
+ * conversa e o check `num_nonnulls = 1` moram na migração 0106.
+ */
 export const memberWhatsAppOutbox = pgTable(
   "member_whatsapp_outbox",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     orgId: text("org_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
     userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
-    companyFlowId: uuid("company_flow_id").notNull().references(() => companyFlows.id, { onDelete: "cascade" }),
+    companyFlowId: uuid("company_flow_id").references(() => companyFlows.id, { onDelete: "cascade" }),
+    supportConversationId: uuid("support_conversation_id"),
     dedupeKey: varchar("dedupe_key", { length: 255 }).notNull(),
     payload: jsonb("payload").$type<unknown>().notNull(),
     status: memberWhatsAppOutboxStatus("status").notNull().default("pending"),

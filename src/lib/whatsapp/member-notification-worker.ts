@@ -9,13 +9,26 @@ import * as schema from "@/db/schema";
 import { loadWhatsAppChannelAccess } from "./channel-repository";
 import { getWhatsAppConfig } from "./config";
 import { MetaGraphError, sendWhatsAppTemplate, sendWhatsAppText, type MetaServerConfig } from "./meta-client";
-import { hasOpenMemberWhatsAppWindow, memberNewClientMessage, memberNewClientTemplateParams, MEMBER_NEW_CLIENT_TEMPLATE, type MemberNotificationPayload } from "./member-notifications";
+import {
+  hasOpenMemberWhatsAppWindow,
+  memberNewClientMessage,
+  memberNewClientTemplateParams,
+  memberSupportHandoffMessage,
+  MEMBER_NEW_CLIENT_TEMPLATE,
+  type MemberNotificationPayload,
+  type MemberSupportPayload,
+} from "./member-notifications";
 
 type Claim = Readonly<{ id: string; orgId: string; claimToken: string }>;
 
-function payload(value: unknown): MemberNotificationPayload | null {
+function payload(value: unknown): MemberNotificationPayload | MemberSupportPayload | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const v = value as Record<string, unknown>;
+  if (v.version === 2 && v.kind === "support_conversation") {
+    return typeof v.contactName === "string" && typeof v.clanName === "string" && typeof v.url === "string"
+      ? { version: 2, kind: "support_conversation", contactName: v.contactName, clanName: v.clanName, summary: typeof v.summary === "string" ? v.summary : "", url: v.url }
+      : null;
+  }
   return v.version === 1 && typeof v.companyName === "string" && typeof v.clanName === "string" && typeof v.url === "string"
     ? { version: 1, title: typeof v.title === "string" ? v.title : "Novo cliente", companyName: v.companyName, clanName: v.clanName, url: v.url }
     : null;
@@ -56,7 +69,12 @@ async function deliver(claimed: Claim, config: MetaServerConfig, fetchImpl: type
     if (!access) throw new Error("Canal do WhatsApp indisponível.");
     const to = item.connection.phoneE164.slice(1);
     if (hasOpenMemberWhatsAppWindow(item.connection.lastInboundAt)) {
-      await sendWhatsAppText({ phoneNumberId: access.channel.phoneNumberId, accessToken: access.accessToken, to, text: memberNewClientMessage(item.payload) }, config, fetchImpl);
+      const text = item.payload.version === 2 ? memberSupportHandoffMessage(item.payload) : memberNewClientMessage(item.payload);
+      await sendWhatsAppText({ phoneNumberId: access.channel.phoneNumberId, accessToken: access.accessToken, to, text }, config, fetchImpl);
+    } else if (item.payload.version === 2) {
+      // O modelo aprovado fala de "novo cliente": conversa do Atendimento só sai dentro da janela.
+      await finish(claimed, true, "Janela fechada: aviso de conversa do Atendimento ainda sem modelo aprovado.");
+      return false;
     } else {
       if (item.config?.templateStatus !== "APPROVED") {
         // Não gastamos tentativas: a pessoa pode abrir a janela ou o admin aprovar o template depois.
