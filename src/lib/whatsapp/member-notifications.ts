@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -19,6 +19,36 @@ export type MemberNotificationPayload = Readonly<{
 export function normalizeWhatsAppPhone(value: unknown): string | null {
   const digits = String(value ?? "").replace(/\D/g, "");
   return /^[1-9][0-9]{7,14}$/.test(digits) ? `+${digits}` : null;
+}
+
+/**
+ * O número que a pessoa digita no Perfil. Sem o "+", DDD e número (10 ou 11
+ * dígitos) são do Brasil: "(54) 99999-0000" virava +54…, um número da
+ * Argentina. Com o "+", vale o código de país escrito. Número do Brasil precisa
+ * ter DDD e 8 ou 9 dígitos.
+ */
+export function normalizeMemberPhoneInput(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  const digits = text.replace(/\D/g, "");
+  const national = text.startsWith("+") ? digits : digits.replace(/^0+/, "");
+  const withCountry = !text.startsWith("+") && (national.length === 10 || national.length === 11) ? `55${national}` : national;
+  const phone = normalizeWhatsAppPhone(withCountry);
+  if (phone?.startsWith("+55") && phone.length !== 13 && phone.length !== 14) return null;
+  return phone;
+}
+
+/**
+ * Celular brasileiro aparece com e sem o nono dígito: o WhatsApp manda o
+ * número da conta (wa_id), que em conta antiga vem sem o 9, enquanto a pessoa
+ * digita com ele. Os dois formatos são o mesmo WhatsApp. Fixo (começa com 2 a
+ * 5) e outros países ficam como estão.
+ */
+export function whatsAppPhoneVariants(phoneE164: string): string[] {
+  const withNine = /^\+55(\d{2})9(\d{8})$/.exec(phoneE164);
+  if (withNine) return [phoneE164, `+55${withNine[1]}${withNine[2]}`];
+  const withoutNine = /^\+55(\d{2})([6-9]\d{7})$/.exec(phoneE164);
+  if (withoutNine) return [phoneE164, `+55${withoutNine[1]}9${withoutNine[2]}`];
+  return [phoneE164];
 }
 
 /** Text and parameters are deliberately short: the same content works as normal text or Utility template. */
@@ -93,7 +123,7 @@ export async function recordMemberWhatsAppInbound(
     .set({ lastInboundAt: input.occurredAt, updatedAt: new Date() })
     .where(and(
       eq(schema.memberWhatsAppConnections.orgId, input.orgId),
-      eq(schema.memberWhatsAppConnections.phoneE164, input.phoneE164),
+      inArray(schema.memberWhatsAppConnections.phoneE164, whatsAppPhoneVariants(input.phoneE164)),
       eq(schema.memberWhatsAppConnections.enabled, true),
     ))
     .returning({ id: schema.memberWhatsAppConnections.id });
@@ -102,7 +132,11 @@ export async function recordMemberWhatsAppInbound(
 
 export async function isActiveMemberWhatsAppPhone(tx: OrgTx, input: { orgId: string; phoneE164: string }): Promise<boolean> {
   const row = await tx.query.memberWhatsAppConnections.findFirst({
-    where: and(eq(schema.memberWhatsAppConnections.orgId, input.orgId), eq(schema.memberWhatsAppConnections.phoneE164, input.phoneE164), eq(schema.memberWhatsAppConnections.enabled, true)),
+    where: and(
+      eq(schema.memberWhatsAppConnections.orgId, input.orgId),
+      inArray(schema.memberWhatsAppConnections.phoneE164, whatsAppPhoneVariants(input.phoneE164)),
+      eq(schema.memberWhatsAppConnections.enabled, true),
+    ),
     columns: { id: true },
   });
   return Boolean(row);

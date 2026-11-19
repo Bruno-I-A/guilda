@@ -1,6 +1,6 @@
 "use server";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -11,24 +11,33 @@ import { isAdminRole } from "@/lib/session";
 import { loadWhatsAppChannelAccess } from "@/lib/whatsapp/channel-repository";
 import { getWhatsAppConfig } from "@/lib/whatsapp/config";
 import { createWhatsAppUtilityTemplate, describeWhatsAppTemplateError, getWhatsAppTemplate, type MetaServerConfig } from "@/lib/whatsapp/meta-client";
-import { MEMBER_NEW_CLIENT_TEMPLATE, normalizeWhatsAppPhone } from "@/lib/whatsapp/member-notifications";
+import { MEMBER_NEW_CLIENT_TEMPLATE, normalizeMemberPhoneInput, whatsAppPhoneVariants } from "@/lib/whatsapp/member-notifications";
 
-const settingsSchema = z.object({ phone: z.string().trim().min(8, "Informe o WhatsApp com DDI e DDD."), enabled: z.boolean() });
+const settingsSchema = z.object({ phone: z.string().trim().min(8, "Informe o WhatsApp com DDD."), enabled: z.boolean() });
 
 export async function saveMemberWhatsAppSettings(input: z.input<typeof settingsSchema>): Promise<ActionResult> {
   const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
   const parsed = settingsSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
-  const phone = normalizeWhatsAppPhone(parsed.data.phone);
-  if (!phone) return err("Use um número válido com DDI e DDD, por exemplo 55 54 99999-0000.");
+  const phone = normalizeMemberPhoneInput(parsed.data.phone);
+  if (!phone) return err("Use um número válido com DDD, por exemplo (54) 99999-0000.");
+  let taken = false;
   try {
     await withOrgTx(ctx.orgId, async (tx) => {
+      // Com e sem o nono dígito é o mesmo WhatsApp: os dois formatos contam.
       const duplicate = await tx.query.memberWhatsAppConnections.findFirst({
-        where: and(eq(schema.memberWhatsAppConnections.orgId, ctx.orgId), eq(schema.memberWhatsAppConnections.phoneE164, phone)),
+        where: and(
+          eq(schema.memberWhatsAppConnections.orgId, ctx.orgId),
+          inArray(schema.memberWhatsAppConnections.phoneE164, whatsAppPhoneVariants(phone)),
+          ne(schema.memberWhatsAppConnections.userId, ctx.userId),
+        ),
         columns: { userId: true },
       });
-      if (duplicate && duplicate.userId !== ctx.userId) throw new Error("Este WhatsApp já está conectado a outra pessoa da Guilda.");
+      if (duplicate) {
+        taken = true;
+        return;
+      }
       const current = await tx.query.memberWhatsAppConnections.findFirst({
         where: and(eq(schema.memberWhatsAppConnections.orgId, ctx.orgId), eq(schema.memberWhatsAppConnections.userId, ctx.userId)),
         columns: { id: true, phoneE164: true },
@@ -41,8 +50,9 @@ export async function saveMemberWhatsAppSettings(input: z.input<typeof settingsS
             enabled: parsed.data.enabled,
             optedInAt: now,
             updatedAt: now,
-            // A janela pertence ao número, não à pessoa: trocar o telefone a reinicia.
-            ...(current.phoneE164 !== phone ? { lastInboundAt: null } : {}),
+            // A janela pertence ao número, não à pessoa: trocar o telefone a reinicia
+            // (o mesmo número com ou sem o nono dígito não é troca).
+            ...(whatsAppPhoneVariants(phone).includes(current.phoneE164) ? {} : { lastInboundAt: null }),
           })
           .where(and(eq(schema.memberWhatsAppConnections.orgId, ctx.orgId), eq(schema.memberWhatsAppConnections.id, current.id)));
       } else {
@@ -61,6 +71,8 @@ export async function saveMemberWhatsAppSettings(input: z.input<typeof settingsS
     console.error("Falha ao salvar vínculo de WhatsApp do integrante", cause);
     return err("Não foi possível salvar o WhatsApp agora. Tente novamente; se continuar, avise o administrador.");
   }
+  // Fora do catch: dentro dele esta explicação virava a mensagem genérica.
+  if (taken) return err("Este WhatsApp já está conectado a outra pessoa da Guilda.");
   revalidatePath("/profile");
   return { ok: true };
 }
