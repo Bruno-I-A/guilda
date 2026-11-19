@@ -22,6 +22,15 @@ export const PROXY_STATUS_LABELS: Record<ProxyStatus, string> = {
   technical_failure: "Não foi possível testar a procuração",
 };
 
+/** O selo depois de "procuração · ", onde a palavra já está dita. */
+export const PROXY_STATUS_SHORT_LABELS: Record<ProxyStatus, string> = {
+  untested: "não testada",
+  confirmed: "confirmada",
+  invalid: "recusada",
+  no_emission: "sem permissão de emissão",
+  technical_failure: "teste com falha técnica",
+};
+
 /** A empresa manda; sem marcação, o padrão do escritório; sem padrão, certificado (como sempre foi). */
 export function effectiveCredentialMode(
   clientMode: CredentialMode | null | undefined,

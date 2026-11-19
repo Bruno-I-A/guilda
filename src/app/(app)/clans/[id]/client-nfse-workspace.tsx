@@ -44,6 +44,7 @@ import { ClientNfseEmitDialog, type EmitPrefill } from "./client-nfse-emit-dialo
 import { ClientNfseIssuerDialog } from "./client-nfse-issuer-dialog";
 import { ClientNfseInvoiceDialog, clientNfsePdfHref, STATUS_CLASSES, STATUS_LABELS } from "./client-nfse-note-row";
 import { companyDisplayName } from "@/domain/company-display-name";
+import { PROXY_STATUS_SHORT_LABELS } from "@/domain/nfse-credentials";
 
 const MONTHS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"] as const;
 
@@ -247,8 +248,20 @@ function CompanyRow({
       </div>
 
       <div className="grid gap-4 border-b p-4">
+        <p className="text-xs text-muted-foreground">
+          Emite por{" "}
+          {issuer.credential.mode === "proxy" ? (
+            <span className={issuer.credential.proxyStatus === "confirmed" ? "text-success" : issuer.credential.proxyStatus === "invalid" || issuer.credential.proxyStatus === "no_emission" ? "text-destructive" : undefined}>
+              procuração · {PROXY_STATUS_SHORT_LABELS[issuer.credential.proxyStatus]}
+            </span>
+          ) : (
+            "certificado da empresa"
+          )}
+          {" · "}a escolha fica na aba XML das notas
+        </p>
         <div className="flex flex-wrap gap-2">
-          {canManage ? <><ClientCertificateDialog clanId={clanId} clientId={issuer.clientId} clientName={issuer.name} certificate={issuer.certificate} vaultKey={vaultKey} canManage /><Button variant="outline" onClick={() => setTakersOpen(true)}><Users aria-hidden /> Tomadores ({issuer.takers.length})</Button><Button variant="ghost" onClick={() => setFiscalOpen(true)}><Settings2 aria-hidden /> Dados fiscais</Button></> : null}
+          {/* Por procuração o certificado da empresa não é usado: o botão confundiria. */}
+          {canManage ? <>{issuer.credential.mode === "certificate" ? <ClientCertificateDialog clanId={clanId} clientId={issuer.clientId} clientName={issuer.name} certificate={issuer.certificate} vaultKey={vaultKey} canManage /> : null}<Button variant="outline" onClick={() => setTakersOpen(true)}><Users aria-hidden /> Tomadores ({issuer.takers.length})</Button><Button variant="ghost" onClick={() => setFiscalOpen(true)}><Settings2 aria-hidden /> Dados fiscais</Button></> : null}
         </div>
         {canManage && !canEmit ? <p className="text-sm text-warning">{blockedReason ?? "Para emitir uma nova nota, volte ao mês atual."}</p> : null}
         <div><h3>Notas da empresa</h3><p className="mt-1 text-xs text-muted-foreground">Pedidos de {MONTHS[period.month - 1]} · mais recentes primeiro · horários de Brasília</p></div>
