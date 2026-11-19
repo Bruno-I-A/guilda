@@ -152,7 +152,6 @@ beforeAll(async () => {
   process.env.WHATSAPP_APP_SECRET = "segredo-de-teste";
   process.env.SUPPORT_AI_MODE = "shadow";
   process.env.SUPPORT_TRIAGE_DEBOUNCE_SECONDS = "0";
-  process.env.NEXT_PUBLIC_APP_URL = "https://guilda.test/";
   await applyMigrations(client);
   // Ana é do Fiscal e conectou o WhatsApp (janela aberta); Rui é do Fiscal e não conectou.
   await client.exec(`
@@ -292,7 +291,7 @@ test("o encaminhamento avisa no WhatsApp quem é do clã e conectou o número", 
   expect(sent).toEqual([
     {
       to: "5554988887777",
-      text: `Nova conversa no Atendimento\n\nCliente: Bruno\nClã: Fiscal\nAssunto: Cliente pede a guia do DAS\n\nAbrir: https://guilda.test/atendimento?c=${id}`,
+      text: "Nova conversa no Atendimento\n\nCliente: Bruno\nClã: Fiscal\nAssunto: Cliente pede a guia do DAS",
     },
   ]);
 });

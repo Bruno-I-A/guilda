@@ -53,10 +53,10 @@ describe("avisos WhatsApp para integrantes", () => {
     expect(hasOpenMemberWhatsAppWindow(new Date(now.getTime() - (23 * 60 + 50) * 60_000), now)).toBe(false);
   });
 
-  test("aviso de conversa encaminhada traz cliente, clã, assunto e o link", () => {
-    const base = { version: 2 as const, kind: "support_conversation" as const, contactName: "Shift", clanName: "Contabilidade", url: "https://guilda.exemplo/atendimento?c=1" };
+  test("aviso de conversa encaminhada traz cliente, clã e assunto, sem link", () => {
+    const base = { version: 2 as const, kind: "support_conversation" as const, contactName: "Shift", clanName: "Contabilidade" };
     expect(memberSupportHandoffMessage({ ...base, summary: "Cliente pede o balanço de 2025" })).toBe(
-      "Nova conversa no Atendimento\n\nCliente: Shift\nClã: Contabilidade\nAssunto: Cliente pede o balanço de 2025\n\nAbrir: https://guilda.exemplo/atendimento?c=1",
+      "Nova conversa no Atendimento\n\nCliente: Shift\nClã: Contabilidade\nAssunto: Cliente pede o balanço de 2025",
     );
     // Sem resumo da IA, a linha do assunto some em vez de ficar vazia.
     expect(memberSupportHandoffMessage({ ...base, summary: "" })).not.toContain("Assunto");

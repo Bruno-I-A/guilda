@@ -546,7 +546,7 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
     com aceite, como no Scharff. Atribuir à pessoa da Carteira ficou de fora.
   - **Aviso ao clã (2026-11-19, pedido do Bruno)**: quando o agente encaminha a um clã, cada
     integrante com WhatsApp conectado no Perfil recebe "Nova conversa no Atendimento" com cliente,
-    clã, assunto e o link, pela mesma fila do aviso de novo cliente (`member_whatsapp_outbox`, que
+    clã e assunto, sem link (o Bruno pediu só o aviso), pela mesma fila do aviso de novo cliente (`member_whatsapp_outbox`, que
     agora aponta para um Fluxo OU uma conversa, migração 0106). Só dentro da janela de 24h: o modelo
     Utility aprovado fala de "novo cliente", e o modelo de conversa fica para quando o agente atender
     cliente real. Transferência feita por uma pessoa não avisa (o Bruno escolheu só o da IA).
