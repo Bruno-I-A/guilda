@@ -50,9 +50,10 @@ primeira versão continua apenas comparando a sugestão com o que a equipe fez.
 - dúvida que a base aprovada não cubra integralmente;
 - qualquer pedido de senha, código, token ou dado sensível desnecessário.
 
-Quando uma pessoa assume a conversa, a IA para. Ela não promete prazo, não diz
-que algo foi feito e não anuncia que “vai encaminhar”; a própria interface
-mostra o estado do atendimento.
+Quando uma pessoa assume a conversa, ela continua sendo a única que pode
+responder. No piloto em sombra, a IA segue apenas lendo novas mensagens e
+mostrando rascunhos internos para comparação; ela não promete prazo, não diz
+que algo foi feito e não anuncia que “vai encaminhar”.
 
 ## Como escrever a base
 

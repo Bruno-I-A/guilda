@@ -1,7 +1,7 @@
 /**
  * Triagem em sombra contra um Postgres de verdade (PGlite), como guilda_app:
  * desligada não lê nada; ligada lê cada turno uma vez, junta as mensagens
- * seguidas, não lê conversa que já tem dono e nada vai para a fila de saída.
+ * seguidas, inclusive as conversas assumidas, e nada vai para a fila de saída.
  */
 import { PGlite } from "@electric-sql/pglite";
 import { eq } from "drizzle-orm";
@@ -179,14 +179,15 @@ test("recupera somente conhecimento aprovado para o turno", async () => {
   expect(seen.find((call) => call.current.includes("guia do DAS"))?.knowledge).not.toContain(draftId);
 });
 
-test("conversa que já tem dono não passa pela IA", async () => {
+test("conversa assumida continua recebendo sugestão interna", async () => {
   process.env.SUPPORT_AI_MODE = "shadow";
   process.env.SUPPORT_TRIAGE_DEBOUNCE_SECONDS = "0";
   const id = await customerSays("5554900000004", "Preciso de uma nota");
   const { takeSupportConversation } = await import("../inbox");
   await tx((t) => takeSupportConversation(t, { orgId: ORG, viewer: { userId: "ana", role: "admin", clanIds: [] }, conversationId: id, now: new Date() }));
   await cycle();
-  expect(seen.find((call) => call.current.includes("nota"))).toBeUndefined();
+  expect(seen.find((call) => call.current.includes("nota"))).toBeDefined();
+  expect(await tx((t) => t.select().from(schema.supportOutbox))).toEqual([]);
 });
 
 test("falha da IA fica registrada como falha e não trava a conversa", async () => {
