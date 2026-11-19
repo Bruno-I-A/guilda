@@ -6,6 +6,8 @@ import { and, asc, desc, eq, gte, ne } from "drizzle-orm";
 
 import { withOrgTx, type OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { companyDisplayName } from "@/domain/company-display-name";
+import { enqueueMemberSupportHandoffNotifications } from "@/lib/whatsapp/member-notifications";
 
 import type { OpcoesClassificacao, ResultadoClassificacao } from "../triage/classificacao";
 import { retrieveApprovedKnowledge } from "../triage/knowledge";
@@ -69,8 +71,14 @@ async function applyAgentDecision(
   if (input.decision.kind === "wait") return null;
 
   const [contact] = await tx
-    .select({ whatsappId: schema.supportContacts.whatsappId })
+    .select({
+      whatsappId: schema.supportContacts.whatsappId,
+      displayName: schema.supportContacts.displayName,
+      phone: schema.supportContacts.phoneE164,
+      clientName: schema.clients.name,
+    })
     .from(schema.supportContacts)
+    .leftJoin(schema.clients, and(eq(schema.clients.orgId, schema.supportContacts.orgId), eq(schema.clients.id, schema.supportContacts.clientId)))
     .where(and(eq(schema.supportContacts.orgId, input.orgId), eq(schema.supportContacts.id, row.contactId)));
   if (!contact) return "contato_sumiu";
   const [message] = await tx
@@ -128,6 +136,18 @@ async function applyAgentDecision(
         reason: input.decision.reason,
       },
     });
+    // Quem é do clã fica sabendo no WhatsApp pessoal, na mesma transação do encaminhamento.
+    if (input.decision.clanId && input.decision.clanName) {
+      await enqueueMemberSupportHandoffNotifications(tx, {
+        orgId: input.orgId,
+        clanId: input.decision.clanId,
+        conversationId: input.candidate.conversationId,
+        roundKey: input.startedAt.toISOString(),
+        clanName: input.decision.clanName,
+        contactName: contact.clientName ? companyDisplayName(contact.clientName) : (contact.displayName ?? contact.phone ?? contact.whatsappId),
+        summary: input.decision.summary,
+      });
+    }
   } else {
     await tx.update(c).set({ lastMessageAt: input.now, updatedAt: input.now }).where(where);
   }

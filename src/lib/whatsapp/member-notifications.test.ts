@@ -6,6 +6,7 @@ import {
   hasOpenMemberWhatsAppWindow,
   memberNewClientMessage,
   memberNewClientTemplateParams,
+  memberSupportHandoffMessage,
   normalizeMemberPhoneInput,
   normalizeWhatsAppPhone,
   whatsAppPhoneVariants,
@@ -50,6 +51,15 @@ describe("avisos WhatsApp para integrantes", () => {
     const now = new Date("2026-11-19T12:00:00Z");
     expect(hasOpenMemberWhatsAppWindow(new Date(now.getTime() - (23 * 60 + 49) * 60_000), now)).toBe(true);
     expect(hasOpenMemberWhatsAppWindow(new Date(now.getTime() - (23 * 60 + 50) * 60_000), now)).toBe(false);
+  });
+
+  test("aviso de conversa encaminhada traz cliente, clã, assunto e o link", () => {
+    const base = { version: 2 as const, kind: "support_conversation" as const, contactName: "Shift", clanName: "Contabilidade", url: "https://guilda.exemplo/atendimento?c=1" };
+    expect(memberSupportHandoffMessage({ ...base, summary: "Cliente pede o balanço de 2025" })).toBe(
+      "Nova conversa no Atendimento\n\nCliente: Shift\nClã: Contabilidade\nAssunto: Cliente pede o balanço de 2025\n\nAbrir: https://guilda.exemplo/atendimento?c=1",
+    );
+    // Sem resumo da IA, a linha do assunto some em vez de ficar vazia.
+    expect(memberSupportHandoffMessage({ ...base, summary: "" })).not.toContain("Assunto");
   });
 
   test("mantém texto e variáveis do modelo com o mesmo contexto", () => {

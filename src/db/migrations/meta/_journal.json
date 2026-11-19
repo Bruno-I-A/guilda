@@ -743,6 +743,13 @@
       "when": 1795255200000,
       "tag": "0105_support-agent-test",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1795262400000,
+      "tag": "0106_member-whatsapp-support-handoff",
+      "breakpoints": true
     }
   ]
 }

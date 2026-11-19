@@ -152,12 +152,18 @@ beforeAll(async () => {
   process.env.WHATSAPP_APP_SECRET = "segredo-de-teste";
   process.env.SUPPORT_AI_MODE = "shadow";
   process.env.SUPPORT_TRIAGE_DEBOUNCE_SECONDS = "0";
+  process.env.NEXT_PUBLIC_APP_URL = "https://guilda.test/";
   await applyMigrations(client);
+  // Ana é do Fiscal e conectou o WhatsApp (janela aberta); Rui é do Fiscal e não conectou.
   await client.exec(`
     INSERT INTO organization (id, name, slug, created_at) VALUES ('${ORG}', 'Escritório', 'agente', now());
-    INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at) VALUES ('admin', 'Bruno', 'admin@x', true, now(), now());
-    INSERT INTO member (id, organization_id, user_id, role, created_at) VALUES ('m1', '${ORG}', 'admin', 'admin', now());
+    INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at) VALUES
+      ('admin', 'Bruno', 'admin@x', true, now(), now()), ('ana', 'Ana', 'ana@x', true, now(), now()), ('rui', 'Rui', 'rui@x', true, now(), now());
+    INSERT INTO member (id, organization_id, user_id, role, created_at) VALUES
+      ('m1', '${ORG}', 'admin', 'admin', now()), ('m2', '${ORG}', 'ana', 'member', now()), ('m3', '${ORG}', 'rui', 'member', now());
     INSERT INTO clans (id, org_id, name, slug) VALUES ('${FISCAL}', '${ORG}', 'Fiscal', 'fiscal');
+    INSERT INTO clan_memberships (org_id, clan_id, user_id) VALUES ('${ORG}', '${FISCAL}', 'ana'), ('${ORG}', '${FISCAL}', 'rui');
+    INSERT INTO member_whatsapp_connections (org_id, user_id, phone_e164, last_inbound_at) VALUES ('${ORG}', 'ana', '+5554988887777', '2026-11-19T12:00:00Z');
   `);
   await client.exec("SET ROLE guilda_app;");
   const { encryptWhatsAppToken } = await import("@/lib/whatsapp/token-vault");
@@ -265,6 +271,32 @@ test("pergunta, resposta do cliente e encaminhamento ao clã; a palavra de novo 
   expect((await aiTexts(id)).at(-1)).toBe(`Bom dia! ${ASK}`);
 });
 
+test("o encaminhamento avisa no WhatsApp quem é do clã e conectou o número", async () => {
+  const id = await customerIdFor("5554900000003");
+  const rows = await tx((t) =>
+    t
+      .select({ userId: schema.memberWhatsAppOutbox.userId, companyFlowId: schema.memberWhatsAppOutbox.companyFlowId })
+      .from(schema.memberWhatsAppOutbox)
+      .where(eq(schema.memberWhatsAppOutbox.supportConversationId, id)),
+  );
+  expect(rows).toEqual([{ userId: "ana", companyFlowId: null }]);
+
+  const { runMemberWhatsAppNotificationCycle } = await import("@/lib/whatsapp/member-notification-worker");
+  const sent: { to: string; text: string }[] = [];
+  const fetchSpy = (async (_url: URL, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as { to: string; text: { body: string } };
+    sent.push({ to: body.to, text: body.text.body });
+    return new Response(JSON.stringify({ messages: [{ id: `wamid.aviso${sent.length}` }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  await runMemberWhatsAppNotificationCycle(20, fetchSpy);
+  expect(sent).toEqual([
+    {
+      to: "5554988887777",
+      text: `Nova conversa no Atendimento\n\nCliente: Bruno\nClã: Fiscal\nAssunto: Cliente pede a guia do DAS\n\nAbrir: https://guilda.test/atendimento?c=${id}`,
+    },
+  ]);
+});
+
 test("quem assume enquanto a IA lê vence: a fala é descartada", async () => {
   setClock(500);
   const id = await customerSays("5554900000004", "batata preciso de uma nota", 470);
@@ -365,6 +397,29 @@ test("desligar o teste encerra a rodada aberta e segura o que estava na fila", a
   const { loadSupportConversation } = await import("../inbox");
   const view = await tx((t) => loadSupportConversation(t, { orgId: ORG, viewer: admin, conversationId: id, now: new Date() }));
   expect(view?.timeline.some((item) => item.kind === "event" && item.text === "Bruno desligou o teste do agente")).toBe(true);
+});
+
+test("fora da janela de 24 horas, o aviso de conversa não sai (ainda não há modelo para ele)", async () => {
+  // O encaminhamento da conversa 5 deixou um aviso pendente para a Ana.
+  const id = await customerIdFor("5554900000005");
+  await tx((t) => t.update(schema.memberWhatsAppConnections).set({ lastInboundAt: null }).where(eq(schema.memberWhatsAppConnections.userId, "ana")));
+  const { runMemberWhatsAppNotificationCycle } = await import("@/lib/whatsapp/member-notification-worker");
+  const sent: string[] = [];
+  const fetchSpy = (async (_url: URL, init: RequestInit) => {
+    sent.push((JSON.parse(String(init.body)) as { to: string }).to);
+    return new Response(JSON.stringify({ messages: [{ id: "wamid.nao-deveria-sair" }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  await runMemberWhatsAppNotificationCycle(20, fetchSpy);
+  expect(sent).toEqual([]);
+  // Fechado sem tentar de novo. A função do #139 grava aviso pulado como "sent" e
+  // descarta o motivo, como já faz no caso do modelo não aprovado.
+  const [row] = await tx((t) =>
+    t
+      .select({ status: schema.memberWhatsAppOutbox.status })
+      .from(schema.memberWhatsAppOutbox)
+      .where(eq(schema.memberWhatsAppOutbox.supportConversationId, id)),
+  );
+  expect(row.status).not.toBe("pending");
 });
 
 test("a configuração recusa palavra inválida e não se apaga", async () => {
