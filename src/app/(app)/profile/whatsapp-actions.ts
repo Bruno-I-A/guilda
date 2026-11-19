@@ -29,11 +29,37 @@ export async function saveMemberWhatsAppSettings(input: z.input<typeof settingsS
         columns: { userId: true },
       });
       if (duplicate && duplicate.userId !== ctx.userId) throw new Error("Este WhatsApp já está conectado a outra pessoa da Guilda.");
-      await tx.insert(schema.memberWhatsAppConnections).values({ orgId: ctx.orgId, userId: ctx.userId, phoneE164: phone, enabled: parsed.data.enabled, optedInAt: new Date(), updatedAt: new Date() })
-        .onConflictDoUpdate({ target: [schema.memberWhatsAppConnections.orgId, schema.memberWhatsAppConnections.userId], set: { phoneE164: phone, enabled: parsed.data.enabled, optedInAt: new Date(), updatedAt: new Date() } });
+      const current = await tx.query.memberWhatsAppConnections.findFirst({
+        where: and(eq(schema.memberWhatsAppConnections.orgId, ctx.orgId), eq(schema.memberWhatsAppConnections.userId, ctx.userId)),
+        columns: { id: true, phoneE164: true },
+      });
+      const now = new Date();
+      if (current) {
+        await tx.update(schema.memberWhatsAppConnections)
+          .set({
+            phoneE164: phone,
+            enabled: parsed.data.enabled,
+            optedInAt: now,
+            updatedAt: now,
+            // A janela pertence ao número, não à pessoa: trocar o telefone a reinicia.
+            ...(current.phoneE164 !== phone ? { lastInboundAt: null } : {}),
+          })
+          .where(and(eq(schema.memberWhatsAppConnections.orgId, ctx.orgId), eq(schema.memberWhatsAppConnections.id, current.id)));
+      } else {
+        await tx.insert(schema.memberWhatsAppConnections).values({
+          orgId: ctx.orgId,
+          userId: ctx.userId,
+          phoneE164: phone,
+          enabled: parsed.data.enabled,
+          optedInAt: now,
+          updatedAt: now,
+        });
+      }
     });
   } catch (cause) {
-    return err(cause instanceof Error ? cause.message : "Não foi possível salvar o WhatsApp.");
+    // Query e parâmetros nunca vão à tela: além de confundir, poderiam exibir telefone.
+    console.error("Falha ao salvar vínculo de WhatsApp do integrante", cause);
+    return err("Não foi possível salvar o WhatsApp agora. Tente novamente; se continuar, avise o administrador.");
   }
   revalidatePath("/profile");
   return { ok: true };
