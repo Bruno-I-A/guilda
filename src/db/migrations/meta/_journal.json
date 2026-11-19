@@ -722,6 +722,20 @@
       "when": 1795053365576,
       "tag": "0102_procuracao",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1795080000000,
+      "tag": "0103_member-whatsapp-notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1795168800000,
+      "tag": "0104_fix-member-whatsapp-phone-check",
+      "breakpoints": true
     }
   ]
 }

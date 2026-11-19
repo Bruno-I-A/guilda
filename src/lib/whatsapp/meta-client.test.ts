@@ -4,9 +4,12 @@ vi.mock("server-only", () => ({}));
 
 import {
   downloadWhatsAppImage,
+  createWhatsAppUtilityTemplate,
+  describeWhatsAppTemplateError,
   exchangeEmbeddedSignupCode,
   resolveEmbeddedSignupWabaId,
   resolveCoexistencePhone,
+  sendWhatsAppTemplate,
   subscribeWhatsAppWebhook,
 } from "./meta-client";
 
@@ -145,6 +148,31 @@ describe("cliente seguro da Meta", () => {
       verify_token: "verify-token-guilda",
     });
     expect(String(init.body)).not.toContain("EA-token");
+  });
+
+  test("envia o modelo Utility com os parâmetros fora da janela", async () => {
+    const fetchMock = fetchReturning({ messages: [{ id: "wamid.aviso" }] });
+    await expect(sendWhatsAppTemplate({
+      phoneNumberId: "222222", accessToken: "EA-token", to: "5554999990000",
+      name: "guilda_novo_cliente", language: "pt_BR", bodyParams: ["ACME", "Fiscal", "https://guilda.example"],
+    }, config, fetchMock)).resolves.toBe("wamid.aviso");
+    const [, init] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      type: "template",
+      template: { name: "guilda_novo_cliente", language: { code: "pt_BR" } },
+    });
+    expect(JSON.parse(String(init.body)).template.components[0].parameters).toEqual([
+      { type: "text", text: "ACME" }, { type: "text", text: "Fiscal" }, { type: "text", text: "https://guilda.example" },
+    ]);
+  });
+
+  test("explica de forma acionável a permissão ausente para criar modelos", async () => {
+    const fetchMock = fetchReturning({ error: { code: 200, message: "Permissions error" } }, 403);
+    await expect(createWhatsAppUtilityTemplate({
+      wabaId: "111111", accessToken: "EA-token", name: "guilda_novo_cliente", body: "Novo cliente: {{1}}", examples: ["ACME"],
+    }, config, fetchMock)).rejects.toSatisfy((error: unknown) =>
+      describeWhatsAppTemplateError(error).includes("whatsapp_business_management"),
+    );
   });
 
   test("baixa foto por uma URL temporária sem expor o token", async () => {

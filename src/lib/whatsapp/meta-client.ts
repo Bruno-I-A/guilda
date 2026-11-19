@@ -15,7 +15,7 @@ export type MetaPhoneNumber = Readonly<{
 }>;
 
 type MetaErrorPayload = {
-  error?: { code?: number; type?: string };
+  error?: { code?: number; type?: string; message?: string; error_user_msg?: string };
 };
 
 export class MetaGraphError extends Error {
@@ -26,11 +26,16 @@ export class MetaGraphError extends Error {
       | "list_phones"
       | "subscribe_webhook"
       | "send_message"
+      | "send_template"
+      | "get_template"
+      | "create_template"
       | "get_media_url"
       | "download_media",
     readonly httpStatus: number,
     readonly graphCode?: number,
     readonly graphType?: string,
+    /** Explicação curta da Meta, sem token ou resposta bruta. */
+    readonly graphMessage?: string,
   ) {
     super(`Meta Graph API falhou em ${operation}.`);
     this.name = "MetaGraphError";
@@ -57,7 +62,25 @@ function graphError(
   payload: Record<string, unknown>,
 ): MetaGraphError {
   const error = (payload as MetaErrorPayload).error;
-  return new MetaGraphError(operation, response.status, error?.code, error?.type);
+  const message = String(error?.error_user_msg ?? error?.message ?? "")
+    .replace(/(?:access[_ -]?token|bearer)\s+[^\s,]+/gi, "")
+    .slice(0, 300)
+    .trim() || undefined;
+  return new MetaGraphError(operation, response.status, error?.code, error?.type, message);
+}
+
+/** Texto seguro e acionável para o administrador; não entrega payload nem credencial. */
+export function describeWhatsAppTemplateError(error: unknown): string {
+  if (!(error instanceof MetaGraphError)) return "Não foi possível preparar o modelo da Meta.";
+  if (error.graphCode === 200 || error.httpStatus === 403) {
+    return "A Meta negou a permissão de gerenciar modelos. Reconecte o WhatsApp do escritório em Atendimento para conceder whatsapp_business_management e tente novamente.";
+  }
+  if (error.graphCode === 190) return "O acesso do WhatsApp expirou. Reconecte o número do escritório em Atendimento e tente novamente.";
+  if (error.graphCode === 100 || error.graphCode === 131009) {
+    return error.graphMessage ? `A Meta recusou um campo do modelo: ${error.graphMessage}` : "A Meta recusou um campo do modelo.";
+  }
+  if (error.graphCode === 80008) return "A Meta limitou temporariamente a criação de modelos. Aguarde alguns minutos e tente novamente.";
+  return error.graphMessage ? `A Meta não criou o modelo: ${error.graphMessage}` : `A Meta não criou o modelo (HTTP ${error.httpStatus}).`;
 }
 
 export async function exchangeEmbeddedSignupCode(
@@ -209,6 +232,93 @@ export async function sendWhatsAppText(
     throw graphError("send_message", response, payload);
   }
   return sent.id;
+}
+
+export type WhatsAppTemplate = Readonly<{
+  id?: string;
+  name: string;
+  language: string;
+  status: string;
+  rejectedReason?: string;
+}>;
+
+/** Envia um modelo previamente aprovado; é a única saída permitida fora da janela de 24 h. */
+export async function sendWhatsAppTemplate(
+  input: { phoneNumberId: string; accessToken: string; to: string; name: string; language: string; bodyParams: string[] },
+  config: MetaServerConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const url = graphUrl(config, `/${input.phoneNumberId}/messages`);
+  const response = await fetchImpl(url, {
+    method: "POST",
+    headers: { authorization: `Bearer ${input.accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: input.to,
+      type: "template",
+      template: {
+        name: input.name,
+        language: { code: input.language },
+        components: [{ type: "body", parameters: input.bodyParams.map((text) => ({ type: "text", text })) }],
+      },
+    }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const payload = await responsePayload(response);
+  const sent = Array.isArray(payload.messages) ? (payload.messages[0] as { id?: unknown } | undefined) : undefined;
+  if (!response.ok || typeof sent?.id !== "string") throw graphError("send_template", response, payload);
+  return sent.id;
+}
+
+function parseTemplate(value: unknown): WhatsAppTemplate | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const item = value as Record<string, unknown>;
+  if (typeof item.name !== "string" || typeof item.language !== "string" || typeof item.status !== "string") return null;
+  return {
+    ...(typeof item.id === "string" ? { id: item.id } : {}),
+    name: item.name,
+    language: item.language,
+    status: item.status,
+    ...(typeof item.rejected_reason === "string" ? { rejectedReason: item.rejected_reason } : {}),
+  };
+}
+
+export async function getWhatsAppTemplate(
+  input: { wabaId: string; accessToken: string; name: string },
+  config: MetaServerConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<WhatsAppTemplate | null> {
+  const url = graphUrl(config, `/${input.wabaId}/message_templates`);
+  url.search = new URLSearchParams({ name: input.name, limit: "10" }).toString();
+  const response = await fetchImpl(url, { method: "GET", headers: { authorization: `Bearer ${input.accessToken}` }, cache: "no-store", signal: AbortSignal.timeout(15_000) });
+  const payload = await responsePayload(response);
+  if (!response.ok || !Array.isArray(payload.data)) throw graphError("get_template", response, payload);
+  return payload.data.map(parseTemplate).find((template): template is WhatsAppTemplate => Boolean(template)) ?? null;
+}
+
+export async function createWhatsAppUtilityTemplate(
+  input: { wabaId: string; accessToken: string; name: string; body: string; examples: string[] },
+  config: MetaServerConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<WhatsAppTemplate> {
+  const url = graphUrl(config, `/${input.wabaId}/message_templates`);
+  const response = await fetchImpl(url, {
+    method: "POST",
+    headers: { authorization: `Bearer ${input.accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      name: input.name,
+      language: "pt_BR",
+      category: "UTILITY",
+      allow_category_change: true,
+      components: [{ type: "BODY", text: input.body, example: { body_text: [input.examples] } }],
+    }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const payload = await responsePayload(response);
+  if (!response.ok || typeof payload.id !== "string") throw graphError("create_template", response, payload);
+  return { id: payload.id, name: input.name, language: "pt_BR", status: typeof payload.status === "string" ? payload.status : "PENDING" };
 }
 
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;

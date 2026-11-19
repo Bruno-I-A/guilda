@@ -1626,6 +1626,73 @@ export const telegramPreferences = pgTable(
 );
 
 /**
+ * Número pessoal pelo qual um integrante recebe avisos operacionais da Guilda.
+ * Não é um novo usuário: o vínculo sempre aponta para o membro já existente.
+ * A última mensagem recebida desse número abre a janela de 24 horas da Meta.
+ */
+export const memberWhatsAppConnections = pgTable(
+  "member_whatsapp_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    phoneE164: varchar("phone_e164", { length: 16 }).notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    optedInAt: timestamp("opted_in_at", { withTimezone: true }).notNull().defaultNow(),
+    lastInboundAt: timestamp("last_inbound_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("member_whatsapp_connections_org_user_uidx").on(t.orgId, t.userId),
+    uniqueIndex("member_whatsapp_connections_org_phone_uidx").on(t.orgId, t.phoneE164),
+    check("member_whatsapp_connections_phone_check", sql`${t.phoneE164} ~ '^[+][1-9][0-9]{7,14}$'`),
+  ],
+);
+
+/** Estado do modelo Utility compartilhado por organização, aprovado pela Meta. */
+export const memberWhatsAppNotificationConfig = pgTable(
+  "member_whatsapp_notification_config",
+  {
+    orgId: text("org_id").primaryKey().references(() => organization.id, { onDelete: "cascade" }),
+    templateName: varchar("template_name", { length: 512 }).notNull(),
+    templateLanguage: varchar("template_language", { length: 20 }).notNull().default("pt_BR"),
+    templateStatus: varchar("template_status", { length: 40 }).notNull().default("not_created"),
+    templateId: varchar("template_id", { length: 64 }),
+    rejectedReason: text("rejected_reason"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+);
+
+export const memberWhatsAppOutboxStatus = pgEnum("member_whatsapp_outbox_status", ["pending", "processing", "sent", "failed"]);
+
+/** Fila idempotente: avisar a equipe nunca segura a criação do Fluxo. */
+export const memberWhatsAppOutbox = pgTable(
+  "member_whatsapp_outbox",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    companyFlowId: uuid("company_flow_id").notNull().references(() => companyFlows.id, { onDelete: "cascade" }),
+    dedupeKey: varchar("dedupe_key", { length: 255 }).notNull(),
+    payload: jsonb("payload").$type<unknown>().notNull(),
+    status: memberWhatsAppOutboxStatus("status").notNull().default("pending"),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull().defaultNow(),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lockToken: uuid("lock_token"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    lastError: text("last_error"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("member_whatsapp_outbox_org_dedupe_uidx").on(t.orgId, t.dedupeKey),
+    index("member_whatsapp_outbox_pending_idx").on(t.status, t.scheduledFor, t.lockedAt),
+    index("member_whatsapp_outbox_org_user_idx").on(t.orgId, t.userId),
+  ],
+);
+
+/**
  * Dedupe global de updates do Telegram. Não armazena payload nem dados do
  * tenant: a organização ainda é desconhecida quando o update chega.
  */

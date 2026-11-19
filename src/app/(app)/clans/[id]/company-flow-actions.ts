@@ -50,6 +50,7 @@ import {
   enqueueTelegramClanBroadcast,
   notificationPayload,
 } from "@/lib/telegram/notifications";
+import { enqueueMemberNewClientNotifications } from "@/lib/whatsapp/member-notifications";
 
 const activitySchema = z.object({
   code: z.string().trim().max(12).nullable().optional(),
@@ -544,6 +545,11 @@ export async function createCompanyFlow(
       data.clanId,
       "company_flow",
     );
+    const [clanDestinatario] = await tx
+      .select({ name: schema.clans.name })
+      .from(schema.clans)
+      .where(and(eq(schema.clans.orgId, ctx.orgId), eq(schema.clans.id, data.clanId)))
+      .limit(1);
     const nomeEmpresa = companyFlowDisplayName({
       kind: data.kind,
       existingClientName: existingClient?.name ?? null,
@@ -601,6 +607,14 @@ export async function createCompanyFlow(
       ),
       // Quem recebeu a missão nominal já foi avisado por createTaskRecord.
       exceptUserId: responsavel?.userId,
+    });
+
+    await enqueueMemberNewClientNotifications(tx, {
+      orgId: ctx.orgId,
+      clanId: data.clanId,
+      companyFlowId: flow.id,
+      companyName: nomeEmpresa,
+      clanName: clanDestinatario?.name ?? "Clã responsável",
     });
 
     if (encryptedSecret) {
