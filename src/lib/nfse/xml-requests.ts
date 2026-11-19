@@ -15,8 +15,10 @@ import {
   xmlNoteFileName,
   type XmlRoutineSchedule,
 } from "@/domain/nfse-xml";
+import { effectiveCredentialMode, type CredentialMode, type ProxyStatus } from "@/domain/nfse-credentials";
 import { nfseIssuer, type NfseIssuerSource } from "@/domain/nfse-service";
 
+import { credentialPolicyIn } from "./credentials-repository";
 import type { ArchiveCompany, ArchiveMissing } from "./xml-archive";
 
 export interface ClientCertificateView {
@@ -65,11 +67,29 @@ export interface XmlRoutineView {
 export async function loadXmlRoutineView(tx: OrgTx, orgId: string, now: Date): Promise<XmlRoutineView> {
   const r = schema.nfseXmlRoutines;
   const [row] = await tx.select().from(r).where(eq(r.orgId, orgId));
-  const certificates = await tx
-    .select({ name: schema.clients.name, status: schema.nfseClientCertificates.status, validUntil: schema.nfseClientCertificates.validUntil })
-    .from(schema.nfseClientCertificates)
-    .innerJoin(schema.clients, and(eq(schema.clients.orgId, schema.nfseClientCertificates.orgId), eq(schema.clients.id, schema.nfseClientCertificates.clientId)))
-    .where(eq(schema.nfseClientCertificates.orgId, orgId));
+  const policy = await credentialPolicyIn(tx, orgId);
+  const credentials = await loadClientCredentials(tx, orgId);
+  const modeOf = (clientId: string) => effectiveCredentialMode(credentials.get(clientId)?.mode, policy.defaultMode);
+  // Certificado só pesa para quem lê com ele; por procuração, o que pesa é a procuração.
+  const certificates = (
+    await tx
+      .select({
+        clientId: schema.nfseClientCertificates.clientId,
+        name: schema.clients.name,
+        status: schema.nfseClientCertificates.status,
+        validUntil: schema.nfseClientCertificates.validUntil,
+      })
+      .from(schema.nfseClientCertificates)
+      .innerJoin(schema.clients, and(eq(schema.clients.orgId, schema.nfseClientCertificates.orgId), eq(schema.clients.id, schema.nfseClientCertificates.clientId)))
+      .where(eq(schema.nfseClientCertificates.orgId, orgId))
+  ).filter((cert) => modeOf(cert.clientId) === "certificate");
+  const refused = (
+    await tx
+      .select({ clientId: schema.clients.id, name: schema.clients.name, status: schema.nfseClientCredentials.proxyStatus })
+      .from(schema.nfseClientCredentials)
+      .innerJoin(schema.clients, and(eq(schema.clients.orgId, schema.nfseClientCredentials.orgId), eq(schema.clients.id, schema.nfseClientCredentials.clientId)))
+      .where(and(eq(schema.nfseClientCredentials.orgId, orgId), inArray(schema.nfseClientCredentials.proxyStatus, ["invalid", "no_emission"])))
+  ).filter((credential) => modeOf(credential.clientId) === "proxy");
   const cursorErrors = await tx
     .select({ name: schema.clients.name, lastError: schema.nfseDfeCursors.lastError })
     .from(schema.nfseDfeCursors)
@@ -82,6 +102,10 @@ export async function loadXmlRoutineView(tx: OrgTx, orgId: string, now: Date): P
       if (state === "invalid") return [{ clientName: cert.name, message: "certificado com problema" }];
       return [];
     }),
+    ...refused.map((credential) => ({
+      clientName: credential.name,
+      message: credential.status === "invalid" ? "procuração recusada" : "procuração sem permissão de emissão",
+    })),
     ...cursorErrors.map((cursor) => ({ clientName: cursor.name, message: (cursor.lastError ?? "").slice(0, 120) })),
   ];
   return {
@@ -116,6 +140,56 @@ export async function countIssuedNotes(
   return new Map(rows.map((row) => [row.clientId, { total: row.total, cancelled: row.cancelled }]));
 }
 
+type SavedCredential = {
+  mode: CredentialMode | null;
+  proxyStatus: ProxyStatus;
+  proxyCheckedAt: Date | null;
+  proxyMessage: string | null;
+  proxyTestRequestedAt: Date | null;
+};
+
+async function loadClientCredentials(tx: OrgTx, orgId: string): Promise<Map<string, SavedCredential>> {
+  const cc = schema.nfseClientCredentials;
+  const rows = await tx
+    .select({
+      clientId: cc.clientId,
+      mode: cc.mode,
+      proxyStatus: cc.proxyStatus,
+      proxyCheckedAt: cc.proxyCheckedAt,
+      proxyMessage: cc.proxyMessage,
+      proxyTestRequestedAt: cc.proxyTestRequestedAt,
+    })
+    .from(cc)
+    .where(eq(cc.orgId, orgId));
+  return new Map(rows.map(({ clientId, ...saved }) => [clientId, saved]));
+}
+
+/** O passo "Credenciais" da aba XML: o padrão do escritório e o A1 dele. */
+export interface XmlCredentialsView {
+  defaultMode: CredentialMode;
+  /** Há teste de procuração pedido e ainda não feito (para todas ou para alguma). */
+  testRequested: boolean;
+  /** O A1 do escritório, como o serviço fiscal registrou na última volta. */
+  office: { validUntil: string | null; error: string | null };
+}
+
+export async function loadXmlCredentialsView(tx: OrgTx, orgId: string): Promise<XmlCredentialsView> {
+  const policy = await credentialPolicyIn(tx, orgId);
+  const s = schema.nfseSettings;
+  const [settings] = await tx.select({ validUntil: s.certificateValidUntil, error: s.serviceError }).from(s).where(eq(s.orgId, orgId));
+  const cc = schema.nfseClientCredentials;
+  const [pending] = await tx
+    .select({ clientId: cc.clientId })
+    .from(cc)
+    .where(and(eq(cc.orgId, orgId), isNotNull(cc.proxyTestRequestedAt)))
+    .limit(1);
+  return {
+    defaultMode: policy.defaultMode,
+    testRequested: policy.proxyTestRequestedAt !== null || Boolean(pending),
+    office: { validUntil: settings?.validUntil?.toISOString() ?? null, error: settings?.error ?? null },
+  };
+}
+
 export interface XmlCompanyView {
   clientId: string;
   name: string;
@@ -125,6 +199,17 @@ export interface XmlCompanyView {
   /** Emite NFS-e: a Ficha Fiscal manda; sem marcação, o CNAE principal sugere. */
   service: { issues: boolean | null; source: NfseIssuerSource };
   certificate: ClientCertificateView | null;
+  /** Por qual credencial a empresa é lida e emite, e o selo da procuração. */
+  credential: {
+    /** O que vale agora, já com o padrão do escritório. */
+    mode: CredentialMode;
+    /** O que foi marcado na empresa; null = segue o padrão. */
+    explicitMode: CredentialMode | null;
+    proxyStatus: ProxyStatus;
+    proxyCheckedAt: string | null;
+    proxyMessage: string | null;
+    testRequested: boolean;
+  };
   /** Notas emitidas no mês escolhido na aba. */
   notes: { total: number; cancelled: number };
   /** Leitura da rotina; null = a rotina ainda não passou pela empresa. */
@@ -154,6 +239,8 @@ export async function loadXmlCompanies(
     .orderBy(asc(cl.name));
   const clientIds = rows.map((row) => row.clientId);
   const certificates = await loadClientCertificates(tx, input.orgId);
+  const policy = await credentialPolicyIn(tx, input.orgId);
+  const credentials = await loadClientCredentials(tx, input.orgId);
   const counts = await countIssuedNotes(tx, { orgId: input.orgId, clientIds, year: input.year, month: input.month });
   const n = schema.nfseIssuedNotes;
   const stored = new Map(
@@ -176,10 +263,19 @@ export async function loadXmlCompanies(
   );
   return rows.map(({ cnaeCode, issuer, ...row }) => {
     const cursor = cursors.get(row.clientId);
+    const saved = credentials.get(row.clientId);
     return {
       ...row,
       service: nfseIssuer({ applicability: issuer, cnaeCode }),
       certificate: certificates.get(row.clientId) ?? null,
+      credential: {
+        mode: effectiveCredentialMode(saved?.mode, policy.defaultMode),
+        explicitMode: saved?.mode ?? null,
+        proxyStatus: saved?.proxyStatus ?? "untested",
+        proxyCheckedAt: saved?.proxyCheckedAt?.toISOString() ?? null,
+        proxyMessage: saved?.proxyMessage ?? null,
+        testRequested: Boolean(saved?.proxyTestRequestedAt),
+      },
       notes: counts.get(row.clientId) ?? { total: 0, cancelled: 0 },
       stored: (() => {
         const found = stored.get(row.clientId);

@@ -116,3 +116,24 @@ test("rotina: por procuração lê as de serviço sem certificado; o comércio s
   await withOrgTx(ORG, (tx) => repo.setClientModeIn(tx, ORG, { clientId: MERCADO, mode: "proxy", actorId: "u1", now }));
   expect((await xml.listRoutineClients(ORG, now)).map((row) => row.clientId)).toEqual([MERCADO, PADARIA]);
 });
+
+test("aba XML: credencial de cada empresa, painel Credenciais e problemas seguem o modo", async () => {
+  const { withOrgTx } = await import("@/db/org-tx");
+  const views = await import("./xml-requests");
+  // Daqui: padrão procuração, Padaria com a procuração recusada e um teste pedido para ela.
+  const companies = await withOrgTx(ORG, (tx) => views.loadXmlCompanies(tx, { orgId: ORG, year: 2026, month: 10 }));
+  expect(companies.find((company) => company.clientId === PADARIA)?.credential).toMatchObject({
+    mode: "proxy",
+    explicitMode: null,
+    proxyStatus: "invalid",
+    testRequested: true,
+  });
+  expect(companies.find((company) => company.clientId === MERCADO)?.credential).toMatchObject({ mode: "proxy", explicitMode: "proxy" });
+  expect(await withOrgTx(ORG, (tx) => views.loadXmlCredentialsView(tx, ORG))).toEqual({
+    defaultMode: "proxy",
+    testRequested: true,
+    office: { validUntil: null, error: null },
+  });
+  const routine = await withOrgTx(ORG, (tx) => views.loadXmlRoutineView(tx, ORG, new Date()));
+  expect(routine.problems).toContainEqual({ clientName: "Padaria", message: "procuração recusada" });
+});
