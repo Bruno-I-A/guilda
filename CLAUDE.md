@@ -17,6 +17,27 @@ lido e descarta NSU repetido; a migração 0100 zerou os cursores para reler tud
 Teste de rotina simula a API pela regra real (`fakeAdn` em `xml-routine.test.ts`),
 não com lotes prontos que ignoram o número pedido.
 
+**Procuração (2026-11-18)**: a aba XML e as Notas dos clientes leem e emitem pelo A1
+do escritório (o mesmo do `guilda-fiscal`, dos honorários) ou pelo A1 de cada empresa.
+O escritório tem um padrão (`nfse_credential_settings`, só admin muda) e a empresa
+pode ser exceção (`nfse_client_credentials.mode`; nulo segue o padrão). O padrão nasce
+em "Certificado": nada muda até o Bruno testar e virar. Por procuração, a rotina só lê
+empresa de serviço (ou com a procuração marcada), para não ler o comércio todo.
+- **Sem troca silenciosa**: procuração recusada vira selo e erro na empresa, nunca cai
+  escondida para o certificado. Só recusa de autorização (401/403, E2245, texto de
+  procuração) vira selo; lote em formato estranho continua sendo erro da leitura
+  (`AdnRejectionError` leva `httpStatus` e `code`).
+- **Trocar a credencial zera o cursor** (`read_mode` guarda com qual ele foi feito),
+  porque não está medido que a sequência de NSU é a mesma. O teste de procuração
+  (`proxy-test.ts`) lê a partir da nota mais antiga guardada e grava a medida em
+  `proxy_same_sequence`: se der sempre igual, o zerar pode sair.
+- **Por procuração a consulta da nota pela chave é recusada**: o XML vem da resposta da
+  emissão, da consulta (certificado) ou do que a rotina já guardou. Nota achada pela DPS
+  sem XML para conferir vira erro, nunca adoção, também por certificado.
+- Cancelamento por procuração não foi medido: a recusa aparece na nota e a saída é o
+  Portal ou marcar a empresa como exceção. Desenho em
+  `docs/superpowers/specs/2026-11-18-procuracao-design.md`.
+
 O mês é o da emissão em Brasília. O controle de 09/2026 baixa as emitidas de
 01/09 a 30/09. O download `/api/nfse/xml` lê o banco com sessão e permissão do
 Fiscal; não passa pelo serviço fiscal. Certificados e senhas nunca chegam em
