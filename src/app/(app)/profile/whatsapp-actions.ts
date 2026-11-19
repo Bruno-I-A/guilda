@@ -39,7 +39,8 @@ export async function saveMemberWhatsAppSettings(input: z.input<typeof settingsS
   return { ok: true };
 }
 
-const TEMPLATE_BODY = "Novo cliente na Guilda: {{1}}. Clã responsável: {{2}}. Abra os detalhes: {{3}}.";
+// A Meta recusa variável no fim do BODY — inclusive quando vem seguida de ponto.
+const TEMPLATE_BODY = "Novo cliente na Guilda: {{1}}. Clã responsável: {{2}}. Abra os detalhes em {{3}} e dê sequência ao atendimento.";
 
 export async function createMemberWhatsAppUtilityTemplate(): Promise<ActionResult<{ status: string }>> {
   const ctx = await requireMemberContext();
