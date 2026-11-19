@@ -1646,7 +1646,7 @@ export const memberWhatsAppConnections = pgTable(
   (t) => [
     uniqueIndex("member_whatsapp_connections_org_user_uidx").on(t.orgId, t.userId),
     uniqueIndex("member_whatsapp_connections_org_phone_uidx").on(t.orgId, t.phoneE164),
-    check("member_whatsapp_connections_phone_check", sql`${t.phoneE164} ~ '^\\+[1-9][0-9]{7,14}$'`),
+    check("member_whatsapp_connections_phone_check", sql`${t.phoneE164} ~ '^[+][1-9][0-9]{7,14}$'`),
   ],
 );
 
