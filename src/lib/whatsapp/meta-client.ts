@@ -15,7 +15,7 @@ export type MetaPhoneNumber = Readonly<{
 }>;
 
 type MetaErrorPayload = {
-  error?: { code?: number; type?: string };
+  error?: { code?: number; type?: string; message?: string; error_user_msg?: string };
 };
 
 export class MetaGraphError extends Error {
@@ -34,6 +34,8 @@ export class MetaGraphError extends Error {
     readonly httpStatus: number,
     readonly graphCode?: number,
     readonly graphType?: string,
+    /** Explicação curta da Meta, sem token ou resposta bruta. */
+    readonly graphMessage?: string,
   ) {
     super(`Meta Graph API falhou em ${operation}.`);
     this.name = "MetaGraphError";
@@ -60,7 +62,25 @@ function graphError(
   payload: Record<string, unknown>,
 ): MetaGraphError {
   const error = (payload as MetaErrorPayload).error;
-  return new MetaGraphError(operation, response.status, error?.code, error?.type);
+  const message = String(error?.error_user_msg ?? error?.message ?? "")
+    .replace(/(?:access[_ -]?token|bearer)\s+[^\s,]+/gi, "")
+    .slice(0, 300)
+    .trim() || undefined;
+  return new MetaGraphError(operation, response.status, error?.code, error?.type, message);
+}
+
+/** Texto seguro e acionável para o administrador; não entrega payload nem credencial. */
+export function describeWhatsAppTemplateError(error: unknown): string {
+  if (!(error instanceof MetaGraphError)) return "Não foi possível preparar o modelo da Meta.";
+  if (error.graphCode === 200 || error.httpStatus === 403) {
+    return "A Meta negou a permissão de gerenciar modelos. Reconecte o WhatsApp do escritório em Atendimento para conceder whatsapp_business_management e tente novamente.";
+  }
+  if (error.graphCode === 190) return "O acesso do WhatsApp expirou. Reconecte o número do escritório em Atendimento e tente novamente.";
+  if (error.graphCode === 100 || error.graphCode === 131009) {
+    return error.graphMessage ? `A Meta recusou um campo do modelo: ${error.graphMessage}` : "A Meta recusou um campo do modelo.";
+  }
+  if (error.graphCode === 80008) return "A Meta limitou temporariamente a criação de modelos. Aguarde alguns minutos e tente novamente.";
+  return error.graphMessage ? `A Meta não criou o modelo: ${error.graphMessage}` : `A Meta não criou o modelo (HTTP ${error.httpStatus}).`;
 }
 
 export async function exchangeEmbeddedSignupCode(
@@ -290,6 +310,7 @@ export async function createWhatsAppUtilityTemplate(
       name: input.name,
       language: "pt_BR",
       category: "UTILITY",
+      allow_category_change: true,
       components: [{ type: "BODY", text: input.body, example: { body_text: [input.examples] } }],
     }),
     cache: "no-store",
