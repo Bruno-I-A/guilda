@@ -383,9 +383,10 @@ test("a trava final nunca envia mensagem criada pela IA", async () => {
       .from(schema.supportOutbox)
       .where(eq(schema.supportOutbox.messageId, message.id)),
   );
+  // Sem o teste do agente ligado, nenhuma fala da IA sai (2026-11-19).
   expect(outbox).toEqual({
     status: "failed",
-    lastError: "Mensagem da IA bloqueada pelo modo sombra.",
+    lastError: "Teste do agente desligado: a mensagem da IA ficou na Guilda.",
   });
 });
 

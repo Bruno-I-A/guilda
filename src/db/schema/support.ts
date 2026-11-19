@@ -221,6 +221,8 @@ export const supportConversations = pgTable(
     summary: text("summary"),
     aiPausedAt: timestamp("ai_paused_at", { withTimezone: true }),
     aiPauseReason: varchar("ai_pause_reason", { length: 120 }),
+    /** Início da rodada do teste do agente; nulo fora de teste (2026-11-19). */
+    aiTestStartedAt: timestamp("ai_test_started_at", { withTimezone: true }),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -520,6 +522,27 @@ export const supportKnowledgeEntries = pgTable(
       "support_knowledge_entries_approval_check",
       sql`(${t.status} = 'approved' AND ${t.approvedAt} IS NOT NULL AND ${t.approvedByUserId} IS NOT NULL) OR (${t.status} <> 'approved')`,
     ),
+  ],
+);
+
+/**
+ * Teste do agente (2026-11-19): interruptor e palavra-chave por organização.
+ * Só admin muda; desligar encerra as rodadas abertas e segura a fila da IA.
+ */
+export const supportAgentSettings = pgTable(
+  "support_agent_settings",
+  {
+    orgId: text("org_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    testEnabled: boolean("test_enabled").notNull().default(false),
+    testKeyword: varchar("test_keyword", { length: 40 }),
+    updatedBy: text("updated_by").references(() => user.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("support_agent_settings_keyword_check", sql`${t.testKeyword} IS NULL OR ${t.testKeyword} ~ '^[a-z0-9]{3,40}$'`),
+    check("support_agent_settings_enabled_check", sql`NOT ${t.testEnabled} OR ${t.testKeyword} IS NOT NULL`),
   ],
 );
 

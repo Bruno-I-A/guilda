@@ -528,6 +528,22 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
   existe no servidor pelos Informativos. Ligar exige o aviso de privacidade ao cliente
   (transferência internacional), como no Scharff. Preços de certificado ainda estão no prompt
   (`BLOCO_CONHECIMENTO`); a Base de conhecimento editável vem depois.
+- **Teste do agente (2026-11-19, pedido do Bruno)**: em Atendimento → Configurações, só admin
+  liga o interruptor e escolhe a palavra-chave (`support_agent_settings`). Mensagem do cliente
+  que COMEÇA com a palavra abre uma rodada (`status = 'ai_active'`, `ai_test_started_at`): só
+  nela a IA fala de verdade, pelas regras do Scharff (`src/lib/support/agent/decision.ts`):
+  pergunta o assunto uma vez, responde pela base aprovada, até 3 perguntas e encaminha ao clã do
+  setor ("Encaminhei ao setor Fiscal…"), sem chamar o cliente pelo nome. Mandar a palavra de novo
+  reinicia. As outras conversas continuam só em sombra. Desenho em
+  `docs/superpowers/specs/2026-11-19-teste-do-agente-design.md`.
+  - **Travas**: a decisão é gravada com a conversa travada e descartada se uma pessoa assumiu, o
+    cliente escreveu de novo ou a rodada reiniciou. O worker de saída continua recusando toda fala
+    da IA, exceto a da mesma rodada (`payload.agentRound`), com o interruptor ligado e fora de
+    `human_active` (`agentDeliveryBlock`). **Desligar é o freio**: encerra as rodadas abertas e
+    segura o que estava na fila.
+  - Só funciona na produção na prática: o interruptor nasce desligado em cada banco e só a produção
+    tem o WhatsApp do escritório. **Antes de abrir para cliente real** falta o aviso de privacidade
+    com aceite, como no Scharff. Atribuir à pessoa da Carteira e avisar quem recebe ficaram de fora.
 
 ## Estrutura por clã (decisões de 2026-08-18)
 

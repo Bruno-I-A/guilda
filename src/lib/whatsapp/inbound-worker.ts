@@ -7,7 +7,10 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { matchTestKeyword } from "@/domain/support-agent";
 import { statusAfterCustomerMessage } from "@/domain/support-inbox";
+import { loadAgentSettings, startTestRound } from "@/lib/support/agent/settings";
+
 import { recordMemberWhatsAppInbound } from "./member-notifications";
 
 type JsonRecord = Record<string, unknown>;
@@ -298,6 +301,13 @@ async function materializeMessage(
         updatedAt: new Date(),
       })
       .where(eq(schema.supportConversations.id, conversation.id));
+    // Teste do agente: a palavra-chave no começo da mensagem abre (ou reinicia) a rodada.
+    if (input.message.direction === "inbound" && input.message.actor === "customer") {
+      const settings = await loadAgentSettings(tx, input.orgId);
+      if (settings.testEnabled && matchTestKeyword(input.message.text ?? null, settings.testKeyword).matched) {
+        await startTestRound(tx, { orgId: input.orgId, conversationId: conversation.id, at: input.message.occurredAt });
+      }
+    }
   }
 }
 
