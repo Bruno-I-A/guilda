@@ -4,6 +4,8 @@ vi.mock("server-only", () => ({}));
 
 import {
   downloadWhatsAppImage,
+  createWhatsAppUtilityTemplate,
+  describeWhatsAppTemplateError,
   exchangeEmbeddedSignupCode,
   resolveEmbeddedSignupWabaId,
   resolveCoexistencePhone,
@@ -162,6 +164,15 @@ describe("cliente seguro da Meta", () => {
     expect(JSON.parse(String(init.body)).template.components[0].parameters).toEqual([
       { type: "text", text: "ACME" }, { type: "text", text: "Fiscal" }, { type: "text", text: "https://guilda.example" },
     ]);
+  });
+
+  test("explica de forma acionável a permissão ausente para criar modelos", async () => {
+    const fetchMock = fetchReturning({ error: { code: 200, message: "Permissions error" } }, 403);
+    await expect(createWhatsAppUtilityTemplate({
+      wabaId: "111111", accessToken: "EA-token", name: "guilda_novo_cliente", body: "Novo cliente: {{1}}", examples: ["ACME"],
+    }, config, fetchMock)).rejects.toSatisfy((error: unknown) =>
+      describeWhatsAppTemplateError(error).includes("whatsapp_business_management"),
+    );
   });
 
   test("baixa foto por uma URL temporária sem expor o token", async () => {

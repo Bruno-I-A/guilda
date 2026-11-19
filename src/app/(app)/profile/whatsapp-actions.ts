@@ -10,7 +10,7 @@ import { err, requireMemberContext, type ActionResult } from "@/lib/action-conte
 import { isAdminRole } from "@/lib/session";
 import { loadWhatsAppChannelAccess } from "@/lib/whatsapp/channel-repository";
 import { getWhatsAppConfig } from "@/lib/whatsapp/config";
-import { createWhatsAppUtilityTemplate, getWhatsAppTemplate, type MetaServerConfig } from "@/lib/whatsapp/meta-client";
+import { createWhatsAppUtilityTemplate, describeWhatsAppTemplateError, getWhatsAppTemplate, type MetaServerConfig } from "@/lib/whatsapp/meta-client";
 import { MEMBER_NEW_CLIENT_TEMPLATE, normalizeWhatsAppPhone } from "@/lib/whatsapp/member-notifications";
 
 const settingsSchema = z.object({ phone: z.string().trim().min(8, "Informe o WhatsApp com DDI e DDD."), enabled: z.boolean() });
@@ -65,6 +65,6 @@ export async function createMemberWhatsAppUtilityTemplate(): Promise<ActionResul
     revalidatePath("/profile");
     return { ok: true, data: { status: result } };
   } catch (cause) {
-    return err(cause instanceof Error ? cause.message : "Não foi possível preparar o modelo.");
+    return err(describeWhatsAppTemplateError(cause));
   }
 }
