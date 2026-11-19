@@ -10,11 +10,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCnpj } from "@/domain/cnpj";
 import { certificateState, emissionRangeLabel, isEmissionMonthInProgress, previousEmissionMonth, summarizeCertificates } from "@/domain/nfse-xml";
-import type { ClientCertificateView, XmlCompanyView, XmlRoutineView } from "@/lib/nfse/xml-requests";
+import type { ClientCertificateView, XmlCompanyView, XmlCredentialsView, XmlRoutineView } from "@/lib/nfse/xml-requests";
 import { cn } from "@/lib/utils";
 
 import { ClientCertificateDialog } from "./client-certificate-dialog";
 import { setClientNfseIssuer } from "./nfse-xml-actions";
+import { CredentialModeField, CredentialsPanel, credentialReady, ProxyStatusLine, proxyRefused } from "./xml-credentials";
 import { DominioCodeField, ImportDominioCodesDialog } from "./xml-dominio-code";
 import {
   RunXmlRoutineButton,
@@ -118,7 +119,9 @@ function CertificateStatus({ certificate, now }: { certificate: ClientCertificat
 /** O que a rotina fez nesta empresa. */
 function SyncStatus({ company, now }: { company: XmlCompanyView; now: Date }) {
   const { state } = stateOf(company.certificate, now);
-  if (state !== "valid" && state !== "expiring") return null;
+  // Por procuração a leitura não depende do certificado da empresa.
+  const canRead = company.credential.mode === "proxy" ? company.credential.proxyStatus !== "invalid" : state === "valid" || state === "expiring";
+  if (!canRead) return null;
   if (company.sync?.lastError) return <span className="text-destructive">Erro na leitura: {company.sync.lastError}</span>;
   if (!company.sync) return <span className="text-muted-foreground">Aguardando a primeira leitura</span>;
   if (!company.sync.initialSyncAt) return <span className="text-muted-foreground">Lendo o histórico…</span>;
@@ -241,7 +244,9 @@ export function XmlNotesBoard({
   year,
   month,
   canManage,
+  isAdmin,
   routine,
+  credentials,
   companies,
   vaultKey,
 }: {
@@ -249,7 +254,9 @@ export function XmlNotesBoard({
   year: number;
   month: number;
   canManage: boolean;
+  isAdmin: boolean;
   routine: XmlRoutineView;
+  credentials: XmlCredentialsView;
   companies: readonly XmlCompanyView[];
   vaultKey: { keyId: string; publicKeySpki: string } | null;
 }) {
@@ -264,7 +271,8 @@ export function XmlNotesBoard({
   const next = adjacentPeriod(year, month, 1);
   const running = routine.runRequested || xmlRoutineIsRunning(routine);
   const checking = companies.some((company) => company.certificate?.status === "pending");
-  useXmlAutoRefresh(running || checking);
+  // O teste de procuração roda no serviço fiscal: a tela se atualiza sozinha até o selo chegar.
+  useXmlAutoRefresh(running || checking || credentials.testRequested);
 
   const serviceCompanies = useMemo(() => companies.filter((company) => company.service.issues === true), [companies]);
   const scoped = scope === "service" ? serviceCompanies : companies;
@@ -275,16 +283,25 @@ export function XmlNotesBoard({
     })),
     now,
   );
-  const ready = summary.valid + summary.expiring;
+  // Pronta = procuração confirmada ou certificado em dia, conforme a credencial da empresa.
+  const ready = serviceCompanies.filter((company) => {
+    const { state } = stateOf(company.certificate, now);
+    return credentialReady(company, state === "valid" || state === "expiring");
+  }).length;
+  // Sem credencial: por procuração, a procuração recusada; por certificado, sem certificado.
+  const missingCredential = (company: XmlCompanyView) =>
+    company.credential.mode === "proxy" ? company.credential.proxyStatus === "invalid" : !company.certificate;
   const totalNotes = companies.reduce((sum, company) => sum + company.notes.total, 0);
-  // Com problema: certificado recusado ou vencido, ou a última leitura falhou.
+  // Com problema: certificado recusado ou vencido (de quem usa certificado),
+  // procuração recusada (de quem usa procuração) ou a última leitura falhou.
   const problemIds = useMemo(
     () =>
       new Set(
         companies
           .filter((company) => {
             const { state } = stateOf(company.certificate, now);
-            return state === "invalid" || state === "expired" || Boolean(company.sync?.lastError);
+            const certificateProblem = company.credential.mode === "certificate" && (state === "invalid" || state === "expired");
+            return certificateProblem || proxyRefused(company) || Boolean(company.sync?.lastError);
           })
           .map((company) => company.clientId),
       ),
@@ -292,7 +309,7 @@ export function XmlNotesBoard({
   );
   const counts: Record<Filter, number> = {
     all: scoped.length,
-    missing: scoped.filter((company) => !company.certificate).length,
+    missing: scoped.filter(missingCredential).length,
     problem: scoped.filter((company) => problemIds.has(company.clientId)).length,
     notes: scoped.filter((company) => company.notes.total > 0).length,
     nocode: scoped.filter((company) => !company.dominioCode).length,
@@ -302,8 +319,11 @@ export function XmlNotesBoard({
   const steps = [
     {
       key: "certificates",
-      label: "Certificados",
-      detail: `${ready} de ${serviceCompanies.length} prontos${summary.pending > 0 ? ` · ${summary.pending} conferindo` : ""}`,
+      label: "Credenciais",
+      detail:
+        credentials.defaultMode === "proxy"
+          ? `${ready} de ${serviceCompanies.length} prontas · procuração`
+          : `${ready} de ${serviceCompanies.length} prontas${summary.pending > 0 ? ` · ${summary.pending} conferindo` : ""}`,
       done: ready > 0 && ready === serviceCompanies.length && summary.pending === 0,
     },
     {
@@ -326,7 +346,7 @@ export function XmlNotesBoard({
     const digits = query.replace(/\D/g, "");
     return scoped.filter((company) => {
       if (needle && !normalize(company.name).includes(needle) && !(digits && (company.cnpj?.includes(digits) || company.dominioCode === digits))) return false;
-      if (filter === "missing") return !company.certificate;
+      if (filter === "missing") return missingCredential(company);
       if (filter === "problem") return problemIds.has(company.clientId);
       if (filter === "notes") return company.notes.total > 0;
       if (filter === "nocode") return !company.dominioCode;
@@ -336,7 +356,7 @@ export function XmlNotesBoard({
 
   const filters: { key: Filter; label: string }[] = [
     { key: "all", label: "Sem filtro" },
-    { key: "missing", label: "Sem certificado" },
+    { key: "missing", label: "Sem credencial" },
     { key: "problem", label: "Com problema" },
     { key: "notes", label: `Com notas em ${monthName}` },
     { key: "nocode", label: "Sem código Domínio" },
@@ -365,8 +385,8 @@ export function XmlNotesBoard({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Indicadores do acervo">
         {[
           { label: "Empresas com XML", value: companies.filter((company) => company.notes.total > 0).length, detail: "Com notas no período selecionado", icon: Building2 },
-          { label: "Certificados prontos", value: `${ready} / ${serviceCompanies.length}`, detail: "Empresas de serviço · válidos para coleta", icon: ShieldCheck },
-          { label: "Precisam de atenção", value: serviceCompanies.filter((company) => problemIds.has(company.clientId)).length, detail: "Empresas de serviço · certificado ou leitura", icon: AlertTriangle },
+          { label: "Credenciais prontas", value: `${ready} / ${serviceCompanies.length}`, detail: "Empresas de serviço · certificado ou procuração", icon: ShieldCheck },
+          { label: "Precisam de atenção", value: serviceCompanies.filter((company) => problemIds.has(company.clientId)).length, detail: "Empresas de serviço · credencial ou leitura", icon: AlertTriangle },
         ].map(({ label, value, detail, icon: Icon }) => <section key={label} className="rounded-md border bg-card/60 p-4"><div className="flex items-center justify-between gap-3 text-sm text-muted-foreground"><span>{label}</span><Icon className="size-4 text-primary" aria-hidden /></div><p className="my-2 font-mono text-2xl tabular-nums">{value}</p><p className="text-xs text-muted-foreground">{detail}</p></section>)}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -416,9 +436,16 @@ export function XmlNotesBoard({
         })}
       </ol>
 
+      <CredentialsPanel clanId={clanId} credentials={credentials} companies={serviceCompanies} isAdmin={isAdmin} canManage={canManage} />
+
       <section className="grid gap-3 rounded-md border bg-card/40 p-4" aria-live="polite">
         <div className="grid gap-1 text-sm">
-          {current === "certificates" ? (
+          {current === "certificates" && credentials.defaultMode === "proxy" ? (
+            <p>
+              <strong>Próximo passo:</strong> clique em <strong>Testar procuração</strong> em Credenciais. Empresa com a procuração
+              recusada pode ficar no certificado dela: escolha no detalhe da linha.
+            </p>
+          ) : current === "certificates" ? (
             <p>
               <strong>Próximo passo:</strong> na lista abaixo, clique em <strong>Enviar certificado</strong> na empresa e escolha o
               arquivo .pfx com a senha. Comece por uma empresa e confira antes de cadastrar as outras.
@@ -550,9 +577,15 @@ export function XmlNotesBoard({
                 <div className="grid min-w-0 gap-0.5 text-sm">
                   <span className="truncate font-medium">{companyDisplayName(company.name)}</span>
                   <span className="font-mono text-xs text-muted-foreground">{company.cnpj ? formatCnpj(company.cnpj) : "sem CNPJ no cadastro"}</span>
-                  <span><CertificateStatus certificate={company.certificate} now={now} /></span>
+                  <span>
+                    {company.credential.mode === "proxy" ? (
+                      <ProxyStatusLine clanId={clanId} company={company} canManage={canManage} />
+                    ) : (
+                      <CertificateStatus certificate={company.certificate} now={now} />
+                    )}
+                  </span>
                   <span className="text-xs"><SyncStatus company={company} now={now} /></span>
-                  <details className="mt-2"><summary className="min-h-11 cursor-pointer py-3 text-xs text-muted-foreground hover:text-foreground">Cadastro e código Domínio{company.dominioCode ? ` · ${company.dominioCode}` : " · código não informado"}</summary><div className="grid gap-2 border-t pt-3"><ServiceToggle clanId={clanId} company={company} canManage={canManage} /><DominioCodeField key={company.dominioCode ?? ""} clanId={clanId} company={company} canManage={canManage} /></div></details>
+                  <details className="mt-2"><summary className="min-h-11 cursor-pointer py-3 text-xs text-muted-foreground hover:text-foreground">Cadastro, credencial e código Domínio{company.dominioCode ? ` · ${company.dominioCode}` : " · código não informado"}</summary><div className="grid gap-2 border-t pt-3"><CredentialModeField clanId={clanId} company={company} canManage={canManage} /><ServiceToggle clanId={clanId} company={company} canManage={canManage} /><DominioCodeField key={company.dominioCode ?? ""} clanId={clanId} company={company} canManage={canManage} /></div></details>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                   <span className="rounded-md border bg-background/50 px-3 py-2 font-mono text-sm tabular-nums">
@@ -564,14 +597,17 @@ export function XmlNotesBoard({
                       <a href={xmlHref(clanId, year, month, company.clientId)}><Download aria-hidden /> Baixar XML</a>
                     </Button>
                   ) : null}
-                  <ClientCertificateDialog
-                    clanId={clanId}
-                    clientId={company.clientId}
-                    clientName={company.name}
-                    certificate={company.certificate}
-                    vaultKey={vaultKey}
-                    canManage={canManage}
-                  />
+                  {/* Por procuração o certificado da empresa não é usado. */}
+                  {company.credential.mode === "certificate" ? (
+                    <ClientCertificateDialog
+                      clanId={clanId}
+                      clientId={company.clientId}
+                      clientName={company.name}
+                      certificate={company.certificate}
+                      vaultKey={vaultKey}
+                      canManage={canManage}
+                    />
+                  ) : null}
                 </div>
               </li>
             ))}
