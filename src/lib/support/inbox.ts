@@ -68,6 +68,8 @@ export interface SupportQueueRow {
   waitingReply: boolean;
   /** A IA, em sombra, leu como urgente. Só marca: a fila continua por ordem de chegada. */
   aiUrgent: boolean;
+  /** Rodada do teste do agente aberta: a IA está conversando com o cliente. */
+  agentTest: boolean;
 }
 
 export async function loadSupportQueue(
@@ -80,6 +82,7 @@ export async function loadSupportQueue(
       id: c.id,
       status: c.status,
       assignedUserId: c.assignedUserId,
+      aiTestStartedAt: c.aiTestStartedAt,
       lastMessageAt: c.lastMessageAt,
       displayName: contacts.displayName,
       phone: contacts.phoneE164,
@@ -131,6 +134,7 @@ export async function loadSupportQueue(
         lastMessage: last ? messageLabel(last) : null,
         waitingReply: last?.actor === "customer" && row.status !== "resolved",
         aiUrgent: row.status !== "resolved" && suggestions.get(row.id)?.urgency === "alta",
+        agentTest: row.status === "ai_active" && row.aiTestStartedAt !== null,
       };
     }),
     counts: {
@@ -167,10 +171,14 @@ export interface SupportConversationView {
   lastCustomerText: string | null;
   /** O que a IA faria, em sombra: nunca foi enviado ao cliente. */
   aiSuggestion: (SupportAiSuggestion & { sectorLabel: string; clan: { id: string; name: string } | null }) | null;
+  /** Rodada do teste do agente aberta: a IA está conversando com o cliente. */
+  agentTest: boolean;
 }
 
 function eventLabel(eventType: string, actor: string | null, detail: Record<string, unknown>, status: string | undefined): string | null {
-  const who = actor ?? "Sistema";
+  const who = actor ?? (typeof detail.actorLabel === "string" ? detail.actorLabel : "Sistema");
+  if (eventType === "ai_resumed" && detail.reason === "test_keyword") return "Teste do agente iniciado pela palavra-chave";
+  if (eventType === "ai_paused" && detail.reason === "test_disabled") return `${who} desligou o teste do agente`;
   if (eventType === "assigned") return typeof detail.note === "string" ? `${who}: ${detail.note}` : `${who} assumiu a conversa`;
   if (eventType === "resolved") return `${who} resolveu a conversa`;
   if (eventType === "reopened") return `${who} reabriu a conversa`;
@@ -191,6 +199,7 @@ export async function loadSupportConversation(
       channelId: c.channelId,
       assignedClanId: c.assignedClanId,
       assignedUserId: c.assignedUserId,
+      aiTestStartedAt: c.aiTestStartedAt,
       contactId: contacts.id,
       clientId: contacts.clientId,
       displayName: contacts.displayName,
@@ -318,6 +327,7 @@ export async function loadSupportConversation(
       : null,
     id: row.id,
     status: row.status,
+    agentTest: row.status === "ai_active" && row.aiTestStartedAt !== null,
     assignedToMe: row.assignedUserId === input.viewer.userId,
     assignedUserId: row.assignedUserId,
     assignedClanId: row.assignedClanId,

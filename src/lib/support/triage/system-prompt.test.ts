@@ -260,3 +260,14 @@ test("o roster só entra no prompt quando existe alguém cadastrado", () => {
   assert.ok(!prompt().includes("## ATENDENTES"));
   assert.ok(prompt(0, false, ROSTER).includes("## ATENDENTES"));
 });
+
+test("no teste do agente o prompt diz que a fala vai ao cliente", () => {
+  const sombra = montarSystemPrompt([], 0, false, [], "sombra");
+  const conversa = montarSystemPrompt([], 0, false, [], "conversa");
+  assert.match(sombra, /MODO SOMBRA/);
+  assert.doesNotMatch(conversa, /MODO SOMBRA/);
+  assert.match(conversa, /vai ao cliente exatamente como voce escrever/);
+  assert.match(conversa, /## ENTRADA/);
+  // O resto do prompt é o mesmo nos dois modos.
+  assert.equal(sombra.split("## SETORES")[1], conversa.split("## SETORES")[1]);
+});

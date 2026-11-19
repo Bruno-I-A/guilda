@@ -7,6 +7,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { agentDeliveryBlock } from "@/domain/support-agent";
 import { metaErrorMessage } from "@/domain/support-inbox";
 
 import { loadWhatsAppChannelAccess } from "./channel-repository";
@@ -49,9 +50,17 @@ async function loadItem(claim: OutboxClaim) {
         attemptCount: o.attemptCount,
         actor: m.actor,
         source: m.source,
+        conversationStatus: schema.supportConversations.status,
+        roundStartedAt: schema.supportConversations.aiTestStartedAt,
+        testEnabled: schema.supportAgentSettings.testEnabled,
       })
       .from(o)
       .innerJoin(m, and(eq(m.orgId, o.orgId), eq(m.id, o.messageId)))
+      .innerJoin(
+        schema.supportConversations,
+        and(eq(schema.supportConversations.orgId, m.orgId), eq(schema.supportConversations.id, m.conversationId)),
+      )
+      .leftJoin(schema.supportAgentSettings, eq(schema.supportAgentSettings.orgId, o.orgId))
       .where(and(eq(o.id, claim.id), eq(o.orgId, claim.orgId), eq(o.status, "processing"), eq(o.lockToken, claim.claimToken)))
       .limit(1);
     return item ?? null;
@@ -59,11 +68,12 @@ async function loadItem(claim: OutboxClaim) {
 }
 
 /**
- * Trava de producao do piloto: a IA so escreve sugestoes internas. Mesmo que
- * outro trecho crie outbox por engano, ator/origem de IA nunca chega a Meta.
- * Liberar automacao no futuro exige mudar esta guarda e seus testes.
+ * Trava de producao do piloto: mensagem com ator/origem de IA nunca chega a
+ * Meta, mesmo que outro trecho crie outbox por engano. A unica excecao e a fala
+ * da rodada do teste do agente (2026-11-19), conferida de novo aqui: mesma
+ * rodada, interruptor ligado e nenhuma pessoa no comando (agentDeliveryBlock).
  */
-async function blockAutomatedDelivery(claim: OutboxClaim, messageId: string): Promise<void> {
+async function blockAutomatedDelivery(claim: OutboxClaim, messageId: string, reason: string): Promise<void> {
   await withOrgTx(claim.orgId, async (tx) => {
     const o = schema.supportOutbox;
     await tx
@@ -72,7 +82,7 @@ async function blockAutomatedDelivery(claim: OutboxClaim, messageId: string): Pr
         status: "failed",
         lockedAt: null,
         lockToken: null,
-        lastError: "Mensagem da IA bloqueada pelo modo sombra.",
+        lastError: reason,
       })
       .where(
         and(
@@ -86,7 +96,7 @@ async function blockAutomatedDelivery(claim: OutboxClaim, messageId: string): Pr
       orgId: claim.orgId,
       messageId,
       eventType: "failed",
-      detail: { message: "Sugestão da IA mantida somente dentro da Guilda." },
+      detail: { message: reason },
       occurredAt: new Date(),
     });
   });
@@ -116,8 +126,16 @@ async function deliver(claim: OutboxClaim, config: MetaServerConfig, fetchImpl: 
   const item = await loadItem(claim);
   if (!item) return false;
   if (item.actor === "ai" || item.source === "guilda_ai") {
-    await blockAutomatedDelivery(claim, item.messageId);
-    return false;
+    const block = agentDeliveryBlock({
+      payloadRound: item.payload.agentRound,
+      roundStartedAt: item.roundStartedAt,
+      status: item.conversationStatus,
+      testEnabled: item.testEnabled === true,
+    });
+    if (block) {
+      await blockAutomatedDelivery(claim, item.messageId, block);
+      return false;
+    }
   }
   const to = typeof item.payload.to === "string" ? item.payload.to : "";
   const text = typeof item.payload.text === "string" ? item.payload.text : "";
