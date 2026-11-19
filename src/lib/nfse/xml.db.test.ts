@@ -55,7 +55,7 @@ test("certificado: pendente, conferido, listado para a rotina; chave pública pu
   const now = new Date("2026-10-19T12:00:00Z");
   await repo.saveCertificateCheck(ORG, { id: pending.id, wrappedKey: pending.envelope.wrappedKey, result: { status: "valid", cnpj: "33000167000101", validUntil: new Date("2027-03-19T00:00:00Z") }, now });
   expect(await repo.listPendingCertificates(ORG)).toEqual([]);
-  expect(await repo.listRoutineClients(ORG, now)).toEqual([{ clientId: CLIENT, cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, envelope: ENVELOPE }]);
+  expect(await repo.listRoutineClients(ORG, now)).toEqual([{ clientId: CLIENT, cnpj: "33000167000101", lastNsu: 0, historyFromNsu: null, mode: "certificate", readMode: null, envelope: ENVELOPE }]);
   // Vencido sai da rotina.
   expect(await repo.listRoutineClients(ORG, new Date("2027-04-01T00:00:00Z"))).toEqual([]);
   await repo.publishVaultKey(ORG, { keyId: "fedcba9876543210", publicKeySpki: "AAAA" });

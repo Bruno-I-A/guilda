@@ -2,13 +2,16 @@ import "server-only";
 
 import { gzipSync } from "node:zlib";
 
-import { and, eq, gt, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { effectiveCredentialMode, type CredentialMode } from "@/domain/nfse-credentials";
+import { nfseIssuer } from "@/domain/nfse-service";
 import { XML_ROUTINE_DEFAULTS, type XmlRoutineSchedule } from "@/domain/nfse-xml";
 
 import type { CertificateCheck } from "./certificate-check";
+import { credentialPolicyIn } from "./credentials-repository";
 import type { VaultEnvelope } from "./vault";
 import type { ClientProgress } from "./xml-routine";
 
@@ -117,25 +120,73 @@ export async function markXmlRoutineRun(orgId: string, mark: { startedAt: Date }
   );
 }
 
-/** Empresas ativas com CNPJ e certificado válido e não vencido, com o cursor. */
-export async function listRoutineClients(
-  orgId: string,
-  now: Date,
-): Promise<{ clientId: string; cnpj: string; lastNsu: number; historyFromNsu: number | null; envelope: VaultEnvelope }[]> {
-  const c = schema.nfseClientCertificates;
-  const cl = schema.clients;
-  const cur = schema.nfseDfeCursors;
-  const rows = await withOrgTx(orgId, (tx) =>
-    tx
-      .select({ clientId: c.clientId, cnpj: cl.cnpj, lastNsu: cur.lastNsu, historyFromNsu: cur.historyNsu, envelope: c.envelope })
-      .from(c)
-      .innerJoin(cl, and(eq(cl.orgId, c.orgId), eq(cl.id, c.clientId)))
-      .leftJoin(cur, and(eq(cur.orgId, c.orgId), eq(cur.clientId, c.clientId)))
-      .where(and(eq(c.orgId, orgId), eq(c.status, "valid"), gt(c.validUntil, now), eq(cl.active, true), ne(cl.taxRegime, "mei"), isNotNull(cl.cnpj)))
-      .orderBy(cl.name),
-  );
-  // O filtro isNotNull garante o CNPJ; o tipo da coluna não sabe disso.
-  return rows.map((row) => ({ clientId: row.clientId, cnpj: row.cnpj as string, lastNsu: row.lastNsu ?? 0, historyFromNsu: row.historyFromNsu ?? null, envelope: row.envelope }));
+export interface RoutineClient {
+  clientId: string;
+  cnpj: string;
+  lastNsu: number;
+  historyFromNsu: number | null;
+  /** A credencial que vale para esta empresa agora. */
+  mode: CredentialMode;
+  /** Com qual credencial o cursor foi construído; null = certificado (o de sempre). */
+  readMode: CredentialMode | null;
+  /** O A1 da empresa: só no modo certificado. */
+  envelope: VaultEnvelope | null;
+}
+
+/**
+ * Quem a rotina lê, com o cursor. Por certificado: quem tem A1 válido e não
+ * vencido, como sempre. Por procuração: quem é de serviço ou tem a procuração
+ * marcada; sem essa trava, virar o padrão leria também o comércio que não
+ * emite NFS-e.
+ */
+export async function listRoutineClients(orgId: string, now: Date): Promise<RoutineClient[]> {
+  return withOrgTx(orgId, async (tx) => {
+    const policy = await credentialPolicyIn(tx, orgId);
+    const c = schema.nfseClientCertificates;
+    const cl = schema.clients;
+    const cur = schema.nfseDfeCursors;
+    const cc = schema.nfseClientCredentials;
+    const fp = schema.fiscalClientProfiles;
+    const rows = await tx
+      .select({
+        clientId: cl.id,
+        cnpj: cl.cnpj,
+        cnaeCode: cl.cnaeCode,
+        applicability: fp.nfseIssuerApplicability,
+        lastNsu: cur.lastNsu,
+        historyFromNsu: cur.historyNsu,
+        envelope: c.envelope,
+        certStatus: c.status,
+        certValidUntil: c.validUntil,
+        mode: cc.mode,
+        readMode: cc.readMode,
+      })
+      .from(cl)
+      .leftJoin(c, and(eq(c.orgId, cl.orgId), eq(c.clientId, cl.id)))
+      .leftJoin(cur, and(eq(cur.orgId, cl.orgId), eq(cur.clientId, cl.id)))
+      .leftJoin(cc, and(eq(cc.orgId, cl.orgId), eq(cc.clientId, cl.id)))
+      .leftJoin(fp, and(eq(fp.orgId, cl.orgId), eq(fp.clientId, cl.id)))
+      .where(and(eq(cl.orgId, orgId), eq(cl.active, true), ne(cl.taxRegime, "mei"), isNotNull(cl.cnpj)))
+      .orderBy(cl.name);
+    return rows.flatMap((row): RoutineClient[] => {
+      const mode = effectiveCredentialMode(row.mode, policy.defaultMode);
+      // O filtro isNotNull garante o CNPJ; o tipo da coluna não sabe disso.
+      const base = {
+        clientId: row.clientId,
+        cnpj: row.cnpj as string,
+        lastNsu: row.lastNsu ?? 0,
+        historyFromNsu: row.historyFromNsu ?? null,
+        mode,
+        readMode: row.readMode ?? null,
+      };
+      if (mode === "proxy") {
+        const service = nfseIssuer({ applicability: row.applicability ?? null, cnaeCode: row.cnaeCode }).issues === true;
+        return service || row.mode === "proxy" ? [{ ...base, envelope: null }] : [];
+      }
+      const valid = row.certStatus === "valid" && row.certValidUntil !== null && row.certValidUntil > now && row.envelope !== null;
+      return valid ? [{ ...base, envelope: row.envelope }] : [];
+    });
+  });
 }
 
 /**

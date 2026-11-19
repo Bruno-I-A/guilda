@@ -11,11 +11,11 @@ export type MemberContext = Extract<Awaited<ReturnType<typeof requireMemberConte
 export async function asFiscalOperator<T>(
   clanId: string,
   run: (tx: OrgTx, ctx: MemberContext) => Promise<ActionResult<T>>,
-  options: { adminOnly?: boolean } = {},
+  options: { adminOnly?: boolean; adminOnlyMessage?: string } = {},
 ): Promise<ActionResult<T>> {
   const ctx = await requireMemberContext();
   if (!ctx.ok) return ctx;
-  if (options.adminOnly && !isAdminRole(ctx.role)) return err("Só admins configuram o modelo da nota.");
+  if (options.adminOnly && !isAdminRole(ctx.role)) return err(options.adminOnlyMessage ?? "Só admins configuram o modelo da nota.");
   return withOrgTx(ctx.orgId, async (tx) => {
     const fiscal = await requireFiscalClan(tx, { orgId: ctx.orgId, clanId, userId: ctx.userId, role: ctx.role });
     if (!fiscal) return err("Clã Fiscal não encontrado.");

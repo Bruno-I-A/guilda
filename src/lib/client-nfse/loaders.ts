@@ -10,6 +10,8 @@ import { danfseFileName, type NfseClientAddress, type NfseInvoiceStatus } from "
 import type { NfseRetentions } from "@/domain/nfse-retentions";
 import { ibgeCity, ibgeCityCode } from "@/lib/nfse/municipios";
 import { firstElementText } from "@/lib/nfse/xml";
+import { effectiveCredentialMode, type CredentialMode, type ProxyStatus } from "@/domain/nfse-credentials";
+import { clientCredentialIn, credentialPolicyIn } from "@/lib/nfse/credentials-repository";
 import type { ClientCertificateView } from "@/lib/nfse/xml-requests";
 import { parseNfseIssuerTemplate, type NfseConstruction, type NfseIssuerTemplate } from "@/lib/nfse/template";
 
@@ -76,6 +78,8 @@ export interface ClientNfseIssuerView {
   cityLabel: string | null;
   /** Certificado A1 da empresa, para gerenciar sem sair da central de emissão. */
   certificate: ClientCertificateView | null;
+  /** Por qual credencial a empresa emite agora (procuração ou o próprio A1). */
+  credential: { mode: CredentialMode; proxyStatus: ProxyStatus };
   problem: string | null;
 }
 
@@ -204,6 +208,14 @@ export async function loadClientNfseWorkspace(
     .where(eq(c.orgId, input.orgId))
     .orderBy(asc(c.name));
   const taken = new Set(issuers.map((issuer) => issuer.clientId));
+  const policy = await credentialPolicyIn(tx, input.orgId);
+  const cc = schema.nfseClientCredentials;
+  const credentials = new Map(
+    (await tx.select({ clientId: cc.clientId, mode: cc.mode, proxyStatus: cc.proxyStatus }).from(cc).where(eq(cc.orgId, input.orgId))).map((row) => [
+      row.clientId,
+      row,
+    ]),
+  );
   const certificates = new Map<string, ClientCertificateView>(
     candidates.flatMap((row) => row.certStatus && row.certUploadedAt ? [[row.clientId, {
       status: row.certStatus,
@@ -228,6 +240,10 @@ export async function loadClientNfseWorkspace(
       template: parseNfseIssuerTemplate(issuer.template),
       cityLabel: cityLabelOf(parseNfseIssuerTemplate(issuer.template)?.cityCode),
       certificate: certificates.get(issuer.clientId) ?? null,
+      credential: {
+        mode: effectiveCredentialMode(credentials.get(issuer.clientId)?.mode, policy.defaultMode),
+        proxyStatus: credentials.get(issuer.clientId)?.proxyStatus ?? "untested",
+      },
       problem: readiness.get(issuer.id)?.problem ?? null,
     })),
     candidates: candidates
@@ -365,7 +381,7 @@ export interface IssuerCustomersView {
   customers: IssuerCustomer[];
   /** A releitura do histórico no Portal está pedida e ainda não acabou. */
   historyReading: boolean;
-  /** A empresa tem certificado válido: sem ele, não há o que ler no Portal. */
+  /** Dá para ler o Portal: certificado válido ou procuração não recusada. */
   canReadHistory: boolean;
 }
 
@@ -405,10 +421,12 @@ export async function loadIssuerCustomers(
     .select({ status: cert.status })
     .from(cert)
     .where(and(eq(cert.orgId, input.orgId), eq(cert.clientId, issuer.clientId)));
+  // Por procuração a rotina lê sem o A1 da empresa; só a procuração recusada impede.
+  const credential = await clientCredentialIn(tx, input.orgId, issuer.clientId);
   return {
     customers: customersFromIssuedNotes(facts, new Set(registered.map((row) => row.document))),
     historyReading: cursor?.historyNsu !== null && cursor?.historyNsu !== undefined,
-    canReadHistory: certificate?.status === "valid",
+    canReadHistory: credential.mode === "proxy" ? credential.proxyStatus !== "invalid" : certificate?.status === "valid",
   };
 }
 

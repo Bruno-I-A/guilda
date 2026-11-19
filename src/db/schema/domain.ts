@@ -3582,6 +3582,58 @@ export const nfseDfeCursors = pgTable(
   ],
 );
 
+export const nfseCredentialMode = pgEnum("nfse_credential_mode", ["certificate", "proxy"]);
+export const nfseProxyStatus = pgEnum("nfse_proxy_status", ["untested", "confirmed", "invalid", "no_emission", "technical_failure"]);
+
+/**
+ * Padrão do escritório para ler e emitir as notas das empresas (procuração ou
+ * certificado de cada empresa) e o pedido de teste de procuração para todas.
+ * Uma linha por organização. Decisão de 2026-11-18.
+ */
+export const nfseCredentialSettings = pgTable("nfse_credential_settings", {
+  orgId: text("org_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  defaultMode: nfseCredentialMode("default_mode").notNull().default("certificate"),
+  proxyTestRequestedAt: timestamp("proxy_test_requested_at", { withTimezone: true }),
+  updatedBy: text("updated_by").references(() => user.id),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Credencial de cada empresa: o modo (nulo = segue o padrão), o selo da
+ * procuração e com qual credencial o cursor de leitura foi construído
+ * (`read_mode`, nulo = certificado, como todo cursor até a procuração existir).
+ */
+export const nfseClientCredentials = pgTable(
+  "nfse_client_credentials",
+  {
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    mode: nfseCredentialMode("mode"),
+    readMode: nfseCredentialMode("read_mode"),
+    proxyStatus: nfseProxyStatus("proxy_status").notNull().default("untested"),
+    proxyCheckedAt: timestamp("proxy_checked_at", { withTimezone: true }),
+    proxyCode: varchar("proxy_code", { length: 30 }),
+    proxyMessage: varchar("proxy_message", { length: 300 }),
+    proxyTestRequestedAt: timestamp("proxy_test_requested_at", { withTimezone: true }),
+    /** O teste comparou os NSU com os já guardados: a sequência é a mesma? Nulo = não deu para medir. */
+    proxySameSequence: boolean("proxy_same_sequence"),
+    updatedBy: text("updated_by").references(() => user.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.clientId] }),
+    foreignKey({
+      name: "nfse_client_credentials_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+  ],
+);
+
 /**
  * A pasta de XML de cada empresa: as NFS-e que ela emitiu, com o XML
  * compactado (gzip). Aqui o XML fica guardado, ao contrário das notas de

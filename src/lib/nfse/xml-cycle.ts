@@ -1,10 +1,12 @@
 import "server-only";
 
+import { isProxyAuthorizationError, needsCursorReset } from "@/domain/nfse-credentials";
 import { isXmlRoutineDue } from "@/domain/nfse-xml";
 
-import { fetchAdnBatch, withTransientRetry } from "./adn-client";
+import { AdnRejectionError, fetchAdnBatch, withTransientRetry } from "./adn-client";
 import { loadNfseCertificate, NfseCertificateError } from "./certificate";
 import { checkClientCertificate } from "./certificate-check";
+import { resetCursorForMode, saveProxyStatus } from "./credentials-repository";
 import { createMtlsTransport, type HttpTransport, type NfseEnvironmentName, NfseTransientError } from "./sefin-client";
 import { type VaultEnvelope, VaultError, type VaultKey } from "./vault";
 import {
@@ -13,6 +15,7 @@ import {
   loadXmlRoutineState,
   markXmlRoutineRun,
   publishVaultKey,
+  type RoutineClient,
   saveAdnError,
   saveAdnProgress,
   saveCertificateCheck,
@@ -22,7 +25,8 @@ import { runXmlRoutine } from "./xml-routine";
 /**
  * O que o serviço fiscal faz com os certificados das empresas: publicar a
  * chave do cofre, conferir os certificados enviados e rodar a leitura da
- * distribuição do ADN de cada empresa com o certificado dela (mTLS).
+ * distribuição do ADN de cada empresa (mTLS) com o certificado dela ou, por
+ * procuração, com o A1 do escritório em nome dela.
  *
  * Os logs daqui dizem só id e contagem: nada de envelope, senha, certificado
  * ou XML, nem a mensagem de erro de cada empresa (essa fica no banco).
@@ -60,6 +64,15 @@ function openClientTransport(vault: VaultKey, envelope: VaultEnvelope): HttpTran
   }
 }
 
+/** Recusa declarada (com HTTP) que fala de autorização: 401/403, E2245 ou procuração no texto. */
+function isProxyRefusal(error: unknown): error is AdnRejectionError & { httpStatus: number } {
+  return (
+    error instanceof AdnRejectionError &&
+    error.httpStatus !== null &&
+    isProxyAuthorizationError([{ code: error.code ?? String(error.httpStatus), message: error.message }])
+  );
+}
+
 /**
  * Uma rodada inteira. O certificado de cada empresa é aberto em memória só
  * para ela e descartado quando a rodada passa para a próxima (runXmlRoutine
@@ -73,22 +86,40 @@ export async function runXmlRoutineCycle(
   orgId: string,
   vault: VaultKey,
   environment: NfseEnvironmentName,
-  options: { retryDelaysMs?: readonly number[] } = {},
+  options: {
+    retryDelaysMs?: readonly number[];
+    /** O A1 do escritório (o dos honorários), para quem lê por procuração. */
+    office?: HttpTransport | null;
+  } = {},
 ): Promise<void> {
   const startedAt = new Date();
   await markXmlRoutineRun(orgId, { startedAt });
   const state = await loadXmlRoutineState(orgId);
-  const clients = await listRoutineClients(orgId, startedAt);
-  const envelopes = new Map(clients.map((client) => [client.clientId, client.envelope]));
+  const clients: RoutineClient[] = [];
+  for (const client of await listRoutineClients(orgId, startedAt)) {
+    // Trocou de credencial desde a última leitura: recomeça do zero, porque não
+    // está medido que a sequência de NSU é a mesma (decisão 4 do desenho).
+    if (needsCursorReset(client.readMode, client.mode)) {
+      await resetCursorForMode(orgId, client.clientId, client.mode, startedAt);
+      clients.push({ ...client, lastNsu: 0, historyFromNsu: client.historyFromNsu === null ? null : 0 });
+    } else {
+      clients.push(client);
+    }
+  }
+  const byId = new Map(clients.map((client) => [client.clientId, client]));
 
   let current: { clientId: string; transport: HttpTransport } | null = null;
   const transportFor = (clientId: string): HttpTransport => {
+    const client = byId.get(clientId);
+    if (client?.mode === "proxy") {
+      if (!options.office) throw new Error("O A1 do escritório não está disponível no serviço fiscal.");
+      return options.office;
+    }
     if (current?.clientId === clientId) return current.transport;
     // Solta o da empresa anterior antes de abrir o próximo.
     current = null;
-    const envelope = envelopes.get(clientId);
-    if (!envelope) throw new Error("O certificado da empresa não veio na rodada.");
-    current = { clientId, transport: openClientTransport(vault, envelope) };
+    if (!client?.envelope) throw new Error("O certificado da empresa não veio na rodada.");
+    current = { clientId, transport: openClientTransport(vault, client.envelope) };
     return current.transport;
   };
 
@@ -105,6 +136,13 @@ export async function runXmlRoutineCycle(
         // Esgotadas as tentativas: o que já veio está gravado, e a tela diz isso.
         if (error instanceof NfseTransientError) {
           throw new NfseTransientError(`${error.message} A próxima leitura continua de onde parou.`);
+        }
+        // Por procuração, a recusa de autorização é da procuração: vira selo da empresa.
+        if (byId.get(client.clientId)?.mode === "proxy" && isProxyRefusal(error)) {
+          await saveProxyStatus(orgId, client.clientId, { status: "invalid", code: error.code, message: error.message, checkedAt: new Date() });
+          throw new AdnRejectionError(
+            `Procuração recusada pelo Sistema Nacional${error.code ? ` (${error.code})` : ""}. Renove a procuração ou use o certificado da empresa.`,
+          );
         }
         throw error;
       }

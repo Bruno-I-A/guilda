@@ -31,10 +31,28 @@ describe("cliente do Sistema Nacional", () => {
   test("emite: manda a DPS compactada e lê chave e número", async () => {
     const nfse = gzipBase64("<NFSe><infNFSe><nNFSe>123</nNFSe></infNFSe></NFSe>");
     const { calls, client } = fake([json(201, { chaveAcesso: KEY, nfseXmlGZipB64: nfse })]);
-    await expect(client.emit("<DPS/>")).resolves.toEqual({ kind: "issued", accessKey: KEY, nfseNumber: "123" });
+    // O XML da resposta segue junto: por procuração, a consulta pela chave é recusada.
+    await expect(client.emit("<DPS/>")).resolves.toEqual({
+      kind: "issued",
+      accessKey: KEY,
+      nfseNumber: "123",
+      xml: "<NFSe><infNFSe><nNFSe>123</nNFSe></infNFSe></NFSe>",
+    });
     expect(calls[0].method).toBe("POST");
     expect(calls[0].url).toBe(`${NFSE_ENDPOINTS.restrita.sefin}/nfse`);
     expect(gunzipBase64((calls[0].json as { dpsXmlGZipB64: string }).dpsXmlGZipB64)).toBe("<DPS/>");
+  });
+
+  test("emissão sem o XML na resposta devolve xml nulo, não erro", async () => {
+    const { client } = fake([json(201, { chaveAcesso: KEY })]);
+    await expect(client.emit("<DPS/>")).resolves.toEqual({ kind: "issued", accessKey: KEY, nfseNumber: null, xml: null });
+  });
+
+  test("número da nota recusado por procuração (401/403) vira nulo, não erro", async () => {
+    const { client } = fake([json(403, {}), json(401, {}), json(500, {})]);
+    await expect(client.getNfseNumber(KEY)).resolves.toBeNull();
+    await expect(client.getNfseNumber(KEY)).resolves.toBeNull();
+    await expect(client.getNfseNumber(KEY)).rejects.toBeInstanceOf(NfseTransientError);
   });
 
   test("recusa de regra de negócio vira lista de erros", async () => {

@@ -72,6 +72,16 @@ describe("distribuição do ADN para contribuintes", () => {
     await expect(fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ })).rejects.toThrow("E2230 — CNPJ sem relação");
   });
 
+  test("a recusa leva o HTTP e o código, para a procuração saber se foi ela", async () => {
+    const e2245 = JSON.stringify({ StatusProcessamento: "REJEICAO", Erros: [{ Codigo: "E2245", Descricao: "Não há procuração" }] });
+    const { transport } = fake([json(400, e2245), json(403, "{}"), json(200, "{}")]);
+    const caught = async () => fetchAdnBatch(transport, "producao", { afterNsu: 1, cnpj: CNPJ }).catch((error: unknown) => error);
+    expect(await caught()).toMatchObject({ httpStatus: 400, code: "E2245" });
+    expect(await caught()).toMatchObject({ httpStatus: 403, code: null });
+    // Formato inesperado não é recusa de ninguém: sem HTTP de recusa.
+    expect(await caught()).toMatchObject({ httpStatus: null, code: null });
+  });
+
   test("429, 408 e status 0 também são transitórios", async () => {
     const { transport } = fake([json(429, ""), json(408, ""), { status: 0, body: Buffer.alloc(0), contentType: null }]);
     for (let i = 0; i < 3; i += 1) {

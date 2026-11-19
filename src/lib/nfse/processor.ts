@@ -31,7 +31,7 @@ export interface NfseJob {
 
 export type NfseJobOutcome =
   /** `foundByDps`: a nota já existia e foi achada pela consulta da DPS, não emitida agora. */
-  | { kind: "issued"; accessKey: string; nfseNumber: string | null; environment: 1 | 2; foundByDps?: true }
+  | { kind: "issued"; accessKey: string; nfseNumber: string | null; environment: 1 | 2; foundByDps?: true; xml?: string | null }
   | { kind: "failed"; message: string; errors: NfseApiError[] }
   | { kind: "retry"; message: string; delayMinutes: number }
   | { kind: "cancelled" }

@@ -54,7 +54,8 @@ export interface NfseApiError {
   message: string;
 }
 export type EmitResult =
-  | { kind: "issued"; accessKey: string; nfseNumber: string | null }
+  /** `xml`: a NFS-e que veio na própria resposta (por procuração, a consulta pela chave é recusada). */
+  | { kind: "issued"; accessKey: string; nfseNumber: string | null; xml: string | null }
   | { kind: "rejected"; errors: NfseApiError[] };
 export type CancelResult = { kind: "cancelled" } | { kind: "rejected"; errors: NfseApiError[] };
 
@@ -170,9 +171,9 @@ function unexpected(res: HttpResponse, what: string): NfseTransientError {
 export function createSefinClient(environment: NfseEnvironmentName, transport: HttpTransport): SefinClient {
   const base = NFSE_ENDPOINTS[environment];
 
-  async function nfseNumberFrom(body: Record<string, unknown>): Promise<string | null> {
+  function nfseXmlFrom(body: Record<string, unknown>): string | null {
     const xml = stringField(body, "nfseXmlGZipB64");
-    return xml ? firstElementText(gunzipBase64(xml), "nNFSe") : null;
+    return xml ? gunzipBase64(xml) : null;
   }
 
   return {
@@ -186,7 +187,8 @@ export function createSefinClient(environment: NfseEnvironmentName, transport: H
       if (res.status >= 200 && res.status < 300) {
         const accessKey = stringField(body, "chaveAcesso");
         if (!accessKey) throw new NfseTransientError("Resposta de emissão sem chave de acesso.");
-        return { kind: "issued", accessKey, nfseNumber: await nfseNumberFrom(body) };
+        const xml = nfseXmlFrom(body);
+        return { kind: "issued", accessKey, nfseNumber: xml ? firstElementText(xml, "nNFSe") : null, xml };
       }
       return rejection(res, body);
     },
@@ -200,7 +202,13 @@ export function createSefinClient(environment: NfseEnvironmentName, transport: H
 
     async getNfseNumber(accessKey) {
       const res = await transport({ method: "GET", url: `${base.sefin}/nfse/${accessKey}` });
-      if (res.status >= 200 && res.status < 300) return nfseNumberFrom(parseBody(res));
+      // Por procuração o Sistema Nacional recusa a consulta pela chave (medido no Tero):
+      // o número fica para o XML da resposta ou da rotina da aba XML.
+      if (res.status === 401 || res.status === 403) return null;
+      if (res.status >= 200 && res.status < 300) {
+        const xml = nfseXmlFrom(parseBody(res));
+        return xml ? firstElementText(xml, "nNFSe") : null;
+      }
       throw unexpected(res, "Consulta da nota falhou");
     },
 

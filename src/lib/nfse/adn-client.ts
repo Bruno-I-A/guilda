@@ -32,7 +32,21 @@ export interface AdnBatch {
 }
 
 /** O Sistema Nacional recusou a consulta, ou devolveu algo que não dá para ler com segurança. */
-export class AdnRejectionError extends Error {}
+/**
+ * O Sistema Nacional recusou ou devolveu algo ilegível. `httpStatus` e `code`
+ * só existem na recusa declarada (4xx, REJEICAO): é por eles que a leitura por
+ * procuração distingue "a procuração não deixa" de um lote em formato estranho.
+ */
+export class AdnRejectionError extends Error {
+  readonly httpStatus: number | null;
+  readonly code: string | null;
+
+  constructor(message: string, detail: { httpStatus: number; code: string | null } | null = null) {
+    super(message);
+    this.httpStatus = detail?.httpStatus ?? null;
+    this.code = detail?.code ?? null;
+  }
+}
 
 /**
  * Espera antes de cada nova tentativa de um lote: 3 tentativas ao todo.
@@ -106,6 +120,12 @@ function rejectionMessage(body: unknown, status: number): string {
   return described.length > 0
     ? clip(described.join(" · "), MAX_MESSAGE)
     : `O Sistema Nacional recusou a consulta (HTTP ${status}).`;
+}
+
+function firstRejectionCode(body: unknown): string | null {
+  const errors = field(body, "Erros");
+  const code = Array.isArray(errors) ? field(errors[0], "Codigo") : undefined;
+  return typeof code === "string" && code ? clip(code, 30) : null;
 }
 
 /** NSU é inteiro não negativo, número ou texto de dígitos; `null`, vazio e lixo não viram 0. */
@@ -188,7 +208,7 @@ export async function fetchAdnBatch(
     return { documents: [], done: true };
   }
   if (!ok || declaredRejection) {
-    throw new AdnRejectionError(rejectionMessage(body, res.status));
+    throw new AdnRejectionError(rejectionMessage(body, res.status), { httpStatus: res.status, code: firstRejectionCode(body) });
   }
 
   // Contrato desconhecido nao prova ausencia de notas. Nao avance o cursor

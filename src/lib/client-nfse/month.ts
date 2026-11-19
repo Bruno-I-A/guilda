@@ -18,8 +18,10 @@ import {
   type NfseCancelReasonCode,
   type NfseClientAddress,
 } from "@/domain/nfse";
+import { effectiveCredentialMode, proxyEmissionProblem } from "@/domain/nfse-credentials";
 import { nfseRetentionGroups, type NfseRetentions } from "@/domain/nfse-retentions";
 import { err, type ActionResult } from "@/lib/action-context";
+import { credentialPolicyIn } from "@/lib/nfse/credentials-repository";
 import { ibgeCityCode } from "@/lib/nfse/municipios";
 import {
   NFSE_CONSTRUCTION_REQUIRED,
@@ -88,10 +90,22 @@ export interface IssuerReadiness {
   problem: string | null;
 }
 
+function certificateProblem(
+  row: { certStatus: string | null; certCnpj: string | null; cnpj: string | null; certValidUntil: Date | null },
+  now: Date,
+): string | null {
+  if (!row.certStatus) return "Sem certificado A1. Envie o certificado nesta empresa.";
+  if (row.certStatus === "pending") return "Certificado ainda em conferência.";
+  if (row.certStatus !== "valid" || row.certCnpj !== row.cnpj) return "Certificado com problema. Troque o certificado nesta empresa.";
+  if (row.certValidUntil && row.certValidUntil <= now) return "Certificado vencido.";
+  return null;
+}
+
 /**
- * Pode emitir? Modelo fiscal completo, empresa com CNPJ, ativa e com
- * certificado conferido, do mesmo CNPJ e dentro da validade. O serviço fiscal
- * confere de novo ao abrir o certificado.
+ * Pode emitir? Modelo fiscal completo, empresa com CNPJ, ativa e com a
+ * credencial em ordem: por certificado, conferido, do mesmo CNPJ e dentro da
+ * validade; por procuração, sem recusa registrada. O serviço fiscal confere de
+ * novo ao emitir.
  */
 export async function loadIssuerReadiness(
   tx: OrgTx,
@@ -100,6 +114,8 @@ export async function loadIssuerReadiness(
   const i = schema.clientNfseIssuers;
   const c = schema.clients;
   const cert = schema.nfseClientCertificates;
+  const cc = schema.nfseClientCredentials;
+  const policy = await credentialPolicyIn(tx, input.orgId);
   const rows = await tx
     .select({
       issuerId: i.id,
@@ -114,15 +130,22 @@ export async function loadIssuerReadiness(
       certStatus: cert.status,
       certCnpj: cert.certificateCnpj,
       certValidUntil: cert.validUntil,
+      credentialMode: cc.mode,
+      proxyStatus: cc.proxyStatus,
     })
     .from(i)
     .innerJoin(c, and(eq(c.orgId, i.orgId), eq(c.id, i.clientId)))
     .leftJoin(cert, and(eq(cert.orgId, i.orgId), eq(cert.clientId, i.clientId)))
+    .leftJoin(cc, and(eq(cc.orgId, i.orgId), eq(cc.clientId, i.clientId)))
     .where(and(eq(i.orgId, input.orgId), input.issuerIds ? inArray(i.id, [...input.issuerIds]) : undefined));
   const result = new Map<string, IssuerReadiness>();
   for (const row of rows) {
     const parsed = nfseIssuerTemplateRulesSchema.safeParse(row.template);
     const template = parsed.success ? parsed.data : null;
+    const credentialProblem =
+      effectiveCredentialMode(row.credentialMode, policy.defaultMode) === "proxy"
+        ? proxyEmissionProblem(row.proxyStatus ?? "untested")
+        : certificateProblem(row, input.now);
     const problem = !row.issuerActive
       ? "Empresa desativada nas Notas dos clientes."
       : !row.clientActive
@@ -133,15 +156,7 @@ export async function loadIssuerReadiness(
             ? "Empresa sem CNPJ no cadastro."
             : !template
               ? `Modelo fiscal incompleto: ${parsed.error?.issues[0]?.message ?? "revise o cadastro"}`
-              : !row.certStatus
-                ? "Sem certificado A1. Envie o certificado nesta empresa."
-                : row.certStatus === "pending"
-                  ? "Certificado ainda em conferência."
-                  : row.certStatus !== "valid" || row.certCnpj !== row.cnpj
-                    ? "Certificado com problema. Troque o certificado nesta empresa."
-                    : row.certValidUntil && row.certValidUntil <= input.now
-                      ? "Certificado vencido."
-                      : null;
+              : credentialProblem;
     result.set(row.issuerId, {
       issuerId: row.issuerId,
       clientId: row.clientId,

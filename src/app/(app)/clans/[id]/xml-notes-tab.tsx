@@ -1,6 +1,6 @@
 import { withOrgTx } from "@/db/org-tx";
 import { previousEmissionMonth } from "@/domain/nfse-xml";
-import { loadVaultPublicKey, loadXmlCompanies, loadXmlRoutineView } from "@/lib/nfse/xml-requests";
+import { loadVaultPublicKey, loadXmlCompanies, loadXmlCredentialsView, loadXmlRoutineView } from "@/lib/nfse/xml-requests";
 
 import { XmlNotesBoard } from "./xml-notes-board";
 
@@ -23,19 +23,23 @@ export async function XmlNotesTab({
   orgId,
   clanId,
   canManage,
+  isAdmin,
   requestedYear,
   requestedMonth,
 }: {
   orgId: string;
   clanId: string;
   canManage: boolean;
+  /** Só admin muda o padrão de credencial do escritório. */
+  isAdmin: boolean;
   requestedYear?: string;
   requestedMonth?: string;
 }) {
   const now = new Date();
   const period = parsePeriod(requestedYear, requestedMonth, now);
-  const { routine, companies, vaultKey } = await withOrgTx(orgId, async (tx) => ({
+  const { routine, credentials, companies, vaultKey } = await withOrgTx(orgId, async (tx) => ({
     routine: await loadXmlRoutineView(tx, orgId, now),
+    credentials: await loadXmlCredentialsView(tx, orgId),
     companies: await loadXmlCompanies(tx, { orgId, ...period }),
     vaultKey: await loadVaultPublicKey(tx, orgId),
   }));
@@ -46,7 +50,9 @@ export async function XmlNotesTab({
       year={period.year}
       month={period.month}
       canManage={canManage}
+      isAdmin={isAdmin}
       routine={routine}
+      credentials={credentials}
       companies={companies}
       vaultKey={vaultKey}
     />

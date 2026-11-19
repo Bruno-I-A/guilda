@@ -8,7 +8,9 @@ import { and, asc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "driz
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { amountToCents, buildDpsId, type NfseCancelReasonCode } from "@/domain/nfse";
+import { isProxyAuthorizationError, proxyEmissionProblem } from "@/domain/nfse-credentials";
 import { loadNfseCertificate, NfseCertificateError } from "@/lib/nfse/certificate";
+import { loadClientCredential, saveProxyStatus } from "@/lib/nfse/credentials-repository";
 import { runNfseJob, type NfseJob, type NfseJobOutcome } from "@/lib/nfse/processor";
 import {
   createMtlsTransport,
@@ -160,22 +162,40 @@ export async function finishClientNfseJob(
   });
 }
 
-interface IssuerConnection {
+/** O A1 do escritório (o dos honorários), para emitir por procuração. Vem do serviço fiscal. */
+export interface OfficeIssuer {
   client: SefinClient;
   signingKey: NfseSigningKey;
 }
 
+interface IssuerConnection {
+  client: SefinClient;
+  signingKey: NfseSigningKey;
+  viaProxy: boolean;
+}
+
 /**
- * Abre o A1 da empresa para emitir. Confere de novo o que o app já conferiu:
- * certificado conferido, do CNPJ da nota e dentro da validade. As mensagens
- * do cofre e do certificado já são seguras; qualquer outra vira genérica.
+ * A conexão que emite pela empresa. Por procuração, o A1 do escritório (sem
+ * troca silenciosa para o certificado da empresa: procuração recusada para a
+ * nota com o motivo). Por certificado, abre o A1 da empresa e confere de novo
+ * o que o app já conferiu: certificado conferido, do CNPJ da nota e dentro da
+ * validade. As mensagens do cofre e do certificado já são seguras; qualquer
+ * outra vira genérica.
  */
 async function openIssuer(
   orgId: string,
   claim: ClientNfseClaim,
   vault: VaultKey,
   environment: NfseEnvironmentName,
+  office: OfficeIssuer | null,
 ): Promise<IssuerConnection | string> {
+  const credential = await loadClientCredential(orgId, claim.clientId);
+  if (credential.mode === "proxy") {
+    const problem = proxyEmissionProblem(credential.proxyStatus);
+    if (problem) return problem;
+    if (!office) return "O A1 do escritório não está disponível no serviço fiscal.";
+    return { client: office.client, signingKey: office.signingKey, viaProxy: true };
+  }
   const c = schema.nfseClientCertificates;
   const [row] = await withOrgTx(orgId, (tx) =>
     tx
@@ -195,6 +215,7 @@ async function openIssuer(
     return {
       client: createSefinClient(environment, createMtlsTransport({ privateKeyPem: certificate.privateKeyPem, chainPem: certificate.chainPem })),
       signingKey: { privateKeyPem: certificate.privateKeyPem, certificatePem: certificate.certificatePem },
+      viaProxy: false,
     };
   } catch (error) {
     if (error instanceof VaultError || error instanceof NfseCertificateError) return error.message;
@@ -246,11 +267,24 @@ export async function repairAdoptedClientNfse(orgId: string): Promise<number> {
 
 const repairedOrgs = new Set<string>();
 
+/** XML que a rotina da aba XML já guardou desta nota; null = ainda não leu. */
+async function storedNoteXml(orgId: string, accessKey: string): Promise<string | null> {
+  const n = schema.nfseIssuedNotes;
+  const [row] = await withOrgTx(orgId, (tx) => tx.select({ xmlGz: n.xmlGz }).from(n).where(and(eq(n.orgId, orgId), eq(n.accessKey, accessKey))));
+  return row ? gunzipSync(Buffer.from(row.xmlGz)).toString("utf8") : null;
+}
+
 /**
  * Consome a fila das notas dos clientes até esvaziar. A conexão de cada
- * empresa fica aberta só durante esta chamada.
+ * empresa fica aberta só durante esta chamada. `office` é o A1 do escritório,
+ * para as empresas que emitem por procuração.
  */
-export async function runClientNfseQueue(orgId: string, vault: VaultKey, environment: NfseEnvironmentName): Promise<void> {
+export async function runClientNfseQueue(
+  orgId: string,
+  vault: VaultKey,
+  environment: NfseEnvironmentName,
+  office: OfficeIssuer | null = null,
+): Promise<void> {
   // Antes de pegar a fila: um cancelamento pendente de nota adotada cancelaria a antiga.
   if (!repairedOrgs.has(orgId)) {
     const repaired = await repairAdoptedClientNfse(orgId);
@@ -263,7 +297,7 @@ export async function runClientNfseQueue(orgId: string, vault: VaultKey, environ
   for (let claim = await claimClientNfseJob(orgId); claim; claim = await claimClientNfseJob(orgId)) {
     let connection = connections.get(claim.issuerId);
     if (!connection) {
-      connection = await openIssuer(orgId, claim, vault, environment);
+      connection = await openIssuer(orgId, claim, vault, environment, office);
       connections.set(claim.issuerId, connection);
     }
     let outcome: NfseJobOutcome;
@@ -285,12 +319,33 @@ export async function runClientNfseQueue(orgId: string, vault: VaultKey, environ
         now: new Date(),
       });
       if (outcome.kind === "issued") {
-        try {
-          xml = await connection.client.getNfseXml(outcome.accessKey);
-        } catch {
-          // Sem o XML agora: a nota está emitida; o PDF usa o que a rotina de XML guardar.
-          xml = null;
+        // O XML em três fontes, nesta ordem: a resposta da emissão, a consulta
+        // pela chave (recusada por procuração) e o que a rotina da aba XML guardou.
+        xml = outcome.xml ?? null;
+        if (!xml) {
+          try {
+            xml = await connection.client.getNfseXml(outcome.accessKey);
+          } catch {
+            xml = null;
+          }
         }
+        xml ??= await storedNoteXml(orgId, outcome.accessKey);
+        if (!outcome.nfseNumber && xml) outcome = { ...outcome, nfseNumber: firstElementText(xml, "nNFSe") };
+      }
+      // A nota ACHADA pela DPS pode ser de outro sistema e precisa ser conferida.
+      // Sem XML não se adota no escuro: erro, e o Tentar de novo confere depois.
+      // A recém-emitida sem XML segue emitida: o PDF usa o que a rotina guardar.
+      if (outcome.kind === "issued" && outcome.foundByDps && !xml) {
+        outcome = {
+          kind: "failed",
+          message: "Não foi possível conferir a nota achada pela DPS. Tente de novo depois da próxima leitura dos XML.",
+          errors: [],
+        };
+      }
+      if (outcome.kind === "failed" && connection.viaProxy && isProxyAuthorizationError(outcome.errors)) {
+        await saveProxyStatus(orgId, claim.clientId, { status: "no_emission", code: outcome.errors[0]?.code ?? null, message: outcome.message, checkedAt: new Date() });
+      }
+      if (outcome.kind === "issued") {
         // Só a nota ACHADA pela DPS pode ser de outro sistema. A que a Guilda
         // acabou de emitir é nossa: marcá-la como erro esconderia uma nota
         // real, e trocar a série emitiria outra igual.

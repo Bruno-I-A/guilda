@@ -9,6 +9,7 @@ import { readDanfse } from "../src/lib/nfse/danfse-data";
 import { renderDanfsePdf } from "../src/lib/nfse/danfse-pdf";
 import { MIN_SERVICE_TOKEN_LENGTH } from "../src/lib/nfse/danfse-zip";
 import { createFiscalHttpHandler } from "../src/lib/nfse/fiscal-http";
+import { runProxyTests } from "../src/lib/nfse/proxy-test";
 import { loadVaultKey, type VaultKey } from "../src/lib/nfse/vault";
 import { isXmlRoutineDueNow, runXmlRoutineCycle, serviceVaultTick } from "../src/lib/nfse/xml-cycle";
 import { runNfseJob } from "../src/lib/nfse/processor";
@@ -91,9 +92,16 @@ function describeError(error: unknown): string {
 async function main() {
   const { certificate, error: certificateError } = openCertificate();
   if (!certificate) console.error(`Serviço fiscal sem certificado: ${certificateError}`);
-  const client = certificate
-    ? createSefinClient(environment, createMtlsTransport({ privateKeyPem: certificate.privateKeyPem, chainPem: certificate.chainPem }))
+  // Um transporte só para o A1 do escritório: honorários, PDFs e, por procuração,
+  // a leitura e a emissão das empresas e o teste de procuração.
+  const officeTransport = certificate
+    ? createMtlsTransport({ privateKeyPem: certificate.privateKeyPem, chainPem: certificate.chainPem })
     : null;
+  const client = officeTransport ? createSefinClient(environment, officeTransport) : null;
+  const office =
+    certificate && client
+      ? { client, signingKey: { privateKeyPem: certificate.privateKeyPem, certificatePem: certificate.certificatePem } }
+      : null;
   startHttp(certificateError ? null : client);
   const vault = openVault();
   let xmlRoutineRunning = false;
@@ -112,12 +120,19 @@ async function main() {
           console.warn(`Nenhuma organização configurada com o CNPJ ${certificate.cnpj}.`);
         } else if (client && !certificateError) {
           const settings = await loadServiceSettings(orgId);
+          if (officeTransport) {
+            try {
+              await runProxyTests(orgId, officeTransport, environment);
+            } catch (error) {
+              console.error("Falha no teste de procuração; nova tentativa no próximo ciclo:", describeError(error));
+            }
+          }
           if (vault) {
             try {
               await serviceVaultTick(orgId, vault);
               if (!xmlRoutineRunning && (await isXmlRoutineDueNow(orgId, new Date()))) {
                 xmlRoutineRunning = true;
-                void runXmlRoutineCycle(orgId, vault, environment)
+                void runXmlRoutineCycle(orgId, vault, environment, { office: officeTransport })
                   .catch(() => console.error("Falha na rotina de XML; a leitura será retomada."))
                   .finally(() => { xmlRoutineRunning = false; });
               }
@@ -125,7 +140,7 @@ async function main() {
               console.error("Falha no ciclo do cofre; nova tentativa no próximo ciclo.");
             }
             try {
-              await runClientNfseQueue(orgId, vault, environment);
+              await runClientNfseQueue(orgId, vault, environment, office);
             } catch (error) {
               console.error("Falha na fila das notas dos clientes:", describeError(error));
             }
