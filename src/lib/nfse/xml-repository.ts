@@ -2,7 +2,7 @@ import "server-only";
 
 import { gzipSync } from "node:zlib";
 
-import { and, eq, gt, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
