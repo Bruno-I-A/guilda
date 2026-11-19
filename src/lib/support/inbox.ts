@@ -411,7 +411,7 @@ async function lockConversation(tx: OrgTx, input: Command) {
 
 const NOT_FOUND = "Conversa não encontrada.";
 
-/** Assumir pausa a IA na mesma transação: nunca há IA e pessoa respondendo juntas. */
+/** Assumir reserva a resposta para a pessoa; no modo sombra a IA só continua lendo e sugerindo internamente. */
 export async function takeSupportConversation(tx: OrgTx, input: Command): Promise<ActionResult> {
   const row = await lockConversation(tx, input);
   if (!row) return err(NOT_FOUND);

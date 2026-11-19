@@ -16,7 +16,9 @@ import { retrieveApprovedKnowledge } from "./knowledge";
  * Modo sombra da triagem (decisão de 2026-11-09): a IA lê cada conversa nova e
  * grava o que faria — setor, urgência, resumo, pergunta ou resposta —, mas NADA
  * vai ao cliente. A equipe compara com o que ela mesma fez antes de qualquer
- * resposta automática. Desligado por padrão: as mensagens dos clientes só vão
+ * resposta automática. Mesmo quando um atendente assume a conversa, o modo
+ * sombra continua sugerindo internamente: assumir só impede automação de saída.
+ * Desligado por padrão: as mensagens dos clientes só vão
  * à Anthropic com SUPPORT_AI_MODE=shadow.
  */
 
@@ -52,7 +54,6 @@ async function findCandidates(tx: OrgTx, orgId: string, cutoff: Date, limit: num
     ) m ON true
     WHERE c.org_id = ${orgId}
       AND c.resolved_at IS NULL
-      AND c.assigned_user_id IS NULL
       AND m.actor = 'customer'
       AND m.occurred_at < ${cutoff.toISOString()}::timestamptz
       AND NOT EXISTS (SELECT 1 FROM support_ai_runs r WHERE r.org_id = c.org_id AND r.trigger_message_id = m.id)
