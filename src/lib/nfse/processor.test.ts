@@ -37,7 +37,7 @@ function job(overrides: Partial<NfseJob> = {}): NfseJob {
 
 function client(overrides: Partial<SefinClient> = {}): SefinClient {
   return {
-    emit: async () => ({ kind: "issued", accessKey: KEY, nfseNumber: "77" }),
+    emit: async () => ({ kind: "issued", accessKey: KEY, nfseNumber: "77", xml: null }),
     findAccessKeyByDps: async () => null,
     getNfseNumber: async () => "77",
     cancel: async () => ({ kind: "cancelled" }),
@@ -60,8 +60,9 @@ function deps(sefin: SefinClient) {
 describe("emissão", () => {
   test("consulta a DPS, emite e devolve chave e número", async () => {
     let emitted = "";
-    const outcome = await runNfseJob(job(), deps(client({ emit: async (xml) => { emitted = xml; return { kind: "issued", accessKey: KEY, nfseNumber: "77" }; } })));
-    expect(outcome).toEqual({ kind: "issued", accessKey: KEY, nfseNumber: "77", environment: 2 });
+    const outcome = await runNfseJob(job(), deps(client({ emit: async (xml) => { emitted = xml; return { kind: "issued", accessKey: KEY, nfseNumber: "77", xml: "<NFSe/>" }; } })));
+    // O XML da resposta segue no desfecho (a fila das notas dos clientes guarda; a dos honorários não).
+    expect(outcome).toEqual({ kind: "issued", accessKey: KEY, nfseNumber: "77", xml: "<NFSe/>", environment: 2 });
     expect(emitted).toContain("<Signature");
     expect(emitted).toContain("<dCompet>2026-10-05</dCompet>");
   });
@@ -70,7 +71,7 @@ describe("emissão", () => {
     let emitCalls = 0;
     const outcome = await runNfseJob(job({ attemptCount: 2 }), deps(client({
       findAccessKeyByDps: async () => KEY,
-      emit: async () => { emitCalls += 1; return { kind: "issued", accessKey: KEY, nfseNumber: null }; },
+      emit: async () => { emitCalls += 1; return { kind: "issued", accessKey: KEY, nfseNumber: null, xml: null }; },
     })));
     expect(outcome).toEqual({ kind: "issued", accessKey: KEY, nfseNumber: "77", environment: 2, foundByDps: true });
     expect(emitCalls).toBe(0);
