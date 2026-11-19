@@ -23,7 +23,7 @@ export function WhatsAppSettings({ connection, templateStatus, canManageTemplate
       <CardDescription>Receba no seu número o aviso quando um novo cliente chegar ao seu clã.</CardDescription>
     </CardHeader>
     <CardContent className="grid gap-4">
-      <div className="grid gap-2"><Label htmlFor="member-whatsapp">Seu WhatsApp</Label><Input id="member-whatsapp" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="55 54 99999-0000" inputMode="tel" /></div>
+      <div className="grid gap-2"><Label htmlFor="member-whatsapp">Seu WhatsApp</Label><Input id="member-whatsapp" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="(54) 99999-0000" inputMode="tel" autoComplete="tel" /><p className="text-xs text-muted-foreground">Com DDD. O 55 do Brasil é opcional.</p></div>
       <label className="flex items-center justify-between gap-3 rounded-lg border p-3"><div><p className="text-sm font-medium">Avisos ativos</p><p className="text-xs text-muted-foreground">Você pode desligar quando estiver fora.</p></div><input className="size-4 accent-primary" type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /></label>
       <p className="text-xs text-muted-foreground">Depois de salvar, mande uma mensagem para o WhatsApp do escritório. Isso abre por 24 horas a janela para avisos comuns, sem uso de template.</p>
       {connection?.lastInboundAt ? <p className="flex items-center gap-1 text-xs text-success"><CheckCircle2 className="size-3" />Janela identificada pela última mensagem enviada ao escritório.</p> : null}
