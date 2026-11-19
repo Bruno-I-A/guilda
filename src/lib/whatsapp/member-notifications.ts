@@ -20,6 +20,7 @@ export type MemberNotificationPayload = Readonly<{
  * Conversa do Atendimento que o agente encaminhou ao clã (2026-11-19). Só sai
  * dentro da janela de 24 horas: o modelo Utility aprovado fala de "novo
  * cliente", e o de conversa fica para quando o agente atender cliente real.
+ * Sem link, a pedido do Bruno: o aviso só avisa.
  */
 export type MemberSupportPayload = Readonly<{
   version: 2;
@@ -27,7 +28,6 @@ export type MemberSupportPayload = Readonly<{
   contactName: string;
   clanName: string;
   summary: string;
-  url: string;
 }>
 
 export function normalizeWhatsAppPhone(value: unknown): string | null {
@@ -88,8 +88,6 @@ export function memberSupportHandoffMessage(payload: MemberSupportPayload): stri
     `Cliente: ${payload.contactName}`,
     `Clã: ${payload.clanName}`,
     ...(payload.summary ? [`Assunto: ${payload.summary}`] : []),
-    "",
-    `Abrir: ${payload.url}`,
   ].join("\n");
 }
 
@@ -127,14 +125,12 @@ export async function enqueueMemberSupportHandoffNotifications(
   input: { orgId: string; clanId: string; conversationId: string; roundKey: string; clanName: string; contactName: string; summary: string },
 ): Promise<void> {
   const members = await clanMembersWithWhatsApp(tx, input.orgId, input.clanId);
-  const appUrl = appBaseUrl();
   const payload: MemberSupportPayload = {
     version: 2,
     kind: "support_conversation",
     contactName: input.contactName.slice(0, 120),
     clanName: input.clanName.slice(0, 100),
     summary: input.summary.slice(0, 280),
-    url: appUrl ? `${appUrl}/atendimento?c=${input.conversationId}` : "Abra o Atendimento da Guilda para ver a conversa.",
   };
   for (const member of members) {
     await tx.insert(schema.memberWhatsAppOutbox).values({

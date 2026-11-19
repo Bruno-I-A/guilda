@@ -25,8 +25,8 @@ function payload(value: unknown): MemberNotificationPayload | MemberSupportPaylo
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const v = value as Record<string, unknown>;
   if (v.version === 2 && v.kind === "support_conversation") {
-    return typeof v.contactName === "string" && typeof v.clanName === "string" && typeof v.url === "string"
-      ? { version: 2, kind: "support_conversation", contactName: v.contactName, clanName: v.clanName, summary: typeof v.summary === "string" ? v.summary : "", url: v.url }
+    return typeof v.contactName === "string" && typeof v.clanName === "string"
+      ? { version: 2, kind: "support_conversation", contactName: v.contactName, clanName: v.clanName, summary: typeof v.summary === "string" ? v.summary : "" }
       : null;
   }
   return v.version === 1 && typeof v.companyName === "string" && typeof v.clanName === "string" && typeof v.url === "string"
