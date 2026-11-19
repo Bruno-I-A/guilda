@@ -66,7 +66,10 @@ decisão é uma função pura (`decideAgentTurn`), na ordem do Scharff:
    ("Só preciso confirmar: …"). A conversa continua com o agente.
 3. **Pergunta** (`perguntaEsclarecimento`, teto de 3 na rodada pela guarda que
    já existe) → envia "Só preciso confirmar: …". Continua com o agente.
-4. **Confiança baixa** e ainda não perguntou o assunto → pergunta o assunto.
+4. **Confiança baixa**: na primeira fala da rodada, pergunta o assunto. Logo
+   depois de uma resposta da base, espera: é o "ok, obrigado", que o prompt
+   manda deixar com confiança baixa, e não há o que encaminhar. No resto,
+   encaminha para a equipe.
 5. **Encaminha** em qualquer outro caso: "Encaminhei ao setor Fiscal. Uma
    pessoa da equipe continua o atendimento por aqui." A conversa vai para o clã
    do setor (`clanForSector`), com o resumo da IA em `summary`, em

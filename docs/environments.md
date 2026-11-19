@@ -84,11 +84,17 @@ cofre continuam exclusivos de cada ambiente da Guilda.
 | `SUPPORT_TRIAGE_DEBOUNCE_SECONDS` | espera para agrupar mensagens seguidas do cliente; recomendado: `20` |
 
 No piloto de produção, `SUPPORT_AI_MODE` aceita somente `shadow` ou fica
-desligado. A triagem não insere nada em `support_outbox`, e o worker de saída
-tem uma segunda trava que recusa qualquer mensagem com ator `ai` ou origem
-`guilda_ai` antes de chamar a API da Meta. Liberar resposta automática exige
-uma alteração explícita de código e testes; não existe variável de ambiente que
-ative isso acidentalmente.
+desligado. A triagem em sombra não insere nada em `support_outbox`, e o worker
+de saída tem uma segunda trava que recusa qualquer mensagem com ator `ai` ou
+origem `guilda_ai` antes de chamar a API da Meta. Não existe variável de
+ambiente que ligue resposta automática.
+
+A única exceção é o **teste do agente** (2026-11-19): um admin liga o
+interruptor em Atendimento → Configurações e escolhe uma palavra-chave; só a
+conversa que começa com ela recebe resposta da IA, e o worker confere de novo
+a rodada e o interruptor antes de cada envio. O interruptor fica no banco de
+cada ambiente e nasce desligado. Ele depende de `SUPPORT_AI_MODE=shadow` e da
+`ANTHROPIC_API_KEY`: sem elas, a tela avisa que o teste não responde.
 
 Ao assinar cada WABA, a Guilda envia `override_callback_uri` com a sua própria
 rota `/api/atendimento/meta/webhook` e o `WHATSAPP_WEBHOOK_VERIFY_TOKEN`. Assim,

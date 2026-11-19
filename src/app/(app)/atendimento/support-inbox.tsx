@@ -33,6 +33,16 @@ function StatusChip({ status }: { status: SupportStatus }) {
   return <span className={cn("inline-flex shrink-0 items-center rounded-md border px-1.5 py-0.5 text-xs", STATUS_CLASSES[status])}>{SUPPORT_STATUS_LABELS[status]}</span>;
 }
 
+/** Rodada do teste do agente aberta pela palavra-chave: a IA está falando com o cliente. */
+function AgentTestChip() {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-xs text-foreground">
+      <Bot className="size-3" aria-hidden />
+      Teste do agente
+    </span>
+  );
+}
+
 const TIME_FORMAT = new Intl.DateTimeFormat("pt-BR", { timeZone: APP_TIME_ZONE, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 function shortTime(value: string): string {
@@ -87,6 +97,7 @@ function QueueItem({ row, active, filter, now }: { row: SupportQueueRow; active:
         {row.lastMessage ? <span className="truncate text-sm text-muted-foreground">{row.lastMessage}</span> : null}
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <StatusChip status={row.status} />
+          {row.agentTest ? <AgentTestChip /> : null}
           {row.aiUrgent ? <span className="inline-flex shrink-0 items-center rounded-md border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-xs text-warning">Urgente (IA)</span> : null}
           <span className="truncate text-xs text-muted-foreground">{row.assignedToMe ? "Com você" : (row.assigneeName ?? row.clanName ?? "Sem setor")}</span>
         </span>
@@ -246,6 +257,7 @@ function ConversationPanel({ conversation, filter, onContext }: { conversation: 
             <span className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="truncate text-base font-semibold">{conversation.contactName}</span>
               <StatusChip status={conversation.status} />
+              {conversation.agentTest ? <AgentTestChip /> : null}
             </span>
             <span className="truncate text-xs text-muted-foreground">{conversation.phone ?? "Número não informado"} · {conversation.client?.name ?? "Empresa não vinculada"}{conversation.assigneeName ? ` · ${conversation.assignedToMe ? "com você" : `com ${conversation.assigneeName}`}` : ""}</span>
           </div>
