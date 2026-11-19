@@ -26,6 +26,9 @@ export class MetaGraphError extends Error {
       | "list_phones"
       | "subscribe_webhook"
       | "send_message"
+      | "send_template"
+      | "get_template"
+      | "create_template"
       | "get_media_url"
       | "download_media",
     readonly httpStatus: number,
@@ -209,6 +212,92 @@ export async function sendWhatsAppText(
     throw graphError("send_message", response, payload);
   }
   return sent.id;
+}
+
+export type WhatsAppTemplate = Readonly<{
+  id?: string;
+  name: string;
+  language: string;
+  status: string;
+  rejectedReason?: string;
+}>;
+
+/** Envia um modelo previamente aprovado; é a única saída permitida fora da janela de 24 h. */
+export async function sendWhatsAppTemplate(
+  input: { phoneNumberId: string; accessToken: string; to: string; name: string; language: string; bodyParams: string[] },
+  config: MetaServerConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const url = graphUrl(config, `/${input.phoneNumberId}/messages`);
+  const response = await fetchImpl(url, {
+    method: "POST",
+    headers: { authorization: `Bearer ${input.accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: input.to,
+      type: "template",
+      template: {
+        name: input.name,
+        language: { code: input.language },
+        components: [{ type: "body", parameters: input.bodyParams.map((text) => ({ type: "text", text })) }],
+      },
+    }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const payload = await responsePayload(response);
+  const sent = Array.isArray(payload.messages) ? (payload.messages[0] as { id?: unknown } | undefined) : undefined;
+  if (!response.ok || typeof sent?.id !== "string") throw graphError("send_template", response, payload);
+  return sent.id;
+}
+
+function parseTemplate(value: unknown): WhatsAppTemplate | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const item = value as Record<string, unknown>;
+  if (typeof item.name !== "string" || typeof item.language !== "string" || typeof item.status !== "string") return null;
+  return {
+    ...(typeof item.id === "string" ? { id: item.id } : {}),
+    name: item.name,
+    language: item.language,
+    status: item.status,
+    ...(typeof item.rejected_reason === "string" ? { rejectedReason: item.rejected_reason } : {}),
+  };
+}
+
+export async function getWhatsAppTemplate(
+  input: { wabaId: string; accessToken: string; name: string },
+  config: MetaServerConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<WhatsAppTemplate | null> {
+  const url = graphUrl(config, `/${input.wabaId}/message_templates`);
+  url.search = new URLSearchParams({ name: input.name, limit: "10" }).toString();
+  const response = await fetchImpl(url, { method: "GET", headers: { authorization: `Bearer ${input.accessToken}` }, cache: "no-store", signal: AbortSignal.timeout(15_000) });
+  const payload = await responsePayload(response);
+  if (!response.ok || !Array.isArray(payload.data)) throw graphError("get_template", response, payload);
+  return payload.data.map(parseTemplate).find((template): template is WhatsAppTemplate => Boolean(template)) ?? null;
+}
+
+export async function createWhatsAppUtilityTemplate(
+  input: { wabaId: string; accessToken: string; name: string; body: string; examples: string[] },
+  config: MetaServerConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<WhatsAppTemplate> {
+  const url = graphUrl(config, `/${input.wabaId}/message_templates`);
+  const response = await fetchImpl(url, {
+    method: "POST",
+    headers: { authorization: `Bearer ${input.accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      name: input.name,
+      language: "pt_BR",
+      category: "UTILITY",
+      components: [{ type: "BODY", text: input.body, example: { body_text: [input.examples] } }],
+    }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const payload = await responsePayload(response);
+  if (!response.ok || typeof payload.id !== "string") throw graphError("create_template", response, payload);
+  return { id: payload.id, name: input.name, language: "pt_BR", status: typeof payload.status === "string" ? payload.status : "PENDING" };
 }
 
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;

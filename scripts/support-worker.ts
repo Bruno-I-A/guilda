@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { isWhatsAppWebhookConfigured } from "../src/lib/whatsapp/config";
 import { runSupportInboundCycle } from "../src/lib/whatsapp/inbound-worker";
 import { runSupportOutboxCycle } from "../src/lib/whatsapp/outbound-worker";
+import { runMemberWhatsAppNotificationCycle } from "../src/lib/whatsapp/member-notification-worker";
 import { runSupportTriageCycle, supportAiMode } from "../src/lib/support/triage/shadow";
 
 const INTERVAL_MS = 2_000;
@@ -22,6 +23,7 @@ async function main() {
     try {
       await runSupportInboundCycle();
       await runSupportOutboxCycle();
+      await runMemberWhatsAppNotificationCycle();
       await runSupportTriageCycle();
     } catch (error) {
       console.error(

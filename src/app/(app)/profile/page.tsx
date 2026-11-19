@@ -32,6 +32,7 @@ import {
 
 import { McpKeyManager } from "../settings/mcp-key-manager";
 import { TelegramSettings } from "./telegram-settings";
+import { WhatsAppSettings } from "./whatsapp-settings";
 import type { TelegramPreferencesView } from "./telegram-types";
 
 export const metadata: Metadata = { title: "Perfil" };
@@ -68,7 +69,7 @@ export default async function ProfilePage() {
     redirect("/onboarding");
   }
 
-  const [totalXp, completedCount, history, telegramData, botUsername, mcpKeys] = await Promise.all([
+  const [totalXp, completedCount, history, telegramData, whatsAppData, botUsername, mcpKeys] = await Promise.all([
     getUserXpTotal(session.orgId, session.user.id),
     countCompletedTasks(session.orgId, session.user.id),
     getXpHistory(session.orgId, session.user.id),
@@ -90,6 +91,13 @@ export default async function ProfilePage() {
         }),
       ]);
       return { connection, preferences };
+    }),
+    withOrgTx(session.orgId, async (tx) => {
+      const [connection, config] = await Promise.all([
+        tx.query.memberWhatsAppConnections.findFirst({ where: and(eq(schema.memberWhatsAppConnections.orgId, session.orgId), eq(schema.memberWhatsAppConnections.userId, session.user.id)) }),
+        tx.query.memberWhatsAppNotificationConfig.findFirst({ where: eq(schema.memberWhatsAppNotificationConfig.orgId, session.orgId) }),
+      ]);
+      return { connection, config };
     }),
     getTelegramBotUsername(),
     listMcpAgentKeys(session.orgId, session.user.id),
@@ -178,6 +186,13 @@ export default async function ProfilePage() {
         }
         botUsername={botUsername}
         configured={Boolean(telegramConfig.botToken && botUsername)}
+      />
+
+      <WhatsAppSettings
+        key={whatsAppData.connection?.id ?? "whatsapp-disconnected"}
+        connection={whatsAppData.connection ? { phone: whatsAppData.connection.phoneE164, enabled: whatsAppData.connection.enabled, lastInboundAt: whatsAppData.connection.lastInboundAt?.toISOString() ?? null } : null}
+        templateStatus={whatsAppData.config?.templateStatus ?? null}
+        canManageTemplate={member.role === "owner" || member.role === "admin"}
       />
 
       <McpKeyManager

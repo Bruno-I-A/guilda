@@ -8,6 +8,7 @@ import { db } from "@/db";
 import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { statusAfterCustomerMessage } from "@/domain/support-inbox";
+import { recordMemberWhatsAppInbound } from "./member-notifications";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -414,6 +415,15 @@ async function processClaim(claim: InboundClaim): Promise<void> {
     if (!event) throw new Error("Lease do webhook expirou");
 
     for (const message of normalizeInboundMessages(event.payload)) {
+      // Mensagem de um integrante é só o sinal que abre a janela de serviço
+      // para os avisos internos. Ela não pode nascer como atendimento de cliente.
+      if (message.direction === "inbound" && await recordMemberWhatsAppInbound(tx, {
+        orgId: claim.orgId,
+        phoneE164: `+${message.contactWhatsAppId}`,
+        occurredAt: message.occurredAt,
+      })) {
+        continue;
+      }
       await materializeMessage(tx, {
         orgId: claim.orgId,
         channelId: claim.channelId,
