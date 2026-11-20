@@ -28,6 +28,8 @@ export type AgentDecision =
       clanName: string | null;
       summary: string;
       reason: AgentHandoffReason;
+      /** Pessoa (ou "carteira") que a IA indicou pelo assunto; quem decide é routing.ts. */
+      suggestedAttendant: string | null;
     };
 
 /** O que cada leitura da rodada fez, gravado em support_ai_runs.result.agent. */
@@ -75,6 +77,7 @@ function handoff(input: {
   clans: readonly Clan[];
   facts: RoundFacts;
   now: Date;
+  suggestedAttendant?: string | null;
 }): AgentDecision {
   const clan = input.reason === "classified" ? clanForSector(input.sector, input.clans) : null;
   const where = clan
@@ -88,6 +91,7 @@ function handoff(input: {
     clanName: clan?.name ?? null,
     summary: input.summary,
     reason: input.reason,
+    suggestedAttendant: clan ? (input.suggestedAttendant ?? null) : null,
   };
 }
 
@@ -141,5 +145,6 @@ export function decideAfterClassifying(input: {
     clans: input.clans,
     facts: input.facts,
     now: input.now,
+    suggestedAttendant: classificacao.atendente_sugerido ?? null,
   });
 }

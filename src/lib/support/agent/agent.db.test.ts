@@ -28,6 +28,7 @@ vi.mock("@/db", () => ({ db: pgDb }));
 const ORG = "org-agente";
 const FISCAL = "00000000-0000-4000-8000-0000000000f1";
 const CHANNEL = "00000000-0000-4000-8000-0000000000a1";
+const COMPANY = "00000000-0000-4000-8000-0000000000c1";
 const T0 = new Date("2026-11-19T12:00:00Z").getTime(); // 09:00 em Brasília
 const admin: SupportViewer = { userId: "admin", role: "admin", clanIds: [] };
 const env = { ...process.env };
@@ -69,13 +70,15 @@ async function customerSays(whatsappId: string, text: string, seconds: number): 
   return row.id;
 }
 
-type Reply = { setor?: SetorValido; pergunta?: string; resposta?: string; fallback?: string };
+type Reply = { setor?: SetorValido; pergunta?: string; resposta?: string; fallback?: string; atendente?: string };
 const calls: { current: string; modo?: string; perguntasFeitas?: number }[] = [];
+const rosters: string[][] = [];
 let replies: Reply[] = [];
 let during: (() => Promise<unknown>) | null = null;
 
 const fake: Classifier = async (current, _history, options) => {
   calls.push({ current, modo: options.modo, perguntasFeitas: options.perguntasFeitas });
+  rosters.push((options.roster ?? []).map((entry) => entry.id));
   if (during) {
     const run = during;
     during = null;
@@ -88,6 +91,7 @@ const fake: Classifier = async (current, _history, options) => {
       urgencia: "media",
       confianca: reply.fallback ? 0 : 0.9,
       resumo: "Cliente pede a guia do DAS",
+      atendente_sugerido: reply.atendente ?? null,
       ...(reply.fallback ? { fallback: { motivo: reply.fallback } } : {}),
     },
     perguntaEsclarecimento: reply.pergunta ?? null,
@@ -153,16 +157,21 @@ beforeAll(async () => {
   process.env.SUPPORT_AI_MODE = "shadow";
   process.env.SUPPORT_TRIAGE_DEBOUNCE_SECONDS = "0";
   await applyMigrations(client);
-  // Ana é do Fiscal e conectou o WhatsApp (janela aberta); Rui é do Fiscal e não conectou.
+  // Fiscal: Ana conectou o WhatsApp (janela aberta) e é a responsável da Academia na
+  // Carteira; Rui e Maria não conectaram (Maria conecta no teste do encaminhamento por assunto).
   await client.exec(`
     INSERT INTO organization (id, name, slug, created_at) VALUES ('${ORG}', 'Escritório', 'agente', now());
     INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at) VALUES
-      ('admin', 'Bruno', 'admin@x', true, now(), now()), ('ana', 'Ana', 'ana@x', true, now(), now()), ('rui', 'Rui', 'rui@x', true, now(), now());
+      ('admin', 'Bruno', 'admin@x', true, now(), now()), ('ana', 'Ana', 'ana@x', true, now(), now()),
+      ('rui', 'Rui', 'rui@x', true, now(), now()), ('maria', 'Maria Souza', 'maria@x', true, now(), now());
     INSERT INTO member (id, organization_id, user_id, role, created_at) VALUES
-      ('m1', '${ORG}', 'admin', 'admin', now()), ('m2', '${ORG}', 'ana', 'member', now()), ('m3', '${ORG}', 'rui', 'member', now());
+      ('m1', '${ORG}', 'admin', 'admin', now()), ('m2', '${ORG}', 'ana', 'member', now()),
+      ('m3', '${ORG}', 'rui', 'member', now()), ('m4', '${ORG}', 'maria', 'member', now());
     INSERT INTO clans (id, org_id, name, slug) VALUES ('${FISCAL}', '${ORG}', 'Fiscal', 'fiscal');
-    INSERT INTO clan_memberships (org_id, clan_id, user_id) VALUES ('${ORG}', '${FISCAL}', 'ana'), ('${ORG}', '${FISCAL}', 'rui');
+    INSERT INTO clan_memberships (org_id, clan_id, user_id) VALUES ('${ORG}', '${FISCAL}', 'ana'), ('${ORG}', '${FISCAL}', 'rui'), ('${ORG}', '${FISCAL}', 'maria');
     INSERT INTO member_whatsapp_connections (org_id, user_id, phone_e164, last_inbound_at) VALUES ('${ORG}', 'ana', '+5554988887777', '2026-11-19T12:00:00Z');
+    INSERT INTO clients (id, org_id, name, tax_regime, cnpj) VALUES ('${COMPANY}', '${ORG}', 'ACADEMIA FORMA LTDA', 'simples', '33000167000101');
+    INSERT INTO fiscal_portfolios (org_id, client_id, user_id, assigned_by) VALUES ('${ORG}', '${COMPANY}', 'ana', 'admin');
   `);
   await client.exec("SET ROLE guilda_app;");
   const { encryptWhatsAppToken } = await import("@/lib/whatsapp/token-vault");
@@ -183,11 +192,22 @@ beforeAll(async () => {
       createdBy: "admin",
     }),
   );
+  // Carrega aqui o que os testes importam: a primeira importação passava dos 5 s do teste.
+  await Promise.all([
+    import("@/lib/whatsapp/inbound-worker"),
+    import("@/lib/whatsapp/outbound-worker"),
+    import("@/lib/whatsapp/member-notification-worker"),
+    import("../triage/shadow"),
+    import("../inbox"),
+    import("./settings"),
+    import("./routing"),
+  ]);
   vi.useFakeTimers({ toFake: ["Date"] });
 }, 120_000);
 
 beforeEach(() => {
   calls.length = 0;
+  rosters.length = 0;
   replies = [];
   during = null;
 });
@@ -419,6 +439,84 @@ test("fora da janela de 24 horas, o aviso de conversa não sai (ainda não há m
       .where(eq(schema.memberWhatsAppOutbox.supportConversationId, id)),
   );
   expect(row.status).not.toBe("pending");
+});
+
+async function noticesFor(conversationId: string): Promise<string[]> {
+  const rows = await tx((t) =>
+    t
+      .select({ userId: schema.memberWhatsAppOutbox.userId })
+      .from(schema.memberWhatsAppOutbox)
+      .where(eq(schema.memberWhatsAppOutbox.supportConversationId, conversationId)),
+  );
+  return rows.map((row) => row.userId).sort();
+}
+
+test("encaminhamento por assunto: a pessoa do assunto recebe a conversa e o aviso, só ela", async () => {
+  // O teste anterior desligou o agente: liga de novo, faz do Rui o líder e escreve as regras.
+  await setAgent(true);
+  await tx((t) => t.update(schema.clanMemberships).set({ isLeader: true }).where(eq(schema.clanMemberships.userId, "rui")));
+  await tx((t) => t.update(schema.memberWhatsAppConnections).set({ lastInboundAt: at(900) }).where(eq(schema.memberWhatsAppConnections.userId, "ana")));
+  await tx((t) => t.insert(schema.memberWhatsAppConnections).values({ orgId: ORG, userId: "maria", phoneE164: "+5554977776666", lastInboundAt: at(900) }));
+  const { saveClanRoutingTopics } = await import("./routing");
+  expect(
+    await tx((t) =>
+      saveClanRoutingTopics(t, {
+        orgId: ORG,
+        actorId: "admin",
+        clanId: FISCAL,
+        people: [{ userId: "maria", topics: "parcelamento, guia de parcelamento, parcelamento atrasado" }, { userId: "rui", topics: "  " }],
+        portfolioTopics: "guias de imposto, guia atrasada",
+        now: new Date(),
+      }),
+    ),
+  ).toEqual({ ok: true });
+
+  setClock(1000);
+  const id = await customerSays("5554900000009", "batata, preciso da guia do parcelamento", 970);
+  replies = [{ atendente: "maria" }];
+  await cycle();
+  // A IA recebe quem atende cada assunto, com a Carteira como entrada especial.
+  expect(rosters.at(-1)).toEqual(["maria", "carteira"]);
+  expect(await conversation(id)).toMatchObject({ status: "needs_human", assignedClanId: FISCAL, assignedUserId: "maria" });
+  expect(await noticesFor(id)).toEqual(["maria"]);
+
+  const { loadSupportConversation } = await import("../inbox");
+  const view = await tx((t) => loadSupportConversation(t, { orgId: ORG, viewer: admin, conversationId: id, now: new Date() }));
+  expect(view?.timeline.some((item) => item.kind === "event" && item.text === "IA: encaminhou para Fiscal · Maria Souza")).toBe(true);
+});
+
+test("assunto da Carteira vai ao responsável da empresa vinculada; sem empresa, ao líder", async () => {
+  const { linkSupportContact } = await import("../inbox");
+  setClock(1100);
+  const linked = await customerSays("5554900000010", "oi", 1060);
+  await tx((t) => linkSupportContact(t, { orgId: ORG, viewer: admin, conversationId: linked, now: new Date(), clientId: COMPANY }));
+  await customerSays("5554900000010", "batata, preciso da guia atrasada", 1070);
+  replies = [{ atendente: "carteira" }];
+  await cycle();
+  expect(await conversation(linked)).toMatchObject({ assignedUserId: "ana" });
+  expect(await noticesFor(linked)).toEqual(["ana"]);
+
+  setClock(1200);
+  const unknown = await customerSays("5554900000011", "batata, preciso da guia atrasada", 1170);
+  replies = [{ atendente: "carteira" }];
+  await cycle();
+  // Sem empresa, o líder; o Rui não conectou o WhatsApp, então ninguém é avisado.
+  expect(await conversation(unknown)).toMatchObject({ assignedUserId: "rui" });
+  expect(await noticesFor(unknown)).toEqual([]);
+});
+
+test("assunto que não casa com ninguém vai ao líder", async () => {
+  setClock(1300);
+  const id = await customerSays("5554900000012", "batata, preciso de uma certidão", 1270);
+  replies = [{}];
+  await cycle();
+  expect(await conversation(id)).toMatchObject({ assignedClanId: FISCAL, assignedUserId: "rui" });
+});
+
+test("quem sai do clã leva a regra junto", async () => {
+  await tx((t) => t.delete(schema.clanMemberships).where(and(eq(schema.clanMemberships.clanId, FISCAL), eq(schema.clanMemberships.userId, "maria"))));
+  const left = await tx((t) => t.select({ userId: schema.supportRoutingTopics.userId }).from(schema.supportRoutingTopics).where(eq(schema.supportRoutingTopics.clanId, FISCAL)));
+  expect(left).toEqual([{ userId: null }]);
 });
 
 test("a configuração recusa palavra inválida e não se apaga", async () => {

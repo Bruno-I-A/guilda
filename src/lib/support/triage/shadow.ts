@@ -74,7 +74,7 @@ async function findCandidates(tx: OrgTx, orgId: string, cutoff: Date, limit: num
 }
 
 const defaultClassifier: Classifier = (current, history, options) =>
-  classificarMensagem(current, history, [], options.perguntasFeitas ?? 0, null, options);
+  classificarMensagem(current, history, options.roster ?? [], options.perguntasFeitas ?? 0, null, options);
 
 async function triageOne(orgId: string, candidate: Candidate, options: OpcoesClassificacao, classify: Classifier): Promise<boolean> {
   const runs = schema.supportAiRuns;

@@ -34,3 +34,9 @@ export function clanForSector<T extends { id: string; name: string; slug: string
   // Dois clãs casando com o mesmo setor é ambíguo: melhor não sugerir do que errar.
   return matches.length === 1 ? matches[0] : null;
 }
+
+/** O setor cujo clã é este (inverso de clanForSector), ou null quando nenhum aponta para ele. */
+export function sectorForClan<T extends { id: string; name: string; slug: string }>(clan: T, clans: readonly T[]): SetorValido | null {
+  const sectors = Object.keys(SECTOR_PATTERNS) as Exclude<SetorValido, "outro">[];
+  return sectors.find((sector) => clanForSector(sector, clans)?.id === clan.id) ?? null;
+}
