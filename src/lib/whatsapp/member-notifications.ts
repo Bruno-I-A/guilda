@@ -116,15 +116,28 @@ async function clanMembersWithWhatsApp(tx: OrgTx, orgId: string, clanId: string)
 }
 
 /**
- * Enfileira o aviso de conversa encaminhada pelo agente para cada integrante
- * do clã. A chave inclui a rodada: encaminhar de novo numa rodada nova avisa
- * de novo; repetir a mesma gravação, não.
+ * Enfileira o aviso de conversa encaminhada pelo agente para quem foi escolhido
+ * (a pessoa do assunto, o líder ou o clã inteiro, em routing.ts). Só recebe
+ * quem conectou o WhatsApp e ainda é da organização. A chave inclui a rodada:
+ * encaminhar de novo numa rodada nova avisa de novo; repetir a gravação, não.
  */
 export async function enqueueMemberSupportHandoffNotifications(
   tx: OrgTx,
-  input: { orgId: string; clanId: string; conversationId: string; roundKey: string; clanName: string; contactName: string; summary: string },
+  input: { orgId: string; userIds: readonly string[]; conversationId: string; roundKey: string; clanName: string; contactName: string; summary: string },
 ): Promise<void> {
-  const members = await clanMembersWithWhatsApp(tx, input.orgId, input.clanId);
+  if (input.userIds.length === 0) return;
+  const members = await tx
+    .select({ userId: schema.memberWhatsAppConnections.userId })
+    .from(schema.memberWhatsAppConnections)
+    .innerJoin(schema.member, and(
+      eq(schema.member.organizationId, schema.memberWhatsAppConnections.orgId),
+      eq(schema.member.userId, schema.memberWhatsAppConnections.userId),
+    ))
+    .where(and(
+      eq(schema.memberWhatsAppConnections.orgId, input.orgId),
+      inArray(schema.memberWhatsAppConnections.userId, [...input.userIds]),
+      eq(schema.memberWhatsAppConnections.enabled, true),
+    ));
   const payload: MemberSupportPayload = {
     version: 2,
     kind: "support_conversation",
