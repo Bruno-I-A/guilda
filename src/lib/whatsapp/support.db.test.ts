@@ -48,6 +48,8 @@ beforeAll(async () => {
       .returning({ id: schema.supportWhatsAppChannels.id }),
   );
   channelId = channel.id;
+  // A primeira importação do worker passava dos 5 s do teste com a máquina carregada.
+  await import("./inbound-worker");
 }, 120_000);
 
 afterAll(() => {

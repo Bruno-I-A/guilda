@@ -435,6 +435,8 @@ export interface OpcoesClassificacao {
   modo?: ModoPrompt;
   /** Perguntas de esclarecimento já feitas na rodada (teto de LIMITE_PERGUNTAS_ESCLARECIMENTO). */
   perguntasFeitas?: number;
+  /** Quem atende cada assunto (2026-11-20): só no teste do agente; vazio na sombra. */
+  roster?: readonly AtendenteRoster[];
 }
 
 export async function classificarMensagem(

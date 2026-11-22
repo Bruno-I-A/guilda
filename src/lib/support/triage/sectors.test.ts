@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { clanForSector } from "./sectors";
+import { clanForSector, sectorForClan } from "./sectors";
 
 const clans = [
   { id: "1", name: "Fiscal", slug: "fiscal" },
@@ -25,5 +25,13 @@ describe("setor da triagem para clã da Guilda", () => {
     expect(clanForSector("outro", clans)).toBeNull();
     expect(clanForSector("financeiro", clans.slice(0, 2))).toBeNull();
     expect(clanForSector("fiscal", [...clans, { id: "6", name: "Fiscal 2", slug: "fiscal-2" }])).toBeNull();
+  });
+});
+
+describe("clã da Guilda para setor da triagem", () => {
+  test("o setor cujo clã é este; clã sem setor fica sem", () => {
+    expect(sectorForClan(clans[0], clans)).toBe("fiscal");
+    expect(sectorForClan(clans[2], clans)).toBe("trabalhista/dp");
+    expect(sectorForClan({ id: "7", name: "Atendimento", slug: "atendimento" }, [...clans, { id: "7", name: "Atendimento", slug: "atendimento" }])).toBeNull();
   });
 });

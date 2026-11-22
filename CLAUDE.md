@@ -550,6 +550,19 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
     agora aponta para um Fluxo OU uma conversa, migração 0106). Só dentro da janela de 24h: o modelo
     Utility aprovado fala de "novo cliente", e o modelo de conversa fica para quando o agente atender
     cliente real. Transferência feita por uma pessoa não avisa (o Bruno escolheu só o da IA).
+  - **Encaminhamento por assunto (2026-11-20, pedido do Bruno)**: o Fiscal tem três pessoas e
+    avisar o clã inteiro dilui a responsabilidade. Dentro do clã a conversa vai para UMA pessoa:
+    (1) a do assunto, que o admin escreve em texto livre por pessoa ("parcelamento, guia de
+    parcelamento") e a IA indica pelo roster do Scharff (`atendente_sugerido`); (2) no Fiscal, os
+    "assuntos da Carteira" ("guias de imposto, guia atrasada") vão ao responsável da empresa em
+    `fiscal_portfolios`, se a conversa estiver vinculada a ela; (3) o resto vai ao líder do clã
+    (vários líderes: todos avisados; sem líder: o clã inteiro). A conversa fica atribuída a quem
+    foi escolhido e só ele é avisado. Regras em `support_routing_topics` (migração 0107; quem sai
+    do clã leva a regra), só admin edita em Atendimento → Configurações. A escolha final é pura
+    (`chooseRecipient`, `src/domain/support-routing.ts`); o código só aceita pessoa que ainda é do
+    clã. Desenho em `docs/superpowers/specs/2026-11-20-encaminhamento-por-assunto-design.md`.
+    Próxima etapa: cadastrar os números de WhatsApp na empresa, para a Carteira acertar já na
+    primeira mensagem.
 
 ## Estrutura por clã (decisões de 2026-08-18)
 

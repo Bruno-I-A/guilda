@@ -547,6 +547,32 @@ export const supportAgentSettings = pgTable(
 );
 
 /**
+ * Encaminhamento por assunto dentro do clã (2026-11-20): o que cada pessoa
+ * atende, em texto livre, e (com `user_id` nulo) os assuntos que seguem a
+ * Carteira do clã. Só admin escreve. As FKs para `clans` e para o vínculo
+ * `clan_memberships` (quem sai do clã leva a regra) moram na migração 0107.
+ */
+export const supportRoutingTopics = pgTable(
+  "support_routing_topics",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clanId: uuid("clan_id").notNull(),
+    userId: text("user_id"),
+    topics: varchar("topics", { length: 500 }).notNull(),
+    updatedBy: text("updated_by").references(() => user.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("support_routing_topics_person_uidx").on(t.orgId, t.clanId, t.userId).where(sql`${t.userId} IS NOT NULL`),
+    uniqueIndex("support_routing_topics_portfolio_uidx").on(t.orgId, t.clanId).where(sql`${t.userId} IS NULL`),
+    check("support_routing_topics_topics_check", sql`length(btrim(${t.topics})) > 0`),
+  ],
+);
+
+/**
  * Cada leitura da IA numa conversa (modo sombra, 2026-11-09): o que ela faria,
  * com custo e versão do prompt. Nunca guarda o prompt nem a mensagem enviada à
  * IA. A linha nasce "running" e o índice único por mensagem é a trava contra

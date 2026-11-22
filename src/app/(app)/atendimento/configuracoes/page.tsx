@@ -6,6 +6,7 @@ import { isAdminRole } from "@/domain/guild-permissions";
 import type { OrgRole } from "@/domain/task-state";
 import { isAiConfigured } from "@/lib/ai/config";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
+import { loadRoutingSettings } from "@/lib/support/agent/routing";
 import { loadAgentSettings } from "@/lib/support/agent/settings";
 import { supportAiMode } from "@/lib/support/triage/shadow";
 import { listWhatsAppChannels } from "@/lib/whatsapp/channel-repository";
@@ -13,6 +14,7 @@ import { getReadyEmbeddedSignupConfig } from "@/lib/whatsapp/onboarding";
 
 import { AtendimentoSectionHeader } from "../section-header";
 import { AgentTestPanel } from "./agent-test-panel";
+import { RoutingPanel } from "./routing-panel";
 import { WhatsAppOnboardingPanel } from "./whatsapp-onboarding-panel";
 
 export const metadata: Metadata = { title: "Configurações do atendimento" };
@@ -25,7 +27,10 @@ export default async function AtendimentoSettingsPage() {
 
   const channels = await listWhatsAppChannels(session.orgId);
   const embeddedSignupConfig = getReadyEmbeddedSignupConfig();
-  const agent = await withOrgTx(session.orgId, (tx) => loadAgentSettings(tx, session.orgId));
+  const { agent, routing } = await withOrgTx(session.orgId, async (tx) => ({
+    agent: await loadAgentSettings(tx, session.orgId),
+    routing: await loadRoutingSettings(tx, session.orgId),
+  }));
   // O teste usa a mesma leitura da IA da sombra: sem ela ligada no servidor, não responde.
   const aiReady = supportAiMode() === "shadow" && isAiConfigured();
 
@@ -37,6 +42,7 @@ export default async function AtendimentoSettingsPage() {
         initialChannels={channels}
       />
       <AgentTestPanel initial={{ enabled: agent.testEnabled, keyword: agent.testKeyword ?? "" }} aiReady={aiReady} />
+      <RoutingPanel clans={routing} />
     </div>
   );
 }

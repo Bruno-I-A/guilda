@@ -21,6 +21,7 @@ import {
   type AgentDecision,
   type AgentRunRecord,
 } from "./decision";
+import { loadRoutingRoster, resolveHandoffRecipients } from "./routing";
 import { loadAgentSettings } from "./settings";
 
 /**
@@ -75,6 +76,7 @@ async function applyAgentDecision(
       whatsappId: schema.supportContacts.whatsappId,
       displayName: schema.supportContacts.displayName,
       phone: schema.supportContacts.phoneE164,
+      clientId: schema.supportContacts.clientId,
       clientName: schema.clients.name,
     })
     .from(schema.supportContacts)
@@ -111,11 +113,21 @@ async function applyAgentDecision(
   });
 
   if (input.decision.kind === "handoff") {
+    // Dentro do clã, uma pessoa: a do assunto, a da Carteira ou o líder (routing.ts).
+    const choice = input.decision.clanId
+      ? await resolveHandoffRecipients(tx, {
+          orgId: input.orgId,
+          clanId: input.decision.clanId,
+          suggested: input.decision.suggestedAttendant,
+          clientId: contact.clientId,
+        })
+      : null;
     await tx
       .update(c)
       .set({
         status: "needs_human",
         assignedClanId: input.decision.clanId,
+        assignedUserId: choice?.assigneeUserId ?? null,
         ...(input.decision.summary ? { summary: input.decision.summary } : {}),
         aiPausedAt: input.now,
         aiPauseReason: "ai_handoff",
@@ -123,6 +135,7 @@ async function applyAgentDecision(
         updatedAt: input.now,
       })
       .where(where);
+    const target = [input.decision.clanName ?? "a equipe", choice?.label].filter(Boolean).join(" · ");
     await tx.insert(schema.supportConversationEvents).values({
       orgId: input.orgId,
       conversationId: input.candidate.conversationId,
@@ -130,17 +143,18 @@ async function applyAgentDecision(
       source: "guilda_ai",
       detail: {
         actorLabel: "IA",
-        note: `encaminhou para ${input.decision.clanName ?? "a equipe"}`,
+        note: `encaminhou para ${target}`,
         clanId: input.decision.clanId,
+        userId: choice?.assigneeUserId ?? null,
         sector: input.decision.sector,
         reason: input.decision.reason,
       },
     });
-    // Quem é do clã fica sabendo no WhatsApp pessoal, na mesma transação do encaminhamento.
-    if (input.decision.clanId && input.decision.clanName) {
+    // Só quem foi escolhido fica sabendo no WhatsApp pessoal, na mesma transação do encaminhamento.
+    if (choice && input.decision.clanName) {
       await enqueueMemberSupportHandoffNotifications(tx, {
         orgId: input.orgId,
-        clanId: input.decision.clanId,
+        userIds: choice.notifyUserIds,
         conversationId: input.candidate.conversationId,
         roundKey: input.startedAt.toISOString(),
         clanName: input.decision.clanName,
@@ -202,8 +216,9 @@ export async function runAgentTurn(
       .from(schema.clans)
       .where(and(eq(schema.clans.orgId, orgId), eq(schema.clans.active, true)));
     const knowledge = await retrieveApprovedKnowledge(tx, orgId, input.current);
+    const roster = await loadRoutingRoster(tx, orgId);
     const records = previous.map((row) => agentRecord(row.result)).filter((record): record is AgentRunRecord => record !== null);
-    return { runId: run.id, startedAt, facts: roundFacts(records), runsInRound: previous.length, input, clans, knowledge };
+    return { runId: run.id, startedAt, facts: roundFacts(records), runsInRound: previous.length, input, clans, knowledge, roster };
   });
   if (!claimed) return false;
 
@@ -223,6 +238,7 @@ export async function runAgentTurn(
       knowledge: claimed.knowledge,
       modo: "conversa",
       perguntasFeitas: claimed.facts.questionsAsked,
+      roster: claimed.roster,
     });
     decision = decideAfterClassifying({ result, facts: claimed.facts, clans: claimed.clans, now });
   }

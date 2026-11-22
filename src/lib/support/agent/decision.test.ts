@@ -142,7 +142,15 @@ describe("depois da leitura", () => {
       clanName: "Fiscal",
       summary: "Cliente pede a guia do DAS",
       reason: "classified",
+      suggestedAttendant: null,
     });
+  });
+
+  test("leva a pessoa que a IA indicou pelo assunto, só quando há clã", () => {
+    const withPerson = { ...result({}), classificacao: { ...result({}).classificacao, atendente_sugerido: "maria" } };
+    expect(decideAfterClassifying({ result: withPerson, facts: SPOKE, clans: CLANS, now: NOW })).toMatchObject({ kind: "handoff", suggestedAttendant: "maria" });
+    const noClan = { ...withPerson, classificacao: { ...withPerson.classificacao, setor_sugerido: "contabil" as const } };
+    expect(decideAfterClassifying({ result: noClan, facts: SPOKE, clans: CLANS, now: NOW })).toMatchObject({ kind: "handoff", clanId: null, suggestedAttendant: null });
   });
 
   test("setor sem clã vai para a equipe", () => {
