@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, FileText, Hand, ImageOff, LoaderCircle, Maximize2, Paperclip, Plus, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Hand, ImageOff, LoaderCircle, Maximize2, Paperclip, Plus, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCnpj } from "@/domain/cnpj";
-import { SUPPORT_UPLOAD_ACCEPT, validateSupportCaption, validateSupportUpload } from "@/domain/support-upload";
+import { SUPPORT_UPLOAD_ACCEPT, SUPPORT_UPLOAD_MAX_FILES, validateSupportCaption, validateSupportUpload } from "@/domain/support-upload";
 import { contactInitials, DELIVERY_LABELS, elapsedLabel, SUPPORT_FILTERS, SUPPORT_STATUS_LABELS, type DeliveryState, type SupportFilter, type SupportStatus } from "@/domain/support-inbox";
 import type { ActionResult } from "@/lib/action-context";
 import { APP_TIME_ZONE } from "@/lib/date-time";
@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { addContactCompany, addNote, markWaiting, removeContactCompany, reopenConversation, resolveConversation, sendReply, setConversationCompany, takeConversation, transferConversation } from "./actions";
 import { MessageAudio } from "./message-audio";
 import { MessageFile } from "./message-file";
+import { ComposerAttachmentList } from "./composer-attachments";
 import { VoiceRecorder } from "./voice-recorder";
 import { companyDisplayName } from "@/domain/company-display-name";
 
@@ -211,10 +212,11 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<"reply" | "note">(conversation.replyBlocked ? "note" : "reply");
   const [text, setText] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<Array<{ file: File; requestId: string }>>([]);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   // Chave do envio: clicar duas vezes não manda a mensagem em dobro.
-  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  const [textRequestId, setTextRequestId] = useState(() => crypto.randomUUID());
   const canReply = !conversation.replyBlocked;
   const effective = canReply ? mode : "note";
   // Gravando ou com áudio por enviar: o texto espera, para não sair nada pela metade.
@@ -223,42 +225,55 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
   async function submit() {
     if (voiceActive || uploading || pending) return;
     const body = text.trim();
-    if (!body && !file) return;
-    if (effective === "reply" && file) {
+    if (!body && files.length === 0) return;
+    if (effective === "reply" && files.length > 0) {
       const caption = validateSupportCaption(body);
       if (caption === null) {
         toast.error("Legenda muito longa (até 1024 caracteres).");
         return;
       }
-      const form = new FormData();
-      form.set("file", file);
-      form.set("caption", caption);
-      form.set("requestId", requestId);
       setUploading(true);
+      setUploadProgress({ current: 1, total: files.length });
+      let sent = 0;
       try {
-        const response = await fetch(`/api/atendimento/conversations/${conversation.id}/media`, { method: "POST", body: form, cache: "no-store" });
-        const result: { ok?: boolean; error?: string } = await response.json();
-        if (!response.ok || !result.ok) {
-          toast.error(result.error ?? "Não foi possível anexar o arquivo.");
-          return;
+        for (const [index, attachment] of files.entries()) {
+          setUploadProgress({ current: index + 1, total: files.length });
+          const form = new FormData();
+          form.set("file", attachment.file);
+          // O WhatsApp envia cada mídia como uma mensagem. A legenda acompanha
+          // somente a primeira, como no envio múltiplo do aplicativo.
+          form.set("caption", index === 0 ? caption : "");
+          form.set("requestId", attachment.requestId);
+          const response = await fetch(`/api/atendimento/conversations/${conversation.id}/media`, { method: "POST", body: form, cache: "no-store" });
+          // Recusa do proxy (arquivo grande demais, por exemplo) vem em HTML, não em JSON.
+          const result = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+          if (!response.ok || !result?.ok) {
+            const reason = result?.error ?? (response.status === 413 ? "O arquivo passou do tamanho aceito." : "Não foi possível enviar o arquivo.");
+            toast.error(sent > 0 ? `${sent} de ${files.length} arquivo(s) enviado(s). ${reason}` : reason);
+            return;
+          }
+          sent += 1;
+          setFiles((current) => current.filter((item) => item.requestId !== attachment.requestId));
+          if (index === 0) setText("");
         }
-        setFile(null);
-        if (fileInput.current) fileInput.current.value = "";
-        setText("");
-        setRequestId(crypto.randomUUID());
-        router.refresh();
+        toast.success(files.length === 1 ? "Arquivo enviado." : `${files.length} arquivos enviados.`);
       } catch {
-        toast.error("Falha de conexão. Tente novamente; o arquivo não será enviado em dobro.");
+        toast.error(sent > 0
+          ? `${sent} de ${files.length} arquivo(s) enviado(s). A conexão falhou no próximo; tente novamente.`
+          : "Falha de conexão. Tente novamente; o arquivo não será enviado em dobro.");
       } finally {
         setUploading(false);
+        setUploadProgress(null);
+        // Mesmo se um arquivo do meio falhou, os que já saíram aparecem na conversa.
+        if (sent > 0) router.refresh();
       }
       return;
     }
     const done = () => {
       setText("");
-      setRequestId(crypto.randomUUID());
+      setTextRequestId(crypto.randomUUID());
     };
-    if (effective === "reply") run(() => sendReply({ conversationId: conversation.id, requestId, text: body }), done);
+    if (effective === "reply") run(() => sendReply({ conversationId: conversation.id, requestId: textRequestId, text: body }), done);
     else run(() => addNote({ conversationId: conversation.id, text: body }), done);
   }
 
@@ -267,41 +282,50 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
       {conversation.replyBlocked ? <p className="text-xs text-muted-foreground">{conversation.replyBlocked} Você ainda pode deixar uma nota para a equipe.</p> : null}
       <div className="flex gap-1" role="group" aria-label="Tipo de texto">
         <Button type="button" size="sm" variant={effective === "reply" ? "secondary" : "ghost"} disabled={!canReply || voiceActive || uploading} aria-pressed={effective === "reply"} onClick={() => setMode("reply")}>Responder</Button>
-        <Button type="button" size="sm" variant={effective === "note" ? "secondary" : "ghost"} disabled={voiceActive || uploading} aria-pressed={effective === "note"} onClick={() => { setMode("note"); setFile(null); if (fileInput.current) fileInput.current.value = ""; }}><StickyNote aria-hidden /> Nota interna</Button>
+        <Button type="button" size="sm" variant={effective === "note" ? "secondary" : "ghost"} disabled={voiceActive || uploading} aria-pressed={effective === "note"} onClick={() => { setMode("note"); setFiles([]); if (fileInput.current) fileInput.current.value = ""; }}><StickyNote aria-hidden /> Nota interna</Button>
       </div>
       <input
         ref={fileInput}
         type="file"
+        multiple
         accept={SUPPORT_UPLOAD_ACCEPT}
         className="sr-only"
         tabIndex={-1}
         onChange={(event) => {
-          const selected = event.target.files?.[0];
-          if (!selected) return;
-          const checked = validateSupportUpload(selected);
-          if (!checked.ok) {
-            toast.error(checked.error);
-            event.target.value = "";
+          const selected = Array.from(event.target.files ?? []);
+          event.target.value = "";
+          if (selected.length === 0) return;
+          const available = SUPPORT_UPLOAD_MAX_FILES - files.length;
+          if (available <= 0) {
+            toast.error(`Envie no máximo ${SUPPORT_UPLOAD_MAX_FILES} arquivos por vez.`);
             return;
           }
-          setFile(selected);
-          setRequestId(crypto.randomUUID());
+          const accepted: Array<{ file: File; requestId: string }> = [];
+          for (const selectedFile of selected.slice(0, available)) {
+            const checked = validateSupportUpload(selectedFile);
+            if (!checked.ok) {
+              toast.error(`${selectedFile.name}: ${checked.error}`);
+              continue;
+            }
+            accepted.push({ file: selectedFile, requestId: crypto.randomUUID() });
+          }
+          if (selected.length > available) toast.error(`Só os primeiros ${available} arquivo(s) couberam. O limite é ${SUPPORT_UPLOAD_MAX_FILES}.`);
+          if (accepted.length > 0) setFiles((current) => [...current, ...accepted]);
         }}
       />
-      {effective === "reply" && file ? (
-        <div className="flex min-w-0 items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-          <FileText className="size-4 shrink-0 text-primary" aria-hidden />
-          <span className="min-w-0 flex-1 truncate" title={file.name}>{file.name}</span>
-          <span className="shrink-0 text-xs text-muted-foreground">{(file.size / 1024 / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB</span>
-          <Button type="button" size="icon-sm" variant="ghost" aria-label="Remover anexo" disabled={uploading} onClick={() => { setFile(null); if (fileInput.current) fileInput.current.value = ""; }}><X aria-hidden /></Button>
-        </div>
+      {effective === "reply" && files.length > 0 ? (
+        <ComposerAttachmentList
+          attachments={files}
+          disabled={uploading}
+          onRemove={(requestId) => setFiles((current) => current.filter((item) => item.requestId !== requestId))}
+        />
       ) : null}
       <Textarea
         rows={2}
         disabled={voiceActive || uploading}
-        maxLength={effective === "reply" ? file ? 1024 : 4096 : 4000}
+        maxLength={effective === "reply" ? files.length > 0 ? 1024 : 4096 : 4000}
         aria-label={effective === "reply" ? "Mensagem para o cliente" : "Nota interna para a equipe"}
-        placeholder={effective === "reply" ? file ? "Legenda opcional para o arquivo" : "Escreva para o cliente" : "Só a equipe vê esta nota"}
+        placeholder={effective === "reply" ? files.length > 0 ? "Legenda opcional para o primeiro arquivo" : "Escreva para o cliente" : "Só a equipe vê esta nota"}
         className={cn(effective === "note" && "border-warning/40")}
         value={text}
         onChange={(event) => setText(event.target.value)}
@@ -315,13 +339,13 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
       <div className="flex min-w-0 items-center justify-between gap-2">
         {voiceActive ? null : <span className="hidden text-xs text-muted-foreground sm:inline">Ctrl + Enter envia</span>}
         <div className={cn("flex min-w-0 items-center gap-2", voiceActive ? "flex-1" : "ml-auto")}>
-          {effective === "reply" ? <VoiceRecorder conversationId={conversation.id} onActiveChange={setVoiceActive} disabled={Boolean(file) || uploading || pending} /> : null}
+          {effective === "reply" ? <VoiceRecorder conversationId={conversation.id} onActiveChange={setVoiceActive} disabled={files.length > 0 || uploading || pending} /> : null}
           {voiceActive ? null : (
             <>
-              {effective === "reply" ? <Button type="button" size="sm" variant="outline" disabled={pending || uploading} onClick={() => fileInput.current?.click()}><Paperclip aria-hidden /> Anexar</Button> : null}
-              <Button type="button" size="sm" disabled={pending || uploading || (!text.trim() && !file)} onClick={() => void submit()}>
+              {effective === "reply" ? <Button type="button" size="sm" variant="outline" disabled={pending || uploading || files.length >= SUPPORT_UPLOAD_MAX_FILES} onClick={() => fileInput.current?.click()}><Paperclip aria-hidden /> {files.length > 0 ? "Anexar mais" : "Anexar"}</Button> : null}
+              <Button type="button" size="sm" disabled={pending || uploading || (!text.trim() && files.length === 0)} onClick={() => void submit()}>
                 {pending || uploading ? <LoaderCircle className="animate-spin" aria-hidden /> : effective === "reply" ? <Send aria-hidden /> : <StickyNote aria-hidden />}
-                {uploading ? "Enviando arquivo…" : effective === "reply" ? "Enviar ao cliente" : "Salvar nota"}
+                {uploadProgress ? `Enviando ${uploadProgress.current} de ${uploadProgress.total}…` : effective === "reply" ? "Enviar ao cliente" : "Salvar nota"}
               </Button>
             </>
           )}

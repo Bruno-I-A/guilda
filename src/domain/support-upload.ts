@@ -14,6 +14,7 @@ const TYPES = {
 } as const;
 
 export const SUPPORT_UPLOAD_ACCEPT = Object.keys(TYPES).map((extension) => `.${extension}`).join(",");
+export const SUPPORT_UPLOAD_MAX_FILES = 10;
 export const SUPPORT_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 export const SUPPORT_UPLOAD_BODY_MAX_BYTES = SUPPORT_UPLOAD_MAX_BYTES + 512 * 1024;
 
