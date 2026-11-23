@@ -193,6 +193,42 @@ test("só quem assumiu responde; a resposta vai para a fila uma vez, mesmo com c
   expect((await reply(uuid(3), colleague)).ok).toBe(false);
 });
 
+test("anexo só sai de conversa assumida, fica no histórico e é enviado uma vez", async () => {
+  const { checkSupportMediaReply, takeSupportConversation, sendSupportMedia, loadSupportConversation } = await import("./inbox");
+  const { runSupportOutboxCycle } = await import("@/lib/whatsapp/outbound-worker");
+  const phone = "5554911110080";
+  const { id } = await customerSays(phone, "Mande o balanço, por favor");
+  const base = { orgId: ORG, conversationId: id, now: NOW, requestId: uuid(80) };
+  const media = { ...base, viewer: admin, mediaId: "123456789", kind: "document" as const, mimeType: "application/pdf", filename: "balanco.pdf", caption: "Segue o balanço" };
+  expect((await tx((t) => checkSupportMediaReply(t, { ...base, viewer: admin }))).ok).toBe(false);
+  await tx((t) => takeSupportConversation(t, { ...base, viewer: admin }));
+  expect(await tx((t) => checkSupportMediaReply(t, { ...base, viewer: admin }))).toMatchObject({ ok: true, data: { channelId, alreadyQueued: false } });
+  expect((await tx((t) => checkSupportMediaReply(t, { ...base, viewer: rh }))).ok).toBe(false);
+  expect(await tx((t) => sendSupportMedia(t, media))).toEqual({ ok: true });
+  expect(await tx((t) => sendSupportMedia(t, media))).toEqual({ ok: true });
+  expect(await tx((t) => checkSupportMediaReply(t, { ...base, viewer: admin }))).toMatchObject({ ok: true, data: { alreadyQueued: true } });
+
+  const rows = await tx((t) => t.select().from(schema.supportMessages).where(and(eq(schema.supportMessages.conversationId, id), eq(schema.supportMessages.direction, "outbound"))));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({ messageType: "document", content: { id: "123456789", filename: "balanco.pdf", caption: "Segue o balanço" } });
+  const view = await tx((t) => loadSupportConversation(t, { ...base, viewer: admin }));
+  expect(view?.timeline.find((item) => item.kind === "message" && item.id === rows[0].id)).toMatchObject({
+    file: { name: "balanco.pdf", caption: "Segue o balanço" }, delivery: "sending",
+  });
+
+  const calls: Record<string, unknown>[] = [];
+  const fetchOk = (async (_url: URL, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    calls.push(body);
+    return new Response(JSON.stringify({ messages: [{ id: `wamid.media${calls.length}` }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  await runSupportOutboxCycle(50, fetchOk);
+  expect(calls.filter((body) => body.to === phone)).toEqual([{
+    messaging_product: "whatsapp", recipient_type: "individual", to: phone, type: "document",
+    document: { id: "123456789", filename: "balanco.pdf", caption: "Segue o balanço" },
+  }]);
+});
+
 test("passadas 24 horas, a Guilda não tenta responder", async () => {
   const { takeSupportConversation, sendSupportReply, loadSupportConversation } = await import("./inbox");
   const old = new Date(NOW.getTime() - 25 * 3_600_000);
@@ -580,3 +616,50 @@ test("recusa definitiva da Meta aparece na hora, sem novas tentativas; falha pas
   const failed = await tx((t) => t.select().from(schema.supportOutbox).where(eq(schema.supportOutbox.status, "failed")));
   expect(failed.filter((row) => row.payload.text === "Passageira")).toHaveLength(1);
 });
+
+test("nota de voz: a mesma régua da resposta, entra uma vez só e sai à Meta como áudio", async () => {
+  const { takeSupportConversation, checkSupportAudioReply, sendSupportAudioReply, loadSupportConversation } = await import("./inbox");
+  const { runSupportOutboxCycle } = await import("@/lib/whatsapp/outbound-worker");
+  const whatsappId = "5554911110012";
+  const { id } = await customerSays(whatsappId, "Pode mandar por áudio?");
+  await setClan(id, FISCAL);
+  const base = { orgId: ORG, conversationId: id, now: NOW, requestId: uuid(30) };
+  const check = (viewer: SupportViewer) => tx((t) => checkSupportAudioReply(t, { ...base, viewer }));
+
+  // Antes de assumir (ou de outro clã), a Guilda recusa antes de converter e subir o áudio.
+  expect(await check(fiscal)).toEqual({ ok: false, error: expect.stringContaining("Assuma") });
+  expect((await check(rh)).ok).toBe(false);
+  await tx((t) => takeSupportConversation(t, { ...base, viewer: fiscal }));
+  expect(await check(fiscal)).toEqual({ ok: true, data: { channelId, duplicate: false } });
+
+  expect((await tx((t) => sendSupportAudioReply(t, { ...base, viewer: fiscal, mediaId: "../media" }))).ok).toBe(false);
+  const send = () => tx((t) => sendSupportAudioReply(t, { ...base, viewer: fiscal, mediaId: "998877" }));
+  expect((await send()).ok).toBe(true);
+  expect((await send()).ok).toBe(true);
+  // A mesma chave depois de enviada: o reenvio do navegador nem converte de novo.
+  expect(await check(fiscal)).toEqual({ ok: true, data: { channelId, duplicate: true } });
+
+  const sent = await tx((t) => t.select().from(schema.supportMessages).where(and(eq(schema.supportMessages.conversationId, id), eq(schema.supportMessages.direction, "outbound"))));
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({ messageType: "audio", actor: "attendant", source: "guilda_attendant", sentByUserId: "ana", content: { id: "998877", mime_type: "audio/ogg", voice: true } });
+  const [outbox] = await tx((t) => t.select().from(schema.supportOutbox).where(eq(schema.supportOutbox.messageId, sent[0].id)));
+  expect(outbox.payload).toEqual({ to: whatsappId, audio: { id: "998877" } });
+
+  const bodies: Record<string, unknown>[] = [];
+  const fetchOk = (async (_url: URL, init: RequestInit) => {
+    bodies.push(JSON.parse(String(init.body)));
+    return new Response(JSON.stringify({ messages: [{ id: `wamid.voz${bodies.length}` }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  await runSupportOutboxCycle(50, fetchOk);
+  const call = bodies.find((body) => body.to === whatsappId);
+  expect(call).toEqual({ messaging_product: "whatsapp", recipient_type: "individual", to: whatsappId, type: "audio", audio: { id: "998877" } });
+
+  const view = await tx((t) => loadSupportConversation(t, { ...base, viewer: fiscal }));
+  expect(view?.timeline.findLast((item) => item.kind === "message")).toMatchObject({
+    direction: "outbound",
+    author: "Ana",
+    delivery: "sent",
+    // A voz da equipe não vai para a transcrição: só a do cliente.
+    audio: { src: `/api/atendimento/media/${sent[0].id}`, transcript: null, status: null },
+  });
+}, 30_000);

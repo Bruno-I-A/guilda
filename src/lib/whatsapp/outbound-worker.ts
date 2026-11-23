@@ -12,7 +12,7 @@ import { metaErrorMessage } from "@/domain/support-inbox";
 
 import { loadWhatsAppChannelAccess } from "./channel-repository";
 import { getWhatsAppConfig } from "./config";
-import { MetaGraphError, sendWhatsAppText, type MetaServerConfig } from "./meta-client";
+import { MetaGraphError, sendWhatsAppAudio, sendWhatsAppMedia, sendWhatsAppText, type MetaServerConfig } from "./meta-client";
 
 type OutboxClaim = Readonly<{ id: string; orgId: string; channelId: string; claimToken: string }>;
 
@@ -139,10 +139,34 @@ async function deliver(claim: OutboxClaim, config: MetaServerConfig, fetchImpl: 
   }
   const to = typeof item.payload.to === "string" ? item.payload.to : "";
   const text = typeof item.payload.text === "string" ? item.payload.text : "";
+  // Nota de voz (2026-11-23): o áudio já está na Meta; a saída só leva o id dele.
+  const audio = item.payload.audio as { id?: unknown } | undefined;
+  const audioId = typeof audio?.id === "string" && /^\d{1,32}$/.test(audio.id) ? audio.id : null;
   try {
     const access = await loadWhatsAppChannelAccess({ orgId: claim.orgId, channelId: claim.channelId });
     if (!access?.channel.phoneNumberId) throw new Error("Canal do WhatsApp sem acesso configurado.");
-    const wamid = await sendWhatsAppText({ phoneNumberId: access.channel.phoneNumberId, accessToken: access.accessToken, to, text }, config, fetchImpl);
+    const media = item.payload.media;
+    const target = { phoneNumberId: access.channel.phoneNumberId, accessToken: access.accessToken, to };
+    let wamid: string;
+    if (audio !== undefined) {
+      if (!audioId) throw new MetaGraphError("send_message", 400);
+      wamid = await sendWhatsAppAudio({ ...target, mediaId: audioId }, config, fetchImpl);
+    } else if (media !== undefined) {
+      if (!media || typeof media !== "object" || Array.isArray(media)) throw new MetaGraphError("send_message", 400);
+      const value = media as Record<string, unknown>;
+      if ((value.kind !== "image" && value.kind !== "document") || typeof value.id !== "string") {
+        throw new MetaGraphError("send_message", 400);
+      }
+      wamid = await sendWhatsAppMedia({
+        ...target,
+        kind: value.kind,
+        mediaId: value.id,
+        filename: typeof value.filename === "string" ? value.filename : undefined,
+        caption: typeof value.caption === "string" ? value.caption : undefined,
+      }, config, fetchImpl);
+    } else {
+      wamid = await sendWhatsAppText({ ...target, text }, config, fetchImpl);
+    }
     await recordAccepted(claim, item.messageId, wamid);
     await finishOutbox(claim, true, null);
     return true;

@@ -19,6 +19,7 @@ import {
   type SupportViewer,
 } from "@/domain/support-inbox";
 import { documentFilename } from "@/domain/support-media";
+import { validateSupportUpload } from "@/domain/support-upload";
 
 import { loadTranscriptions, type TranscriptionStatus } from "./transcription";
 import { err, type ActionResult } from "@/lib/action-context";
@@ -673,38 +674,24 @@ export async function addSupportNote(tx: OrgTx, input: Command & { text: string 
   return { ok: true };
 }
 
+/** A mesma régua de texto e áudio, antes de carregar a mídia na Meta. */
+export async function checkSupportMediaReply(tx: OrgTx, input: Command & { requestId: string }): Promise<ActionResult<{ channelId: string; alreadyQueued: boolean }>> {
+  const target = await replyTarget(tx, input);
+  if (!("row" in target)) return target;
+  return { ok: true, data: { channelId: target.row.channelId, alreadyQueued: target.duplicate } };
+}
+
 /**
  * Responde o cliente: grava a mensagem e a saída na mesma transação, e o
  * processo de atendimento entrega à Meta. O telefone sai do cadastro do contato,
  * nunca do navegador. A chave do formulário impede a mensagem em dobro.
  */
 export async function sendSupportReply(tx: OrgTx, input: Command & { text: string; requestId: string }): Promise<ActionResult> {
-  const row = await lockConversation(tx, input);
-  if (!row) return err(NOT_FOUND);
+  const target = await replyTarget(tx, input);
+  if (!("row" in target)) return target;
+  if (target.duplicate) return { ok: true };
+  const { row, contact, queuedKey } = target;
   const events = schema.supportMessageEvents;
-  const queuedKey = createHash("sha256").update(`reply\0${row.id}\0${input.requestId}`, "utf8").digest("hex");
-  const [already] = await tx.select({ id: events.id }).from(events).where(and(eq(events.orgId, input.orgId), eq(events.providerEventKey, queuedKey))).limit(1);
-  if (already) return { ok: true };
-
-  const ch = schema.supportWhatsAppChannels;
-  const [channel] = await tx.select({ status: ch.status }).from(ch).where(and(eq(ch.orgId, input.orgId), eq(ch.id, row.channelId)));
-  const [contact] = await tx.select({ whatsappId: contacts.whatsappId }).from(contacts).where(and(eq(contacts.orgId, input.orgId), eq(contacts.id, row.contactId)));
-  const [lastCustomer] = await tx
-    .select({ occurredAt: messages.occurredAt })
-    .from(messages)
-    .where(and(eq(messages.orgId, input.orgId), eq(messages.conversationId, row.id), eq(messages.actor, "customer")))
-    .orderBy(desc(messages.occurredAt))
-    .limit(1);
-  const blocked = replyBlockReason({
-    status: row.status,
-    assignedUserId: row.assignedUserId,
-    viewerId: input.viewer.userId,
-    channelActive: channel?.status === "active",
-    lastCustomerMessageAt: lastCustomer?.occurredAt ?? null,
-    now: input.now,
-  });
-  if (blocked) return err(blocked);
-  if (!contact) return err(NOT_FOUND);
 
   const [message] = await tx
     .insert(messages)
@@ -725,4 +712,127 @@ export async function sendSupportReply(tx: OrgTx, input: Command & { text: strin
   await tx.insert(schema.supportOutbox).values({ orgId: input.orgId, channelId: row.channelId, messageId: message.id, payload: { to: contact.whatsappId, text: input.text } });
   await tx.update(c).set({ lastMessageAt: input.now, updatedAt: input.now }).where(and(eq(c.orgId, input.orgId), eq(c.id, row.id)));
   return { ok: true };
+}
+
+/** Guarda só o id da mídia da Meta; o arquivo não vai para o Postgres. */
+export async function sendSupportMedia(
+  tx: OrgTx,
+  input: Command & { requestId: string; mediaId: string; kind: "image" | "document"; mimeType: string; filename: string; caption: string },
+): Promise<ActionResult> {
+  const spec = validateSupportUpload({ name: input.filename, type: input.mimeType, size: 1 });
+  if (!/^\d{1,32}$/.test(input.mediaId) || input.caption.length > 1024 || !spec.ok || spec.value.kind !== input.kind) return err("Arquivo inválido.");
+  const target = await replyTarget(tx, input);
+  if (!("row" in target)) return target;
+  if (target.duplicate) return { ok: true };
+  const { row, contact, queuedKey } = target;
+
+  const content = {
+    id: input.mediaId,
+    mime_type: input.mimeType,
+    ...(input.kind === "document" ? { filename: input.filename } : {}),
+    ...(input.caption ? { caption: input.caption } : {}),
+  };
+  const [message] = await tx.insert(messages).values({
+    orgId: input.orgId,
+    channelId: row.channelId,
+    conversationId: row.id,
+    direction: "outbound",
+    actor: "attendant",
+    source: "guilda_attendant",
+    messageType: input.kind,
+    content,
+    sentByUserId: input.viewer.userId,
+    occurredAt: input.now,
+  }).returning({ id: messages.id });
+  await tx.insert(schema.supportMessageEvents).values({ orgId: input.orgId, messageId: message.id, eventType: "queued", providerEventKey: queuedKey, occurredAt: input.now });
+  await tx.insert(schema.supportOutbox).values({
+    orgId: input.orgId,
+    channelId: row.channelId,
+    messageId: message.id,
+    payload: { to: contact.whatsappId, media: { id: input.mediaId, kind: input.kind, filename: input.filename, caption: input.caption } },
+  });
+  await tx.update(c).set({ lastMessageAt: input.now, updatedAt: input.now }).where(and(eq(c.orgId, input.orgId), eq(c.id, row.id)));
+  return { ok: true };
+}
+
+/**
+ * Antes de converter e subir a nota de voz à Meta (2026-11-23): a mesma régua da
+ * resposta em texto, para não gastar o envio com uma resposta que seria recusada.
+ * Devolve o canal, de onde a rota tira o acesso à Meta.
+ */
+export async function checkSupportAudioReply(tx: OrgTx, input: Command & { requestId: string }): Promise<ActionResult<{ channelId: string; duplicate: boolean }>> {
+  const target = await replyTarget(tx, input);
+  if (!("row" in target)) return target;
+  return { ok: true, data: { channelId: target.row.channelId, duplicate: target.duplicate } };
+}
+
+/**
+ * Nota de voz gravada na conversa (2026-11-23): o áudio já está na Meta
+ * (`mediaId`); aqui entra a mensagem e a saída, como a resposta em texto.
+ */
+export async function sendSupportAudioReply(tx: OrgTx, input: Command & { mediaId: string; requestId: string }): Promise<ActionResult> {
+  if (!/^\d{1,32}$/.test(input.mediaId)) return err("Áudio inválido.");
+  const target = await replyTarget(tx, input);
+  if (!("row" in target)) return target;
+  if (target.duplicate) return { ok: true };
+  const { row, contact, queuedKey } = target;
+  const [message] = await tx
+    .insert(messages)
+    .values({
+      orgId: input.orgId,
+      channelId: row.channelId,
+      conversationId: row.id,
+      direction: "outbound",
+      actor: "attendant",
+      source: "guilda_attendant",
+      messageType: "audio",
+      content: { id: input.mediaId, mime_type: "audio/ogg", voice: true },
+      sentByUserId: input.viewer.userId,
+      occurredAt: input.now,
+    })
+    .returning({ id: messages.id });
+  await tx.insert(schema.supportMessageEvents).values({ orgId: input.orgId, messageId: message.id, eventType: "queued", providerEventKey: queuedKey, occurredAt: input.now });
+  await tx.insert(schema.supportOutbox).values({ orgId: input.orgId, channelId: row.channelId, messageId: message.id, payload: { to: contact.whatsappId, audio: { id: input.mediaId } } });
+  await tx.update(c).set({ lastMessageAt: input.now, updatedAt: input.now }).where(and(eq(c.orgId, input.orgId), eq(c.id, row.id)));
+  return { ok: true };
+}
+
+/**
+ * Régua de quem responde, comum ao texto e à nota de voz: a conversa travada e
+ * visível, quem assumiu, canal ativo e a janela de 24 horas. A chave do
+ * formulário diz se o mesmo envio já entrou (clique duplo).
+ */
+async function replyTarget(
+  tx: OrgTx,
+  input: Command & { requestId: string },
+): Promise<
+  | { row: NonNullable<Awaited<ReturnType<typeof lockConversation>>>; contact: { whatsappId: string }; queuedKey: string; duplicate: boolean }
+  | { ok: false; error: string }
+> {
+  const row = await lockConversation(tx, input);
+  if (!row) return err(NOT_FOUND);
+  const events = schema.supportMessageEvents;
+  const queuedKey = createHash("sha256").update(`reply\0${row.id}\0${input.requestId}`, "utf8").digest("hex");
+  const [already] = await tx.select({ id: events.id }).from(events).where(and(eq(events.orgId, input.orgId), eq(events.providerEventKey, queuedKey))).limit(1);
+
+  const ch = schema.supportWhatsAppChannels;
+  const [channel] = await tx.select({ status: ch.status }).from(ch).where(and(eq(ch.orgId, input.orgId), eq(ch.id, row.channelId)));
+  const [contact] = await tx.select({ whatsappId: contacts.whatsappId }).from(contacts).where(and(eq(contacts.orgId, input.orgId), eq(contacts.id, row.contactId)));
+  const [lastCustomer] = await tx
+    .select({ occurredAt: messages.occurredAt })
+    .from(messages)
+    .where(and(eq(messages.orgId, input.orgId), eq(messages.conversationId, row.id), eq(messages.actor, "customer")))
+    .orderBy(desc(messages.occurredAt))
+    .limit(1);
+  const blocked = replyBlockReason({
+    status: row.status,
+    assignedUserId: row.assignedUserId,
+    viewerId: input.viewer.userId,
+    channelActive: channel?.status === "active",
+    lastCustomerMessageAt: lastCustomer?.occurredAt ?? null,
+    now: input.now,
+  });
+  if (blocked) return err(blocked);
+  if (!contact) return err(NOT_FOUND);
+  return { row, contact, queuedKey, duplicate: Boolean(already) };
 }

@@ -8,10 +8,10 @@ type Audio = NonNullable<Extract<SupportTimelineItem, { kind: "message" }>["audi
  * 16rem (com "Transcrevendo…" a bolha encolhia até sobrar só o play) e
  * `max-w-full`, que deixa encolher em tela estreita sem empurrar a bolha.
  */
-export function MessageAudio({ audio }: { audio: Audio }) {
+export function MessageAudio({ audio, outbound = false }: { audio: Audio; outbound?: boolean }) {
   return (
     <>
-      <audio controls preload="none" src={audio.src} className="h-10 w-64 max-w-full" aria-label="Áudio do cliente" />
+      <audio controls preload="none" src={audio.src} className="h-10 w-64 max-w-full" aria-label={outbound ? "Nota de voz enviada" : "Áudio do cliente"} />
       {audio.transcript ? (
         <p className="whitespace-pre-wrap break-words">
           <span className="hud-label mr-1.5">Transcrição</span>
