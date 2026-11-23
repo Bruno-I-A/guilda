@@ -541,7 +541,11 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
   O envio leva `voice: true` (documentado pela Meta para nota de voz). **A Meta aceita mídia e
   só depois avisa a falha pelo webhook**: o primeiro teste real ficou "Não enviada" sem motivo,
   porque a tela só lia a recusa na hora. Agora `deliveryFailureMessage` mostra a frase e o código
-  da Meta, e o `error_data.details` vai ao log do `support-worker`.
+  da Meta, e o `error_data.details` vai ao log do `support-worker`. O segundo teste deu uma
+  entregue e duas recusadas com "Media file scrutiny for the file failed" (131053): a conversão
+  levava para o OGG os saltos de marca de tempo da gravação do navegador. O ffmpeg agora refaz as
+  marcas do zero e cobre salto com silêncio (`aresample=async=1:first_pts=0`); o teste com o
+  ffmpeg de verdade grava um WebM com salto e confere o OGG contínuo.
 - **Vínculo com a empresa é manual**, com histórico. Nota interna não se edita nem se apaga
   (`support_conversation_notes`, REVOKE no `guilda_app`).
 - **Números e empresas (2026-11-23, pedido do Bruno: "é meio variado")**: uma empresa tem vários
