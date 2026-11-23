@@ -538,6 +538,10 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
   (`requestId`) vale para toda nova tentativa: clique duplo ou reenvio não sai em dobro. Para em 5
   minutos e espera o clique (microfone esquecido não vira envio). `Permissions-Policy` libera
   `microphone=(self)`. A voz da equipe não é transcrita (a rotina lê só áudio recebido).
+  O envio leva `voice: true` (documentado pela Meta para nota de voz). **A Meta aceita mídia e
+  só depois avisa a falha pelo webhook**: o primeiro teste real ficou "Não enviada" sem motivo,
+  porque a tela só lia a recusa na hora. Agora `deliveryFailureMessage` mostra a frase e o código
+  da Meta, e o `error_data.details` vai ao log do `support-worker`.
 - **Vínculo com a empresa é manual**, com histórico. Nota interna não se edita nem se apaga
   (`support_conversation_notes`, REVOKE no `guilda_app`).
 - **Números e empresas (2026-11-23, pedido do Bruno: "é meio variado")**: uma empresa tem vários

@@ -652,7 +652,7 @@ test("nota de voz: a mesma régua da resposta, entra uma vez só e sai à Meta c
   }) as unknown as typeof fetch;
   await runSupportOutboxCycle(50, fetchOk);
   const call = bodies.find((body) => body.to === whatsappId);
-  expect(call).toEqual({ messaging_product: "whatsapp", recipient_type: "individual", to: whatsappId, type: "audio", audio: { id: "998877" } });
+  expect(call).toEqual({ messaging_product: "whatsapp", recipient_type: "individual", to: whatsappId, type: "audio", audio: { id: "998877", voice: true } });
 
   const view = await tx((t) => loadSupportConversation(t, { ...base, viewer: fiscal }));
   expect(view?.timeline.findLast((item) => item.kind === "message")).toMatchObject({
@@ -661,5 +661,31 @@ test("nota de voz: a mesma régua da resposta, entra uma vez só e sai à Meta c
     delivery: "sent",
     // A voz da equipe não vai para a transcrição: só a do cliente.
     audio: { src: `/api/atendimento/media/${sent[0].id}`, transcript: null, status: null },
+  });
+
+  // A Meta aceita a mídia e avisa depois, pelo webhook, que não entregou: a tela diz o motivo.
+  const { runSupportInboundCycle } = await import("@/lib/whatsapp/inbound-worker");
+  seq += 1;
+  await tx((t) =>
+    t.insert(schema.supportInboundEvents).values({
+      orgId: ORG,
+      channelId,
+      fingerprint: String(seq).padStart(64, "0"),
+      webhookField: "messages",
+      payload: {
+        statuses: [{
+          id: `wamid.voz${bodies.indexOf(call!) + 1}`,
+          status: "failed",
+          timestamp: String(Math.floor(NOW.getTime() / 1000) + 60),
+          errors: [{ code: 131053, title: "Media upload error", error_data: { details: "Audio file uploaded with mimetype as audio/ogg" } }],
+        }],
+      },
+    }),
+  );
+  expect((await runSupportInboundCycle()).failed).toBe(0);
+  const failedView = await tx((t) => loadSupportConversation(t, { ...base, viewer: fiscal }));
+  expect(failedView?.timeline.findLast((item) => item.kind === "message")).toMatchObject({
+    delivery: "failed",
+    failure: "A Meta não aceitou o arquivo. (código 131053 da Meta)",
   });
 }, 30_000);

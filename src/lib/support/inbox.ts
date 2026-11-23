@@ -9,6 +9,7 @@ import * as schema from "@/db/schema";
 import { isAdminRole } from "@/domain/guild-permissions";
 import {
   canSeeConversation,
+  deliveryFailureMessage,
   deliveryState,
   messageLabel,
   replyBlockReason,
@@ -323,7 +324,7 @@ export async function loadSupportConversation(
             }
           : null,
         delivery: message.direction === "outbound" && message.source !== "business_app" ? deliveryState(own.map((event) => event.eventType)) : null,
-        failure: failed && typeof failed.detail.message === "string" ? failed.detail.message : null,
+        failure: failed ? deliveryFailureMessage(failed.detail) : null,
       };
     }),
     ...notes.map((note): SupportTimelineItem => ({ kind: "note", id: note.id, at: note.createdAt.toISOString(), author: note.author, text: note.text })),

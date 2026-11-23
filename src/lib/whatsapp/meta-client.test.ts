@@ -358,7 +358,7 @@ describe("cliente seguro da Meta", () => {
       recipient_type: "individual",
       to: "5554999999999",
       type: "audio",
-      audio: { id: "1234567890" },
+      audio: { id: "1234567890", voice: true },
     });
   });
 });
