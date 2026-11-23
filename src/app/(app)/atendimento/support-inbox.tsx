@@ -571,7 +571,7 @@ export function SupportInbox({
     return () => clearInterval(timer);
   }, [router]);
 
-  if (channels === 0 && queue.length === 0 && counts.resolved === 0) {
+  if (channels === 0 && queue.length === 0 && counts.open === 0) {
     return (
       <div className="grid justify-items-center gap-2 rounded-lg border border-dashed p-8 text-center text-sm">
         <p className="font-medium">Nenhum WhatsApp conectado ainda.</p>
@@ -587,7 +587,7 @@ export function SupportInbox({
   return (
     <div className="grid h-full min-h-0 min-w-0 overflow-hidden border-y bg-card lg:grid-cols-[22rem_minmax(0,1fr)] lg:border-t-0">
       <section className={cn("min-h-0 min-w-0 flex-col bg-card lg:flex lg:border-r", selected ? "hidden" : "flex")} aria-label="Fila de conversas">
-        <nav className="grid shrink-0 grid-cols-2 gap-1 border-b bg-background/45 p-3" aria-label="Filtrar conversas">
+        <nav className="grid shrink-0 grid-cols-3 gap-1 border-b bg-background/45 p-3" aria-label="Filtrar conversas">
           {SUPPORT_FILTERS.map((item) => (
             <Link
               key={item.key}
@@ -600,7 +600,7 @@ export function SupportInbox({
           ))}
         </nav>
         {queue.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">{filter === "open" ? "Nenhuma conversa aberta para você. As de outros setores aparecem para quem atende neles." : "Nenhuma conversa nesta situação."}</p>
+          <p className="p-4 text-sm text-muted-foreground">{filter === "open" ? "Nenhuma conversa aguardando um atendente. As de outros setores aparecem para quem atende neles." : "Nenhuma conversa nesta situação."}</p>
         ) : (
           <ul className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto">
             {queue.map((row) => <QueueItem key={row.id} row={row} active={conversation?.id === row.id} filter={filter} now={clock} />)}
