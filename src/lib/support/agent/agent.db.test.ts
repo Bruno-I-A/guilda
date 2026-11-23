@@ -16,7 +16,9 @@ import * as schema from "@/db/schema";
 import type { SupportViewer } from "@/domain/support-inbox";
 import { applyMigrations } from "@/lib/nfse/testing/pglite";
 
-import type { SetorValido } from "../triage/classificacao";
+import { PDFDocument } from "pdf-lib";
+
+import type { AnexoParaClassificacao, SetorValido } from "../triage/classificacao";
 import type { Classifier } from "../triage/shadow";
 
 vi.mock("server-only", () => ({}));
@@ -44,9 +46,11 @@ async function tx<T>(run: Parameters<typeof import("@/db/org-tx").withOrgTx<T>>[
 }
 
 /** Mensagem do cliente pelo caminho real do webhook: evento na fila e worker. */
-async function customerSays(whatsappId: string, text: string, seconds: number): Promise<string> {
+async function customerSays(whatsappId: string, text: string | Record<string, unknown>, seconds: number): Promise<string> {
   seq += 1;
   const { runSupportInboundCycle } = await import("@/lib/whatsapp/inbound-worker");
+  // Texto, ou o corpo de outra mídia ({ type: "document", document: {...} }).
+  const body = typeof text === "string" ? { type: "text", text: { body: text } } : text;
   await tx((t) =>
     t.insert(schema.supportInboundEvents).values({
       orgId: ORG,
@@ -55,7 +59,7 @@ async function customerSays(whatsappId: string, text: string, seconds: number): 
       webhookField: "messages",
       payload: {
         contacts: [{ wa_id: whatsappId, profile: { name: "Bruno" } }],
-        messages: [{ id: `wamid.agente${seq}`, from: whatsappId, type: "text", timestamp: String(Math.floor(at(seconds).getTime() / 1000)), text: { body: text } }],
+        messages: [{ id: `wamid.agente${seq}`, from: whatsappId, timestamp: String(Math.floor(at(seconds).getTime() / 1000)), ...body }],
       },
     }),
   );
@@ -73,12 +77,14 @@ async function customerSays(whatsappId: string, text: string, seconds: number): 
 type Reply = { setor?: SetorValido; pergunta?: string; resposta?: string; fallback?: string; atendente?: string };
 const calls: { current: string; modo?: string; perguntasFeitas?: number }[] = [];
 const rosters: string[][] = [];
+const anexos: (AnexoParaClassificacao | null)[] = [];
 let replies: Reply[] = [];
 let during: (() => Promise<unknown>) | null = null;
 
 const fake: Classifier = async (current, _history, options) => {
   calls.push({ current, modo: options.modo, perguntasFeitas: options.perguntasFeitas });
   rosters.push((options.roster ?? []).map((entry) => entry.id));
+  anexos.push(options.anexo ?? null);
   if (during) {
     const run = during;
     during = null;
@@ -208,6 +214,7 @@ beforeAll(async () => {
 beforeEach(() => {
   calls.length = 0;
   rosters.length = 0;
+  anexos.length = 0;
   replies = [];
   during = null;
 });
@@ -517,6 +524,52 @@ test("quem sai do clã leva a regra junto", async () => {
   await tx((t) => t.delete(schema.clanMemberships).where(and(eq(schema.clanMemberships.clanId, FISCAL), eq(schema.clanMemberships.userId, "maria"))));
   const left = await tx((t) => t.select({ userId: schema.supportRoutingTopics.userId }).from(schema.supportRoutingTopics).where(eq(schema.supportRoutingTopics.clanId, FISCAL)));
   expect(left).toEqual([{ userId: null }]);
+});
+
+/** A Meta de mentira: o id 555 é um PDF de três páginas; o 666 dá erro. */
+async function fakeMeta(): Promise<typeof fetch> {
+  const doc = await PDFDocument.create();
+  for (const label of ["guia", "detalhe", "instrucoes"]) doc.addPage([200, 200]).drawText(label);
+  const saved = await doc.save();
+  const pdf = saved.buffer.slice(saved.byteOffset, saved.byteOffset + saved.byteLength) as ArrayBuffer;
+  return (async (url: URL | string) => {
+    const href = String(url);
+    if (href.startsWith("https://graph.facebook.com/") && href.includes("/555?")) {
+      return new Response(JSON.stringify({ url: "https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=555", mime_type: "application/pdf", file_size: pdf.byteLength }), { status: 200 });
+    }
+    if (href.startsWith("https://lookaside.fbsbx.com/")) return new Response(pdf, { status: 200, headers: { "content-length": String(pdf.byteLength) } });
+    return new Response(JSON.stringify({ error: { message: "indisponível", code: 1 } }), { status: 500 });
+  }) as unknown as typeof fetch;
+}
+
+test("PDF sem explicação: a IA recebe as 2 primeiras páginas e a legenda", async () => {
+  vi.stubGlobal("fetch", await fakeMeta());
+  try {
+    setClock(1400);
+    const id = await customerSays("5554900000013", "batata", 1360);
+    await customerSays(
+      "5554900000013",
+      { type: "document", document: { id: "555", mime_type: "application/pdf", filename: "guia-inss-10-2026.pdf", caption: "pode recalcular?" } },
+      1370,
+    );
+    replies = [{ setor: "trabalhista/dp" }];
+    await cycle();
+    expect(calls.at(-1)?.current).toBe('Documento "guia-inss-10-2026.pdf": pode recalcular?');
+    const anexo = anexos.at(-1);
+    expect(anexo?.tipo).toBe("pdf");
+    expect((await PDFDocument.load(Buffer.from(anexo!.data, "base64"))).getPageCount()).toBe(2);
+    expect((await runsOf(id)).at(-1)?.result).toMatchObject({ attachment: { kind: "pdf", status: "read", pages: 2, totalPages: 3 } });
+
+    // Meta fora do ar: o turno segue só com o texto e o motivo fica registrado.
+    setClock(1500);
+    const failed = await customerSays("5554900000014", "batata", 1460);
+    await customerSays("5554900000014", { type: "document", document: { id: "666", mime_type: "application/pdf" } }, 1470);
+    await cycle();
+    expect(anexos.at(-1)).toBeNull();
+    expect((await runsOf(failed)).at(-1)?.result).toMatchObject({ attachment: { kind: "pdf", status: "skipped", reason: "meta_500" } });
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 test("a configuração recusa palavra inválida e não se apaga", async () => {

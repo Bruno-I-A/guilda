@@ -351,6 +351,31 @@ export async function downloadWhatsAppImage(
   config: Pick<MetaServerConfig, "graphApiVersion">,
   fetchImpl: typeof fetch = fetch,
 ): Promise<WhatsAppImage> {
+  const media = await downloadWhatsAppMedia(
+    { ...input, allowedMimeTypes: IMAGE_MIME_TYPES, maxBytes: MAX_IMAGE_BYTES },
+    config,
+    fetchImpl,
+  );
+  return { bytes: media.bytes, mimeType: media.mimeType as WhatsAppImage["mimeType"] };
+}
+
+/**
+ * Baixa uma mídia recebida (foto ou PDF), só dos tipos e até o tamanho que o
+ * chamador aceita. Mesmas travas da foto: id numérico, host da Meta, sem
+ * redirecionamento e tamanho conferido antes e depois do download.
+ */
+export async function downloadWhatsAppMedia(
+  input: {
+    mediaId: string;
+    phoneNumberId: string;
+    accessToken: string;
+    allowedMimeTypes: ReadonlySet<string>;
+    maxBytes: number;
+  },
+  config: Pick<MetaServerConfig, "graphApiVersion">,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ bytes: ArrayBuffer; mimeType: string }> {
+  const maxBytes = input.maxBytes;
   if (!/^\d{1,32}$/.test(input.mediaId)) {
     throw new MetaGraphError("get_media_url", 400);
   }
@@ -373,11 +398,11 @@ export async function downloadWhatsAppImage(
     !metadataResponse.ok ||
     typeof mediaUrlValue !== "string" ||
     typeof mimeType !== "string" ||
-    !IMAGE_MIME_TYPES.has(mimeType) ||
+    !input.allowedMimeTypes.has(mimeType) ||
     typeof fileSize !== "number" ||
     !Number.isSafeInteger(fileSize) ||
     fileSize < 0 ||
-    fileSize > MAX_IMAGE_BYTES
+    fileSize > maxBytes
   ) {
     throw graphError("get_media_url", metadataResponse, metadata);
   }
@@ -402,15 +427,15 @@ export async function downloadWhatsAppImage(
   const declaredLength = Number(mediaResponse.headers.get("content-length") ?? "0");
   if (
     !mediaResponse.ok ||
-    (Number.isFinite(declaredLength) && declaredLength > MAX_IMAGE_BYTES)
+    (Number.isFinite(declaredLength) && declaredLength > maxBytes)
   ) {
     throw new MetaGraphError("download_media", mediaResponse.status);
   }
   const bytes = await mediaResponse.arrayBuffer();
-  if (bytes.byteLength > MAX_IMAGE_BYTES) {
+  if (bytes.byteLength > maxBytes) {
     throw new MetaGraphError("download_media", 413);
   }
-  return { bytes, mimeType: mimeType as WhatsAppImage["mimeType"] };
+  return { bytes, mimeType };
 }
 
 export async function subscribeWhatsAppWebhook(

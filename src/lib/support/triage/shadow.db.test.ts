@@ -86,6 +86,8 @@ beforeAll(async () => {
   `);
   await client.exec("SET ROLE guilda_app;");
   await tx((t) => t.insert(schema.supportWhatsAppChannels).values({ id: CHANNEL, orgId: ORG, name: "WhatsApp", status: "active", wabaId: "1", phoneNumberId: "2" }));
+  // A primeira importação (com o turno do agente e o leitor de PDF) passava dos 5 s do teste.
+  await Promise.all([import("@/lib/whatsapp/inbound-worker"), import("./shadow"), import("../inbox")]);
 }, 120_000);
 
 afterEach(() => {
