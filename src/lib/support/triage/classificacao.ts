@@ -197,14 +197,14 @@ Voce PODE preencher resposta_direta somente quando uma ou mais fontes da BASE DE
 const BLOCO_SETORES = `## SETORES
 - fiscal: guias e impostos (DAS, DARF, GARE, ICMS, ISS, PIS/COFINS), emissao e cancelamento de notas fiscais, apuracao, SPED fiscal, parcelamento e regularizacao de tributos, Simples Nacional e suas declaracoes (DEFIS), enquadramento e limite do Simples.
 - contabil: balancete, balanco, DRE, IRPJ e apuracao de lucro, lancamentos, conciliacao, relatorios contabeis, imposto de renda de pessoa fisica.
-- trabalhista/dp: admissao, rescisao, folha de pagamento, ferias, 13o, eSocial, FGTS, INSS de funcionario, atestado, ponto, vale-transporte, RAIS/CAGED, homologacao.
+- trabalhista/dp: admissao, rescisao, folha de pagamento, ferias, 13o, eSocial, FGTS, toda guia de INSS (de funcionario e do socio, pelo pro-labore), atestado, ponto, vale-transporte, RAIS/CAGED, homologacao.
 - societario: abertura, baixa e alteracao de empresa, contrato social, alvara, inscricoes, mudanca de endereco, entrada e saida de socios, capital social, procuracoes e documentos de junta comercial.
 - financeiro: assuntos financeiros DO ESCRITORIO com o cliente — honorarios, mensalidade, boleto do escritorio, cobranca, dados de pagamento ao escritorio.
 - outro: assunto que nao cabe claramente em nenhum dos acima, mensagem sem assunto reconhecivel, ou certeza insuficiente.
 
 Fronteiras que costumam confundir:
-- Pagar, emitir ou pedir segunda via de guia de IMPOSTO (DAS, DARF, GARE, ICMS, ISS, PIS/COFINS) e sempre fiscal, mesmo quando o cliente fala em "pagamento", "boleto" ou "conta". Mas a palavra "guia" sozinha NAO decide o setor — olhe do que e a guia: guia de FGTS, de INSS de funcionario, de 13o salario e de rescisao saem da FOLHA e sao trabalhista/dp.
-- INSS tem dois donos: o de FUNCIONARIO e trabalhista/dp (folha); o do SOCIO acompanha o pro-labore e e contabil. Vale o mesmo para "quanto pagar", "como pagar" e "gerar a guia" de cada um.
+- Pagar, emitir ou pedir segunda via de guia de IMPOSTO (DAS, DARF, GARE, ICMS, ISS, PIS/COFINS) e sempre fiscal, mesmo quando o cliente fala em "pagamento", "boleto" ou "conta". Mas a palavra "guia" sozinha NAO decide o setor — olhe do que e a guia: guia de FGTS, de INSS (de funcionario ou do socio), de 13o salario e de rescisao saem da FOLHA e sao trabalhista/dp.
+- Guia de INSS e sempre trabalhista/dp neste escritorio, seja de funcionario, seja do socio (pro-labore): quem emite e o RH. Vale o mesmo para "quanto pagar", "como pagar" e "gerar a guia" de INSS. Decidir QUANTO tirar de pro-labore continua contabil.
 - Pedido de "nota" ou "NF" e SEMPRE fiscal, mesmo quando o cliente NAO diz "fiscal" — em contabilidade "nota" e "NF" ja significam nota fiscal. "Quero a nota do mes", "preciso de uma nota", "faz a nota", "a de sempre", "manda a NF", "NF de novembro" sao todos fiscal, nunca contabil, mesmo soando como um fechamento mensal.
 - Boleto, mensalidade ou cobranca SEM mencionar imposto e financeiro.
 - Certidao (negativa ou nao, de qualquer tipo — federal, estadual, municipal, trabalhista ou FGTS) e certificado digital tem responsavel proprio no escritorio: NAO pergunte o tipo nem detalhes. Se algum atendente da lista tiver esse assunto nas atribuicoes, escolha o SETOR DELE e preencha atendente_sugerido com o id dele. Sem ninguem na lista para o assunto, use o setor mais proximo do pedido.
