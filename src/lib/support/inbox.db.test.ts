@@ -5,7 +5,7 @@
 import { randomBytes } from "node:crypto";
 
 import { PGlite } from "@electric-sql/pglite";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
@@ -226,11 +226,11 @@ test("transferir confere clã e pessoa na organização e leva a conversa para a
 });
 
 test("vínculo com a empresa traz as missões abertas; empresa de outra organização é recusada", async () => {
-  const { linkSupportContact, loadSupportConversation } = await import("./inbox");
+  const { addSupportContactClient, removeSupportContactClient, loadSupportConversation } = await import("./inbox");
   const { id } = await customerSays("5554911110008", "Oi");
   const base = { orgId: ORG, viewer: admin, conversationId: id, now: NOW };
-  expect((await tx((t) => linkSupportContact(t, { ...base, clientId: OTHER_COMPANY }))).ok).toBe(false);
-  expect((await tx((t) => linkSupportContact(t, { ...base, clientId: COMPANY }))).ok).toBe(true);
+  expect((await tx((t) => addSupportContactClient(t, { ...base, clientId: OTHER_COMPANY }))).ok).toBe(false);
+  expect((await tx((t) => addSupportContactClient(t, { ...base, clientId: COMPANY }))).ok).toBe(true);
   const task = (title: string, status: "pending" | "completed") =>
     t_insert(title, status);
   async function t_insert(title: string, status: "pending" | "completed") {
@@ -241,8 +241,110 @@ test("vínculo com a empresa traz as missões abertas; empresa de outra organiza
   const view = await tx((t) => loadSupportConversation(t, base));
   expect(view?.client).toMatchObject({ name: "Academia" });
   expect(view?.openTasks.map((row) => row.title)).toEqual(["Enviar guia"]);
-  expect((await tx((t) => linkSupportContact(t, { ...base, clientId: null }))).ok).toBe(true);
+  expect((await tx((t) => removeSupportContactClient(t, { ...base, clientId: COMPANY }))).ok).toBe(true);
   expect((await tx((t) => loadSupportConversation(t, base)))?.client).toBeNull();
+});
+
+test("número em duas empresas: a conversa escolhe só entre as do número, e a nova nasce sem empresa", async () => {
+  const { addSupportContactClient, removeSupportContactClient, setSupportConversationClient, resolveSupportConversation, loadSupportConversation } = await import("./inbox");
+  const SECOND = "00000000-0000-4000-8000-0000000000c3";
+  await tx((t) => t.insert(schema.clients).values({ id: SECOND, orgId: ORG, name: "Padaria", taxRegime: "simples" }));
+  const whatsappId = "5554911110020";
+  const { id } = await customerSays(whatsappId, "Oi");
+  const base = { orgId: ORG, viewer: admin, conversationId: id, now: NOW };
+
+  expect((await tx((t) => addSupportContactClient(t, { ...base, clientId: COMPANY }))).ok).toBe(true);
+  expect((await tx((t) => addSupportContactClient(t, { ...base, clientId: SECOND }))).ok).toBe(true);
+  let view = await tx((t) => loadSupportConversation(t, base));
+  // A primeira empresa adicionada virou a da conversa; a segunda só entrou na lista.
+  expect(view?.client?.id).toBe(COMPANY);
+  expect(view?.contactClients.map((client) => client.name)).toEqual(["Academia", "Padaria"]);
+
+  expect((await tx((t) => setSupportConversationClient(t, { ...base, clientId: OTHER_COMPANY }))).ok).toBe(false);
+  expect((await tx((t) => setSupportConversationClient(t, { ...base, clientId: SECOND }))).ok).toBe(true);
+  expect((await tx((t) => loadSupportConversation(t, base)))?.client?.id).toBe(SECOND);
+
+  // Tirar a empresa da conversa deixa a única que sobrou.
+  expect((await tx((t) => removeSupportContactClient(t, { ...base, clientId: SECOND }))).ok).toBe(true);
+  view = await tx((t) => loadSupportConversation(t, base));
+  expect(view?.client?.id).toBe(COMPANY);
+  expect(view?.timeline.some((item) => item.kind === "event" && item.text.includes("tirou Padaria deste número"))).toBe(true);
+
+  // Conversa nova: com uma empresa no número já nasce com ela; com duas, sem.
+  // (O número passa a ter várias conversas: procura a aberta.)
+  const openConversation = async () => {
+    const [row] = await tx((t) =>
+      t
+        .select({ id: schema.supportConversations.id })
+        .from(schema.supportConversations)
+        .innerJoin(schema.supportContacts, eq(schema.supportContacts.id, schema.supportConversations.contactId))
+        .where(and(eq(schema.supportContacts.whatsappId, whatsappId), isNull(schema.supportConversations.resolvedAt))),
+    );
+    return row.id;
+  };
+  await tx((t) => resolveSupportConversation(t, base));
+  await customerSays(whatsappId, "Bom dia", new Date(NOW.getTime() + 60_000));
+  const single = await openConversation();
+  expect(single).not.toBe(id);
+  expect((await tx((t) => loadSupportConversation(t, { ...base, conversationId: single })))?.client?.id).toBe(COMPANY);
+  await tx((t) => addSupportContactClient(t, { ...base, conversationId: single, clientId: SECOND }));
+  await tx((t) => resolveSupportConversation(t, { ...base, conversationId: single }));
+  await customerSays(whatsappId, "Outra coisa", new Date(NOW.getTime() + 120_000));
+  const next = await openConversation();
+  const nextView = await tx((t) => loadSupportConversation(t, { ...base, conversationId: next }));
+  expect(nextView?.client).toBeNull();
+  expect(nextView?.contactClients).toHaveLength(2);
+});
+
+test("número cadastrado com o nono dígito acha a mensagem que chega sem ele", async () => {
+  const [contact] = await tx((t) =>
+    t.insert(schema.supportContacts).values({ orgId: ORG, whatsappId: "5554999990031", phoneE164: "+5554999990031" }).returning({ id: schema.supportContacts.id }),
+  );
+  await tx((t) => t.insert(schema.supportContactClients).values({ orgId: ORG, contactId: contact.id, clientId: COMPANY, linkedBy: "admin" }));
+  seq += 1;
+  const { runSupportInboundCycle } = await import("@/lib/whatsapp/inbound-worker");
+  await tx((t) =>
+    t.insert(schema.supportInboundEvents).values({
+      orgId: ORG,
+      channelId,
+      fingerprint: String(seq).padStart(64, "0"),
+      webhookField: "messages",
+      payload: {
+        contacts: [{ wa_id: "555499990031", profile: { name: "Elisa" } }],
+        messages: [{ id: `wamid.in${seq}`, from: "555499990031", type: "text", timestamp: String(Math.floor(NOW.getTime() / 1000)), text: { body: "Oi, é a Elisa" } }],
+      },
+    }),
+  );
+  expect((await runSupportInboundCycle()).failed).toBe(0);
+  const conversations = await tx((t) =>
+    t.select({ contactId: schema.supportConversations.contactId, clientId: schema.supportConversations.clientId }).from(schema.supportConversations).where(eq(schema.supportConversations.contactId, contact.id)),
+  );
+  expect(conversations).toEqual([{ contactId: contact.id, clientId: COMPANY }]);
+  const strays = await tx((t) => t.select().from(schema.supportContacts).where(eq(schema.supportContacts.whatsappId, "555499990031")));
+  expect(strays).toEqual([]);
+});
+
+test("a migração copia os vínculos feitos antes para o número e para a conversa", async () => {
+  const { readFileSync } = await import("node:fs");
+  const legacy = await customerSays("5554911110040", "Oi");
+  const [conversation] = await tx((t) => t.select({ contactId: schema.supportConversations.contactId }).from(schema.supportConversations).where(eq(schema.supportConversations.id, legacy.id)));
+  // Como o vínculo era gravado antes da 0108: direto no contato, sem empresa na conversa.
+  await tx((t) => t.update(schema.supportContacts).set({ clientId: COMPANY, linkedBy: "admin", linkedAt: NOW }).where(eq(schema.supportContacts.id, conversation.contactId)));
+  const statements = readFileSync("src/db/migrations/0108_support-contact-clients.sql", "utf8")
+    .split("--> statement-breakpoint")
+    .map((statement) => statement.trim())
+    .filter((statement) => /^(-- Os vinculos[^\n]*\n)?(INSERT INTO "support_contact_clients"|UPDATE "support_conversations")/.test(statement));
+  expect(statements).toHaveLength(2);
+  await client.exec("RESET ROLE;");
+  try {
+    for (const statement of statements) await client.exec(statement);
+  } finally {
+    await client.exec("SET ROLE guilda_app;");
+  }
+  const { loadSupportConversation } = await import("./inbox");
+  const view = await tx((t) => loadSupportConversation(t, { orgId: ORG, viewer: admin, conversationId: legacy.id, now: NOW }));
+  expect(view?.client?.id).toBe(COMPANY);
+  expect(view?.contactClients.map((row) => row.id)).toEqual([COMPANY]);
 });
 
 test("nota interna aparece só na tela, não vira mensagem nem saída, e não se apaga", async () => {

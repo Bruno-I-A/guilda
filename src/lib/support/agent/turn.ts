@@ -55,7 +55,7 @@ async function applyAgentDecision(
 ): Promise<string | null> {
   const where = and(eq(c.orgId, input.orgId), eq(c.id, input.candidate.conversationId));
   const [row] = await tx
-    .select({ status: c.status, startedAt: c.aiTestStartedAt, channelId: c.channelId, contactId: c.contactId })
+    .select({ status: c.status, startedAt: c.aiTestStartedAt, channelId: c.channelId, contactId: c.contactId, clientId: c.clientId })
     .from(c)
     .where(where)
     .for("update");
@@ -77,13 +77,17 @@ async function applyAgentDecision(
       whatsappId: schema.supportContacts.whatsappId,
       displayName: schema.supportContacts.displayName,
       phone: schema.supportContacts.phoneE164,
-      clientId: schema.supportContacts.clientId,
-      clientName: schema.clients.name,
     })
     .from(schema.supportContacts)
-    .leftJoin(schema.clients, and(eq(schema.clients.orgId, schema.supportContacts.orgId), eq(schema.clients.id, schema.supportContacts.clientId)))
     .where(and(eq(schema.supportContacts.orgId, input.orgId), eq(schema.supportContacts.id, row.contactId)));
   if (!contact) return "contato_sumiu";
+  // A empresa é a da conversa (2026-11-23): um número pode ser de várias.
+  const [company] = row.clientId
+    ? await tx
+        .select({ name: schema.clients.name })
+        .from(schema.clients)
+        .where(and(eq(schema.clients.orgId, input.orgId), eq(schema.clients.id, row.clientId)))
+    : [];
   const [message] = await tx
     .insert(m)
     .values({
@@ -120,7 +124,7 @@ async function applyAgentDecision(
           orgId: input.orgId,
           clanId: input.decision.clanId,
           suggested: input.decision.suggestedAttendant,
-          clientId: contact.clientId,
+          clientId: row.clientId,
         })
       : null;
     await tx
@@ -159,7 +163,7 @@ async function applyAgentDecision(
         conversationId: input.candidate.conversationId,
         roundKey: input.startedAt.toISOString(),
         clanName: input.decision.clanName,
-        contactName: contact.clientName ? companyDisplayName(contact.clientName) : (contact.displayName ?? contact.phone ?? contact.whatsappId),
+        contactName: company ? companyDisplayName(company.name) : (contact.displayName ?? contact.phone ?? contact.whatsappId),
         summary: input.decision.summary,
       });
     }

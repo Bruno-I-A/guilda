@@ -7,13 +7,15 @@ import { withOrgTx, type OrgTx } from "@/db/org-tx";
 import type { SupportViewer } from "@/domain/support-inbox";
 import { err, requireMemberContext, type ActionResult } from "@/lib/action-context";
 import {
+  addSupportContactClient,
   addSupportNote,
-  linkSupportContact,
   loadSupportViewer,
   markSupportWaiting,
+  removeSupportContactClient,
   reopenSupportConversation,
   resolveSupportConversation,
   sendSupportReply,
+  setSupportConversationClient,
   takeSupportConversation,
   transferSupportConversation,
 } from "@/lib/support/inbox";
@@ -100,10 +102,25 @@ export async function transferConversation(input: z.input<typeof transferSchema>
   return run((tx, base) => transferSupportConversation(tx, { ...base, ...parsed.data }));
 }
 
-const linkSchema = z.object({ conversationId, clientId: z.uuid("Empresa inválida.").nullable() });
+const companySchema = z.object({ conversationId, clientId: z.uuid("Empresa inválida.") });
+const conversationCompanySchema = z.object({ conversationId, clientId: z.uuid("Empresa inválida.").nullable() });
 
-export async function linkContact(input: z.input<typeof linkSchema>): Promise<ActionResult> {
-  const parsed = linkSchema.safeParse(input);
+/** Número ↔ empresas (2026-11-23): acrescenta a empresa ao número que escreveu. */
+export async function addContactCompany(input: z.input<typeof companySchema>): Promise<ActionResult> {
+  const parsed = companySchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Empresa inválida.");
-  return run((tx, base) => linkSupportContact(tx, { ...base, ...parsed.data }));
+  return run((tx, base) => addSupportContactClient(tx, { ...base, ...parsed.data }));
+}
+
+export async function removeContactCompany(input: z.input<typeof companySchema>): Promise<ActionResult> {
+  const parsed = companySchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Empresa inválida.");
+  return run((tx, base) => removeSupportContactClient(tx, { ...base, ...parsed.data }));
+}
+
+/** A empresa desta conversa, entre as do número. */
+export async function setConversationCompany(input: z.input<typeof conversationCompanySchema>): Promise<ActionResult> {
+  const parsed = conversationCompanySchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Empresa inválida.");
+  return run((tx, base) => setSupportConversationClient(tx, { ...base, ...parsed.data }));
 }

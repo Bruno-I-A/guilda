@@ -757,6 +757,13 @@
       "when": 1795341600000,
       "tag": "0107_support-routing-topics",
       "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1795514400000,
+      "tag": "0108_support-contact-clients",
+      "breakpoints": true
     }
   ]
 }

@@ -493,10 +493,10 @@ test("encaminhamento por assunto: a pessoa do assunto recebe a conversa e o avis
 });
 
 test("assunto da Carteira vai ao responsável da empresa vinculada; sem empresa, ao líder", async () => {
-  const { linkSupportContact } = await import("../inbox");
+  const { addSupportContactClient } = await import("../inbox");
   setClock(1100);
   const linked = await customerSays("5554900000010", "oi", 1060);
-  await tx((t) => linkSupportContact(t, { orgId: ORG, viewer: admin, conversationId: linked, now: new Date(), clientId: COMPANY }));
+  await tx((t) => addSupportContactClient(t, { orgId: ORG, viewer: admin, conversationId: linked, now: new Date(), clientId: COMPANY }));
   await customerSays("5554900000010", "batata, preciso da guia atrasada", 1070);
   replies = [{ atendente: "carteira" }];
   await cycle();

@@ -205,6 +205,39 @@ export const supportContacts = pgTable(
   ],
 );
 
+/**
+ * Número ↔ empresas (2026-11-23): uma empresa tem vários números e um número
+ * pode ser de várias empresas (o empresário com duas ou três). Substitui
+ * `support_contacts.client_id`, que deixou de ser lido e escrito.
+ */
+export const supportContactClients = pgTable(
+  "support_contact_clients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id").notNull(),
+    clientId: uuid("client_id").notNull(),
+    linkedBy: text("linked_by").references(() => user.id),
+    linkedAt: timestamp("linked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "support_contact_clients_org_contact_fk",
+      columns: [t.orgId, t.contactId],
+      foreignColumns: [supportContacts.orgId, supportContacts.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "support_contact_clients_org_client_fk",
+      columns: [t.orgId, t.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+    }).onDelete("cascade"),
+    uniqueIndex("support_contact_clients_contact_client_uidx").on(t.orgId, t.contactId, t.clientId),
+    index("support_contact_clients_org_client_idx").on(t.orgId, t.clientId),
+  ],
+);
+
 export const supportConversations = pgTable(
   "support_conversations",
   {
@@ -223,6 +256,11 @@ export const supportConversations = pgTable(
     aiPauseReason: varchar("ai_pause_reason", { length: 120 }),
     /** Início da rodada do teste do agente; nulo fora de teste (2026-11-19). */
     aiTestStartedAt: timestamp("ai_test_started_at", { withTimezone: true }),
+    /**
+     * Empresa desta conversa (2026-11-23): uma das empresas do número. A FK
+     * composta com `ON DELETE SET NULL (client_id)` mora na migração 0108.
+     */
+    clientId: uuid("client_id"),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -94,7 +94,7 @@ export async function loadSupportQueue(
     })
     .from(c)
     .innerJoin(contacts, and(eq(contacts.orgId, c.orgId), eq(contacts.id, c.contactId)))
-    .leftJoin(schema.clients, and(eq(schema.clients.orgId, contacts.orgId), eq(schema.clients.id, contacts.clientId)))
+    .leftJoin(schema.clients, and(eq(schema.clients.orgId, c.orgId), eq(schema.clients.id, c.clientId)))
     .leftJoin(schema.clans, and(eq(schema.clans.orgId, c.orgId), eq(schema.clans.id, c.assignedClanId)))
     .leftJoin(schema.user, eq(schema.user.id, c.assignedUserId))
     .where(and(eq(c.orgId, input.orgId), filterWhere(input.filter, input.viewer), visible))
@@ -177,7 +177,10 @@ export interface SupportConversationView {
   contactId: string;
   contactName: string;
   phone: string | null;
+  /** Empresa desta conversa (2026-11-23): uma das empresas do número. */
   client: { id: string; name: string; cnpj: string | null; taxRegime: string } | null;
+  /** Empresas do número que escreveu: uma empresa tem vários números e um número várias empresas. */
+  contactClients: { id: string; name: string; cnpj: string | null }[];
   timeline: SupportTimelineItem[];
   replyBlocked: string | null;
   openTasks: { id: string; title: string; status: string }[];
@@ -215,7 +218,7 @@ export async function loadSupportConversation(
       assignedUserId: c.assignedUserId,
       aiTestStartedAt: c.aiTestStartedAt,
       contactId: contacts.id,
-      clientId: contacts.clientId,
+      clientId: c.clientId,
       displayName: contacts.displayName,
       phone: contacts.phoneE164,
       whatsappId: contacts.whatsappId,
@@ -326,6 +329,12 @@ export async function loadSupportConversation(
           .where(and(eq(schema.clients.orgId, input.orgId), eq(schema.clients.id, row.clientId)))
       )[0]
     : undefined;
+  const linkedClients = await tx
+    .select({ id: schema.clients.id, name: schema.clients.name, cnpj: schema.clients.cnpj })
+    .from(contactClients)
+    .innerJoin(schema.clients, and(eq(schema.clients.orgId, contactClients.orgId), eq(schema.clients.id, contactClients.clientId)))
+    .where(and(eq(contactClients.orgId, input.orgId), eq(contactClients.contactId, row.contactId)))
+    .orderBy(asc(schema.clients.name));
   const tasks = schema.tasks;
   const openTasks = row.clientId
     ? await tx
@@ -359,6 +368,7 @@ export async function loadSupportConversation(
     contactName,
     phone: row.phone,
     client: client ?? null,
+    contactClients: linkedClients,
     timeline,
     replyBlocked: replyBlockReason({
       status: row.status,
@@ -442,7 +452,7 @@ type Command = { orgId: string; viewer: SupportViewer; conversationId: string; n
 /** Trava a conversa e confere a visibilidade: conversa alheia responde como inexistente. */
 async function lockConversation(tx: OrgTx, input: Command) {
   const [row] = await tx
-    .select({ id: c.id, status: c.status, channelId: c.channelId, contactId: c.contactId, assignedClanId: c.assignedClanId, assignedUserId: c.assignedUserId, aiPausedAt: c.aiPausedAt })
+    .select({ id: c.id, status: c.status, channelId: c.channelId, contactId: c.contactId, clientId: c.clientId, assignedClanId: c.assignedClanId, assignedUserId: c.assignedUserId, aiPausedAt: c.aiPausedAt })
     .from(c)
     .where(and(eq(c.orgId, input.orgId), eq(c.id, input.conversationId)))
     .for("update");
@@ -551,26 +561,88 @@ export async function transferSupportConversation(tx: OrgTx, input: Command & { 
 }
 
 /** O vínculo com a empresa é manual: número parecido não prova de quem é a conversa. */
-export async function linkSupportContact(tx: OrgTx, input: Command & { clientId: string | null }): Promise<ActionResult> {
-  const row = await lockConversation(tx, input);
-  if (!row) return err(NOT_FOUND);
-  let clientName: string | null = null;
-  if (input.clientId) {
-    const [client] = await tx.select({ name: schema.clients.name }).from(schema.clients).where(and(eq(schema.clients.orgId, input.orgId), eq(schema.clients.id, input.clientId)));
-    if (!client) return err("Empresa não encontrada.");
-    clientName = client.name;
-  }
-  await tx
-    .update(contacts)
-    .set(input.clientId ? { clientId: input.clientId, linkedBy: input.viewer.userId, linkedAt: input.now, updatedAt: input.now } : { clientId: null, linkedBy: null, linkedAt: null, updatedAt: input.now })
-    .where(and(eq(contacts.orgId, input.orgId), eq(contacts.id, row.contactId)));
+const contactClients = schema.supportContactClients;
+
+async function clientNameOf(tx: OrgTx, orgId: string, clientId: string): Promise<string | null> {
+  const [client] = await tx.select({ name: schema.clients.name }).from(schema.clients).where(and(eq(schema.clients.orgId, orgId), eq(schema.clients.id, clientId)));
+  return client?.name ?? null;
+}
+
+async function linkedClientIds(tx: OrgTx, orgId: string, contactId: string): Promise<string[]> {
+  const rows = await tx
+    .select({ clientId: contactClients.clientId })
+    .from(contactClients)
+    .where(and(eq(contactClients.orgId, orgId), eq(contactClients.contactId, contactId)));
+  return rows.map((row) => row.clientId);
+}
+
+async function recordLinkEvent(tx: OrgTx, input: Command & { conversationId: string; note: string; clientId: string | null }) {
   await tx.insert(schema.supportConversationEvents).values({
     orgId: input.orgId,
-    conversationId: row.id,
+    conversationId: input.conversationId,
     eventType: "contact_linked",
     actorUserId: input.viewer.userId,
     source: "guilda_attendant",
-    detail: { note: clientName ? `vinculou a ${clientName}` : "desfez o vínculo com a empresa", clientId: input.clientId },
+    detail: { note: input.note, clientId: input.clientId },
+  });
+}
+
+/**
+ * Número ↔ empresas (2026-11-23): acrescenta a empresa ao número desta
+ * conversa. Sem empresa na conversa, ela passa a ser esta.
+ */
+export async function addSupportContactClient(tx: OrgTx, input: Command & { clientId: string }): Promise<ActionResult> {
+  const row = await lockConversation(tx, input);
+  if (!row) return err(NOT_FOUND);
+  const name = await clientNameOf(tx, input.orgId, input.clientId);
+  if (!name) return err("Empresa não encontrada.");
+  await tx
+    .insert(contactClients)
+    .values({ orgId: input.orgId, contactId: row.contactId, clientId: input.clientId, linkedBy: input.viewer.userId, linkedAt: input.now })
+    .onConflictDoNothing();
+  if (!row.clientId) {
+    await tx.update(c).set({ clientId: input.clientId, updatedAt: input.now }).where(and(eq(c.orgId, input.orgId), eq(c.id, row.id)));
+  }
+  await recordLinkEvent(tx, { ...input, conversationId: row.id, note: `vinculou o número a ${name}`, clientId: input.clientId });
+  return { ok: true };
+}
+
+/** Tira a empresa do número. Se era a da conversa, fica a única que sobrar, ou nenhuma. */
+export async function removeSupportContactClient(tx: OrgTx, input: Command & { clientId: string }): Promise<ActionResult> {
+  const row = await lockConversation(tx, input);
+  if (!row) return err(NOT_FOUND);
+  const name = (await clientNameOf(tx, input.orgId, input.clientId)) ?? "a empresa";
+  await tx
+    .delete(contactClients)
+    .where(and(eq(contactClients.orgId, input.orgId), eq(contactClients.contactId, row.contactId), eq(contactClients.clientId, input.clientId)));
+  if (row.clientId === input.clientId) {
+    const remaining = await linkedClientIds(tx, input.orgId, row.contactId);
+    await tx
+      .update(c)
+      .set({ clientId: remaining.length === 1 ? remaining[0] : null, updatedAt: input.now })
+      .where(and(eq(c.orgId, input.orgId), eq(c.id, row.id)));
+  }
+  await recordLinkEvent(tx, { ...input, conversationId: row.id, note: `tirou ${name} deste número`, clientId: input.clientId });
+  return { ok: true };
+}
+
+/** A empresa desta conversa, entre as do número: é ela que a Carteira usa. */
+export async function setSupportConversationClient(tx: OrgTx, input: Command & { clientId: string | null }): Promise<ActionResult> {
+  const row = await lockConversation(tx, input);
+  if (!row) return err(NOT_FOUND);
+  let name: string | null = null;
+  if (input.clientId) {
+    if (!(await linkedClientIds(tx, input.orgId, row.contactId)).includes(input.clientId)) {
+      return err("Essa empresa não é deste número. Adicione-a antes.");
+    }
+    name = await clientNameOf(tx, input.orgId, input.clientId);
+  }
+  await tx.update(c).set({ clientId: input.clientId, updatedAt: input.now }).where(and(eq(c.orgId, input.orgId), eq(c.id, row.id)));
+  await recordLinkEvent(tx, {
+    ...input,
+    conversationId: row.id,
+    note: name ? `marcou a conversa como da ${name}` : "tirou a empresa da conversa",
+    clientId: input.clientId,
   });
   return { ok: true };
 }
