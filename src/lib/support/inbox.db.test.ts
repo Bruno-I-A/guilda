@@ -193,6 +193,42 @@ test("só quem assumiu responde; a resposta vai para a fila uma vez, mesmo com c
   expect((await reply(uuid(3), colleague)).ok).toBe(false);
 });
 
+test("anexo só sai de conversa assumida, fica no histórico e é enviado uma vez", async () => {
+  const { checkSupportMediaReply, takeSupportConversation, sendSupportMedia, loadSupportConversation } = await import("./inbox");
+  const { runSupportOutboxCycle } = await import("@/lib/whatsapp/outbound-worker");
+  const phone = "5554911110080";
+  const { id } = await customerSays(phone, "Mande o balanço, por favor");
+  const base = { orgId: ORG, conversationId: id, now: NOW, requestId: uuid(80) };
+  const media = { ...base, viewer: admin, mediaId: "123456789", kind: "document" as const, mimeType: "application/pdf", filename: "balanco.pdf", caption: "Segue o balanço" };
+  expect((await tx((t) => checkSupportMediaReply(t, { ...base, viewer: admin }))).ok).toBe(false);
+  await tx((t) => takeSupportConversation(t, { ...base, viewer: admin }));
+  expect(await tx((t) => checkSupportMediaReply(t, { ...base, viewer: admin }))).toMatchObject({ ok: true, data: { channelId, alreadyQueued: false } });
+  expect((await tx((t) => checkSupportMediaReply(t, { ...base, viewer: rh }))).ok).toBe(false);
+  expect(await tx((t) => sendSupportMedia(t, media))).toEqual({ ok: true });
+  expect(await tx((t) => sendSupportMedia(t, media))).toEqual({ ok: true });
+  expect(await tx((t) => checkSupportMediaReply(t, { ...base, viewer: admin }))).toMatchObject({ ok: true, data: { alreadyQueued: true } });
+
+  const rows = await tx((t) => t.select().from(schema.supportMessages).where(and(eq(schema.supportMessages.conversationId, id), eq(schema.supportMessages.direction, "outbound"))));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({ messageType: "document", content: { id: "123456789", filename: "balanco.pdf", caption: "Segue o balanço" } });
+  const view = await tx((t) => loadSupportConversation(t, { ...base, viewer: admin }));
+  expect(view?.timeline.find((item) => item.kind === "message" && item.id === rows[0].id)).toMatchObject({
+    file: { name: "balanco.pdf", caption: "Segue o balanço" }, delivery: "sending",
+  });
+
+  const calls: Record<string, unknown>[] = [];
+  const fetchOk = (async (_url: URL, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    calls.push(body);
+    return new Response(JSON.stringify({ messages: [{ id: `wamid.media${calls.length}` }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  await runSupportOutboxCycle(50, fetchOk);
+  expect(calls.filter((body) => body.to === phone)).toEqual([{
+    messaging_product: "whatsapp", recipient_type: "individual", to: phone, type: "document",
+    document: { id: "123456789", filename: "balanco.pdf", caption: "Segue o balanço" },
+  }]);
+});
+
 test("passadas 24 horas, a Guilda não tenta responder", async () => {
   const { takeSupportConversation, sendSupportReply, loadSupportConversation } = await import("./inbox");
   const old = new Date(NOW.getTime() - 25 * 3_600_000);

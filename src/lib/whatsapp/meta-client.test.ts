@@ -10,8 +10,10 @@ import {
   exchangeEmbeddedSignupCode,
   resolveEmbeddedSignupWabaId,
   resolveCoexistencePhone,
+  sendWhatsAppMedia,
   sendWhatsAppTemplate,
   subscribeWhatsAppWebhook,
+  uploadWhatsAppMedia,
 } from "./meta-client";
 
 const config = {
@@ -30,6 +32,52 @@ function fetchReturning(payload: unknown, status = 200) {
 }
 
 describe("cliente seguro da Meta", () => {
+  test("sobe arquivo no número conectado e envia o id como documento com legenda", async () => {
+    const upload = fetchReturning({ id: "987654321" });
+    const mediaId = await uploadWhatsAppMedia({
+      phoneNumberId: "222222",
+      accessToken: "EA-token",
+      bytes: new Uint8Array([37, 80, 68, 70]).buffer,
+      mimeType: "application/pdf",
+      filename: "balanco.pdf",
+    }, config, upload);
+    expect(mediaId).toBe("987654321");
+    const [uploadUrl, uploadInit] = (upload as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(String(uploadUrl)).toContain("/v24.0/222222/media");
+    expect(new Headers(uploadInit.headers).get("authorization")).toBe("Bearer EA-token");
+    expect(new Headers(uploadInit.headers).get("content-type")).toBeNull();
+    const form = uploadInit.body as FormData;
+    expect(form.get("messaging_product")).toBe("whatsapp");
+    expect(form.get("type")).toBe("application/pdf");
+    expect((form.get("file") as File).name).toBe("balanco.pdf");
+
+    const send = fetchReturning({ messages: [{ id: "wamid.documento" }] });
+    await expect(sendWhatsAppMedia({
+      phoneNumberId: "222222", accessToken: "EA-token", to: "5554911110000",
+      kind: "document", mediaId, filename: "balanco.pdf", caption: "Segue o balanço",
+    }, config, send)).resolves.toBe("wamid.documento");
+    const [sendUrl, sendInit] = (send as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(String(sendUrl)).toContain("/v24.0/222222/messages");
+    expect(JSON.parse(String(sendInit.body))).toMatchObject({
+      messaging_product: "whatsapp", type: "document", to: "5554911110000",
+      document: { id: "987654321", filename: "balanco.pdf", caption: "Segue o balanço" },
+    });
+  });
+
+  test("recusa id de mídia inválido e não faz chamada à Meta", async () => {
+    const send = fetchReturning({ messages: [{ id: "wamid" }] });
+    await expect(sendWhatsAppMedia({ phoneNumberId: "222222", accessToken: "EA-token", to: "5554911110000", kind: "image", mediaId: "outro" }, config, send)).rejects.toBeInstanceOf(Error);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  test("foto sai como imagem, sem nome de documento", async () => {
+    const send = fetchReturning({ messages: [{ id: "wamid.foto" }] });
+    await sendWhatsAppMedia({ phoneNumberId: "222222", accessToken: "EA-token", to: "5554911110000", kind: "image", mediaId: "12345", caption: "Comprovante" }, config, send);
+    const [, init] = (send as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(JSON.parse(String(init.body))).toMatchObject({ type: "image", image: { id: "12345", caption: "Comprovante" } });
+    expect(JSON.parse(String(init.body)).image).not.toHaveProperty("filename");
+  });
+
   test("troca o code usando somente a configuração do servidor", async () => {
     const fetchMock = fetchReturning({ access_token: "EA-access-token-valido" });
     await expect(

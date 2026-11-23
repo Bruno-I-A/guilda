@@ -12,7 +12,7 @@ import { metaErrorMessage } from "@/domain/support-inbox";
 
 import { loadWhatsAppChannelAccess } from "./channel-repository";
 import { getWhatsAppConfig } from "./config";
-import { MetaGraphError, sendWhatsAppText, type MetaServerConfig } from "./meta-client";
+import { MetaGraphError, sendWhatsAppMedia, sendWhatsAppText, type MetaServerConfig } from "./meta-client";
 
 type OutboxClaim = Readonly<{ id: string; orgId: string; channelId: string; claimToken: string }>;
 
@@ -142,7 +142,26 @@ async function deliver(claim: OutboxClaim, config: MetaServerConfig, fetchImpl: 
   try {
     const access = await loadWhatsAppChannelAccess({ orgId: claim.orgId, channelId: claim.channelId });
     if (!access?.channel.phoneNumberId) throw new Error("Canal do WhatsApp sem acesso configurado.");
-    const wamid = await sendWhatsAppText({ phoneNumberId: access.channel.phoneNumberId, accessToken: access.accessToken, to, text }, config, fetchImpl);
+    const media = item.payload.media;
+    let wamid: string;
+    if (media !== undefined) {
+      if (!media || typeof media !== "object" || Array.isArray(media)) throw new MetaGraphError("send_message", 400);
+      const value = media as Record<string, unknown>;
+      if ((value.kind !== "image" && value.kind !== "document") || typeof value.id !== "string") {
+        throw new MetaGraphError("send_message", 400);
+      }
+      wamid = await sendWhatsAppMedia({
+        phoneNumberId: access.channel.phoneNumberId,
+        accessToken: access.accessToken,
+        to,
+        kind: value.kind,
+        mediaId: value.id,
+        filename: typeof value.filename === "string" ? value.filename : undefined,
+        caption: typeof value.caption === "string" ? value.caption : undefined,
+      }, config, fetchImpl);
+    } else {
+      wamid = await sendWhatsAppText({ phoneNumberId: access.channel.phoneNumberId, accessToken: access.accessToken, to, text }, config, fetchImpl);
+    }
     await recordAccepted(claim, item.messageId, wamid);
     await finishOutbox(claim, true, null);
     return true;

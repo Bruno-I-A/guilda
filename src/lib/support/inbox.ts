@@ -19,6 +19,7 @@ import {
   type SupportViewer,
 } from "@/domain/support-inbox";
 import { documentFilename } from "@/domain/support-media";
+import { validateSupportUpload } from "@/domain/support-upload";
 
 import { loadTranscriptions, type TranscriptionStatus } from "./transcription";
 import { err, type ActionResult } from "@/lib/action-context";
@@ -673,18 +674,17 @@ export async function addSupportNote(tx: OrgTx, input: Command & { text: string 
   return { ok: true };
 }
 
-/**
- * Responde o cliente: grava a mensagem e a saída na mesma transação, e o
- * processo de atendimento entrega à Meta. O telefone sai do cadastro do contato,
- * nunca do navegador. A chave do formulário impede a mensagem em dobro.
- */
-export async function sendSupportReply(tx: OrgTx, input: Command & { text: string; requestId: string }): Promise<ActionResult> {
+type ReplyPermit = { channelId: string; to: string; queuedKey: string; alreadyQueued: boolean };
+type ReplyPermitResult = { ok: true; data: ReplyPermit } | { ok: false; error: string };
+
+/** Mesma autorização antes do upload e, novamente, antes de enfileirar o envio. */
+async function prepareSupportReply(tx: OrgTx, input: Command & { requestId: string }): Promise<ReplyPermitResult> {
   const row = await lockConversation(tx, input);
   if (!row) return err(NOT_FOUND);
   const events = schema.supportMessageEvents;
   const queuedKey = createHash("sha256").update(`reply\0${row.id}\0${input.requestId}`, "utf8").digest("hex");
   const [already] = await tx.select({ id: events.id }).from(events).where(and(eq(events.orgId, input.orgId), eq(events.providerEventKey, queuedKey))).limit(1);
-  if (already) return { ok: true };
+  if (already) return { ok: true, data: { channelId: row.channelId, to: "", queuedKey, alreadyQueued: true } };
 
   const ch = schema.supportWhatsAppChannels;
   const [channel] = await tx.select({ status: ch.status }).from(ch).where(and(eq(ch.orgId, input.orgId), eq(ch.id, row.channelId)));
@@ -705,13 +705,33 @@ export async function sendSupportReply(tx: OrgTx, input: Command & { text: strin
   });
   if (blocked) return err(blocked);
   if (!contact) return err(NOT_FOUND);
+  return { ok: true, data: { channelId: row.channelId, to: contact.whatsappId, queuedKey, alreadyQueued: false } };
+}
+
+export async function checkSupportMediaReply(tx: OrgTx, input: Command & { requestId: string }): Promise<ActionResult<{ channelId: string; alreadyQueued: boolean }>> {
+  const permit = await prepareSupportReply(tx, input);
+  if (!permit.ok) return permit;
+  return { ok: true, data: { channelId: permit.data.channelId, alreadyQueued: permit.data.alreadyQueued } };
+}
+
+/**
+ * Responde o cliente: grava a mensagem e a saída na mesma transação, e o
+ * processo de atendimento entrega à Meta. O telefone sai do cadastro do contato,
+ * nunca do navegador. A chave do formulário impede a mensagem em dobro.
+ */
+export async function sendSupportReply(tx: OrgTx, input: Command & { text: string; requestId: string }): Promise<ActionResult> {
+  const permit = await prepareSupportReply(tx, input);
+  if (!permit.ok) return permit;
+  const target = permit.data;
+  if (target.alreadyQueued) return { ok: true };
+  const events = schema.supportMessageEvents;
 
   const [message] = await tx
     .insert(messages)
     .values({
       orgId: input.orgId,
-      channelId: row.channelId,
-      conversationId: row.id,
+      channelId: target.channelId,
+      conversationId: input.conversationId,
       direction: "outbound",
       actor: "attendant",
       source: "guilda_attendant",
@@ -721,8 +741,49 @@ export async function sendSupportReply(tx: OrgTx, input: Command & { text: strin
       occurredAt: input.now,
     })
     .returning({ id: messages.id });
-  await tx.insert(events).values({ orgId: input.orgId, messageId: message.id, eventType: "queued", providerEventKey: queuedKey, occurredAt: input.now });
-  await tx.insert(schema.supportOutbox).values({ orgId: input.orgId, channelId: row.channelId, messageId: message.id, payload: { to: contact.whatsappId, text: input.text } });
-  await tx.update(c).set({ lastMessageAt: input.now, updatedAt: input.now }).where(and(eq(c.orgId, input.orgId), eq(c.id, row.id)));
+  await tx.insert(events).values({ orgId: input.orgId, messageId: message.id, eventType: "queued", providerEventKey: target.queuedKey, occurredAt: input.now });
+  await tx.insert(schema.supportOutbox).values({ orgId: input.orgId, channelId: target.channelId, messageId: message.id, payload: { to: target.to, text: input.text } });
+  await tx.update(c).set({ lastMessageAt: input.now, updatedAt: input.now }).where(and(eq(c.orgId, input.orgId), eq(c.id, input.conversationId)));
+  return { ok: true };
+}
+
+/** Guarda só o id da mídia da Meta; o arquivo não vai para o Postgres. */
+export async function sendSupportMedia(
+  tx: OrgTx,
+  input: Command & { requestId: string; mediaId: string; kind: "image" | "document"; mimeType: string; filename: string; caption: string },
+): Promise<ActionResult> {
+  const spec = validateSupportUpload({ name: input.filename, type: input.mimeType, size: 1 });
+  if (!/^\d{1,32}$/.test(input.mediaId) || input.caption.length > 1024 || !spec.ok || spec.value.kind !== input.kind) return err("Arquivo inválido.");
+  const permit = await prepareSupportReply(tx, input);
+  if (!permit.ok) return permit;
+  const target = permit.data;
+  if (target.alreadyQueued) return { ok: true };
+
+  const content = {
+    id: input.mediaId,
+    mime_type: input.mimeType,
+    ...(input.kind === "document" ? { filename: input.filename } : {}),
+    ...(input.caption ? { caption: input.caption } : {}),
+  };
+  const [message] = await tx.insert(messages).values({
+    orgId: input.orgId,
+    channelId: target.channelId,
+    conversationId: input.conversationId,
+    direction: "outbound",
+    actor: "attendant",
+    source: "guilda_attendant",
+    messageType: input.kind,
+    content,
+    sentByUserId: input.viewer.userId,
+    occurredAt: input.now,
+  }).returning({ id: messages.id });
+  await tx.insert(schema.supportMessageEvents).values({ orgId: input.orgId, messageId: message.id, eventType: "queued", providerEventKey: target.queuedKey, occurredAt: input.now });
+  await tx.insert(schema.supportOutbox).values({
+    orgId: input.orgId,
+    channelId: target.channelId,
+    messageId: message.id,
+    payload: { to: target.to, media: { id: input.mediaId, kind: input.kind, filename: input.filename, caption: input.caption } },
+  });
+  await tx.update(c).set({ lastMessageAt: input.now, updatedAt: input.now }).where(and(eq(c.orgId, input.orgId), eq(c.id, input.conversationId)));
   return { ok: true };
 }

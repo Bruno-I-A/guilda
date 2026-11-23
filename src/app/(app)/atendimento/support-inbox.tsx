@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Hand, ImageOff, LoaderCircle, Maximize2, Plus, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, FileText, Hand, ImageOff, LoaderCircle, Maximize2, Paperclip, Plus, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCnpj } from "@/domain/cnpj";
+import { SUPPORT_UPLOAD_ACCEPT, validateSupportCaption, validateSupportUpload } from "@/domain/support-upload";
 import { contactInitials, DELIVERY_LABELS, elapsedLabel, SUPPORT_FILTERS, SUPPORT_STATUS_LABELS, type DeliveryState, type SupportFilter, type SupportStatus } from "@/domain/support-inbox";
 import type { ActionResult } from "@/lib/action-context";
 import { APP_TIME_ZONE } from "@/lib/date-time";
@@ -205,16 +206,50 @@ function TimelineItem({ item }: { item: SupportTimelineItem }) {
 
 function Composer({ conversation }: { conversation: SupportConversationView }) {
   const { pending, run } = useCommand();
+  const router = useRouter();
+  const fileInput = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<"reply" | "note">(conversation.replyBlocked ? "note" : "reply");
   const [text, setText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   // Chave do envio: clicar duas vezes não manda a mensagem em dobro.
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const canReply = !conversation.replyBlocked;
   const effective = canReply ? mode : "note";
 
-  function submit() {
+  async function submit() {
     const body = text.trim();
-    if (!body) return;
+    if (!body && !file) return;
+    if (effective === "reply" && file) {
+      const caption = validateSupportCaption(body);
+      if (caption === null) {
+        toast.error("Legenda muito longa (até 1024 caracteres).");
+        return;
+      }
+      const form = new FormData();
+      form.set("file", file);
+      form.set("caption", caption);
+      form.set("requestId", requestId);
+      setUploading(true);
+      try {
+        const response = await fetch(`/api/atendimento/conversations/${conversation.id}/media`, { method: "POST", body: form, cache: "no-store" });
+        const result: { ok?: boolean; error?: string } = await response.json();
+        if (!response.ok || !result.ok) {
+          toast.error(result.error ?? "Não foi possível anexar o arquivo.");
+          return;
+        }
+        setFile(null);
+        if (fileInput.current) fileInput.current.value = "";
+        setText("");
+        setRequestId(crypto.randomUUID());
+        router.refresh();
+      } catch {
+        toast.error("Falha de conexão. Tente novamente; o arquivo não será enviado em dobro.");
+      } finally {
+        setUploading(false);
+      }
+      return;
+    }
     const done = () => {
       setText("");
       setRequestId(crypto.randomUUID());
@@ -227,29 +262,57 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
     <div className="grid shrink-0 gap-2 border-t bg-card p-3 sm:px-5 sm:py-3">
       {conversation.replyBlocked ? <p className="text-xs text-muted-foreground">{conversation.replyBlocked} Você ainda pode deixar uma nota para a equipe.</p> : null}
       <div className="flex gap-1" role="group" aria-label="Tipo de texto">
-        <Button type="button" size="sm" variant={effective === "reply" ? "secondary" : "ghost"} disabled={!canReply} aria-pressed={effective === "reply"} onClick={() => setMode("reply")}>Responder</Button>
-        <Button type="button" size="sm" variant={effective === "note" ? "secondary" : "ghost"} aria-pressed={effective === "note"} onClick={() => setMode("note")}><StickyNote aria-hidden /> Nota interna</Button>
+        <Button type="button" size="sm" variant={effective === "reply" ? "secondary" : "ghost"} disabled={!canReply || uploading} aria-pressed={effective === "reply"} onClick={() => setMode("reply")}>Responder</Button>
+        <Button type="button" size="sm" variant={effective === "note" ? "secondary" : "ghost"} disabled={uploading} aria-pressed={effective === "note"} onClick={() => { setMode("note"); setFile(null); if (fileInput.current) fileInput.current.value = ""; }}><StickyNote aria-hidden /> Nota interna</Button>
       </div>
+      <input
+        ref={fileInput}
+        type="file"
+        accept={SUPPORT_UPLOAD_ACCEPT}
+        className="sr-only"
+        tabIndex={-1}
+        onChange={(event) => {
+          const selected = event.target.files?.[0];
+          if (!selected) return;
+          const checked = validateSupportUpload(selected);
+          if (!checked.ok) {
+            toast.error(checked.error);
+            event.target.value = "";
+            return;
+          }
+          setFile(selected);
+          setRequestId(crypto.randomUUID());
+        }}
+      />
+      {effective === "reply" && file ? (
+        <div className="flex min-w-0 items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+          <FileText className="size-4 shrink-0 text-primary" aria-hidden />
+          <span className="min-w-0 flex-1 truncate" title={file.name}>{file.name}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">{(file.size / 1024 / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB</span>
+          <Button type="button" size="icon-sm" variant="ghost" aria-label="Remover anexo" disabled={uploading} onClick={() => { setFile(null); if (fileInput.current) fileInput.current.value = ""; }}><X aria-hidden /></Button>
+        </div>
+      ) : null}
       <Textarea
         rows={2}
-        maxLength={effective === "reply" ? 4096 : 4000}
+        maxLength={effective === "reply" ? file ? 1024 : 4096 : 4000}
         aria-label={effective === "reply" ? "Mensagem para o cliente" : "Nota interna para a equipe"}
-        placeholder={effective === "reply" ? "Escreva para o cliente" : "Só a equipe vê esta nota"}
+        placeholder={effective === "reply" ? file ? "Legenda opcional para o arquivo" : "Escreva para o cliente" : "Só a equipe vê esta nota"}
         className={cn(effective === "note" && "border-warning/40")}
         value={text}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
             event.preventDefault();
-            submit();
+            void submit();
           }
         }}
       />
       <div className="flex items-center justify-between gap-2">
         <span className="hidden text-xs text-muted-foreground sm:inline">Ctrl + Enter envia</span>
-        <Button type="button" size="sm" className="ml-auto" disabled={pending || !text.trim()} onClick={submit}>
-          {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : effective === "reply" ? <Send aria-hidden /> : <StickyNote aria-hidden />}
-          {effective === "reply" ? "Enviar ao cliente" : "Salvar nota"}
+        {effective === "reply" ? <Button type="button" size="sm" variant="outline" disabled={pending || uploading} onClick={() => fileInput.current?.click()}><Paperclip aria-hidden /> Anexar</Button> : null}
+        <Button type="button" size="sm" className="ml-auto" disabled={pending || uploading || (!text.trim() && !file)} onClick={() => void submit()}>
+          {pending || uploading ? <LoaderCircle className="animate-spin" aria-hidden /> : effective === "reply" ? <Send aria-hidden /> : <StickyNote aria-hidden />}
+          {uploading ? "Enviando arquivo…" : effective === "reply" ? "Enviar ao cliente" : "Salvar nota"}
         </Button>
       </div>
     </div>
