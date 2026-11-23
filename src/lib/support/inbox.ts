@@ -19,6 +19,7 @@ import {
   type SupportViewer,
 } from "@/domain/support-inbox";
 import { documentFilename } from "@/domain/support-media";
+import { validateSupportUpload } from "@/domain/support-upload";
 
 import { loadTranscriptions, type TranscriptionStatus } from "./transcription";
 import { err, type ActionResult } from "@/lib/action-context";
@@ -673,6 +674,13 @@ export async function addSupportNote(tx: OrgTx, input: Command & { text: string 
   return { ok: true };
 }
 
+/** A mesma régua de texto e áudio, antes de carregar a mídia na Meta. */
+export async function checkSupportMediaReply(tx: OrgTx, input: Command & { requestId: string }): Promise<ActionResult<{ channelId: string; alreadyQueued: boolean }>> {
+  const target = await replyTarget(tx, input);
+  if (!("row" in target)) return target;
+  return { ok: true, data: { channelId: target.row.channelId, alreadyQueued: target.duplicate } };
+}
+
 /**
  * Responde o cliente: grava a mensagem e a saída na mesma transação, e o
  * processo de atendimento entrega à Meta. O telefone sai do cadastro do contato,
@@ -702,6 +710,47 @@ export async function sendSupportReply(tx: OrgTx, input: Command & { text: strin
     .returning({ id: messages.id });
   await tx.insert(events).values({ orgId: input.orgId, messageId: message.id, eventType: "queued", providerEventKey: queuedKey, occurredAt: input.now });
   await tx.insert(schema.supportOutbox).values({ orgId: input.orgId, channelId: row.channelId, messageId: message.id, payload: { to: contact.whatsappId, text: input.text } });
+  await tx.update(c).set({ lastMessageAt: input.now, updatedAt: input.now }).where(and(eq(c.orgId, input.orgId), eq(c.id, row.id)));
+  return { ok: true };
+}
+
+/** Guarda só o id da mídia da Meta; o arquivo não vai para o Postgres. */
+export async function sendSupportMedia(
+  tx: OrgTx,
+  input: Command & { requestId: string; mediaId: string; kind: "image" | "document"; mimeType: string; filename: string; caption: string },
+): Promise<ActionResult> {
+  const spec = validateSupportUpload({ name: input.filename, type: input.mimeType, size: 1 });
+  if (!/^\d{1,32}$/.test(input.mediaId) || input.caption.length > 1024 || !spec.ok || spec.value.kind !== input.kind) return err("Arquivo inválido.");
+  const target = await replyTarget(tx, input);
+  if (!("row" in target)) return target;
+  if (target.duplicate) return { ok: true };
+  const { row, contact, queuedKey } = target;
+
+  const content = {
+    id: input.mediaId,
+    mime_type: input.mimeType,
+    ...(input.kind === "document" ? { filename: input.filename } : {}),
+    ...(input.caption ? { caption: input.caption } : {}),
+  };
+  const [message] = await tx.insert(messages).values({
+    orgId: input.orgId,
+    channelId: row.channelId,
+    conversationId: row.id,
+    direction: "outbound",
+    actor: "attendant",
+    source: "guilda_attendant",
+    messageType: input.kind,
+    content,
+    sentByUserId: input.viewer.userId,
+    occurredAt: input.now,
+  }).returning({ id: messages.id });
+  await tx.insert(schema.supportMessageEvents).values({ orgId: input.orgId, messageId: message.id, eventType: "queued", providerEventKey: queuedKey, occurredAt: input.now });
+  await tx.insert(schema.supportOutbox).values({
+    orgId: input.orgId,
+    channelId: row.channelId,
+    messageId: message.id,
+    payload: { to: contact.whatsappId, media: { id: input.mediaId, kind: input.kind, filename: input.filename, caption: input.caption } },
+  });
   await tx.update(c).set({ lastMessageAt: input.now, updatedAt: input.now }).where(and(eq(c.orgId, input.orgId), eq(c.id, row.id)));
   return { ok: true };
 }

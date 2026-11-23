@@ -26,12 +26,12 @@ export class MetaGraphError extends Error {
       | "list_phones"
       | "subscribe_webhook"
       | "send_message"
+      | "upload_media"
       | "send_template"
       | "get_template"
       | "create_template"
       | "get_media_url"
-      | "download_media"
-      | "upload_media",
+      | "download_media",
     readonly httpStatus: number,
     readonly graphCode?: number,
     readonly graphType?: string,
@@ -236,8 +236,8 @@ export async function sendWhatsAppText(
 }
 
 /**
- * Sobe uma mídia para o número (2026-11-23: a nota de voz gravada na conversa)
- * e devolve o id da Meta, que a mensagem usa em seguida.
+ * Sobe foto, documento ou nota de voz no mesmo número que fará o envio.
+ * O navegador nunca recebe o token nem o id do canal.
  */
 export async function uploadWhatsAppMedia(
   input: { phoneNumberId: string; accessToken: string; bytes: Uint8Array; mimeType: string; fileName: string },
@@ -253,11 +253,38 @@ export async function uploadWhatsAppMedia(
     headers: { authorization: `Bearer ${input.accessToken}` },
     body: form,
     cache: "no-store",
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(45_000),
   });
   const payload = await responsePayload(response);
-  if (!response.ok || typeof payload.id !== "string") throw graphError("upload_media", response, payload);
+  if (!response.ok || typeof payload.id !== "string" || !/^\d{1,32}$/.test(payload.id)) {
+    throw graphError("upload_media", response, payload);
+  }
   return payload.id;
+}
+
+/** Envia foto ou documento já carregado no mesmo número do WhatsApp. */
+export async function sendWhatsAppMedia(
+  input: { phoneNumberId: string; accessToken: string; to: string; kind: "image" | "document"; mediaId: string; filename?: string; caption?: string },
+  config: MetaServerConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  if (!/^\d{1,32}$/.test(input.mediaId)) throw new MetaGraphError("send_message", 400);
+  const media = {
+    id: input.mediaId,
+    ...(input.caption ? { caption: input.caption } : {}),
+    ...(input.kind === "document" && input.filename ? { filename: input.filename } : {}),
+  };
+  const response = await fetchImpl(graphUrl(config, `/${input.phoneNumberId}/messages`), {
+    method: "POST",
+    headers: { authorization: `Bearer ${input.accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: input.to, type: input.kind, [input.kind]: media }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const payload = await responsePayload(response);
+  const sent = Array.isArray(payload.messages) ? (payload.messages[0] as { id?: unknown } | undefined) : undefined;
+  if (!response.ok || typeof sent?.id !== "string") throw graphError("send_message", response, payload);
+  return sent.id;
 }
 
 /** Áudio já enviado à Meta: OGG/Opus chega ao cliente como nota de voz. */

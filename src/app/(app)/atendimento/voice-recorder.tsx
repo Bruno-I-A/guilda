@@ -22,7 +22,7 @@ function stopTracks(stream: MediaStream | null) {
  * durante a gravação para e envia, como no WhatsApp. Em 5 minutos a gravação
  * para e espera o clique: microfone esquecido ligado não vira áudio enviado.
  */
-export function VoiceRecorder({ conversationId, onActiveChange }: { conversationId: string; onActiveChange: (active: boolean) => void }) {
+export function VoiceRecorder({ conversationId, onActiveChange, disabled = false }: { conversationId: string; onActiveChange: (active: boolean) => void; disabled?: boolean }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("idle");
   const [seconds, setSeconds] = useState(0);
@@ -141,7 +141,7 @@ export function VoiceRecorder({ conversationId, onActiveChange }: { conversation
 
   if (phase === "idle" || phase === "starting") {
     return (
-      <Button type="button" size="sm" variant="ghost" disabled={phase === "starting"} onClick={start} aria-label="Gravar nota de voz">
+      <Button type="button" size="sm" variant="ghost" disabled={disabled || phase === "starting"} onClick={start} aria-label="Gravar nota de voz">
         {phase === "starting" ? <LoaderCircle className="animate-spin" aria-hidden /> : <Mic aria-hidden />}
         <span className="hidden sm:inline">Gravar áudio</span>
       </Button>
