@@ -30,7 +30,8 @@ export class MetaGraphError extends Error {
       | "get_template"
       | "create_template"
       | "get_media_url"
-      | "download_media",
+      | "download_media"
+      | "upload_media",
     readonly httpStatus: number,
     readonly graphCode?: number,
     readonly graphType?: string,
@@ -231,6 +232,50 @@ export async function sendWhatsAppText(
   if (!response.ok || typeof sent?.id !== "string") {
     throw graphError("send_message", response, payload);
   }
+  return sent.id;
+}
+
+/**
+ * Sobe uma mídia para o número (2026-11-23: a nota de voz gravada na conversa)
+ * e devolve o id da Meta, que a mensagem usa em seguida.
+ */
+export async function uploadWhatsAppMedia(
+  input: { phoneNumberId: string; accessToken: string; bytes: Uint8Array; mimeType: string; fileName: string },
+  config: Pick<MetaServerConfig, "graphApiVersion">,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const form = new FormData();
+  form.set("messaging_product", "whatsapp");
+  form.set("type", input.mimeType);
+  form.set("file", new Blob([new Uint8Array(input.bytes)], { type: input.mimeType }), input.fileName);
+  const response = await fetchImpl(graphUrl(config, `/${input.phoneNumberId}/media`), {
+    method: "POST",
+    headers: { authorization: `Bearer ${input.accessToken}` },
+    body: form,
+    cache: "no-store",
+    signal: AbortSignal.timeout(30_000),
+  });
+  const payload = await responsePayload(response);
+  if (!response.ok || typeof payload.id !== "string") throw graphError("upload_media", response, payload);
+  return payload.id;
+}
+
+/** Áudio já enviado à Meta: OGG/Opus chega ao cliente como nota de voz. */
+export async function sendWhatsAppAudio(
+  input: { phoneNumberId: string; accessToken: string; to: string; mediaId: string },
+  config: MetaServerConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const response = await fetchImpl(graphUrl(config, `/${input.phoneNumberId}/messages`), {
+    method: "POST",
+    headers: { authorization: `Bearer ${input.accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: input.to, type: "audio", audio: { id: input.mediaId } }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const payload = await responsePayload(response);
+  const sent = Array.isArray(payload.messages) ? (payload.messages[0] as { id?: unknown } | undefined) : undefined;
+  if (!response.ok || typeof sent?.id !== "string") throw graphError("send_message", response, payload);
   return sent.id;
 }
 
