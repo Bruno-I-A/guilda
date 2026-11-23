@@ -76,8 +76,19 @@ test("(1) fecha a confusão entre guia de imposto e financeiro do escritório", 
 test('regressão (03/08/2026): "guia" sozinha não joga tudo em fiscal', () => {
   const texto = prompt();
   assert.match(texto, /a palavra "guia" sozinha NAO decide o setor/);
-  assert.match(texto, /guia de FGTS, de INSS de funcionario, de 13o salario/);
-  assert.match(texto, /INSS tem dois donos/);
+  assert.match(texto, /guia de FGTS, de INSS \(de funcionario ou do socio\), de 13o salario/);
+});
+
+/**
+ * Regra do escritório (23/11/2026, Bruno): toda guia de INSS é do RH, inclusive a
+ * do sócio. O prompt do Scharff mandava o INSS do sócio para o contábil.
+ */
+test("guia de INSS, de funcionário ou de sócio, vai para o RH", () => {
+  const texto = prompt();
+  assert.match(texto, /Guia de INSS e sempre trabalhista\/dp neste escritorio, seja de funcionario, seja do socio/);
+  assert.match(texto, /toda guia de INSS \(de funcionario e do socio, pelo pro-labore\)/);
+  assert.doesNotMatch(texto, /INSS tem dois donos/);
+  assert.doesNotMatch(texto, /o do SOCIO acompanha o pro-labore e e contabil/);
 });
 
 test('regressão (03/08/2026): "quero a nota do mês" tem que cair em fiscal, não contábil', () => {

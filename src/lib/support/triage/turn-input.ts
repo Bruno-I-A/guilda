@@ -17,7 +17,7 @@ import type { MensagemHistoricoClassificacao } from "./contexto";
  */
 
 /** Bump quando o prompt mudar de verdade: a leitura antiga fica marcada com a versão dela. */
-export const TRIAGE_PROMPT_VERSION = "guilda-2026-11-19-v3";
+export const TRIAGE_PROMPT_VERSION = "guilda-2026-11-23-v4";
 
 const HISTORY_LIMIT = 20;
 
