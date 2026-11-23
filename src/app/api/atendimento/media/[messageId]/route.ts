@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { withOrgTx } from "@/db/org-tx";
+import { DOCUMENT_MAX_BYTES, documentResponseHeaders } from "@/domain/support-media";
 import { requireMemberContext } from "@/lib/action-context";
 import {
   loadSupportMediaReference,
@@ -8,7 +9,7 @@ import {
 } from "@/lib/support/inbox";
 import { loadWhatsAppChannelAccess } from "@/lib/whatsapp/channel-repository";
 import { getWhatsAppConfig } from "@/lib/whatsapp/config";
-import { downloadWhatsAppImage } from "@/lib/whatsapp/meta-client";
+import { downloadWhatsAppImage, downloadWhatsAppMedia, MetaGraphError } from "@/lib/whatsapp/meta-client";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -26,13 +27,16 @@ function plain(status: number, message: string): Response {
   });
 }
 
-/** Foto do WhatsApp com sessão, tenant e visibilidade da conversa conferidos. */
+/**
+ * Foto ou documento do WhatsApp com sessão, tenant e visibilidade da conversa
+ * conferidos. Documento (2026-11-23): PDF abre no navegador; o resto baixa.
+ */
 export async function GET(
   _request: Request,
   context: { params: Promise<{ messageId: string }> },
 ): Promise<Response> {
   const parsed = paramsSchema.safeParse(await context.params);
-  if (!parsed.success) return plain(400, "Foto inválida.");
+  if (!parsed.success) return plain(400, "Arquivo inválido.");
 
   const member = await requireMemberContext();
   if (!member.ok) return plain(401, member.error);
@@ -49,7 +53,7 @@ export async function GET(
       messageId: parsed.data.messageId,
     });
   });
-  if (!reference) return plain(404, "Foto não encontrada.");
+  if (!reference) return plain(404, "Arquivo não encontrado.");
 
   const access = await loadWhatsAppChannelAccess({
     orgId: member.orgId,
@@ -58,18 +62,22 @@ export async function GET(
   if (!access || access.channel.status !== "active") {
     return plain(503, "WhatsApp indisponível.");
   }
+  const media = {
+    mediaId: reference.mediaId,
+    phoneNumberId: access.channel.phoneNumberId,
+    accessToken: access.accessToken,
+  };
+  const config = { graphApiVersion: getWhatsAppConfig().graphApiVersion };
 
   try {
-    const image = await downloadWhatsAppImage(
-      {
-        mediaId: reference.mediaId,
-        phoneNumberId: access.channel.phoneNumberId,
-        accessToken: access.accessToken,
-      },
-      {
-        graphApiVersion: getWhatsAppConfig().graphApiVersion,
-      },
-    );
+    if (reference.kind === "document") {
+      const document = await downloadWhatsAppMedia({ ...media, allowedMimeTypes: null, maxBytes: DOCUMENT_MAX_BYTES }, config);
+      return new Response(document.bytes, {
+        status: 200,
+        headers: documentResponseHeaders({ filename: reference.filename, mimeType: document.mimeType }),
+      });
+    }
+    const image = await downloadWhatsAppImage(media, config);
     return new Response(image.bytes, {
       status: 200,
       headers: {
@@ -80,9 +88,12 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error("Falha ao abrir foto do WhatsApp", {
+    if (error instanceof MetaGraphError && error.httpStatus === 413) {
+      return plain(413, "Arquivo grande demais para baixar pela Guilda (mais de 25 MB). Abra no WhatsApp do escritório.");
+    }
+    console.error("Falha ao abrir arquivo do WhatsApp", {
       error: error instanceof Error ? error.message : "erro desconhecido",
     });
-    return plain(502, "A foto não está mais disponível na Meta.");
+    return plain(502, "O arquivo não está mais disponível na Meta.");
   }
 }

@@ -296,8 +296,54 @@ test("foto recebida aparece no histórico e só pode ser aberta por quem vê a c
   expect(await tx((t) => loadSupportMediaReference(t, { orgId: ORG, viewer: fiscal, messageId: message.id }))).toEqual({
     channelId,
     mediaId: "987654321",
+    kind: "image",
+    filename: "documento",
   });
   expect(await tx((t) => loadSupportMediaReference(t, { orgId: ORG, viewer: rh, messageId: message.id }))).toBeNull();
+});
+
+test("documento recebido aparece para baixar, com legenda, e só para quem vê a conversa", async () => {
+  seq += 1;
+  const { runSupportInboundCycle } = await import("@/lib/whatsapp/inbound-worker");
+  await tx((t) =>
+    t.insert(schema.supportInboundEvents).values({
+      orgId: ORG,
+      channelId,
+      fingerprint: String(seq).padStart(64, "0"),
+      webhookField: "messages",
+      payload: {
+        contacts: [{ wa_id: "5554911110097", profile: { name: "Davi" } }],
+        messages: [{
+          id: `wamid.in${seq}`,
+          from: "5554911110097",
+          type: "document",
+          timestamp: String(Math.floor(NOW.getTime() / 1000)),
+          document: { id: "123456789", mime_type: "application/pdf", filename: "guia-inss-10-2026.pdf", caption: "Consegue recalcular?" },
+        }],
+      },
+    }),
+  );
+  expect((await runSupportInboundCycle()).failed).toBe(0);
+  const [message] = await tx((t) =>
+    t
+      .select({ id: schema.supportMessages.id, conversationId: schema.supportMessages.conversationId })
+      .from(schema.supportMessages)
+      .where(eq(schema.supportMessages.externalMessageId, `wamid.in${seq}`)),
+  );
+  const { loadSupportConversation, loadSupportMediaReference } = await import("./inbox");
+  const view = await tx((t) => loadSupportConversation(t, { orgId: ORG, viewer: admin, conversationId: message.conversationId, now: NOW }));
+  expect(view?.timeline.find((item) => item.kind === "message" && item.id === message.id)).toMatchObject({
+    image: null,
+    file: { href: `/api/atendimento/media/${message.id}`, name: "guia-inss-10-2026.pdf", caption: "Consegue recalcular?", isPdf: true },
+  });
+  expect(await tx((t) => loadSupportMediaReference(t, { orgId: ORG, viewer: fiscal, messageId: message.id }))).toBeNull();
+  await setClan(message.conversationId, FISCAL);
+  expect(await tx((t) => loadSupportMediaReference(t, { orgId: ORG, viewer: fiscal, messageId: message.id }))).toEqual({
+    channelId,
+    mediaId: "123456789",
+    kind: "document",
+    filename: "guia-inss-10-2026.pdf",
+  });
 });
 
 test("o envio chega à Meta com o token do canal, e o recibo acha a mensagem pelo id da Meta", async () => {

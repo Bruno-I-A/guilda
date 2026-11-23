@@ -369,7 +369,8 @@ export async function downloadWhatsAppMedia(
     mediaId: string;
     phoneNumberId: string;
     accessToken: string;
-    allowedMimeTypes: ReadonlySet<string>;
+    /** null aceita qualquer tipo: documento do cliente, que a rota sempre manda baixar. */
+    allowedMimeTypes: ReadonlySet<string> | null;
     maxBytes: number;
   },
   config: Pick<MetaServerConfig, "graphApiVersion">,
@@ -394,15 +395,18 @@ export async function downloadWhatsAppMedia(
   const mediaUrlValue = metadata.url;
   const mimeType = metadata.mime_type;
   const fileSize = metadata.file_size;
+  // Grande demais é recusa própria (413): a tela explica em vez de dizer "indisponível".
+  if (metadataResponse.ok && typeof fileSize === "number" && fileSize > maxBytes) {
+    throw new MetaGraphError("download_media", 413);
+  }
   if (
     !metadataResponse.ok ||
     typeof mediaUrlValue !== "string" ||
     typeof mimeType !== "string" ||
-    !input.allowedMimeTypes.has(mimeType) ||
+    (input.allowedMimeTypes !== null && !input.allowedMimeTypes.has(mimeType)) ||
     typeof fileSize !== "number" ||
     !Number.isSafeInteger(fileSize) ||
-    fileSize < 0 ||
-    fileSize > maxBytes
+    fileSize < 0
   ) {
     throw graphError("get_media_url", metadataResponse, metadata);
   }

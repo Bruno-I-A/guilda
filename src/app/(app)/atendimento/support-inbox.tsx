@@ -19,6 +19,7 @@ import type { SupportConversationView, SupportQueueRow, SupportTimelineItem } fr
 import { cn } from "@/lib/utils";
 
 import { addNote, linkContact, markWaiting, reopenConversation, resolveConversation, sendReply, takeConversation, transferConversation } from "./actions";
+import { MessageFile } from "./message-file";
 import { companyDisplayName } from "@/domain/company-display-name";
 
 const STATUS_CLASSES: Record<SupportStatus, string> = {
@@ -170,6 +171,8 @@ function TimelineItem({ item }: { item: SupportTimelineItem }) {
             <MessageImage src={item.image.src} caption={item.image.caption} />
             {item.image.caption ? <p className="whitespace-pre-wrap break-words">{item.image.caption}</p> : null}
           </>
+        ) : item.file ? (
+          <MessageFile file={item.file} />
         ) : (
           <p className={cn("whitespace-pre-wrap break-words", !item.isText && "italic text-muted-foreground")}>{item.text}</p>
         )}
