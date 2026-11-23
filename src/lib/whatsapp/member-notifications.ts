@@ -123,7 +123,17 @@ async function clanMembersWithWhatsApp(tx: OrgTx, orgId: string, clanId: string)
  */
 export async function enqueueMemberSupportHandoffNotifications(
   tx: OrgTx,
-  input: { orgId: string; userIds: readonly string[]; conversationId: string; roundKey: string; clanName: string; contactName: string; summary: string },
+  input: {
+    orgId: string;
+    userIds: readonly string[];
+    conversationId: string;
+    roundKey: string;
+    clanName: string;
+    contactName: string;
+    summary: string;
+    /** Fora do expediente, a abertura (2026-11-23); sem ele, sai na hora. */
+    scheduledFor?: Date | null;
+  },
 ): Promise<void> {
   if (input.userIds.length === 0) return;
   const members = await tx
@@ -152,6 +162,7 @@ export async function enqueueMemberSupportHandoffNotifications(
       supportConversationId: input.conversationId,
       dedupeKey: `support-conversation:${input.conversationId}:${input.roundKey}:user:${member.userId}`,
       payload,
+      ...(input.scheduledFor ? { scheduledFor: input.scheduledFor } : {}),
     }).onConflictDoNothing();
   }
 }

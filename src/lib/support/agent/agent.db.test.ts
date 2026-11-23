@@ -623,3 +623,36 @@ test("com o agente para todos, conversa nova abre rodada sem palavra; a que est�
   expect(view?.timeline.some((item) => item.kind === "event" && item.text === "Agente de IA começou o atendimento")).toBe(true);
   await mode("off");
 });
+
+test("fora do expediente: o agente avisa, encaminha e o aviso à equipe espera a abertura", async () => {
+  const { saveBusinessWeek, clearBusinessWeek } = await import("../business-hours");
+  const open = [["08:00", "12:00"], ["13:30", "18:00"]] as const;
+  // Só segunda: o relógio do teste é quinta, 19/11, às 9h (T0) mais os segundos.
+  await tx((t) => saveBusinessWeek(t, { orgId: ORG, userId: "admin", week: { 1: open, 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] }, now: new Date() }));
+  await setAgent(true);
+  // A conversa da empresa da Ana na Carteira: o assunto da Carteira vai para ela, que conectou o WhatsApp.
+  const { addSupportContactClient } = await import("../inbox");
+  setClock(3000);
+  const id = await customerSays("5554900000092", "oi", 2980);
+  await tx((t) => addSupportContactClient(t, { orgId: ORG, viewer: admin, conversationId: id, now: new Date(), clientId: COMPANY }));
+  await customerSays("5554900000092", "batata, preciso da guia atrasada", 2990);
+  replies = [{ setor: "fiscal", atendente: "carteira" }];
+  await cycle();
+  expect((await aiTexts(id)).at(-1)).toBe(
+    "Bom dia! Estamos fora do horário de atendimento. Encaminhei ao setor Fiscal. A equipe retorna segunda-feira, 23/11, às 8h e continua daqui.",
+  );
+  expect(await conversation(id)).toMatchObject({ status: "needs_human", assignedUserId: "ana" });
+  const notices = () => tx((t) => t.select().from(schema.memberWhatsAppOutbox).where(eq(schema.memberWhatsAppOutbox.supportConversationId, id)));
+  expect((await notices()).map((notice) => ({ userId: notice.userId, scheduledFor: notice.scheduledFor }))).toEqual([
+    { userId: "ana", scheduledFor: new Date("2026-11-23T11:00:00Z") },
+  ]);
+
+  // Antes da abertura o worker de avisos não pega este aviso.
+  const { runMemberWhatsAppNotificationCycle } = await import("@/lib/whatsapp/member-notification-worker");
+  const fetchSpy = (async () => new Response(JSON.stringify({ messages: [{ id: "wamid.aviso" }] }), { status: 200 })) as unknown as typeof fetch;
+  await runMemberWhatsAppNotificationCycle(20, fetchSpy);
+  expect((await notices()).map((notice) => notice.status)).toEqual(["pending"]);
+
+  await tx((t) => clearBusinessWeek(t, ORG));
+  await setAgent(false);
+});
