@@ -118,6 +118,22 @@ test("conversa nova precisa de pessoa, porque ainda não há IA", async () => {
   expect(conversation.status).toBe("needs_human");
 });
 
+test("abertas é a fila sem atendente; depois de assumir, a conversa fica só em Minhas", async () => {
+  const { loadSupportQueue, takeSupportConversation } = await import("./inbox");
+  const { id } = await customerSays("5554911110199", "Preciso de ajuda");
+  await setClan(id, FISCAL);
+
+  const before = await tx((t) => loadSupportQueue(t, { orgId: ORG, viewer: fiscal, filter: "open" }));
+  expect(before.rows.map((row) => row.id)).toContain(id);
+  expect(before.counts.open).toBeGreaterThan(0);
+
+  expect((await tx((t) => takeSupportConversation(t, { orgId: ORG, viewer: fiscal, conversationId: id, now: NOW }))).ok).toBe(true);
+  const open = await tx((t) => loadSupportQueue(t, { orgId: ORG, viewer: fiscal, filter: "open" }));
+  const mine = await tx((t) => loadSupportQueue(t, { orgId: ORG, viewer: fiscal, filter: "mine" }));
+  expect(open.rows.map((row) => row.id)).not.toContain(id);
+  expect(mine.rows.map((row) => row.id)).toContain(id);
+});
+
 test("membro só vê o clã dele; sem setor, só admin; outra organização não vê nada", async () => {
   const { loadSupportQueue, loadSupportConversation } = await import("./inbox");
   const { id } = await customerSays("5554911110002", "Oi");

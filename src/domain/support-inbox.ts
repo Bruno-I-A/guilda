@@ -16,14 +16,16 @@ export const SUPPORT_STATUS_LABELS: Record<SupportStatus, string> = {
   resolved: "Resolvida",
 };
 
-export type SupportFilter = "open" | "needs_human" | "mine" | "waiting" | "resolved";
+/**
+ * A caixa não é um histórico de estados: ela é a distribuição do trabalho.
+ * "open" é a fila geral, isto é, conversas que ninguém assumiu ainda.
+ */
+export type SupportFilter = "open" | "needs_human" | "mine";
 
 export const SUPPORT_FILTERS: readonly { key: SupportFilter; label: string }[] = [
   { key: "open", label: "Abertas" },
   { key: "needs_human", label: "Precisa de pessoa" },
   { key: "mine", label: "Minhas" },
-  { key: "waiting", label: "Aguardando cliente" },
-  { key: "resolved", label: "Resolvidas" },
 ];
 
 export function parseSupportFilter(value: string | undefined): SupportFilter {
@@ -84,6 +86,14 @@ export function elapsedLabel(from: Date, now: Date): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours} h`;
   return `${Math.floor(hours / 24)} d`;
+}
+
+/** Avatar legível mesmo quando o nome do WhatsApp começa com emoji ou é só um número. */
+export function contactInitials(name: string): string {
+  const words = name.match(/[\p{L}\p{N}]+/gu) ?? [];
+  if (words.length === 0) return "?";
+  if (words.every((word) => /^\d+$/.test(word))) return "#";
+  return words.slice(0, 2).map((word) => Array.from(word)[0].toLocaleUpperCase("pt-BR")).join("");
 }
 
 const TYPE_LABELS: Record<string, string> = {
