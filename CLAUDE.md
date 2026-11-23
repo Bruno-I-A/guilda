@@ -517,7 +517,18 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
   `Content-Security-Policy: sandbox` (`documentResponseHeaders`), para arquivo de cliente nunca
   rodar como página da Guilda. Até 25 MB (`DOCUMENT_MAX_BYTES`); acima, a rota explica e manda abrir
   no WhatsApp do escritório. A Meta só guarda a mídia por um tempo: arquivo antigo some de lá.
-  Áudio e vídeo continuam só como rótulo.
+  Vídeo continua só como rótulo.
+- **Áudio (2026-11-23, pedido do Bruno)**: o áudio recebido toca na conversa (`message-audio.tsx`,
+  mesma rota de mídia, só `audio/*`, até 16 MB) e **todo áudio de cliente vira texto pela OpenAI**
+  (`gpt-4o-mini-transcribe` com o vocabulário contábil, como no Scharff; `src/lib/support/transcription.ts`).
+  Decisão do Bruno: transcrever todos, não só os do teste do agente; a voz do cliente vai à OpenAI,
+  e o aviso de privacidade precisa citar isso. Sem `OPENAI_API_KEY` no serviço de atendimento nada
+  sai e o áudio só se ouve. `support_message_transcriptions` guarda o texto (a mensagem é imutável);
+  a linha é a trava, falha tenta até 3 vezes, AMR fica "indisponível". O `support-worker` transcreve
+  antes da triagem, e a leitura (sombra e agente) **espera a transcrição** de áudio do turno até 10
+  minutos, para a IA ler "Áudio (transcrição): …" (mascarado como o resto) e não só "Áudio".
+  Mandar áudio (gravar na conversa, converter para OGG/Opus com ffmpeg) é a entrega seguinte.
+  Desenho em `docs/superpowers/specs/2026-11-23-audio-no-atendimento-design.md`.
 - **Vínculo com a empresa é manual**, com histórico. Nota interna não se edita nem se apaga
   (`support_conversation_notes`, REVOKE no `guilda_app`).
 - **Números e empresas (2026-11-23, pedido do Bruno: "é meio variado")**: uma empresa tem vários

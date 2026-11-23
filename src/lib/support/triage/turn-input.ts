@@ -47,10 +47,13 @@ export async function loadTurnInput(
   round: { startedAt: Date; keyword: string | null } | null = null,
 ): Promise<{ current: string; history: MensagemHistoricoClassificacao[]; attachment: TurnAttachment | null }> {
   const m = schema.supportMessages;
+  const t = schema.supportMessageTranscriptions;
   const recent = await tx
-    .select({ id: m.id, conversationId: m.conversationId, actor: m.actor, text: m.text, messageType: m.messageType, content: m.content, occurredAt: m.occurredAt })
+    .select({ id: m.id, conversationId: m.conversationId, actor: m.actor, text: m.text, messageType: m.messageType, content: m.content, occurredAt: m.occurredAt, transcript: t.text })
     .from(m)
     .innerJoin(schema.supportConversations, and(eq(schema.supportConversations.orgId, m.orgId), eq(schema.supportConversations.id, m.conversationId)))
+    // Áudio entra com o texto transcrito (2026-11-23), mascarado depois como o resto.
+    .leftJoin(t, and(eq(t.orgId, m.orgId), eq(t.messageId, m.id), eq(t.status, "done")))
     .where(and(eq(m.orgId, orgId), eq(schema.supportConversations.contactId, candidate.contactId)))
     .orderBy(desc(m.occurredAt))
     .limit(HISTORY_LIMIT + 10);

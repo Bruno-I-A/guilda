@@ -6,6 +6,7 @@
  */
 import { PDFDocument } from "pdf-lib";
 
+import { audioTurnText } from "./support-audio";
 import { messageLabel } from "./support-inbox";
 
 /** Tipos de foto que a IA lê; figurinha (sticker) não entra. */
@@ -24,7 +25,14 @@ function str(value: unknown, max: number): string | null {
  * Texto da mensagem para a IA. Foto e documento chegam sem texto: a legenda e o
  * nome do arquivo moram no conteúdo e viravam só "Documento".
  */
-export function turnMessageText(message: { text: string | null; messageType: string; content: Record<string, unknown> }): string {
+export function turnMessageText(message: {
+  text: string | null;
+  messageType: string;
+  content: Record<string, unknown>;
+  /** Texto do áudio recebido, quando a transcrição terminou (2026-11-23). */
+  transcript?: string | null;
+}): string {
+  if (message.text === null && message.messageType === "audio") return audioTurnText(message.transcript);
   if (message.text !== null || (message.messageType !== "document" && message.messageType !== "image")) return messageLabel(message);
   const filename = message.messageType === "document" ? str(message.content.filename, 120) : null;
   const caption = str(message.content.caption, 1000);

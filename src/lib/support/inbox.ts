@@ -19,6 +19,8 @@ import {
   type SupportViewer,
 } from "@/domain/support-inbox";
 import { documentFilename } from "@/domain/support-media";
+
+import { loadTranscriptions, type TranscriptionStatus } from "./transcription";
 import { err, type ActionResult } from "@/lib/action-context";
 
 import { clanForSector, SECTOR_LABELS } from "./triage/sectors";
@@ -160,6 +162,8 @@ export type SupportTimelineItem =
       image: { src: string; caption: string | null } | null;
       /** Documento recebido (2026-11-23): baixa pela rota da Guilda; PDF abre no navegador. */
       file: { href: string; name: string; caption: string | null; isPdf: boolean } | null;
+      /** Áudio recebido (2026-11-23): toca pela rota da Guilda, com o texto da transcrição. */
+      audio: { src: string; transcript: string | null; status: TranscriptionStatus | null } | null;
       delivery: DeliveryState | null;
       failure: string | null;
     }
@@ -259,6 +263,12 @@ export async function loadSupportConversation(
     ? await tx.select({ messageId: events.messageId, eventType: events.eventType, detail: events.detail }).from(events).where(and(eq(events.orgId, input.orgId), inArray(events.messageId, outboundIds)))
     : [];
 
+  const transcripts = await loadTranscriptions(
+    tx,
+    input.orgId,
+    recent.filter((message) => message.messageType === "audio").map((message) => message.id),
+  );
+
   const notesTable = schema.supportConversationNotes;
   const notes = await tx
     .select({ id: notesTable.id, text: notesTable.text, createdAt: notesTable.createdAt, author: schema.user.name })
@@ -301,6 +311,13 @@ export async function loadSupportConversation(
               name: documentFilename(message.content, typeof message.content.mime_type === "string" ? message.content.mime_type : null),
               caption: typeof message.content.caption === "string" ? message.content.caption.slice(0, 1024) : null,
               isPdf: message.content.mime_type === "application/pdf",
+            }
+          : null,
+        audio: message.messageType === "audio" && typeof message.content.id === "string"
+          ? {
+              src: `/api/atendimento/media/${message.id}`,
+              transcript: transcripts.get(message.id)?.text ?? null,
+              status: transcripts.get(message.id)?.status ?? null,
             }
           : null,
         delivery: message.direction === "outbound" && message.source !== "business_app" ? deliveryState(own.map((event) => event.eventType)) : null,
@@ -386,7 +403,7 @@ export async function loadSupportConversation(
 export type SupportMediaReference = Readonly<{
   channelId: string;
   mediaId: string;
-  kind: "image" | "document";
+  kind: "image" | "document" | "audio";
   filename: string;
 }>;
 
@@ -424,7 +441,7 @@ export async function loadSupportMediaReference(
     .limit(1);
   if (
     !row ||
-    (row.messageType !== "image" && row.messageType !== "document") ||
+    (row.messageType !== "image" && row.messageType !== "document" && row.messageType !== "audio") ||
     !canSeeConversation(input.viewer, row)
   ) {
     return null;

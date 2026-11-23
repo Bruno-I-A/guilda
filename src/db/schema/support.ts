@@ -469,6 +469,42 @@ export const supportInboundEvents = pgTable(
   ],
 );
 
+/**
+ * Transcrição do áudio recebido (2026-11-23, pedido do Bruno): uma linha por
+ * mensagem de áudio. A linha é a trava contra transcrever duas vezes; o texto
+ * mora aqui porque a mensagem é imutável.
+ */
+export const supportMessageTranscriptions = pgTable(
+  "support_message_transcriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    messageId: uuid("message_id").notNull(),
+    status: varchar("status", { length: 16 }).notNull().default("pending"),
+    text: text("text"),
+    model: varchar("model", { length: 80 }),
+    error: varchar("error", { length: 1000 }),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "support_message_transcriptions_org_message_fk",
+      columns: [t.orgId, t.messageId],
+      foreignColumns: [supportMessages.orgId, supportMessages.id],
+    }).onDelete("cascade"),
+    uniqueIndex("support_message_transcriptions_message_uidx").on(t.orgId, t.messageId),
+    index("support_message_transcriptions_status_idx").on(t.status, t.updatedAt),
+    check(
+      "support_message_transcriptions_status_check",
+      sql`${t.status} IN ('pending', 'processing', 'done', 'failed', 'unavailable')`,
+    ),
+  ],
+);
+
 /** Envio à Cloud API separado do histórico imutável da mensagem. */
 export const supportOutbox = pgTable(
   "support_outbox",
