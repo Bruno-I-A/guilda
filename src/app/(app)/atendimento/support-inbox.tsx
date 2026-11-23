@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { addContactCompany, addNote, markWaiting, removeContactCompany, reopenConversation, resolveConversation, sendReply, setConversationCompany, takeConversation, transferConversation } from "./actions";
 import { MessageAudio } from "./message-audio";
 import { MessageFile } from "./message-file";
+import { VoiceRecorder } from "./voice-recorder";
 import { companyDisplayName } from "@/domain/company-display-name";
 
 const STATUS_CLASSES: Record<SupportStatus, string> = {
@@ -175,7 +176,7 @@ function TimelineItem({ item }: { item: SupportTimelineItem }) {
         ) : item.file ? (
           <MessageFile file={item.file} />
         ) : item.audio ? (
-          <MessageAudio audio={item.audio} />
+          <MessageAudio audio={item.audio} outbound={outbound} />
         ) : (
           <p className={cn("whitespace-pre-wrap break-words", !item.isText && "italic text-muted-foreground")}>{item.text}</p>
         )}
@@ -197,6 +198,8 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const canReply = !conversation.replyBlocked;
   const effective = canReply ? mode : "note";
+  // Gravando ou com áudio por enviar: o texto espera, para não sair nada pela metade.
+  const [voiceActive, setVoiceActive] = useState(false);
 
   function submit() {
     const body = text.trim();
@@ -213,11 +216,12 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
     <div className="grid shrink-0 gap-2 border-t bg-card p-3 sm:px-5 sm:py-3">
       {conversation.replyBlocked ? <p className="text-xs text-muted-foreground">{conversation.replyBlocked} Você ainda pode deixar uma nota para a equipe.</p> : null}
       <div className="flex gap-1" role="group" aria-label="Tipo de texto">
-        <Button type="button" size="sm" variant={effective === "reply" ? "secondary" : "ghost"} disabled={!canReply} aria-pressed={effective === "reply"} onClick={() => setMode("reply")}>Responder</Button>
-        <Button type="button" size="sm" variant={effective === "note" ? "secondary" : "ghost"} aria-pressed={effective === "note"} onClick={() => setMode("note")}><StickyNote aria-hidden /> Nota interna</Button>
+        <Button type="button" size="sm" variant={effective === "reply" ? "secondary" : "ghost"} disabled={!canReply || voiceActive} aria-pressed={effective === "reply"} onClick={() => setMode("reply")}>Responder</Button>
+        <Button type="button" size="sm" variant={effective === "note" ? "secondary" : "ghost"} disabled={voiceActive} aria-pressed={effective === "note"} onClick={() => setMode("note")}><StickyNote aria-hidden /> Nota interna</Button>
       </div>
       <Textarea
         rows={2}
+        disabled={voiceActive}
         maxLength={effective === "reply" ? 4096 : 4000}
         aria-label={effective === "reply" ? "Mensagem para o cliente" : "Nota interna para a equipe"}
         placeholder={effective === "reply" ? "Escreva para o cliente" : "Só a equipe vê esta nota"}
@@ -231,12 +235,17 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
           }
         }}
       />
-      <div className="flex items-center justify-between gap-2">
-        <span className="hidden text-xs text-muted-foreground sm:inline">Ctrl + Enter envia</span>
-        <Button type="button" size="sm" className="ml-auto" disabled={pending || !text.trim()} onClick={submit}>
-          {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : effective === "reply" ? <Send aria-hidden /> : <StickyNote aria-hidden />}
-          {effective === "reply" ? "Enviar ao cliente" : "Salvar nota"}
-        </Button>
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        {voiceActive ? null : <span className="hidden text-xs text-muted-foreground sm:inline">Ctrl + Enter envia</span>}
+        <div className={cn("flex min-w-0 items-center gap-2", voiceActive ? "flex-1" : "ml-auto")}>
+          {effective === "reply" ? <VoiceRecorder conversationId={conversation.id} onActiveChange={setVoiceActive} /> : null}
+          {voiceActive ? null : (
+            <Button type="button" size="sm" disabled={pending || !text.trim()} onClick={submit}>
+              {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : effective === "reply" ? <Send aria-hidden /> : <StickyNote aria-hidden />}
+              {effective === "reply" ? "Enviar ao cliente" : "Salvar nota"}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

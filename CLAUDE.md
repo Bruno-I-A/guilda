@@ -527,8 +527,17 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
   a linha é a trava, falha tenta até 3 vezes, AMR fica "indisponível". O `support-worker` transcreve
   antes da triagem, e a leitura (sombra e agente) **espera a transcrição** de áudio do turno até 10
   minutos, para a IA ler "Áudio (transcrição): …" (mascarado como o resto) e não só "Áudio".
-  Mandar áudio (gravar na conversa, converter para OGG/Opus com ffmpeg) é a entrega seguinte.
   Desenho em `docs/superpowers/specs/2026-11-23-audio-no-atendimento-design.md`.
+- **Nota de voz (2026-11-23, pedido do Bruno)**: quem assumiu grava na própria conversa ("Gravar
+  áudio" ao lado do Enviar, `voice-recorder.tsx`). O navegador grava no que souber (WebM, OGG ou MP4);
+  a rota `POST /api/atendimento/conversations/[id]/audio` confere a régua da resposta em texto ANTES
+  de gastar a conversão (`checkSupportAudioReply`, mesma `replyTarget`: quem assumiu, canal, 24 horas),
+  converte para OGG/Opus com o **ffmpeg do servidor** (`voice-note.ts`; o Dockerfile instala no
+  runner), sobe à Meta (`uploadWhatsAppMedia`) e só então grava mensagem e saída
+  (`sendSupportAudioReply`, payload `audio.id`); o worker de saída manda pelo id. A chave da gravação
+  (`requestId`) vale para toda nova tentativa: clique duplo ou reenvio não sai em dobro. Para em 5
+  minutos e espera o clique (microfone esquecido não vira envio). `Permissions-Policy` libera
+  `microphone=(self)`. A voz da equipe não é transcrita (a rotina lê só áudio recebido).
 - **Vínculo com a empresa é manual**, com histórico. Nota interna não se edita nem se apaga
   (`support_conversation_notes`, REVOKE no `guilda_app`).
 - **Números e empresas (2026-11-23, pedido do Bruno: "é meio variado")**: uma empresa tem vários

@@ -10,8 +10,10 @@ import {
   exchangeEmbeddedSignupCode,
   resolveEmbeddedSignupWabaId,
   resolveCoexistencePhone,
+  sendWhatsAppAudio,
   sendWhatsAppTemplate,
   subscribeWhatsAppWebhook,
+  uploadWhatsAppMedia,
 } from "./meta-client";
 
 const config = {
@@ -263,6 +265,53 @@ describe("cliente seguro da Meta", () => {
       graphCode: 190,
       graphType: "OAuthException",
       message: "Meta Graph API falhou em exchange_code.",
+    });
+  });
+  test("sobe a nota de voz como multipart e devolve o id da mídia", async () => {
+    const fetchMock = fetchReturning({ id: "1234567890" });
+    await expect(
+      uploadWhatsAppMedia(
+        { phoneNumberId: "222222", accessToken: "EA-token", bytes: new Uint8Array([79, 103, 103, 83]), mimeType: "audio/ogg", fileName: "nota-de-voz.ogg" },
+        config,
+        fetchMock,
+      ),
+    ).resolves.toBe("1234567890");
+    const [url, init] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(new URL(String(url)).pathname).toBe("/v24.0/222222/media");
+    expect(init).toMatchObject({ method: "POST", headers: { authorization: "Bearer EA-token" } });
+    const form = (init as RequestInit).body as FormData;
+    expect(form.get("messaging_product")).toBe("whatsapp");
+    expect(form.get("type")).toBe("audio/ogg");
+    const file = form.get("file") as File;
+    expect(file.name).toBe("nota-de-voz.ogg");
+    expect(file.type).toBe("audio/ogg");
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(new Uint8Array([79, 103, 103, 83]));
+  });
+
+  test("recusa da Meta ao subir a mídia vira erro sem o texto dela", async () => {
+    const fetchMock = fetchReturning({ error: { message: "detalhe", code: 131053 } }, 400);
+    await expect(
+      uploadWhatsAppMedia(
+        { phoneNumberId: "222222", accessToken: "EA-token", bytes: new Uint8Array([1]), mimeType: "audio/ogg", fileName: "nota-de-voz.ogg" },
+        config,
+        fetchMock,
+      ),
+    ).rejects.toMatchObject({ operation: "upload_media", httpStatus: 400, graphCode: 131053 });
+  });
+
+  test("manda o áudio pelo id da mídia e devolve o wamid", async () => {
+    const fetchMock = fetchReturning({ messages: [{ id: "wamid.AUDIO" }] });
+    await expect(
+      sendWhatsAppAudio({ phoneNumberId: "222222", accessToken: "EA-token", to: "5554999999999", mediaId: "1234567890" }, config, fetchMock),
+    ).resolves.toBe("wamid.AUDIO");
+    const [url, init] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(new URL(String(url)).pathname).toBe("/v24.0/222222/messages");
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: "5554999999999",
+      type: "audio",
+      audio: { id: "1234567890" },
     });
   });
 });

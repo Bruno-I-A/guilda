@@ -20,7 +20,12 @@ export const VOICE_NOTE_MAX_INPUT_BYTES = 10 * 1024 * 1024;
 const TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 
-export class VoiceNoteError extends Error {}
+/** `message` vai para a tela; `detail` (saída do ffmpeg) só para o log. */
+export class VoiceNoteError extends Error {
+  constructor(message: string, readonly detail: string | null = null) {
+    super(message);
+  }
+}
 
 export type VoiceNoteConverter = (input: Uint8Array) => Promise<Uint8Array>;
 
@@ -31,8 +36,10 @@ export const convertToVoiceNote: VoiceNoteConverter = async (input) => {
   await writeFile(file, input);
   try {
     return await new Promise<Uint8Array>((resolve, reject) => {
+      // Sem o comentário, o Turbopack trata o arquivo temporário como caminho do
+      // projeto e copia o repositório inteiro (com .env e docs) para o standalone.
       const ffmpeg = spawn(
-        process.env.FFMPEG_PATH?.trim() || "ffmpeg",
+        /*turbopackIgnore: true*/ process.env.FFMPEG_PATH?.trim() || "ffmpeg",
         ["-hide_banner", "-loglevel", "error", "-i", file, "-vn", "-ac", "1", "-ar", "48000", "-c:a", "libopus", "-b:a", "32k", "-application", "voip", "-f", "ogg", "pipe:1"],
         { stdio: ["ignore", "pipe", "pipe"] },
       );
@@ -57,12 +64,12 @@ export const convertToVoiceNote: VoiceNoteConverter = async (input) => {
       });
       ffmpeg.on("error", (error) => {
         clearTimeout(timer);
-        reject(new VoiceNoteError(`ffmpeg indisponível no servidor (${error.message}).`));
+        reject(new VoiceNoteError("O servidor não está pronto para converter áudio. Avise o suporte da Guilda.", error.message));
       });
       ffmpeg.on("close", (code) => {
         clearTimeout(timer);
         if (code === 0 && size > 0) resolve(new Uint8Array(Buffer.concat(chunks)));
-        else reject(new VoiceNoteError(`Não foi possível converter o áudio (${stderr.trim() || `código ${code}`}).`));
+        else reject(new VoiceNoteError("Não foi possível converter o áudio. Grave de novo.", stderr.trim() || `código ${code}`));
       });
     });
   } finally {
