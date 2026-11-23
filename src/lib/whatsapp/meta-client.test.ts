@@ -4,6 +4,7 @@ vi.mock("server-only", () => ({}));
 
 import {
   downloadWhatsAppImage,
+  downloadWhatsAppMedia,
   createWhatsAppUtilityTemplate,
   describeWhatsAppTemplateError,
   exchangeEmbeddedSignupCode,
@@ -210,6 +211,27 @@ describe("cliente seguro da Meta", () => {
     expect(new Headers(calls[0][1].headers).get("authorization")).toBe("Bearer EA-token");
     expect(String(calls[1][0])).toContain("lookaside.fbsbx.com");
     expect(new Headers(calls[1][1].headers).get("authorization")).toBe("Bearer EA-token");
+  });
+
+  test("documento de qualquer tipo baixa; acima do limite é recusa própria (413), sem baixar", async () => {
+    const meta = (mime: string, size: number) =>
+      fetchReturning({ url: "https://lookaside.fbsbx.com/whatsapp_business/attachments/doc", mime_type: mime, file_size: size });
+    const xml = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ url: "https://lookaside.fbsbx.com/whatsapp_business/attachments/doc", mime_type: "text/xml", file_size: 3 }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(new Uint8Array([60, 97, 62]), { status: 200, headers: { "content-length": "3" } })) as unknown as typeof fetch;
+    const media = await downloadWhatsAppMedia(
+      { mediaId: "123", phoneNumberId: "222222", accessToken: "EA-token", allowedMimeTypes: null, maxBytes: 10 },
+      config,
+      xml,
+    );
+    expect(media.mimeType).toBe("text/xml");
+
+    const big = meta("application/pdf", 11);
+    await expect(
+      downloadWhatsAppMedia({ mediaId: "123", phoneNumberId: "222222", accessToken: "EA-token", allowedMimeTypes: null, maxBytes: 10 }, config, big),
+    ).rejects.toMatchObject({ operation: "download_media", httpStatus: 413 });
+    expect((big as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
   });
 
   test("não segue URL de mídia fora dos hosts da Meta", async () => {

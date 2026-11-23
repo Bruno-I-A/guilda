@@ -18,6 +18,7 @@ import {
   type SupportStatus,
   type SupportViewer,
 } from "@/domain/support-inbox";
+import { documentFilename } from "@/domain/support-media";
 import { err, type ActionResult } from "@/lib/action-context";
 
 import { clanForSector, SECTOR_LABELS } from "./triage/sectors";
@@ -148,7 +149,20 @@ export async function loadSupportQueue(
 }
 
 export type SupportTimelineItem =
-  | { kind: "message"; id: string; at: string; direction: "inbound" | "outbound"; author: string; text: string; isText: boolean; image: { src: string; caption: string | null } | null; delivery: DeliveryState | null; failure: string | null }
+  | {
+      kind: "message";
+      id: string;
+      at: string;
+      direction: "inbound" | "outbound";
+      author: string;
+      text: string;
+      isText: boolean;
+      image: { src: string; caption: string | null } | null;
+      /** Documento recebido (2026-11-23): baixa pela rota da Guilda; PDF abre no navegador. */
+      file: { href: string; name: string; caption: string | null; isPdf: boolean } | null;
+      delivery: DeliveryState | null;
+      failure: string | null;
+    }
   | { kind: "note"; id: string; at: string; author: string; text: string }
   | { kind: "event"; id: string; at: string; text: string };
 
@@ -278,6 +292,14 @@ export async function loadSupportConversation(
                 : null,
             }
           : null,
+        file: message.messageType === "document" && typeof message.content.id === "string"
+          ? {
+              href: `/api/atendimento/media/${message.id}`,
+              name: documentFilename(message.content, typeof message.content.mime_type === "string" ? message.content.mime_type : null),
+              caption: typeof message.content.caption === "string" ? message.content.caption.slice(0, 1024) : null,
+              isPdf: message.content.mime_type === "application/pdf",
+            }
+          : null,
         delivery: message.direction === "outbound" && message.source !== "business_app" ? deliveryState(own.map((event) => event.eventType)) : null,
         failure: failed && typeof failed.detail.message === "string" ? failed.detail.message : null,
       };
@@ -354,11 +376,14 @@ export async function loadSupportConversation(
 export type SupportMediaReference = Readonly<{
   channelId: string;
   mediaId: string;
+  kind: "image" | "document";
+  filename: string;
 }>;
 
 /**
- * Autoriza uma foto pela mesma régua da conversa. O navegador fornece apenas o
- * id interno da mensagem; media id e canal continuam presos à organização.
+ * Autoriza uma foto ou documento pela mesma régua da conversa. O navegador
+ * fornece apenas o id interno da mensagem; media id e canal continuam presos à
+ * organização.
  */
 export async function loadSupportMediaReference(
   tx: OrgTx,
@@ -389,15 +414,20 @@ export async function loadSupportMediaReference(
     .limit(1);
   if (
     !row ||
-    row.messageType !== "image" ||
+    (row.messageType !== "image" && row.messageType !== "document") ||
     !canSeeConversation(input.viewer, row)
   ) {
     return null;
   }
   const mediaId = row.content.id;
-  return typeof mediaId === "string" && /^\d{1,32}$/.test(mediaId)
-    ? { channelId: row.channelId, mediaId }
-    : null;
+  if (typeof mediaId !== "string" || !/^\d{1,32}$/.test(mediaId)) return null;
+  const mimeType = typeof row.content.mime_type === "string" ? row.content.mime_type : null;
+  return {
+    channelId: row.channelId,
+    mediaId,
+    kind: row.messageType,
+    filename: documentFilename(row.content, mimeType),
+  };
 }
 
 /** Número conectado? Sem nenhum, a tela explica como conectar em vez de ficar vazia. */

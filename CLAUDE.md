@@ -510,7 +510,14 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
   pode sair duas vezes: risco raro e aceito.
 - **24 horas**: fora da janela da Meta, a tela bloqueia e explica. Modelos aprovados
   (templates) ainda não existem, então não dá para iniciar conversa pela Guilda.
-- **Mídia não abre**: a tela diz "Documento", "Áudio" etc. Baixar exige outra etapa.
+- **Mídia**: foto abre na conversa. **Documento (2026-11-23, pedido do Bruno)** aparece com o nome
+  e a legenda para baixar (`message-file.tsx`), pela mesma rota da foto
+  (`/api/atendimento/media/[messageId]`, mesma régua de quem vê a conversa): **só PDF abre no
+  navegador; qualquer outro tipo é sempre baixado** como `application/octet-stream` com
+  `Content-Security-Policy: sandbox` (`documentResponseHeaders`), para arquivo de cliente nunca
+  rodar como página da Guilda. Até 25 MB (`DOCUMENT_MAX_BYTES`); acima, a rota explica e manda abrir
+  no WhatsApp do escritório. A Meta só guarda a mídia por um tempo: arquivo antigo some de lá.
+  Áudio e vídeo continuam só como rótulo.
 - **Vínculo com a empresa é manual**, com histórico. Nota interna não se edita nem se apaga
   (`support_conversation_notes`, REVOKE no `guilda_app`).
 - **Fora das 24 horas**: a coexistência não deixa a Guilda furar a janela: a API segue a regra,
