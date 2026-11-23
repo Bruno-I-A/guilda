@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Hand, ImageOff, LoaderCircle, Maximize2, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Hand, ImageOff, LoaderCircle, Maximize2, Plus, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -18,7 +18,7 @@ import { APP_TIME_ZONE } from "@/lib/date-time";
 import type { SupportConversationView, SupportQueueRow, SupportTimelineItem } from "@/lib/support/inbox";
 import { cn } from "@/lib/utils";
 
-import { addNote, linkContact, markWaiting, reopenConversation, resolveConversation, sendReply, takeConversation, transferConversation } from "./actions";
+import { addContactCompany, addNote, markWaiting, removeContactCompany, reopenConversation, resolveConversation, sendReply, setConversationCompany, takeConversation, transferConversation } from "./actions";
 import { MessageFile } from "./message-file";
 import { companyDisplayName } from "@/domain/company-display-name";
 
@@ -343,46 +343,114 @@ function normalize(value: string): string {
   return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
-function ClientLink({ conversation, clients }: { conversation: SupportConversationView; clients: readonly ClientOption[] }) {
+/**
+ * Empresas do número que escreveu (2026-11-23): uma empresa tem vários números e
+ * um número várias empresas. Vale para as próximas conversas dele.
+ */
+export function ContactCompanies({ conversation, clients }: { conversation: SupportConversationView; clients: readonly ClientOption[] }) {
   const { pending, run } = useCommand();
   const [query, setQuery] = useState("");
+  const [adding, setAdding] = useState(false);
+  const linked = conversation.contactClients;
   const matches = useMemo(() => {
     const needle = normalize(query.trim());
     const digits = query.replace(/\D/g, "");
     if (needle.length < 2) return [];
-    return clients.filter((client) => normalize(client.name).includes(needle) || (digits.length >= 3 && client.cnpj?.includes(digits))).slice(0, 6);
-  }, [clients, query]);
+    const taken = new Set(linked.map((client) => client.id));
+    return clients
+      .filter((client) => !taken.has(client.id) && (normalize(client.name).includes(needle) || (digits.length >= 3 && client.cnpj?.includes(digits))))
+      .slice(0, 6);
+  }, [clients, linked, query]);
+  const searching = adding || linked.length === 0;
 
-  if (conversation.client) {
-    const { client } = conversation;
-    return (
-      <div className="grid gap-1 text-sm">
-        <Link href={`/clients/${client.id}`} className="font-medium underline-offset-4 hover:underline">{companyDisplayName(client.name)}</Link>
-        <span className="font-mono text-xs text-muted-foreground">{client.cnpj ? formatCnpj(client.cnpj) : "sem CNPJ"}</span>
-        <span className="text-xs text-muted-foreground">Regime: {client.taxRegime}</span>
-        <Button type="button" size="sm" variant="ghost" className="justify-self-start" disabled={pending} onClick={() => run(() => linkContact({ conversationId: conversation.id, clientId: null }))}><X aria-hidden /> Desfazer vínculo</Button>
-      </div>
-    );
-  }
   return (
-    <div className="grid gap-1.5">
-      <p className="text-xs text-muted-foreground">Quem é esta pessoa? O vínculo é manual, para não misturar empresas.</p>
-      <div className="relative">
-        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-        <Input type="search" className="pl-8" autoComplete="off" data-1p-ignore data-lpignore="true" aria-label="Buscar empresa para vincular" placeholder="Nome ou CNPJ" value={query} onChange={(event) => setQuery(event.target.value)} />
-      </div>
-      {matches.length > 0 ? (
-        <ul className="grid divide-y rounded-md border">
-          {matches.map((client) => (
-            <li key={client.id}>
-              <button type="button" disabled={pending} className="grid min-h-11 w-full gap-0.5 px-2 py-1.5 text-left text-sm hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" onClick={() => run(() => linkContact({ conversationId: conversation.id, clientId: client.id }))}>
-                <span className="truncate">{companyDisplayName(client.name)}</span>
+    <div className="grid gap-2">
+      {linked.length === 0 ? (
+        <p className="text-xs text-muted-foreground">De quais empresas é este número? Vale para as próximas conversas dele.</p>
+      ) : (
+        <ul className="grid gap-1.5">
+          {linked.map((client) => (
+            <li key={client.id} className="flex min-w-0 items-start justify-between gap-2 rounded-md border px-2.5 py-2">
+              <span className="grid min-w-0 gap-0.5">
+                <Link href={`/clients/${client.id}`} className="text-sm font-medium [overflow-wrap:anywhere] underline-offset-4 hover:underline">{companyDisplayName(client.name)}</Link>
                 <span className="font-mono text-xs text-muted-foreground">{client.cnpj ? formatCnpj(client.cnpj) : "sem CNPJ"}</span>
-              </button>
+              </span>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                className="touch-target shrink-0"
+                disabled={pending}
+                aria-label={`Tirar ${companyDisplayName(client.name)} deste número`}
+                onClick={() => run(() => removeContactCompany({ conversationId: conversation.id, clientId: client.id }))}
+              >
+                <X aria-hidden />
+              </Button>
             </li>
           ))}
         </ul>
-      ) : query.trim().length >= 2 ? <p className="text-xs text-muted-foreground">Nenhuma empresa ativa com esse nome ou CNPJ.</p> : null}
+      )}
+      {searching ? (
+        <div className="grid gap-1.5">
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <Input type="search" className="pl-8" autoComplete="off" data-1p-ignore data-lpignore="true" aria-label="Buscar empresa para este número" placeholder="Nome ou CNPJ" value={query} onChange={(event) => setQuery(event.target.value)} />
+          </div>
+          {matches.length > 0 ? (
+            <ul className="grid divide-y rounded-md border">
+              {matches.map((client) => (
+                <li key={client.id}>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    className="grid min-h-11 w-full min-w-0 gap-0.5 px-2 py-1.5 text-left text-sm hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    onClick={() => run(() => addContactCompany({ conversationId: conversation.id, clientId: client.id }), () => { setQuery(""); setAdding(false); })}
+                  >
+                    <span className="[overflow-wrap:anywhere]">{companyDisplayName(client.name)}</span>
+                    <span className="font-mono text-xs text-muted-foreground">{client.cnpj ? formatCnpj(client.cnpj) : "sem CNPJ"}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : query.trim().length >= 2 ? <p className="text-xs text-muted-foreground">Nenhuma empresa ativa com esse nome ou CNPJ.</p> : null}
+        </div>
+      ) : (
+        <Button type="button" size="sm" variant="ghost" className="justify-self-start" onClick={() => setAdding(true)}>
+          <Plus aria-hidden /> Adicionar empresa
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** A empresa desta conversa: com uma empresa no número já vem marcada; com várias, escolhe-se. */
+export function ConversationCompany({ conversation }: { conversation: SupportConversationView }) {
+  const { pending, run } = useCommand();
+  const { client, contactClients } = conversation;
+  return (
+    <div className="grid gap-1.5 text-sm">
+      {contactClients.length > 1 ? (
+        <select
+          className="h-9 w-full min-w-0 rounded-md border bg-transparent px-2 text-sm"
+          aria-label="Empresa desta conversa"
+          disabled={pending}
+          value={client?.id ?? ""}
+          onChange={(event) => run(() => setConversationCompany({ conversationId: conversation.id, clientId: event.target.value || null }))}
+        >
+          <option value="">Ainda não escolhida</option>
+          {contactClients.map((option) => <option key={option.id} value={option.id}>{companyDisplayName(option.name)}</option>)}
+        </select>
+      ) : null}
+      {client ? (
+        <span className="text-xs text-muted-foreground">
+          {contactClients.length > 1 ? null : <span className="font-medium text-foreground">{companyDisplayName(client.name)} · </span>}
+          Regime: {client.taxRegime}
+        </span>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          {contactClients.length > 1 ? "Este número é de mais de uma empresa: escolha a desta conversa." : "Adicione a empresa do número para a Carteira encaminhar certo."}
+        </p>
+      )}
     </div>
   );
 }
@@ -434,8 +502,12 @@ function ContextPanel({ conversation, clients, clans, members }: { conversation:
         {conversation.phone ? <span className="font-mono text-xs text-muted-foreground">{conversation.phone}</span> : null}
       </section>
       <section className="grid gap-1.5">
-        <p className="hud-label">Empresa</p>
-        <ClientLink conversation={conversation} clients={clients} />
+        <p className="hud-label">Empresas deste número</p>
+        <ContactCompanies conversation={conversation} clients={clients} />
+      </section>
+      <section className="grid gap-1.5">
+        <p className="hud-label">Empresa desta conversa</p>
+        <ConversationCompany conversation={conversation} />
       </section>
       <section className="grid gap-1.5">
         <p className="hud-label">Setor e responsável</p>

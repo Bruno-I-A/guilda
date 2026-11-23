@@ -520,6 +520,17 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
   Áudio e vídeo continuam só como rótulo.
 - **Vínculo com a empresa é manual**, com histórico. Nota interna não se edita nem se apaga
   (`support_conversation_notes`, REVOKE no `guilda_app`).
+- **Números e empresas (2026-11-23, pedido do Bruno: "é meio variado")**: uma empresa tem vários
+  números e um número pode ser de várias empresas (empresário com duas ou três). O vínculo mora em
+  `support_contact_clients` (muitos para muitos, migração 0108, que copiou os vínculos antigos);
+  `support_contacts.client_id` **deixou de ser lido e escrito** (ficou no banco). A conversa tem a
+  sua empresa (`support_conversations.client_id`): nasce com ela quando o número tem uma só; com
+  várias, alguém escolhe. É ela que a Carteira, a fila, o cabeçalho e as missões usam. O cadastro é
+  pelo painel Contexto, com o número que escreveu ("Empresas deste número" e "Empresa desta
+  conversa"). A mensagem que chega acha o contato com e sem o nono dígito
+  (`whatsAppPhoneVariants` em `upsertContact`). Desenho em
+  `docs/superpowers/specs/2026-11-23-numeros-e-empresas-design.md`. Próximas: número na ficha da
+  empresa (Clientes) e a IA escolhendo ou perguntando a empresa quando o número tem várias.
 - **Fora das 24 horas**: a coexistência não deixa a Guilda furar a janela: a API segue a regra,
   e só o aparelho do escritório (celular ou WhatsApp Web) fala livre. Por isso a conversa tem
   **"WhatsApp Web"**, que abre a conversa no WhatsApp logado no navegador (precisa ser o do

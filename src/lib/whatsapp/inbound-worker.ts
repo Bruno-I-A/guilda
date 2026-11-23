@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { type OrgTx, withOrgTx } from "@/db/org-tx";
@@ -11,7 +11,7 @@ import { matchTestKeyword } from "@/domain/support-agent";
 import { statusAfterCustomerMessage } from "@/domain/support-inbox";
 import { loadAgentSettings, startTestRound } from "@/lib/support/agent/settings";
 
-import { recordMemberWhatsAppInbound } from "./member-notifications";
+import { recordMemberWhatsAppInbound, whatsAppPhoneVariants } from "./member-notifications";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -146,6 +146,27 @@ async function upsertContact(
   tx: OrgTx,
   input: { orgId: string; message: NormalizedMessage },
 ): Promise<string> {
+  // O WhatsApp manda o número da conta, que em celular antigo vem sem o nono
+  // dígito: o contato cadastrado com o 9 é o mesmo (2026-11-23).
+  const variants = whatsAppPhoneVariants(`+${input.message.contactWhatsAppId}`).map((phone) => phone.slice(1));
+  const [known] = await tx
+    .select({ id: schema.supportContacts.id })
+    .from(schema.supportContacts)
+    .where(and(eq(schema.supportContacts.orgId, input.orgId), inArray(schema.supportContacts.whatsappId, variants)))
+    .orderBy(sql`${schema.supportContacts.whatsappId} = ${input.message.contactWhatsAppId} DESC`)
+    .limit(1);
+  if (known) {
+    await tx
+      .update(schema.supportContacts)
+      .set({
+        lastSeenAt: input.message.occurredAt,
+        updatedAt: new Date(),
+        ...(input.message.displayName ? { displayName: input.message.displayName } : {}),
+      })
+      .where(eq(schema.supportContacts.id, known.id));
+    return known.id;
+  }
+
   const inserted = await tx
     .insert(schema.supportContacts)
     .values({
@@ -185,6 +206,16 @@ async function upsertContact(
   return existing.id;
 }
 
+/** Número com uma empresa só: a conversa já nasce com ela; com várias, alguém escolhe. */
+async function singleCompanyOf(tx: OrgTx, input: { orgId: string; contactId: string }): Promise<string | null> {
+  const links = await tx
+    .select({ clientId: schema.supportContactClients.clientId })
+    .from(schema.supportContactClients)
+    .where(and(eq(schema.supportContactClients.orgId, input.orgId), eq(schema.supportContactClients.contactId, input.contactId)))
+    .limit(2);
+  return links.length === 1 ? links[0].clientId : null;
+}
+
 async function findOrCreateConversation(
   tx: OrgTx,
   input: { orgId: string; channelId: string; contactId: string; at: Date },
@@ -195,6 +226,7 @@ async function findOrCreateConversation(
       orgId: input.orgId,
       channelId: input.channelId,
       contactId: input.contactId,
+      clientId: await singleCompanyOf(tx, input),
       lastMessageAt: input.at,
     })
     .onConflictDoNothing()
