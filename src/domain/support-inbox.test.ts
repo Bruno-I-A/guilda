@@ -59,7 +59,8 @@ describe("mensagem do cliente", () => {
 
 describe("apresentação", () => {
   test("filtro desconhecido cai em Abertas", () => {
-    expect(parseSupportFilter("resolved")).toBe("resolved");
+    expect(parseSupportFilter("resolved")).toBe("open");
+    expect(parseSupportFilter("waiting")).toBe("open");
     expect(parseSupportFilter("x")).toBe("open");
     expect(parseSupportFilter(undefined)).toBe("open");
   });

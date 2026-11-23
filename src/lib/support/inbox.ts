@@ -49,11 +49,10 @@ function visibleTo(viewer: SupportViewer): SQL | undefined {
 }
 
 function filterWhere(filter: SupportFilter, viewer: SupportViewer): SQL | undefined {
-  if (filter === "resolved") return eq(c.status, "resolved");
   if (filter === "needs_human") return eq(c.status, "needs_human");
-  if (filter === "waiting") return eq(c.status, "waiting_customer");
   if (filter === "mine") return and(eq(c.assignedUserId, viewer.userId), ne(c.status, "resolved"));
-  return ne(c.status, "resolved");
+  // Fila geral: só o que ainda não chegou a nenhum atendente.
+  return and(isNull(c.assignedUserId), ne(c.status, "resolved"));
 }
 
 export interface SupportQueueRow {
@@ -115,6 +114,10 @@ export async function loadSupportQueue(
   const suggestions = await loadLatestSuggestions(tx, input.orgId, ids);
 
   const statusCounts = await tx.select({ status: c.status, total: count() }).from(c).where(and(eq(c.orgId, input.orgId), visible)).groupBy(c.status);
+  const [open] = await tx
+    .select({ total: count() })
+    .from(c)
+    .where(and(eq(c.orgId, input.orgId), filterWhere("open", input.viewer), visible));
   const [mine] = await tx
     .select({ total: count() })
     .from(c)
@@ -141,11 +144,9 @@ export async function loadSupportQueue(
       };
     }),
     counts: {
-      open: statusCounts.filter((row) => row.status !== "resolved").reduce((sum, row) => sum + row.total, 0),
+      open: open?.total ?? 0,
       needs_human: of("needs_human"),
       mine: mine?.total ?? 0,
-      waiting: of("waiting_customer"),
-      resolved: of("resolved"),
     },
   };
 }

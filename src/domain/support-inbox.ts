@@ -16,14 +16,16 @@ export const SUPPORT_STATUS_LABELS: Record<SupportStatus, string> = {
   resolved: "Resolvida",
 };
 
-export type SupportFilter = "open" | "needs_human" | "mine" | "waiting" | "resolved";
+/**
+ * A caixa não é um histórico de estados: ela é a distribuição do trabalho.
+ * "open" é a fila geral, isto é, conversas que ninguém assumiu ainda.
+ */
+export type SupportFilter = "open" | "needs_human" | "mine";
 
 export const SUPPORT_FILTERS: readonly { key: SupportFilter; label: string }[] = [
   { key: "open", label: "Abertas" },
   { key: "needs_human", label: "Precisa de pessoa" },
   { key: "mine", label: "Minhas" },
-  { key: "waiting", label: "Aguardando cliente" },
-  { key: "resolved", label: "Resolvidas" },
 ];
 
 export function parseSupportFilter(value: string | undefined): SupportFilter {
