@@ -88,6 +88,14 @@ export function elapsedLabel(from: Date, now: Date): string {
   return `${Math.floor(hours / 24)} d`;
 }
 
+/** Avatar legível mesmo quando o nome do WhatsApp começa com emoji ou é só um número. */
+export function contactInitials(name: string): string {
+  const words = name.match(/[\p{L}\p{N}]+/gu) ?? [];
+  if (words.length === 0) return "?";
+  if (words.every((word) => /^\d+$/.test(word))) return "#";
+  return words.slice(0, 2).map((word) => Array.from(word)[0].toLocaleUpperCase("pt-BR")).join("");
+}
+
 const TYPE_LABELS: Record<string, string> = {
   image: "Imagem",
   audio: "Áudio",

@@ -120,7 +120,7 @@ test("conversa nova precisa de pessoa, porque ainda não há IA", async () => {
 
 test("abertas é a fila sem atendente; depois de assumir, a conversa fica só em Minhas", async () => {
   const { loadSupportQueue, takeSupportConversation } = await import("./inbox");
-  const { id } = await customerSays("5554911110099", "Preciso de ajuda");
+  const { id } = await customerSays("5554911110199", "Preciso de ajuda");
   await setClan(id, FISCAL);
 
   const before = await tx((t) => loadSupportQueue(t, { orgId: ORG, viewer: fiscal, filter: "open" }));
