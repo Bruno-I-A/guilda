@@ -52,7 +52,7 @@ async function loadItem(claim: OutboxClaim) {
         source: m.source,
         conversationStatus: schema.supportConversations.status,
         roundStartedAt: schema.supportConversations.aiTestStartedAt,
-        testEnabled: schema.supportAgentSettings.testEnabled,
+        agentMode: schema.supportAgentSettings.agentMode,
       })
       .from(o)
       .innerJoin(m, and(eq(m.orgId, o.orgId), eq(m.id, o.messageId)))
@@ -70,8 +70,8 @@ async function loadItem(claim: OutboxClaim) {
 /**
  * Trava de producao do piloto: mensagem com ator/origem de IA nunca chega a
  * Meta, mesmo que outro trecho crie outbox por engano. A unica excecao e a fala
- * da rodada do teste do agente (2026-11-19), conferida de novo aqui: mesma
- * rodada, interruptor ligado e nenhuma pessoa no comando (agentDeliveryBlock).
+ * da rodada do agente (2026-11-19; modo em 2026-11-23), conferida de novo aqui:
+ * mesma rodada, agente ligado e nenhuma pessoa no comando (agentDeliveryBlock).
  */
 async function blockAutomatedDelivery(claim: OutboxClaim, messageId: string, reason: string): Promise<void> {
   await withOrgTx(claim.orgId, async (tx) => {
@@ -130,7 +130,7 @@ async function deliver(claim: OutboxClaim, config: MetaServerConfig, fetchImpl: 
       payloadRound: item.payload.agentRound,
       roundStartedAt: item.roundStartedAt,
       status: item.conversationStatus,
-      testEnabled: item.testEnabled === true,
+      mode: item.agentMode ?? "off",
     });
     if (block) {
       await blockAutomatedDelivery(claim, item.messageId, block);

@@ -41,7 +41,7 @@ export default async function AtendimentoSettingsPage() {
         config={embeddedSignupConfig}
         initialChannels={channels}
       />
-      <AgentTestPanel initial={{ enabled: agent.testEnabled, keyword: agent.testKeyword ?? "" }} aiReady={aiReady} />
+      <AgentTestPanel initial={{ enabled: agent.mode !== "off", keyword: agent.testKeyword ?? "" }} aiReady={aiReady} />
       <RoutingPanel clans={routing} />
     </div>
   );

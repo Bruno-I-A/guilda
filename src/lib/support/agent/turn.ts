@@ -60,7 +60,7 @@ async function applyAgentDecision(
     .where(where)
     .for("update");
   if (!row) return "conversa_sumiu";
-  if (!(await loadAgentSettings(tx, input.orgId)).testEnabled) return "teste_desligado";
+  if ((await loadAgentSettings(tx, input.orgId)).mode === "off") return "agente_desligado";
   if (row.status !== "ai_active") return "pessoa_assumiu";
   if (row.startedAt?.getTime() !== input.startedAt.getTime()) return "rodada_reiniciada";
   const [latest] = await tx

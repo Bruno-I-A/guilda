@@ -588,7 +588,7 @@ test("a trava final nunca envia mensagem criada pela IA", async () => {
   // Sem o teste do agente ligado, nenhuma fala da IA sai (2026-11-19).
   expect(outbox).toEqual({
     status: "failed",
-    lastError: "Teste do agente desligado: a mensagem da IA ficou na Guilda.",
+    lastError: "Agente de IA desligado: a mensagem da IA ficou na Guilda.",
   });
 });
 

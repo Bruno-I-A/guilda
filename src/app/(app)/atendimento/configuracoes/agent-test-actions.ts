@@ -6,7 +6,7 @@ import { z } from "zod";
 import { withOrgTx } from "@/db/org-tx";
 import { err, requireMemberContext, type ActionResult } from "@/lib/action-context";
 import { isAdminRole } from "@/lib/session";
-import { saveAgentTestSettings } from "@/lib/support/agent/settings";
+import { saveAgentSettings } from "@/lib/support/agent/settings";
 
 const agentTestSchema = z.object({
   enabled: z.boolean(),
@@ -21,10 +21,10 @@ export async function saveAgentTest(input: z.input<typeof agentTestSchema>): Pro
   const parsed = agentTestSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Dados inválidos.");
   const result = await withOrgTx(ctx.orgId, (tx) =>
-    saveAgentTestSettings(tx, {
+    saveAgentSettings(tx, {
       orgId: ctx.orgId,
       userId: ctx.userId,
-      enabled: parsed.data.enabled,
+      mode: parsed.data.enabled ? "test" : "off",
       keyword: parsed.data.keyword,
       now: new Date(),
     }),
