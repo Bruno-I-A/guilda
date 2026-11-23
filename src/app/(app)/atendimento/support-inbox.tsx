@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCnpj } from "@/domain/cnpj";
-import { DELIVERY_LABELS, elapsedLabel, SUPPORT_FILTERS, SUPPORT_STATUS_LABELS, type DeliveryState, type SupportFilter, type SupportStatus } from "@/domain/support-inbox";
+import { contactInitials, DELIVERY_LABELS, elapsedLabel, SUPPORT_FILTERS, SUPPORT_STATUS_LABELS, type DeliveryState, type SupportFilter, type SupportStatus } from "@/domain/support-inbox";
 import type { ActionResult } from "@/lib/action-context";
 import { APP_TIME_ZONE } from "@/lib/date-time";
 import type { SupportConversationView, SupportQueueRow, SupportTimelineItem } from "@/lib/support/inbox";
@@ -77,31 +77,45 @@ function useCommand() {
   return { pending, run };
 }
 
+function ContactAvatar({ name, id }: { name: string; id: string }) {
+  const tone = ["bg-primary/10 text-primary", "bg-accent text-foreground", "bg-muted text-foreground"][id.charCodeAt(0) % 3];
+  return (
+    <span aria-hidden="true" className={cn("grid size-10 shrink-0 place-items-center rounded-full border border-border/70 text-sm font-medium", tone)}>
+      {contactInitials(name)}
+    </span>
+  );
+}
+
 function QueueItem({ row, active, filter, now }: { row: SupportQueueRow; active: boolean; filter: SupportFilter; now: Date }) {
+  const attention = row.status === "needs_human";
+  const secondary = row.clientName ? companyDisplayName(row.clientName) : null;
   return (
     <li>
       <Link
         href={inboxHref(filter, row.id)}
         scroll={false}
         aria-current={active ? "true" : undefined}
-        className={cn("grid min-w-0 gap-1.5 border-l-2 px-4 py-3.5 transition-colors hover:bg-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", active ? "border-l-primary bg-primary/20" : "border-l-transparent")}
+        className={cn("grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] gap-3 border-l-2 px-4 py-3 transition-colors hover:bg-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", active ? "border-l-primary bg-primary/10" : "border-l-transparent", attention && !active && "bg-destructive/[0.04]")}
       >
-        <span className="flex min-w-0 items-baseline justify-between gap-2">
-          <span className="truncate text-base font-semibold">{row.contactName}</span>
-          {row.lastMessageAt ? (
-            <span className={cn("flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums", row.waitingReply ? "text-foreground" : "text-muted-foreground")}>
-              {row.waitingReply ? <Clock className="size-3" aria-label="Sem resposta há" /> : null}
-              {elapsedLabel(new Date(row.lastMessageAt), now)}
-            </span>
-          ) : null}
-        </span>
-        {row.clientName ? <span className="truncate text-sm text-muted-foreground">{companyDisplayName(row.clientName)}</span> : null}
-        {row.lastMessage ? <span className="truncate text-sm text-muted-foreground">{row.lastMessage}</span> : null}
-        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <StatusChip status={row.status} />
-          {row.agentTest ? <AgentTestChip /> : null}
-          {row.aiUrgent ? <span className="inline-flex shrink-0 items-center rounded-md border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-xs text-warning">Urgente (IA)</span> : null}
-          <span className="truncate text-xs text-muted-foreground">{row.assignedToMe ? "Com você" : (row.assigneeName ?? row.clanName ?? "Sem setor")}</span>
+        <ContactAvatar name={row.contactName} id={row.id} />
+        <span className="grid min-w-0 gap-1">
+          <span className="flex min-w-0 items-baseline justify-between gap-2">
+            <span className="truncate text-sm font-semibold text-foreground">{row.contactName}</span>
+            {row.lastMessageAt ? (
+              <span className={cn("shrink-0 font-mono text-xs tabular-nums", row.waitingReply ? "text-foreground" : "text-muted-foreground")}>
+                {elapsedLabel(new Date(row.lastMessageAt), now)}
+              </span>
+            ) : null}
+          </span>
+          {secondary ? <span className="truncate text-xs text-muted-foreground">{secondary}</span> : null}
+          <span className={cn("truncate text-sm", row.waitingReply ? "text-foreground" : "text-muted-foreground")}>{row.lastMessage ?? "Conversa iniciada"}</span>
+          <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+            {attention ? <span className="inline-flex shrink-0 items-center gap-1 font-medium text-destructive"><span className="size-1.5 rounded-full bg-destructive" /> Precisa de pessoa</span> : null}
+            {row.status === "waiting_customer" ? <span className="shrink-0">Aguardando cliente</span> : null}
+            {row.agentTest ? <span className="inline-flex shrink-0 items-center gap-1"><Bot className="size-3" aria-hidden /> Teste da IA</span> : null}
+            {row.aiUrgent ? <span className="shrink-0 text-warning">Urgente pela IA</span> : null}
+            <span className="truncate">{row.assignedToMe ? "Com você" : (row.assigneeName ?? row.clanName ?? "Sem setor")}</span>
+          </span>
         </span>
       </Link>
     </li>
@@ -259,6 +273,7 @@ function ConversationPanel({ conversation, filter, onContext }: { conversation: 
           <Button asChild size="icon-sm" variant="ghost" className="touch-target lg:hidden">
             <Link href={inboxHref(filter)} aria-label="Voltar para a fila"><ArrowLeft aria-hidden /></Link>
           </Button>
+          <ContactAvatar name={conversation.contactName} id={conversation.id} />
           <div className="grid min-w-0 flex-1 gap-1">
             <span className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="truncate text-base font-semibold">{conversation.contactName}</span>
@@ -587,15 +602,15 @@ export function SupportInbox({
   return (
     <div className="grid h-full min-h-0 min-w-0 overflow-hidden border-y bg-card lg:grid-cols-[22rem_minmax(0,1fr)] lg:border-t-0">
       <section className={cn("min-h-0 min-w-0 flex-col bg-card lg:flex lg:border-r", selected ? "hidden" : "flex")} aria-label="Fila de conversas">
-        <nav className="grid shrink-0 grid-cols-3 gap-1 border-b bg-background/45 p-3" aria-label="Filtrar conversas">
+        <nav className="grid shrink-0 grid-cols-3 gap-1 border-b bg-background/45 p-2" aria-label="Filtrar conversas">
           {SUPPORT_FILTERS.map((item) => (
             <Link
               key={item.key}
               href={inboxHref(item.key)}
               aria-current={filter === item.key ? "page" : undefined}
-              className={cn("flex min-h-10 items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-colors hover:bg-accent/45", filter === item.key ? "border-primary bg-primary/20 text-foreground" : "border-transparent text-muted-foreground")}
+              className={cn("flex min-h-12 min-w-0 flex-col items-start justify-center gap-0.5 rounded-md border px-2 py-1 text-xs leading-tight transition-colors hover:bg-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", filter === item.key ? "border-primary/40 bg-primary/10 text-foreground" : "border-transparent text-muted-foreground")}
             >
-              {item.label} <span className="font-mono tabular-nums">{counts[item.key]}</span>
+              <span className="truncate">{item.key === "needs_human" ? <><span className="sm:hidden">Pessoas</span><span className="hidden sm:inline">{item.label}</span></> : item.label}</span><span className="font-mono text-sm font-medium tabular-nums">{counts[item.key]}</span>
             </Link>
           ))}
         </nav>

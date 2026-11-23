@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   canSeeConversation,
+  contactInitials,
   deliveryState,
   elapsedLabel,
   messageLabel,
@@ -58,6 +59,12 @@ describe("mensagem do cliente", () => {
 });
 
 describe("apresentação", () => {
+  test("avatar usa letras do contato sem depender da foto da Meta", () => {
+    expect(contactInitials("José Prazeres Dos Santos")).toBe("JP");
+    expect(contactInitials("👩‍👦 Ana")).toBe("A");
+    expect(contactInitials("+5554912345678")).toBe("#");
+    expect(contactInitials("♡")).toBe("?");
+  });
   test("filtro desconhecido cai em Abertas", () => {
     expect(parseSupportFilter("resolved")).toBe("open");
     expect(parseSupportFilter("waiting")).toBe("open");
