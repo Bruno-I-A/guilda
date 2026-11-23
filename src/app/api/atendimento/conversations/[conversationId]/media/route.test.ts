@@ -57,7 +57,7 @@ test("envia o arquivo à Meta e só depois grava a mensagem no tenant", async ()
   const response = await POST(uploadRequest(), params);
   expect(response.status).toBe(200);
   expect(mocks.upload).toHaveBeenCalledWith(expect.objectContaining({
-    phoneNumberId: "222222", accessToken: "EA-test", filename: "balanco.pdf", mimeType: "application/pdf",
+    phoneNumberId: "222222", accessToken: "EA-test", fileName: "balanco.pdf", mimeType: "application/pdf",
   }), { graphApiVersion: "v24.0" });
   expect(mocks.save).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
     orgId: "org-a", conversationId, requestId, mediaId: "123456789", kind: "document", caption: "Segue o balanço",

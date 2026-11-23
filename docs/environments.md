@@ -84,6 +84,7 @@ cofre continuam exclusivos de cada ambiente da Guilda.
 | `SUPPORT_TRIAGE_DEBOUNCE_SECONDS` | espera para agrupar mensagens seguidas do cliente; recomendado: `20` |
 | `OPENAI_API_KEY` | transcrição dos áudios recebidos (2026-11-23), só no serviço de atendimento; sem ela o áudio só se ouve. Nunca entra no banco nem no repositório |
 | `OPENAI_TRANSCRIPTION_MODEL` | opcional; padrão `gpt-4o-mini-transcribe`, o mesmo do Scharff |
+| `FFMPEG_PATH` | opcional, no app; caminho do ffmpeg que converte a nota de voz gravada. Na imagem Docker ele já vem instalado (`ffmpeg` no PATH) |
 
 No piloto de produção, `SUPPORT_AI_MODE` aceita somente `shadow` ou fica
 desligado. A triagem em sombra não insere nada em `support_outbox`, e o worker

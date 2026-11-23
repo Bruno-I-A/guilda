@@ -235,16 +235,19 @@ export async function sendWhatsAppText(
   return sent.id;
 }
 
-/** O arquivo é enviado à Meta no servidor; o navegador nunca recebe o token do canal. */
+/**
+ * Sobe foto, documento ou nota de voz no mesmo número que fará o envio.
+ * O navegador nunca recebe o token nem o id do canal.
+ */
 export async function uploadWhatsAppMedia(
-  input: { phoneNumberId: string; accessToken: string; bytes: ArrayBuffer; mimeType: string; filename: string },
+  input: { phoneNumberId: string; accessToken: string; bytes: Uint8Array; mimeType: string; fileName: string },
   config: Pick<MetaServerConfig, "graphApiVersion">,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   const form = new FormData();
   form.set("messaging_product", "whatsapp");
   form.set("type", input.mimeType);
-  form.set("file", new Blob([input.bytes], { type: input.mimeType }), input.filename);
+  form.set("file", new Blob([new Uint8Array(input.bytes)], { type: input.mimeType }), input.fileName);
   const response = await fetchImpl(graphUrl(config, `/${input.phoneNumberId}/media`), {
     method: "POST",
     headers: { authorization: `Bearer ${input.accessToken}` },
@@ -259,17 +262,9 @@ export async function uploadWhatsAppMedia(
   return payload.id;
 }
 
-/** Envia uma mídia já carregada no mesmo número do WhatsApp. */
+/** Envia foto ou documento já carregado no mesmo número do WhatsApp. */
 export async function sendWhatsAppMedia(
-  input: {
-    phoneNumberId: string;
-    accessToken: string;
-    to: string;
-    kind: "image" | "document";
-    mediaId: string;
-    filename?: string;
-    caption?: string;
-  },
+  input: { phoneNumberId: string; accessToken: string; to: string; kind: "image" | "document"; mediaId: string; filename?: string; caption?: string },
   config: MetaServerConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
@@ -282,21 +277,32 @@ export async function sendWhatsAppMedia(
   const response = await fetchImpl(graphUrl(config, `/${input.phoneNumberId}/messages`), {
     method: "POST",
     headers: { authorization: `Bearer ${input.accessToken}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: input.to,
-      type: input.kind,
-      [input.kind]: media,
-    }),
+    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: input.to, type: input.kind, [input.kind]: media }),
     cache: "no-store",
     signal: AbortSignal.timeout(15_000),
   });
   const payload = await responsePayload(response);
   const sent = Array.isArray(payload.messages) ? (payload.messages[0] as { id?: unknown } | undefined) : undefined;
-  if (!response.ok || typeof sent?.id !== "string") {
-    throw graphError("send_message", response, payload);
-  }
+  if (!response.ok || typeof sent?.id !== "string") throw graphError("send_message", response, payload);
+  return sent.id;
+}
+
+/** Áudio já enviado à Meta: OGG/Opus chega ao cliente como nota de voz. */
+export async function sendWhatsAppAudio(
+  input: { phoneNumberId: string; accessToken: string; to: string; mediaId: string },
+  config: MetaServerConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const response = await fetchImpl(graphUrl(config, `/${input.phoneNumberId}/messages`), {
+    method: "POST",
+    headers: { authorization: `Bearer ${input.accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: input.to, type: "audio", audio: { id: input.mediaId } }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const payload = await responsePayload(response);
+  const sent = Array.isArray(payload.messages) ? (payload.messages[0] as { id?: unknown } | undefined) : undefined;
+  if (!response.ok || typeof sent?.id !== "string") throw graphError("send_message", response, payload);
   return sent.id;
 }
 

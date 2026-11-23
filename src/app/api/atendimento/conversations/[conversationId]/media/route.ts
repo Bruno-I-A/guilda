@@ -94,9 +94,9 @@ export async function POST(request: Request, context: { params: Promise<{ conver
     mediaId = await uploadWhatsAppMedia({
       phoneNumberId: access.channel.phoneNumberId,
       accessToken: access.accessToken,
-      bytes: await file.arrayBuffer(),
+      bytes: new Uint8Array(await file.arrayBuffer()),
       mimeType: spec.value.mimeType,
-      filename: spec.value.filename,
+      fileName: spec.value.filename,
     }, { graphApiVersion: getWhatsAppConfig().graphApiVersion });
   } catch (error) {
     if (error instanceof MetaGraphError) return json(error.httpStatus === 413 ? 413 : 502, error.httpStatus === 413 ? "Arquivo grande demais para o WhatsApp." : "O WhatsApp recusou o arquivo. Confira o formato e tente novamente.");

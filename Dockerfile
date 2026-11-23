@@ -36,6 +36,9 @@ CMD ["npx", "drizzle-kit", "migrate"]
 FROM base AS runner
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# ffmpeg converte a nota de voz gravada no navegador (WebM/MP4) para o
+# OGG/Opus que o WhatsApp mostra como áudio de voz (src/lib/support/voice-note.ts).
+RUN apk add --no-cache ffmpeg
 RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static

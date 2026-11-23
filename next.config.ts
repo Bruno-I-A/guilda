@@ -17,7 +17,8 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(), payment=()",
+    // Microfone só na própria Guilda: a nota de voz do Atendimento grava no navegador.
+    value: "camera=(), microphone=(self), geolocation=(), payment=()",
   },
 ];
 
