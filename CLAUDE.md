@@ -563,6 +563,18 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
     clã. Desenho em `docs/superpowers/specs/2026-11-20-encaminhamento-por-assunto-design.md`.
     Próxima etapa: cadastrar os números de WhatsApp na empresa, para a Carteira acertar já na
     primeira mensagem.
+  - **INSS é do RH (2026-11-23, regra do escritório)**: toda guia de INSS, de funcionário ou do
+    sócio (pró-labore), é trabalhista/dp, que cai no clã RH. O prompt do Scharff mandava o INSS do
+    sócio para o contábil; quanto tirar de pró-labore continua contábil.
+  - **Foto e PDF (2026-11-23, pedido do Bruno)**: o cliente manda o PDF da guia e pede "recalcula?"
+    sem dizer do que é. No teste do agente, a IA recebe o último arquivo do turno: foto (JPG, PNG,
+    WEBP, GIF, até 5 MB) ou PDF (até 10 MB, **só as 2 primeiras páginas**, cortadas com `pdf-lib`
+    em `firstPdfPages`), para saber o assunto, encaminhar e dizer no resumo o que é o documento;
+    o prompt proíbe recalcular ou conferir valor (`BLOCO_PDF_ANEXADO`). A legenda e o nome do
+    arquivo entram no texto (`turnMessageText`); antes a mídia virava só "Documento". **Na sombra o
+    arquivo não sai**: o texto é mascarado, o arquivo não, então só a conversa de teste o envia.
+    Falha de download ou PDF ilegível segue só com o texto e fica em `result.attachment` da leitura.
+    Antes de cliente real, o aviso de privacidade precisa citar o envio de arquivos.
 
 ## Estrutura por clã (decisões de 2026-08-18)
 

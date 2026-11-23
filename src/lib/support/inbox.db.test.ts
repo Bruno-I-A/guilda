@@ -104,6 +104,8 @@ beforeAll(async () => {
       createdBy: "admin",
     }),
   );
+  // A primeira importação dos workers passava dos 5 s do teste com a máquina carregada.
+  await Promise.all([import("@/lib/whatsapp/inbound-worker"), import("@/lib/whatsapp/outbound-worker"), import("./inbox")]);
 }, 120_000);
 
 afterAll(async () => {

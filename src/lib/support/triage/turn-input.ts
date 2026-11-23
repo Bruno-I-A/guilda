@@ -5,7 +5,7 @@ import { and, desc, eq } from "drizzle-orm";
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { matchTestKeyword } from "@/domain/support-agent";
-import { messageLabel } from "@/domain/support-inbox";
+import { pickTurnAttachment, turnMessageText, type TurnAttachment } from "@/domain/support-attachment";
 
 import type { OpcoesClassificacao, ResultadoClassificacao } from "./classificacao";
 import type { MensagemHistoricoClassificacao } from "./contexto";
@@ -17,7 +17,7 @@ import type { MensagemHistoricoClassificacao } from "./contexto";
  */
 
 /** Bump quando o prompt mudar de verdade: a leitura antiga fica marcada com a versão dela. */
-export const TRIAGE_PROMPT_VERSION = "guilda-2026-11-23-v4";
+export const TRIAGE_PROMPT_VERSION = "guilda-2026-11-23-v5";
 
 const HISTORY_LIMIT = 20;
 
@@ -36,17 +36,19 @@ const AUTHOR: Record<string, MensagemHistoricoClassificacao["autor"]> = { custom
  * O turno atual são as mensagens do cliente desde a última fala da equipe; o
  * resto do contato vira histórico, marcado como ciclo anterior quando é de
  * outra conversa ou de antes da rodada de teste. Na rodada, a palavra-chave sai
- * do texto. Mídia entra só como rótulo ("Documento"): o arquivo não sai.
+ * do texto. Mídia entra como rótulo com a legenda e o nome do arquivo; o arquivo
+ * em si só vai à IA no teste do agente (`attachment`, baixado em
+ * agent/attachment.ts), nunca na sombra.
  */
 export async function loadTurnInput(
   tx: OrgTx,
   orgId: string,
   candidate: Candidate,
   round: { startedAt: Date; keyword: string | null } | null = null,
-) {
+): Promise<{ current: string; history: MensagemHistoricoClassificacao[]; attachment: TurnAttachment | null }> {
   const m = schema.supportMessages;
   const recent = await tx
-    .select({ conversationId: m.conversationId, actor: m.actor, text: m.text, messageType: m.messageType, occurredAt: m.occurredAt })
+    .select({ id: m.id, conversationId: m.conversationId, actor: m.actor, text: m.text, messageType: m.messageType, content: m.content, occurredAt: m.occurredAt })
     .from(m)
     .innerJoin(schema.supportConversations, and(eq(schema.supportConversations.orgId, m.orgId), eq(schema.supportConversations.id, m.conversationId)))
     .where(and(eq(m.orgId, orgId), eq(schema.supportConversations.contactId, candidate.contactId)))
@@ -57,10 +59,10 @@ export async function loadTurnInput(
     message.conversationId === candidate.conversationId && (!round || message.occurredAt >= round.startedAt);
   let split = ordered.length;
   while (split > 0 && ordered[split - 1].actor === "customer" && inRound(ordered[split - 1])) split -= 1;
-  const current = ordered
-    .slice(split)
+  const turn = ordered.slice(split);
+  const current = turn
     .map((message) =>
-      round && message.text !== null ? matchTestKeyword(messageLabel(message), round.keyword).rest : messageLabel(message),
+      round && message.text !== null ? matchTestKeyword(turnMessageText(message), round.keyword).rest : turnMessageText(message),
     )
     .filter((text) => text.trim() !== "")
     .join("\n");
@@ -69,10 +71,10 @@ export async function loadTurnInput(
     .slice(-HISTORY_LIMIT)
     .map((message) => ({
       autor: AUTHOR[message.actor] ?? "cliente",
-      conteudo: messageLabel(message),
+      conteudo: turnMessageText(message),
       ciclo: inRound(message) ? "atual" : "anterior",
     }));
-  return { current, history };
+  return { current, history, attachment: round ? pickTurnAttachment(turn) : null };
 }
 
 /** O que a tela mostra como "Leitura da IA": igual na sombra e no teste. */

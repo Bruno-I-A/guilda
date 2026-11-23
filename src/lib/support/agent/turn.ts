@@ -21,6 +21,7 @@ import {
   type AgentDecision,
   type AgentRunRecord,
 } from "./decision";
+import { loadAgentAttachment, type AttachmentRecord } from "./attachment";
 import { loadRoutingRoster, resolveHandoffRecipients } from "./routing";
 import { loadAgentSettings } from "./settings";
 
@@ -177,7 +178,7 @@ export async function runAgentTurn(
 ): Promise<boolean> {
   const claimed = await withOrgTx(orgId, async (tx) => {
     const [conversation] = await tx
-      .select({ startedAt: c.aiTestStartedAt })
+      .select({ startedAt: c.aiTestStartedAt, channelId: c.channelId })
       .from(c)
       .where(and(eq(c.orgId, orgId), eq(c.id, candidate.conversationId)));
     const startedAt = conversation?.startedAt;
@@ -218,7 +219,7 @@ export async function runAgentTurn(
     const knowledge = await retrieveApprovedKnowledge(tx, orgId, input.current);
     const roster = await loadRoutingRoster(tx, orgId);
     const records = previous.map((row) => agentRecord(row.result)).filter((record): record is AgentRunRecord => record !== null);
-    return { runId: run.id, startedAt, facts: roundFacts(records), runsInRound: previous.length, input, clans, knowledge, roster };
+    return { runId: run.id, startedAt, channelId: conversation.channelId, facts: roundFacts(records), runsInRound: previous.length, input, clans, knowledge, roster };
   });
   if (!claimed) return false;
 
@@ -232,13 +233,20 @@ export async function runAgentTurn(
     clans: claimed.clans,
     now,
   });
+  let attachment: AttachmentRecord | null = null;
   if (!decision) {
+    // O arquivo do turno é baixado fora da transação: a Meta pode demorar.
+    const loaded = claimed.input.attachment
+      ? await loadAgentAttachment({ orgId, channelId: claimed.channelId, attachment: claimed.input.attachment })
+      : null;
+    attachment = loaded?.record ?? null;
     result = await classify(claimed.input.current, claimed.input.history, {
       ...options,
       knowledge: claimed.knowledge,
       modo: "conversa",
       perguntasFeitas: claimed.facts.questionsAsked,
       roster: claimed.roster,
+      anexo: loaded?.anexo ?? null,
     });
     decision = decideAfterClassifying({ result, facts: claimed.facts, clans: claimed.clans, now });
   }
@@ -261,6 +269,7 @@ export async function runAgentTurn(
           ...(result ? suggestionFields(result) : {}),
           mode: "conversa",
           agent: { kind: final.kind, asked: askedQuestion(final), discarded },
+          ...(attachment ? { attachment } : {}),
         },
         fallbackReason: fallback,
         model: result?.modelo ?? options.modelo,
