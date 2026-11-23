@@ -343,6 +343,21 @@ async function materializeMessage(
   }
 }
 
+/**
+ * A Meta aceita mídia e só depois avisa que não entregou (nota de voz,
+ * 2026-11-23). O motivo em texto (`error_data.details`) fica no log do
+ * serviço: só código, título e detalhe, sem número nem conteúdo da mensagem.
+ */
+function logDeliveryFailure(errors: unknown): void {
+  const first = Array.isArray(errors) ? asRecord(errors[0]) : null;
+  const details = asRecord(first?.error_data)?.details;
+  console.warn("[whatsapp] A Meta avisou falha de entrega", {
+    code: typeof first?.code === "number" ? first.code : null,
+    title: typeof first?.title === "string" ? first.title.slice(0, 200) : null,
+    details: typeof details === "string" ? details.slice(0, 500) : null,
+  });
+}
+
 async function materializeStatuses(
   tx: OrgTx,
   input: { orgId: string; channelId: string; payload: JsonRecord },
@@ -388,6 +403,7 @@ async function materializeStatuses(
           .limit(1);
     const message = received ?? accepted;
     if (!message) continue;
+    if (eventType === "failed") logDeliveryFailure(status.errors);
     const at = occurredAt(status.timestamp);
     await tx
       .insert(schema.supportMessageEvents)

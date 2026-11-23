@@ -142,9 +142,25 @@ const META_ERRORS: Record<number, string> = {
   131047: "Passaram 24 horas desde a última mensagem do cliente.",
   131026: "O número não pôde receber a mensagem.",
   131031: "O número do WhatsApp da empresa está bloqueado na Meta.",
+  131053: "A Meta não aceitou o arquivo.",
   190: "O acesso ao WhatsApp expirou. Reconecte em Configurações.",
 };
 
 export function metaErrorMessage(code: number | undefined): string {
   return (code !== undefined && META_ERRORS[code]) || "A Meta recusou o envio.";
+}
+
+/**
+ * Frase da falha de envio. A recusa na hora já vem como frase (`message`); a
+ * que a Meta avisa DEPOIS de aceitar (status "failed" do webhook, comum em
+ * mídia) vem como `errors` da Meta. Antes essa segunda virava só "Não
+ * enviada", sem dizer por quê (nota de voz, 2026-11-23). O código vai junto:
+ * é ele que separa janela, número e arquivo recusado.
+ */
+export function deliveryFailureMessage(detail: Readonly<Record<string, unknown>>): string | null {
+  if (typeof detail.message === "string") return detail.message;
+  const first: unknown = Array.isArray(detail.errors) ? detail.errors[0] : undefined;
+  const code = first && typeof first === "object" ? (first as { code?: unknown }).code : undefined;
+  if (typeof code !== "number" || !Number.isInteger(code)) return null;
+  return `${metaErrorMessage(code)} (código ${code} da Meta)`;
 }

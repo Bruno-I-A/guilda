@@ -287,7 +287,10 @@ export async function sendWhatsAppMedia(
   return sent.id;
 }
 
-/** Áudio já enviado à Meta: OGG/Opus chega ao cliente como nota de voz. */
+/**
+ * Áudio já enviado à Meta: OGG/Opus com `voice: true` chega ao cliente como
+ * nota de voz. Sem o campo, a Meta trata como arquivo de áudio comum.
+ */
 export async function sendWhatsAppAudio(
   input: { phoneNumberId: string; accessToken: string; to: string; mediaId: string },
   config: MetaServerConfig,
@@ -296,7 +299,7 @@ export async function sendWhatsAppAudio(
   const response = await fetchImpl(graphUrl(config, `/${input.phoneNumberId}/messages`), {
     method: "POST",
     headers: { authorization: `Bearer ${input.accessToken}`, "content-type": "application/json" },
-    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: input.to, type: "audio", audio: { id: input.mediaId } }),
+    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: input.to, type: "audio", audio: { id: input.mediaId, voice: true } }),
     cache: "no-store",
     signal: AbortSignal.timeout(15_000),
   });

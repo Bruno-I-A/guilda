@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   canSeeConversation,
   contactInitials,
+  deliveryFailureMessage,
   deliveryState,
   elapsedLabel,
   messageLabel,
@@ -92,5 +93,14 @@ describe("apresentação", () => {
     expect(metaErrorMessage(131047)).toMatch(/24 horas/);
     expect(metaErrorMessage(1)).toBe("A Meta recusou o envio.");
     expect(metaErrorMessage(undefined)).toBe("A Meta recusou o envio.");
+  });
+  test("falha avisada depois pelo webhook diz o motivo e o código", () => {
+    expect(deliveryFailureMessage({ message: "Passaram 24 horas." })).toBe("Passaram 24 horas.");
+    expect(deliveryFailureMessage({ errors: [{ code: 131053, title: "Media upload error", error_data: { details: "x" } }] }))
+      .toBe("A Meta não aceitou o arquivo. (código 131053 da Meta)");
+    expect(deliveryFailureMessage({ errors: [{ code: 131000 }] })).toBe("A Meta recusou o envio. (código 131000 da Meta)");
+    expect(deliveryFailureMessage({ errors: [{ code: "131053" }] })).toBeNull();
+    expect(deliveryFailureMessage({ errors: [] })).toBeNull();
+    expect(deliveryFailureMessage({})).toBeNull();
   });
 });
