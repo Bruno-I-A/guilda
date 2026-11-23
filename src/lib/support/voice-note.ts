@@ -40,7 +40,16 @@ export const convertToVoiceNote: VoiceNoteConverter = async (input) => {
       // projeto e copia o repositório inteiro (com .env e docs) para o standalone.
       const ffmpeg = spawn(
         /*turbopackIgnore: true*/ process.env.FFMPEG_PATH?.trim() || "ffmpeg",
-        ["-hide_banner", "-loglevel", "error", "-i", file, "-vn", "-ac", "1", "-ar", "48000", "-c:a", "libopus", "-b:a", "32k", "-application", "voip", "-f", "ogg", "pipe:1"],
+        [
+          "-hide_banner", "-loglevel", "error", "-i", file,
+          "-map", "0:a:0", "-vn", "-map_metadata", "-1",
+          // A gravação do navegador pode começar depois do zero e ter saltos nas marcas
+          // de tempo; o salto ia para o OGG e a Meta recusava a nota depois de aceitá-la
+          // ("Media file scrutiny ... failed", 131053). Refaz do zero e cobre o salto com silêncio.
+          "-af", "aresample=async=1:first_pts=0",
+          "-ac", "1", "-ar", "48000", "-c:a", "libopus", "-b:a", "32k", "-application", "voip",
+          "-f", "ogg", "pipe:1",
+        ],
         { stdio: ["ignore", "pipe", "pipe"] },
       );
       const chunks: Buffer[] = [];
