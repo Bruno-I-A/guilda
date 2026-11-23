@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   member: vi.fn(),
@@ -46,11 +46,29 @@ beforeEach(() => {
   mocks.upload.mockResolvedValue("123456789");
 });
 
+afterEach(() => vi.unstubAllEnvs());
+
 test("origem externa e conversa sem permissão não fazem upload", async () => {
   expect((await POST(uploadRequest("https://evil.example"), params)).status).toBe(403);
   mocks.permit.mockResolvedValue({ ok: false, error: "Assuma a conversa para responder." });
   expect((await POST(uploadRequest(), params)).status).toBe(409);
   expect(mocks.upload).not.toHaveBeenCalled();
+});
+
+test("aceita a origem pública configurada quando o proxy entrega uma URL interna", async () => {
+  vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://guilda.example");
+  const internalUrl = `http://guilda-app:4000/api/atendimento/conversations/${conversationId}/media`;
+  const form = new FormData();
+  form.set("file", new File(["%PDF-1.7"], "balanco.pdf", { type: "application/pdf" }));
+  form.set("caption", "");
+  form.set("requestId", requestId);
+  const response = await POST(new Request(internalUrl, {
+    method: "POST",
+    headers: { origin: "https://guilda.example" },
+    body: form,
+  }), params);
+  expect(response.status).toBe(200);
+  expect(mocks.upload).toHaveBeenCalledOnce();
 });
 
 test("envia o arquivo à Meta e só depois grava a mensagem no tenant", async () => {

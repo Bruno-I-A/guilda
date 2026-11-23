@@ -546,6 +546,13 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
   levava para o OGG os saltos de marca de tempo da gravação do navegador. O ffmpeg agora refaz as
   marcas do zero e cobre salto com silêncio (`aresample=async=1:first_pts=0`); o teste com o
   ffmpeg de verdade grava um WebM com salto e confere o OGG contínuo.
+- **Foto e documento para o cliente (2026-11-23, Codex #156; vários de uma vez a pedido do Bruno)**:
+  "Anexar" no compositor de quem assumiu. Até 10 arquivos por vez (`SUPPORT_UPLOAD_MAX_FILES`), um
+  por mensagem como no WhatsApp, com a legenda só no primeiro. Cada arquivo tem a sua chave
+  (`requestId`): o lote sobe um por vez e, se um falhar, os já enviados saem da lista e o resto fica
+  para tentar de novo sem duplicar. A rota `POST .../media` sobe à Meta antes de gravar, como a do
+  áudio. **Origem pela `isSameOriginRequest`**: atrás do proxy a URL interna nunca bate com a origem
+  do navegador, e a comparação direta recusava todo envio na produção.
 - **Vínculo com a empresa é manual**, com histórico. Nota interna não se edita nem se apaga
   (`support_conversation_notes`, REVOKE no `guilda_app`).
 - **Números e empresas (2026-11-23, pedido do Bruno: "é meio variado")**: uma empresa tem vários

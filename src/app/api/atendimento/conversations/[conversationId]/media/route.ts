@@ -4,6 +4,7 @@ import { z } from "zod";
 import { withOrgTx } from "@/db/org-tx";
 import { SUPPORT_UPLOAD_BODY_MAX_BYTES, validateSupportCaption, validateSupportUpload } from "@/domain/support-upload";
 import { requireMemberContext } from "@/lib/action-context";
+import { isSameOriginRequest } from "@/lib/request-security";
 import { checkSupportMediaReply, loadSupportViewer, sendSupportMedia } from "@/lib/support/inbox";
 import { loadWhatsAppChannelAccess } from "@/lib/whatsapp/channel-repository";
 import { getWhatsAppConfig } from "@/lib/whatsapp/config";
@@ -58,7 +59,7 @@ async function boundedFormData(request: Request): Promise<FormData | null> {
 export async function POST(request: Request, context: { params: Promise<{ conversationId: string }> }): Promise<Response> {
   const parsed = paramsSchema.safeParse(await context.params);
   if (!parsed.success) return json(400, "Conversa inválida.");
-  if (request.headers.get("origin") !== new URL(request.url).origin) return json(403, "Origem inválida.");
+  if (!isSameOriginRequest(request)) return json(403, "Origem da solicitação recusada.");
 
   const member = await requireMemberContext();
   if (!member.ok) return json(401, member.error);

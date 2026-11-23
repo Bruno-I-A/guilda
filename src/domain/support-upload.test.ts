@@ -1,6 +1,10 @@
 import { expect, test } from "vitest";
 
-import { validateSupportCaption, validateSupportUpload } from "./support-upload";
+import { SUPPORT_UPLOAD_MAX_FILES, validateSupportCaption, validateSupportUpload } from "./support-upload";
+
+test("permite selecionar um lote pequeno de arquivos", () => {
+  expect(SUPPORT_UPLOAD_MAX_FILES).toBe(10);
+});
 
 test("aceita imagem e documentos usuais com nome limpo", () => {
   expect(validateSupportUpload({ name: "pasta\\balanço.pdf", type: "application/pdf", size: 1024 })).toEqual({
