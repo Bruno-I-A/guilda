@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { withOrgTx } from "@/db/org-tx";
+import { AUDIO_MAX_BYTES, audioBaseMime } from "@/domain/support-audio";
 import { DOCUMENT_MAX_BYTES, documentResponseHeaders } from "@/domain/support-media";
 import { requireMemberContext } from "@/lib/action-context";
 import {
@@ -70,6 +71,21 @@ export async function GET(
   const config = { graphApiVersion: getWhatsAppConfig().graphApiVersion };
 
   try {
+    if (reference.kind === "audio") {
+      // Áudio (2026-11-23): só tipos audio/*, servidos como áudio para o player da conversa.
+      const audio = await downloadWhatsAppMedia({ ...media, allowedMimeTypes: null, maxBytes: AUDIO_MAX_BYTES }, config);
+      const mimeType = audioBaseMime(audio.mimeType);
+      if (!mimeType) return plain(415, "Formato de áudio desconhecido.");
+      return new Response(audio.bytes, {
+        status: 200,
+        headers: {
+          "Content-Type": mimeType,
+          "Content-Disposition": "inline",
+          "Cache-Control": "private, max-age=300",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
     if (reference.kind === "document") {
       const document = await downloadWhatsAppMedia({ ...media, allowedMimeTypes: null, maxBytes: DOCUMENT_MAX_BYTES }, config);
       return new Response(document.bytes, {

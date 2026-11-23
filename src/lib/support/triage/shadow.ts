@@ -8,6 +8,7 @@ import * as schema from "@/db/schema";
 import { getAiConfig } from "@/lib/ai/config";
 
 import { runAgentTurn } from "../agent/turn";
+import { isTranscriptionEnabled } from "../transcription";
 import { classificarMensagem, type OpcoesClassificacao } from "./classificacao";
 import { retrieveApprovedKnowledge } from "./knowledge";
 import { loadTurnInput, suggestionFields, TRIAGE_PROMPT_VERSION, type Candidate, type Classifier } from "./turn-input";
@@ -43,7 +44,10 @@ function debounceMs(): number {
  */
 const MAX_RUNS_PER_CONVERSATION = 6;
 
-async function findCandidates(tx: OrgTx, orgId: string, cutoff: Date, limit: number): Promise<Candidate[]> {
+/** Quanto a leitura espera a transcrição de um áudio do turno antes de seguir só com o rótulo. */
+const AUDIO_WAIT_MS = 10 * 60_000;
+
+async function findCandidates(tx: OrgTx, orgId: string, cutoff: Date, limit: number, audioWaitSince: Date | null): Promise<Candidate[]> {
   const result = await tx.execute<{ conversation_id: string; contact_id: string; message_id: string; live: boolean }>(sql`
     SELECT c.id AS conversation_id, c.contact_id, m.id AS message_id,
            (c.status = 'ai_active' AND c.ai_test_started_at IS NOT NULL) AS live
@@ -62,6 +66,17 @@ async function findCandidates(tx: OrgTx, orgId: string, cutoff: Date, limit: num
         (c.status = 'ai_active' AND c.ai_test_started_at IS NOT NULL)
         OR (SELECT count(*) FROM support_ai_runs r WHERE r.org_id = c.org_id AND r.conversation_id = c.id) < ${MAX_RUNS_PER_CONVERSATION}
       )
+      -- Áudio recente ainda sem transcrição terminada: espera, para a IA ler o texto e não só "Áudio".
+      AND (${audioWaitSince === null} OR NOT EXISTS (
+        SELECT 1 FROM support_messages a
+        WHERE a.org_id = c.org_id AND a.conversation_id = c.id
+          AND a.direction = 'inbound' AND a.message_type = 'audio'
+          AND a.occurred_at > ${(audioWaitSince ?? cutoff).toISOString()}::timestamptz
+          AND NOT EXISTS (
+            SELECT 1 FROM support_message_transcriptions t
+            WHERE t.org_id = a.org_id AND t.message_id = a.id AND t.status IN ('done', 'failed', 'unavailable')
+          )
+      ))
     ORDER BY m.occurred_at
     LIMIT ${limit}
   `);
@@ -121,11 +136,14 @@ export async function runSupportTriageCycle(input: { now?: Date; limit?: number;
   const config = getAiConfig();
   if (!config.apiKey && !input.classify) return { triaged: 0 };
   const options: OpcoesClassificacao = { apiKey: config.apiKey, modelo: config.model };
-  const cutoff = new Date((input.now ?? new Date()).getTime() - debounceMs());
+  const now = input.now ?? new Date();
+  const cutoff = new Date(now.getTime() - debounceMs());
+  // Sem transcrição ligada não há o que esperar: o áudio entra só como rótulo.
+  const audioWaitSince = isTranscriptionEnabled() ? new Date(now.getTime() - AUDIO_WAIT_MS) : null;
   const organizations = await db.select({ id: schema.organization.id }).from(schema.organization).orderBy(asc(schema.organization.id));
   let triaged = 0;
   for (const { id: orgId } of organizations) {
-    const candidates = await withOrgTx(orgId, (tx) => findCandidates(tx, orgId, cutoff, input.limit ?? 5));
+    const candidates = await withOrgTx(orgId, (tx) => findCandidates(tx, orgId, cutoff, input.limit ?? 5, audioWaitSince));
     for (const candidate of candidates) {
       const classify = input.classify ?? defaultClassifier;
       try {

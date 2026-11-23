@@ -19,6 +19,7 @@ import type { SupportConversationView, SupportQueueRow, SupportTimelineItem } fr
 import { cn } from "@/lib/utils";
 
 import { addContactCompany, addNote, markWaiting, removeContactCompany, reopenConversation, resolveConversation, sendReply, setConversationCompany, takeConversation, transferConversation } from "./actions";
+import { MessageAudio } from "./message-audio";
 import { MessageFile } from "./message-file";
 import { companyDisplayName } from "@/domain/company-display-name";
 
@@ -173,6 +174,8 @@ function TimelineItem({ item }: { item: SupportTimelineItem }) {
           </>
         ) : item.file ? (
           <MessageFile file={item.file} />
+        ) : item.audio ? (
+          <MessageAudio audio={item.audio} />
         ) : (
           <p className={cn("whitespace-pre-wrap break-words", !item.isText && "italic text-muted-foreground")}>{item.text}</p>
         )}

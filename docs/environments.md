@@ -82,6 +82,8 @@ cofre continuam exclusivos de cada ambiente da Guilda.
 | `ANTHROPIC_MODEL` | modelo da sugestão interna; o padrão atual é `claude-sonnet-5` |
 | `SUPPORT_AI_MODE` | `shadow` para produzir somente sugestões internas; vazio ou `off` desliga a leitura |
 | `SUPPORT_TRIAGE_DEBOUNCE_SECONDS` | espera para agrupar mensagens seguidas do cliente; recomendado: `20` |
+| `OPENAI_API_KEY` | transcrição dos áudios recebidos (2026-11-23), só no serviço de atendimento; sem ela o áudio só se ouve. Nunca entra no banco nem no repositório |
+| `OPENAI_TRANSCRIPTION_MODEL` | opcional; padrão `gpt-4o-mini-transcribe`, o mesmo do Scharff |
 
 No piloto de produção, `SUPPORT_AI_MODE` aceita somente `shadow` ou fica
 desligado. A triagem em sombra não insere nada em `support_outbox`, e o worker

@@ -764,6 +764,13 @@
       "when": 1795514400000,
       "tag": "0108_support-contact-clients",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1795521600000,
+      "tag": "0109_support-message-transcriptions",
+      "breakpoints": true
     }
   ]
 }
