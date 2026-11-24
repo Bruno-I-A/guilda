@@ -9,6 +9,7 @@ import * as schema from "@/db/schema";
 import { isAdminRole } from "@/domain/guild-permissions";
 import {
   canSeeConversation,
+  conversationAfterTeamReply,
   deliveryFailureMessage,
   deliveryState,
   messageLabel,
@@ -205,12 +206,15 @@ function eventLabel(eventType: string, actor: string | null, detail: Record<stri
   if (eventType === "ai_resumed" && detail.reason === "agent_live") return "Agente de IA começou o atendimento";
   if (eventType === "ai_paused" && detail.reason === "test_disabled") return `${who} desligou o teste do agente`;
   if (eventType === "ai_paused" && detail.reason === "agent_disabled") return `${who} desligou o agente de IA`;
+  if (eventType === "assigned" && detail.reason === "replied") return `${who} respondeu e ficou com a conversa`;
   if (eventType === "assigned") return typeof detail.note === "string" ? `${who}: ${detail.note}` : `${who} assumiu a conversa`;
   if (eventType === "resolved") return `${who} resolveu a conversa`;
   if (eventType === "reopened") return `${who} reabriu a conversa`;
   if (eventType === "contact_linked") return typeof detail.note === "string" ? `${who}: ${detail.note}` : null;
   if (eventType === "status_changed" && status) return `${who} marcou como aguardando cliente`;
-  if (eventType === "ai_paused" && detail.reason === "business_app_message") return "Respondida pelo celular";
+  // A própria mensagem já aparece à direita com autor "Celular". Repetir um
+  // evento depois de cada resposta escondia a conversa real entre etiquetas.
+  if (eventType === "ai_paused" && detail.reason === "business_app_message") return null;
   return null;
 }
 
@@ -394,8 +398,6 @@ export async function loadSupportConversation(
     timeline,
     replyBlocked: replyBlockReason({
       status: row.status,
-      assignedUserId: row.assignedUserId,
-      viewerId: input.viewer.userId,
       channelActive: row.channelStatus === "active",
       lastCustomerMessageAt: lastCustomer?.occurredAt ?? null,
       now: input.now,
@@ -713,7 +715,7 @@ export async function sendSupportReply(tx: OrgTx, input: Command & { text: strin
     .returning({ id: messages.id });
   await tx.insert(events).values({ orgId: input.orgId, messageId: message.id, eventType: "queued", providerEventKey: queuedKey, occurredAt: input.now });
   await tx.insert(schema.supportOutbox).values({ orgId: input.orgId, channelId: row.channelId, messageId: message.id, payload: { to: contact.whatsappId, text: input.text } });
-  await tx.update(c).set({ lastMessageAt: input.now, updatedAt: input.now }).where(and(eq(c.orgId, input.orgId), eq(c.id, row.id)));
+  await afterTeamReply(tx, input, row);
   return { ok: true };
 }
 
@@ -754,7 +756,7 @@ export async function sendSupportMedia(
     messageId: message.id,
     payload: { to: contact.whatsappId, media: { id: input.mediaId, kind: input.kind, filename: input.filename, caption: input.caption } },
   });
-  await tx.update(c).set({ lastMessageAt: input.now, updatedAt: input.now }).where(and(eq(c.orgId, input.orgId), eq(c.id, row.id)));
+  await afterTeamReply(tx, input, row);
   return { ok: true };
 }
 
@@ -796,14 +798,53 @@ export async function sendSupportAudioReply(tx: OrgTx, input: Command & { mediaI
     .returning({ id: messages.id });
   await tx.insert(schema.supportMessageEvents).values({ orgId: input.orgId, messageId: message.id, eventType: "queued", providerEventKey: queuedKey, occurredAt: input.now });
   await tx.insert(schema.supportOutbox).values({ orgId: input.orgId, channelId: row.channelId, messageId: message.id, payload: { to: contact.whatsappId, audio: { id: input.mediaId } } });
-  await tx.update(c).set({ lastMessageAt: input.now, updatedAt: input.now }).where(and(eq(c.orgId, input.orgId), eq(c.id, row.id)));
+  await afterTeamReply(tx, input, row);
   return { ok: true };
 }
 
 /**
- * Régua de quem responde, comum ao texto e à nota de voz: a conversa travada e
- * visível, quem assumiu, canal ativo e a janela de 24 horas. A chave do
- * formulário diz se o mesmo envio já entrou (clique duplo).
+ * Depois de pôr a resposta na fila: quem vê a conversa responde sem assumir
+ * (2026-11-24). A conversa continua com quem está; sem responsável, fica com
+ * quem respondeu, e a IA para (a trava de saída e o turno conferem o status).
+ */
+async function afterTeamReply(
+  tx: OrgTx,
+  input: Command,
+  row: { id: string; status: SupportStatus; assignedUserId: string | null; aiPausedAt: Date | null },
+): Promise<void> {
+  const where = and(eq(c.orgId, input.orgId), eq(c.id, row.id));
+  const change = conversationAfterTeamReply({ status: row.status, assignedUserId: row.assignedUserId, viewerId: input.viewer.userId });
+  if (!change) {
+    await tx.update(c).set({ lastMessageAt: input.now, updatedAt: input.now }).where(where);
+    return;
+  }
+  await tx
+    .update(c)
+    .set({
+      status: change.status,
+      assignedUserId: change.assignedUserId,
+      ...(change.pauseAi ? { aiPausedAt: row.aiPausedAt ?? input.now, aiPauseReason: "attendant_replied" } : {}),
+      lastMessageAt: input.now,
+      updatedAt: input.now,
+    })
+    .where(where);
+  if (change.takeOver) {
+    await tx.insert(schema.supportConversationEvents).values({
+      orgId: input.orgId,
+      conversationId: row.id,
+      eventType: "assigned",
+      actorUserId: input.viewer.userId,
+      source: "guilda_attendant",
+      detail: { reason: "replied" },
+    });
+  }
+}
+
+/**
+ * Régua de quem responde, comum ao texto, ao arquivo e à nota de voz: a
+ * conversa travada e visível para quem responde (não precisa ter assumido),
+ * canal ativo e a janela de 24 horas. A chave do formulário diz se o mesmo
+ * envio já entrou (clique duplo).
  */
 async function replyTarget(
   tx: OrgTx,
@@ -829,8 +870,6 @@ async function replyTarget(
     .limit(1);
   const blocked = replyBlockReason({
     status: row.status,
-    assignedUserId: row.assignedUserId,
-    viewerId: input.viewer.userId,
     channelActive: channel?.status === "active",
     lastCustomerMessageAt: lastCustomer?.occurredAt ?? null,
     now: input.now,

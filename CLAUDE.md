@@ -500,8 +500,12 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
   (`canSeeConversation`, repetida em SQL em `visibleTo`). Conversa sem setor só o admin vê,
   até ser transferida. É o padrão mais fechado, até o Bruno confirmar quem atende (pendência
   do desenho). Conversa alheia responde como inexistente.
-- **Só quem assumiu responde**. Assumir é atômico e pausa a IA. Resposta pelo celular
-  (eco da coexistência) vira "Em atendimento" sem responsável.
+- **Quem vê a conversa responde (2026-11-24, pedido do Bruno; antes só quem assumiu)**: texto,
+  arquivo e nota de voz. A conversa continua com quem está; sem responsável, fica com quem
+  respondeu ("respondeu e ficou com a conversa"); sai de "IA atendendo"/"Precisa de pessoa" e a IA
+  para (`conversationAfterTeamReply`). Assumir continua atômico e pausa a IA. Resposta pelo celular
+  (eco da coexistência) vira "Em atendimento" sem responsável. **Enter envia** e Shift + Enter
+  quebra a linha, como no WhatsApp Web; no celular (toque) o Enter quebra a linha (`enterSends`).
 - **Envio**: a action só grava mensagem e `support_outbox`; `outbound-worker.ts` (no
   `support-worker`) chama a Meta. O destino sai do contato, nunca do navegador. A chave do
   formulário impede resposta em dobro. Mensagem é imutável, então o id da Meta (wamid) mora

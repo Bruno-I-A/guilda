@@ -50,7 +50,7 @@ afterEach(() => vi.unstubAllEnvs());
 
 test("origem externa e conversa sem permissão não fazem upload", async () => {
   expect((await POST(uploadRequest("https://evil.example"), params)).status).toBe(403);
-  mocks.permit.mockResolvedValue({ ok: false, error: "Assuma a conversa para responder." });
+  mocks.permit.mockResolvedValue({ ok: false, error: "Conversa não encontrada." });
   expect((await POST(uploadRequest(), params)).status).toBe(409);
   expect(mocks.upload).not.toHaveBeenCalled();
 });

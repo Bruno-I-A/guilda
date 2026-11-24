@@ -3,7 +3,9 @@ import { describe, expect, test } from "vitest";
 import {
   canSeeConversation,
   contactInitials,
+  conversationAfterTeamReply,
   deliveryFailureMessage,
+  enterSends,
   deliveryState,
   elapsedLabel,
   messageLabel,
@@ -32,14 +34,15 @@ describe("quem vê a conversa", () => {
 });
 
 describe("responder", () => {
-  const base = { status: "human_active" as const, assignedUserId: "u1", viewerId: "u1", channelActive: true, lastCustomerMessageAt: new Date("2026-11-06T11:00:00Z"), now: NOW };
-  test("libera para quem assumiu, com o número ativo e dentro das 24 horas", () => {
+  const base = { status: "human_active" as const, channelActive: true, lastCustomerMessageAt: new Date("2026-11-06T11:00:00Z"), now: NOW };
+  test("libera para quem vê a conversa, com o número ativo e dentro das 24 horas", () => {
     expect(replyBlockReason(base)).toBeNull();
+    // Não precisa ter assumido (2026-11-24): a régua de quem vê fica em canSeeConversation.
+    expect(replyBlockReason({ ...base, status: "needs_human" })).toBeNull();
+    expect(replyBlockReason({ ...base, status: "ai_active" })).toBeNull();
   });
   test("cada bloqueio diz o motivo", () => {
     expect(replyBlockReason({ ...base, status: "resolved" })).toMatch(/Reabra/);
-    expect(replyBlockReason({ ...base, assignedUserId: "u2" })).toMatch(/Assuma/);
-    expect(replyBlockReason({ ...base, assignedUserId: null })).toMatch(/Assuma/);
     expect(replyBlockReason({ ...base, channelActive: false })).toMatch(/não está ativo/);
     expect(replyBlockReason({ ...base, lastCustomerMessageAt: null })).toMatch(/24 horas/);
   });
@@ -47,6 +50,36 @@ describe("responder", () => {
     expect(replyWindowIsOpen(new Date(NOW.getTime() - 86_399_000), NOW)).toBe(true);
     expect(replyWindowIsOpen(new Date(NOW.getTime() - 86_400_000), NOW)).toBe(false);
     expect(replyWindowIsOpen(null, NOW)).toBe(false);
+  });
+});
+
+describe("Enter no compositor (2026-11-24)", () => {
+  const key = { key: "Enter", shiftKey: false, ctrlKey: false, metaKey: false, isComposing: false, coarsePointer: false };
+  test("no computador Enter envia e Shift + Enter quebra a linha", () => {
+    expect(enterSends(key)).toBe(true);
+    expect(enterSends({ ...key, shiftKey: true })).toBe(false);
+    expect(enterSends({ ...key, ctrlKey: true })).toBe(true);
+    expect(enterSends({ ...key, key: "a" })).toBe(false);
+  });
+  test("no celular Enter quebra a linha, como no WhatsApp; acento em composição não envia", () => {
+    expect(enterSends({ ...key, coarsePointer: true })).toBe(false);
+    expect(enterSends({ ...key, coarsePointer: true, ctrlKey: true })).toBe(true);
+    expect(enterSends({ ...key, isComposing: true })).toBe(false);
+  });
+});
+
+describe("resposta da equipe na conversa (2026-11-24)", () => {
+  test("sem responsável: quem respondeu passa a ser o responsável e a IA para", () => {
+    expect(conversationAfterTeamReply({ status: "needs_human", assignedUserId: null, viewerId: "u1" })).toEqual({ status: "human_active", assignedUserId: "u1", takeOver: true, pauseAi: true });
+    expect(conversationAfterTeamReply({ status: "ai_active", assignedUserId: null, viewerId: "u1" })).toEqual({ status: "human_active", assignedUserId: "u1", takeOver: true, pauseAi: true });
+  });
+  test("com um colega: a conversa continua com ele e sai da fila de quem precisa de pessoa", () => {
+    expect(conversationAfterTeamReply({ status: "needs_human", assignedUserId: "u2", viewerId: "u1" })).toEqual({ status: "human_active", assignedUserId: "u2", takeOver: false, pauseAi: false });
+    expect(conversationAfterTeamReply({ status: "human_active", assignedUserId: "u2", viewerId: "u1" })).toBeNull();
+  });
+  test("quem já está com a conversa responde sem mudar nada", () => {
+    expect(conversationAfterTeamReply({ status: "human_active", assignedUserId: "u1", viewerId: "u1" })).toBeNull();
+    expect(conversationAfterTeamReply({ status: "waiting_customer", assignedUserId: "u1", viewerId: "u1" })).toBeNull();
   });
 });
 
