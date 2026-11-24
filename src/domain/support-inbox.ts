@@ -55,22 +55,58 @@ export function replyWindowIsOpen(lastCustomerMessageAt: Date | null, now: Date)
   return lastCustomerMessageAt !== null && now.getTime() - lastCustomerMessageAt.getTime() < REPLY_WINDOW_MS;
 }
 
-/** Só quem assumiu responde: nunca duas pessoas no mesmo cliente sem saber. */
+/**
+ * Quem vê a conversa responde, sem precisar assumir (2026-11-24, pedido do
+ * Bruno; antes só quem assumiu). Quem vê é canSeeConversation; o que a
+ * resposta muda na conversa é conversationAfterTeamReply.
+ */
 export function replyBlockReason(input: {
   status: SupportStatus;
-  assignedUserId: string | null;
-  viewerId: string;
   channelActive: boolean;
   lastCustomerMessageAt: Date | null;
   now: Date;
 }): string | null {
   if (input.status === "resolved") return "Conversa resolvida. Reabra para responder.";
-  if (input.assignedUserId !== input.viewerId) return "Assuma a conversa para responder.";
   if (!input.channelActive) return "O número do WhatsApp não está ativo. Confira em Configurações.";
   if (!replyWindowIsOpen(input.lastCustomerMessageAt, input.now)) {
     return "Passaram 24 horas desde a última mensagem do cliente: pela Guilda, só quando ele escrever de novo. Para falar antes, responda pelo celular ou pelo WhatsApp Web do escritório.";
   }
   return null;
+}
+
+/**
+ * O que a resposta da equipe muda na conversa (2026-11-24, decisão do Bruno):
+ * a conversa continua com quem está; sem responsável, fica com quem respondeu.
+ * Sai de "IA atendendo" e de "Precisa de pessoa", e a IA para. Null: nada muda.
+ */
+export function conversationAfterTeamReply(input: {
+  status: SupportStatus;
+  assignedUserId: string | null;
+  viewerId: string;
+}): { status: SupportStatus; assignedUserId: string; takeOver: boolean; pauseAi: boolean } | null {
+  if (!input.assignedUserId) return { status: "human_active", assignedUserId: input.viewerId, takeOver: true, pauseAi: true };
+  if (input.status === "ai_active" || input.status === "needs_human") {
+    return { status: "human_active", assignedUserId: input.assignedUserId, takeOver: false, pauseAi: input.status === "ai_active" };
+  }
+  return null;
+}
+
+/**
+ * Enter envia, como no WhatsApp Web (2026-11-24, pedido do Bruno); Shift + Enter
+ * quebra a linha. No celular (toque), Enter quebra a linha e o envio é o botão,
+ * como no WhatsApp do celular. Ctrl/⌘ + Enter envia sempre.
+ */
+export function enterSends(input: {
+  key: string;
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  isComposing: boolean;
+  coarsePointer: boolean;
+}): boolean {
+  if (input.key !== "Enter" || input.isComposing) return false;
+  if (input.ctrlKey || input.metaKey) return true;
+  return !input.shiftKey && !input.coarsePointer;
 }
 
 /** Mensagem do cliente que chega enquanto se esperava por ele traz a conversa de volta. */

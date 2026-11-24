@@ -164,21 +164,21 @@ test("os comandos respeitam a mesma visibilidade", async () => {
   expect((await tx((t) => resolveSupportConversation(t, { ...base, viewer: rh }))).ok).toBe(false);
 });
 
-test("só quem assumiu responde; a resposta vai para a fila uma vez, mesmo com clique duplo", async () => {
-  const { takeSupportConversation, sendSupportReply, loadSupportConversation } = await import("./inbox");
+test("quem vê responde sem assumir; a resposta vai para a fila uma vez, mesmo com clique duplo", async () => {
+  const { sendSupportReply, loadSupportConversation } = await import("./inbox");
   const { id } = await customerSays("5554911110004", "Qual o prazo?");
   await setClan(id, FISCAL);
   const base = { orgId: ORG, conversationId: id, now: NOW };
-  const reply = (requestId: string, viewer = fiscal) => tx((t) => sendSupportReply(t, { ...base, viewer, text: "Até sexta", requestId }));
+  const reply = (requestId: string, viewer = fiscal, text = "Até sexta") => tx((t) => sendSupportReply(t, { ...base, viewer, text, requestId }));
+  const current = async () => (await tx((t) => t.select().from(schema.supportConversations).where(eq(schema.supportConversations.id, id))))[0];
 
-  const before = await reply(uuid(1));
-  expect(before).toEqual({ ok: false, error: expect.stringContaining("Assuma") });
-  expect((await tx((t) => takeSupportConversation(t, { ...base, viewer: fiscal }))).ok).toBe(true);
-  const [taken] = await tx((t) => t.select().from(schema.supportConversations).where(eq(schema.supportConversations.id, id)));
-  expect(taken).toMatchObject({ status: "human_active", assignedUserId: "ana", aiPauseReason: "attendant_took_over" });
+  // Quem é de outro clã nem vê a conversa.
+  expect(await reply(uuid(1), rh)).toEqual({ ok: false, error: "Conversa não encontrada." });
 
+  // Sem responsável: a Ana responde sem assumir e passa a ser a responsável (2026-11-24).
   expect((await reply(uuid(2))).ok).toBe(true);
   expect((await reply(uuid(2))).ok).toBe(true);
+  expect(await current()).toMatchObject({ status: "human_active", assignedUserId: "ana", aiPauseReason: "attendant_replied" });
   const sent = await tx((t) => t.select().from(schema.supportMessages).where(and(eq(schema.supportMessages.conversationId, id), eq(schema.supportMessages.direction, "outbound"))));
   expect(sent).toHaveLength(1);
   expect(sent[0]).toMatchObject({ actor: "attendant", source: "guilda_attendant", text: "Até sexta", sentByUserId: "ana" });
@@ -188,20 +188,23 @@ test("só quem assumiu responde; a resposta vai para a fila uma vez, mesmo com c
 
   const view = await tx((t) => loadSupportConversation(t, { ...base, viewer: fiscal }));
   expect(view?.timeline.findLast((item) => item.kind === "message")).toMatchObject({ kind: "message", author: "Ana", delivery: "sending" });
-  // Outra pessoa do clã continua sem poder responder por cima.
+  expect(view?.timeline.some((item) => item.kind === "event" && item.text === "Ana respondeu e ficou com a conversa")).toBe(true);
+
+  // Com a Ana: o admin responde por cima e a conversa continua com ela.
   const colleague: SupportViewer = { userId: "admin", role: "admin", clanIds: [] };
-  expect((await reply(uuid(3), colleague)).ok).toBe(false);
+  expect((await tx((t) => loadSupportConversation(t, { ...base, viewer: colleague })))?.replyBlocked).toBeNull();
+  expect((await reply(uuid(3), colleague, "Complementando: até sexta às 18h")).ok).toBe(true);
+  expect(await current()).toMatchObject({ status: "human_active", assignedUserId: "ana" });
 });
 
-test("anexo só sai de conversa assumida, fica no histórico e é enviado uma vez", async () => {
-  const { checkSupportMediaReply, takeSupportConversation, sendSupportMedia, loadSupportConversation } = await import("./inbox");
+test("anexo sai de conversa visível, fica no histórico e é enviado uma vez", async () => {
+  const { checkSupportMediaReply, sendSupportMedia, loadSupportConversation } = await import("./inbox");
   const { runSupportOutboxCycle } = await import("@/lib/whatsapp/outbound-worker");
   const phone = "5554911110080";
   const { id } = await customerSays(phone, "Mande o balanço, por favor");
   const base = { orgId: ORG, conversationId: id, now: NOW, requestId: uuid(80) };
   const media = { ...base, viewer: admin, mediaId: "123456789", kind: "document" as const, mimeType: "application/pdf", filename: "balanco.pdf", caption: "Segue o balanço" };
-  expect((await tx((t) => checkSupportMediaReply(t, { ...base, viewer: admin }))).ok).toBe(false);
-  await tx((t) => takeSupportConversation(t, { ...base, viewer: admin }));
+  // Não precisa ter assumido (2026-11-24): quem vê a conversa manda o arquivo.
   expect(await tx((t) => checkSupportMediaReply(t, { ...base, viewer: admin }))).toMatchObject({ ok: true, data: { channelId, alreadyQueued: false } });
   expect((await tx((t) => checkSupportMediaReply(t, { ...base, viewer: rh }))).ok).toBe(false);
   expect(await tx((t) => sendSupportMedia(t, media))).toEqual({ ok: true });
@@ -626,11 +629,10 @@ test("nota de voz: a mesma régua da resposta, entra uma vez só e sai à Meta c
   const base = { orgId: ORG, conversationId: id, now: NOW, requestId: uuid(30) };
   const check = (viewer: SupportViewer) => tx((t) => checkSupportAudioReply(t, { ...base, viewer }));
 
-  // Antes de assumir (ou de outro clã), a Guilda recusa antes de converter e subir o áudio.
-  expect(await check(fiscal)).toEqual({ ok: false, error: expect.stringContaining("Assuma") });
+  // Quem é de outro clã é recusado antes de converter e subir o áudio; quem vê grava sem assumir.
   expect((await check(rh)).ok).toBe(false);
-  await tx((t) => takeSupportConversation(t, { ...base, viewer: fiscal }));
   expect(await check(fiscal)).toEqual({ ok: true, data: { channelId, duplicate: false } });
+  await tx((t) => takeSupportConversation(t, { ...base, viewer: fiscal }));
 
   expect((await tx((t) => sendSupportAudioReply(t, { ...base, viewer: fiscal, mediaId: "../media" }))).ok).toBe(false);
   const send = () => tx((t) => sendSupportAudioReply(t, { ...base, viewer: fiscal, mediaId: "998877" }));

@@ -13,7 +13,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Textarea } from "@/components/ui/textarea";
 import { formatCnpj } from "@/domain/cnpj";
 import { SUPPORT_UPLOAD_ACCEPT, SUPPORT_UPLOAD_MAX_FILES, validateSupportCaption, validateSupportUpload } from "@/domain/support-upload";
-import { contactInitials, DELIVERY_LABELS, elapsedLabel, SUPPORT_FILTERS, SUPPORT_STATUS_LABELS, type DeliveryState, type SupportFilter, type SupportStatus } from "@/domain/support-inbox";
+import { contactInitials, DELIVERY_LABELS, elapsedLabel, enterSends, SUPPORT_FILTERS, SUPPORT_STATUS_LABELS, type DeliveryState, type SupportFilter, type SupportStatus } from "@/domain/support-inbox";
 import type { ActionResult } from "@/lib/action-context";
 import { APP_TIME_ZONE } from "@/lib/date-time";
 import type { SupportConversationView, SupportQueueRow, SupportTimelineItem } from "@/lib/support/inbox";
@@ -330,14 +330,22 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
         value={text}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+          const sends = enterSends({
+            key: event.key,
+            shiftKey: event.shiftKey,
+            ctrlKey: event.ctrlKey,
+            metaKey: event.metaKey,
+            isComposing: event.nativeEvent.isComposing,
+            coarsePointer: window.matchMedia("(pointer: coarse)").matches,
+          });
+          if (sends) {
             event.preventDefault();
             void submit();
           }
         }}
       />
       <div className="flex min-w-0 items-center justify-between gap-2">
-        {voiceActive ? null : <span className="hidden text-xs text-muted-foreground sm:inline">Ctrl + Enter envia</span>}
+        {voiceActive ? null : <span className="hidden min-w-0 truncate text-xs text-muted-foreground sm:block" title="Enter envia · Shift + Enter quebra a linha">Enter envia · Shift + Enter quebra a linha</span>}
         <div className={cn("flex min-w-0 items-center gap-2", voiceActive ? "flex-1" : "ml-auto")}>
           {effective === "reply" ? <VoiceRecorder conversationId={conversation.id} onActiveChange={setVoiceActive} disabled={files.length > 0 || uploading || pending} /> : null}
           {voiceActive ? null : (
@@ -645,8 +653,8 @@ function ContextPanel({ conversation, clients, clans, members }: { conversation:
 
 /**
  * Caixa de entrada (decisão de 2026-11-06): fila, conversa e empresa na mesma
- * tela; no celular, um passo de cada vez. Só uma pessoa responde por vez:
- * assumir é o que libera o envio.
+ * tela; no celular, um passo de cada vez. Quem vê a conversa responde sem
+ * assumir (2026-11-24); assumir continua sendo como se pega a conversa para si.
  */
 export function SupportInbox({
   now,
