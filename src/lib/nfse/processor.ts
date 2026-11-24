@@ -1,7 +1,7 @@
 import type { NfseCancelReasonCode, NfseTakerAddress } from "@/domain/nfse";
 
 import { buildCancelRequestXml } from "./cancel-xml";
-import { buildDpsXml } from "./dps-xml";
+import { buildDpsXml, nfseLayoutFor, type NfseLayout } from "./dps-xml";
 import { NfseTransientError, type NfseApiError, type SefinClient } from "./sefin-client";
 import { signNfseXml, type NfseSigningKey } from "./sign";
 import type { NfseIssuerTemplate } from "./template";
@@ -57,6 +57,19 @@ export function formatNfseErrors(errors: readonly NfseApiError[]): string {
     .slice(0, 2000);
 }
 
+/** NFSE_LEIAUTE fixa o leiaute: o serviço fiscal não troca sozinho. */
+function layoutForced(): boolean {
+  return process.env.NFSE_LEIAUTE === "nt004" || process.env.NFSE_LEIAUTE === "nt009";
+}
+
+/**
+ * Recusa do esquema XML (E1235 na produção restrita, "invalid child element"):
+ * a DPS não chegou a ser registrada, então outro leiaute pode ser tentado.
+ */
+export function isSchemaRejection(errors: readonly NfseApiError[]): boolean {
+  return errors.some((error) => error.code === "E1235" || /invalid child element|schema|esquema|xsd/i.test(error.message));
+}
+
 async function issue(job: NfseJob, deps: NfseJobDeps): Promise<NfseJobOutcome> {
   // Consulta antes de emitir: se uma tentativa anterior caiu depois do envio,
   // a nota já existe e só precisa ser recuperada.
@@ -64,18 +77,23 @@ async function issue(job: NfseJob, deps: NfseJobDeps): Promise<NfseJobOutcome> {
   if (existing) {
     return { kind: "issued", accessKey: existing, nfseNumber: await deps.client.getNfseNumber(existing), environment: deps.environment, foundByDps: true };
   }
-  const { id, xml } = buildDpsXml({
-    environment: deps.environment,
-    issuedAt: nfseIssueTimestamp(deps.now),
-    competenceDate: nfseIssueDate(deps.now),
-    series: job.dpsSeries,
-    number: job.dpsNumber,
-    providerCnpj: deps.providerCnpj,
-    template: deps.template,
-    taker: { cnpj: job.takerCnpj, name: job.takerName, address: job.takerAddress },
-    amountCents: job.amountCents,
-    description: job.description,
-  });
+  const issuedAt = nfseIssueTimestamp(deps.now);
+  const layout = nfseLayoutFor(deps.environment, new Date(issuedAt));
+  const build = (chosen: NfseLayout) =>
+    buildDpsXml({
+      environment: deps.environment,
+      layout: chosen,
+      issuedAt,
+      competenceDate: nfseIssueDate(deps.now),
+      series: job.dpsSeries,
+      number: job.dpsNumber,
+      providerCnpj: deps.providerCnpj,
+      template: deps.template,
+      taker: { cnpj: job.takerCnpj, name: job.takerName, address: job.takerAddress },
+      amountCents: job.amountCents,
+      description: job.description,
+    });
+  const { id, xml } = build(layout);
   if (id !== job.dpsId) {
     return {
       kind: "failed",
@@ -85,6 +103,18 @@ async function issue(job: NfseJob, deps: NfseJobDeps): Promise<NfseJobOutcome> {
   }
   const result = await deps.client.emit(signNfseXml(xml, "infDPS", deps.signingKey));
   if (result.kind === "issued") return { ...result, environment: deps.environment };
+  // Virada da NT 009 (01/12/2026): o governo ainda não publicou o cronograma formal da
+  // produção. Se o esquema recusar o leiaute da data, a DPS não foi registrada, então a
+  // mesma DPS sai uma vez no outro leiaute. Com NFSE_LEIAUTE forçado, não troca.
+  if (!layoutForced() && isSchemaRejection(result.errors)) {
+    const other: NfseLayout = layout === "nt009" ? "nt004" : "nt009";
+    const second = await deps.client.emit(signNfseXml(build(other).xml, "infDPS", deps.signingKey));
+    if (second.kind === "issued") {
+      console.warn(`[nfse] o esquema recusou o leiaute ${layout}; a DPS ${job.dpsId} saiu no ${other}. Confira a virada e o NFSE_LEIAUTE.`);
+      return { ...second, environment: deps.environment };
+    }
+    // As duas recusadas: fica o erro do leiaute da data, que é o que explica o problema.
+  }
   if (result.errors.some((error) => error.code === "E0014")) {
     const recovered = await deps.client.findAccessKeyByDps(job.dpsId);
     if (recovered) {

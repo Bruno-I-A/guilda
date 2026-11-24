@@ -38,6 +38,15 @@ describe("o que a nota emitida ensina", () => {
     expect(nfseIssuerTemplateRulesSchema.safeParse(facts.template).success).toBe(true);
   });
 
+  test("nota no leiaute da NT 009 (CST direto no trib, NBS antes da descrição) devolve o mesmo modelo", () => {
+    const facts = readIssuedNoteFacts(testNfseXml({ layout: "nt009" }))!;
+    expect(facts.template).toMatchObject({
+      service: { nationalTaxCode: "171901", municipalTaxCode: "001", nbsCode: "113022100" },
+      ibsCbs: { operationIndicator: "100301", cst: "200", classification: "200052" },
+    });
+    expect(facts.description).toMatch(/HONORÁRIOS/);
+  });
+
   test("XML que não é NFS-e não vira sugestão", () => {
     expect(readIssuedNoteFacts("<x/>")).toBeNull();
     expect(readIssuedNoteFacts("não é xml")).toBeNull();

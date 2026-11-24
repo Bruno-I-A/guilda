@@ -9,8 +9,34 @@ import {
   XML_DECLARATION,
 } from "./xml";
 
+/**
+ * Leiaute da DPS. "nt004": o de produção até 30/11/2026 (NT 004 v2.0).
+ * "nt009": o da Nota Técnica 009 (XSD de produção restrita de 20/10/2026),
+ * exigido na produção restrita desde 20/10/2026 e na produção a partir de
+ * 01/12/2026. Diferenças que a Guilda usa: finNFSe sai do IBSCBS e vai para o
+ * infDPS (obrigatório, logo após tpEmit); no cServ, cNBS vem antes do
+ * xDescServ; no IBSCBS, CST e cClassTrib saem do gIBSCBS para o trib.
+ */
+export type NfseLayout = "nt004" | "nt009";
+
+/** Virada da produção para a NT 009: 01/12/2026, 00h em Brasília. */
+export const NT009_PRODUCTION_START = new Date("2026-12-01T00:00:00-03:00");
+
+/**
+ * O leiaute de uma DPS pelo ambiente e pela data de emissão. NFSE_LEIAUTE
+ * (nt004 | nt009) força um dos dois — para o caso de o governo adiar ou
+ * antecipar a virada sem precisar de deploy de código.
+ */
+export function nfseLayoutFor(environment: 1 | 2, issuedAt: Date, override = process.env.NFSE_LEIAUTE): NfseLayout {
+  if (override === "nt004" || override === "nt009") return override;
+  if (environment === 2) return "nt009";
+  return issuedAt >= NT009_PRODUCTION_START ? "nt009" : "nt004";
+}
+
 export interface DpsInput {
   environment: 1 | 2;
+  /** Sem informar, sai do ambiente e da data de emissão (nfseLayoutFor). */
+  layout?: NfseLayout;
   issuedAt: string;
   competenceDate: string;
   series: string;
@@ -27,12 +53,15 @@ function normalizeName(name: string): string {
 }
 
 /**
- * DPS de quem emite (escritório ou empresa-cliente), na ordem exata das sequências do XSD v1.01.
+ * DPS de quem emite (escritório ou empresa-cliente), na ordem exata das
+ * sequências do XSD v1.01 do leiaute em vigor (NT 004 ou NT 009).
  * O prestador é quem emite (tpEmit = 1), então nome e endereço dele vêm do
  * cadastro nacional e não são informados.
  */
 export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
   const t = input.template;
+  const layout = input.layout ?? nfseLayoutFor(input.environment, new Date(input.issuedAt));
+  const nt009 = layout === "nt009";
   const id = buildDpsId({
     cityCode: t.cityCode,
     cnpj: input.providerCnpj,
@@ -55,11 +84,11 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
   // Tomador avulso pessoa física (produtor rural) vai com CPF.
   const document = input.taker.cnpj.length === 11 ? element("CPF", input.taker.cnpj) : element("CNPJ", input.taker.cnpj);
   const toma = `<toma>${document}${element("xNome", normalizeName(input.taker.name))}${end}</toma>`;
-  const cServ =
-    `<cServ>${element("cTribNac", t.service.nationalTaxCode)}` +
-    `${element("cTribMun", t.service.municipalTaxCode)}` +
-    `${element("xDescServ", input.description)}` +
-    `${element("cNBS", t.service.nbsCode)}</cServ>`;
+  // TCCServ: na NT 009 o cNBS vem antes da descrição.
+  const serviceCodes = `${element("cTribNac", t.service.nationalTaxCode)}${element("cTribMun", t.service.municipalTaxCode)}`;
+  const cServ = nt009
+    ? `<cServ>${serviceCodes}${element("cNBS", t.service.nbsCode)}${element("xDescServ", input.description)}</cServ>`
+    : `<cServ>${serviceCodes}${element("xDescServ", input.description)}${element("cNBS", t.service.nbsCode)}</cServ>`;
   // E0370: serviço de obra leva o grupo da obra logo depois do cServ (TCServ:
   // locPrest, cServ, comExt, obra). Fora desses serviços ele não vai.
   const c = nfseServiceRequiresConstruction(t.service.nationalTaxCode) ? t.construction : undefined;
@@ -72,6 +101,7 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
           ? element("cCIB", c.code)
           : `<end>${element("CEP", c.zipCode)}${element("xLgr", c.street)}${element("nro", c.number)}${element("xCpl", c.complement)}${element("xBairro", c.district)}</end>`) +
       `</obra>`;
+  // A obra é igual nos dois leiautes (TCInfoObra não mudou na NT 009).
   const serv = `<serv><locPrest>${element("cLocPrestacao", t.cityCode)}</locPrest>${cServ}${obra}</serv>`;
   // A alíquota só vai quando o Sistema Nacional não a tira do cadastro do
   // município. E0625: ME/EPP que apura o ISS pelo Simples, sem retenção (ela
@@ -105,14 +135,16 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
   const valores =
     `<valores><vServPrest>${element("vServ", centsToNfseAmount(input.amountCents))}</vServPrest>` +
     `<trib>${tribMun}${tribFed}${totTrib}</trib></valores>`;
-  // Ordem do TCRTCInfoIBSCBS: finNFSe, (indFinal), cIndOp, ..., indDest, ..., valores.
+  // Ordem do TCRTCInfoIBSCBS: (finNFSe só na NT 004), (indFinal), cIndOp, ..., indDest, ..., valores.
   // finNFSe 0 = NFS-e regular; indDest 0 = o tomador é o próprio destinatário.
+  // NT 009: CST e cClassTrib direto no trib (o gIBSCBS fica para crédito presumido/diferimento).
   // E0903/E0904: o tipo de operação é da empresa, mas só vai nos serviços que o
   // exigem. Quem decide é o serviço desta nota, que pode não ser o da empresa.
   const operationType = nfseServiceRequiresOperationType(t.service.nationalTaxCode) ? t.ibsCbs?.operationType : undefined;
+  const classification = t.ibsCbs ? `${element("CST", t.ibsCbs.cst)}${element("cClassTrib", t.ibsCbs.classification)}` : "";
   const ibsCbs = t.ibsCbs
-    ? `<IBSCBS>${element("finNFSe", "0")}${element("cIndOp", t.ibsCbs.operationIndicator)}${element("tpOper", operationType)}${element("indDest", "0")}` +
-      `<valores><trib><gIBSCBS>${element("CST", t.ibsCbs.cst)}${element("cClassTrib", t.ibsCbs.classification)}</gIBSCBS></trib></valores></IBSCBS>`
+    ? `<IBSCBS>${nt009 ? "" : element("finNFSe", "0")}${element("cIndOp", t.ibsCbs.operationIndicator)}${element("tpOper", operationType)}${element("indDest", "0")}` +
+      `<valores><trib>${nt009 ? classification : `<gIBSCBS>${classification}</gIBSCBS>`}</trib></valores></IBSCBS>`
     : "";
   const infDps =
     `<infDPS Id="${id}">` +
@@ -123,6 +155,8 @@ export function buildDpsXml(input: DpsInput): { id: string; xml: string } {
     `${element("nDPS", String(input.number))}` +
     `${element("dCompet", input.competenceDate)}` +
     `${element("tpEmit", "1")}` +
+    // NT 009: finalidade da NFS-e no infDPS, obrigatória em toda nota (0 = regular).
+    `${nt009 ? element("finNFSe", "0") : ""}` +
     `${element("cLocEmi", t.cityCode)}` +
     `${prest}${toma}${serv}${valores}${ibsCbs}</infDPS>`;
   return {

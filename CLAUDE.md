@@ -339,6 +339,21 @@ Desenho em `docs/superpowers/specs/2026-10-10-notas-de-honorario-design.md`.
   DANFSe em 03/08/2026 (NT 008/2026). O serviço fiscal busca o XML da nota
   e desenha o DANFSe v2.0 (`danfse-data.ts` lê, `danfse-pdf.ts` desenha),
   copiando o PDF que o Portal gera. Não voltar a chamar o ADN.
+- **Leiaute da NT 009 (2026-11-14)**: a produção do Sistema Nacional passa a
+  exigir o leiaute da NT 009 em **01/12/2026** (sem ele, E1235). `buildDpsXml`
+  escolhe pela data de emissão (`nfseLayoutFor`): produção restrita sempre
+  NT 009, produção NT 004 até 30/11 e NT 009 dali em diante; `NFSE_LEIAUTE`
+  força. Vale para honorários e notas dos clientes (o montador é um só). Os
+  leitores (`danfse-data.ts`, `client-nfse/from-xml.ts`) aceitam os dois
+  formatos, porque as notas antigas continuam no leiaute antigo. XSD oficial
+  dos dois em `src/lib/nfse/xsd/` (`1.01` e `nt009`). **A data ainda não é
+  oficial (revisão de 2026-11-24)**: o portal (29/10) diz que as releases
+  "deverão estar em produção em 01/12/2026" mas que o cronograma formal ainda sai,
+  e a produção segue na NT 004 até lá. Por isso a emissão se recupera sozinha
+  (`processor.ts`): se o esquema recusar o leiaute da data (`isSchemaRejection`,
+  E1235), a mesma DPS sai uma vez no outro leiaute, com aviso no log; as duas
+  recusadas, fica o erro do leiaute da data. Com `NFSE_LEIAUTE` forçado não troca.
+  A obra (E0370) é igual nos dois leiautes e é validada contra os dois XSD.
 - Série de DPS própria (1–49999); o Emissor Web usa 70000–79999. O número da
   DPS é reservado na fila e nunca muda; antes de emitir, o serviço consulta a
   DPS — é isso que impede nota duplicada.

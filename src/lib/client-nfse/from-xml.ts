@@ -74,7 +74,9 @@ export function readIssuedNoteFacts(xml: string): IssuedNoteFacts | null {
   const cServ = at(dps, "serv/cServ");
   const tribMun = at(dps, "valores/trib/tribMun");
   const ibsCbs = child(dps, "IBSCBS");
-  const gIbsCbs = at(ibsCbs, "valores/trib/gIBSCBS");
+  // NT 009: CST/cClassTrib direto no trib; NT 004: dentro do gIBSCBS.
+  const tribIbsCbs = at(ibsCbs, "valores/trib");
+  const gIbsCbs = read(tribIbsCbs, "CST") ? tribIbsCbs : at(ibsCbs, "valores/trib/gIBSCBS");
   const issuedAt = read(inf, "dhProc") ?? read(dps, "dhEmi");
   const amount = read(dps, "valores/vServPrest/vServ");
   let amountCents: number | null = null;
