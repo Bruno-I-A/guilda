@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { buildDpsId } from "@/domain/nfse";
 
@@ -129,5 +129,55 @@ describe("cancelamento", () => {
   test("nota de outro ambiente não é cancelada por este serviço", async () => {
     const outcome = await runNfseJob(job({ ...issued, issuedEnvironment: 1 }), deps(client()));
     expect(outcome.kind).toBe("cancel_rejected");
+  });
+});
+
+describe("virada da NT 009 (01/12/2026)", () => {
+  // Produção (ambiente 1) em 01/12/2026: pela data, a DPS sai no leiaute da NT 009.
+  const production = (sefin: SefinClient) => ({ ...deps(sefin), environment: 1 as const, now: new Date("2026-12-01T13:00:00Z") });
+  const schemaError = { code: "E1235", message: "The element 'infDPS' has invalid child element 'finNFSe'." };
+  const isNt009 = (xml: string) => xml.includes("<tpEmit>1</tpEmit><finNFSe>");
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  test("o governo ainda no leiaute antigo: a recusa de esquema faz a mesma DPS sair no outro leiaute, uma vez", async () => {
+    const sent: string[] = [];
+    const outcome = await runNfseJob(job(), production(client({
+      emit: async (xml) => {
+        sent.push(xml);
+        return isNt009(xml) ? { kind: "rejected", errors: [schemaError] } : { kind: "issued", accessKey: KEY, nfseNumber: "78", xml: null };
+      },
+    })));
+    expect(outcome).toEqual({ kind: "issued", accessKey: KEY, nfseNumber: "78", xml: null, environment: 1 });
+    expect(sent.map(isNt009)).toEqual([true, false]);
+  });
+
+  test("recusa que não é de esquema não tenta o outro leiaute", async () => {
+    let emits = 0;
+    const outcome = await runNfseJob(job(), production(client({
+      emit: async () => { emits += 1; return { kind: "rejected", errors: [{ code: "E0312", message: "Tomador inexistente" }] }; },
+    })));
+    expect(outcome).toMatchObject({ kind: "failed", message: "E0312: Tomador inexistente" });
+    expect(emits).toBe(1);
+  });
+
+  test("com NFSE_LEIAUTE forçado, o leiaute não troca", async () => {
+    vi.stubEnv("NFSE_LEIAUTE", "nt009");
+    let emits = 0;
+    const outcome = await runNfseJob(job(), production(client({
+      emit: async () => { emits += 1; return { kind: "rejected", errors: [schemaError] }; },
+    })));
+    expect(outcome.kind).toBe("failed");
+    expect(emits).toBe(1);
+  });
+
+  test("os dois leiautes recusados: fica o erro do leiaute da data, que é o que explica o problema", async () => {
+    const outcome = await runNfseJob(job(), production(client({
+      emit: async (xml) => ({
+        kind: "rejected",
+        errors: [isNt009(xml) ? { code: "E1235", message: "Caractere inválido na descrição" } : schemaError],
+      }),
+    })));
+    expect(outcome).toMatchObject({ kind: "failed", message: "E1235: Caractere inválido na descrição" });
   });
 });
