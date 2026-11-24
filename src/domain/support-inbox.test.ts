@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  canSeeConversation,
   contactInitials,
   conversationAfterTeamReply,
   deliveryFailureMessage,
@@ -17,27 +16,12 @@ import {
 } from "./support-inbox";
 
 const NOW = new Date("2026-11-06T12:00:00Z");
-const member = { userId: "u1", role: "member" as const, clanIds: ["fiscal"] };
-
-describe("quem vê a conversa", () => {
-  test("admin e owner veem tudo, inclusive o que não tem clã", () => {
-    const open = { assignedClanId: null, assignedUserId: null };
-    expect(canSeeConversation({ ...member, role: "admin" }, open)).toBe(true);
-    expect(canSeeConversation({ ...member, role: "owner" }, open)).toBe(true);
-  });
-  test("membro vê o clã dele e o que é dele, e nada além", () => {
-    expect(canSeeConversation(member, { assignedClanId: "fiscal", assignedUserId: null })).toBe(true);
-    expect(canSeeConversation(member, { assignedClanId: "rh", assignedUserId: "u1" })).toBe(true);
-    expect(canSeeConversation(member, { assignedClanId: "rh", assignedUserId: "u2" })).toBe(false);
-    expect(canSeeConversation(member, { assignedClanId: null, assignedUserId: null })).toBe(false);
-  });
-});
 
 describe("responder", () => {
   const base = { status: "human_active" as const, channelActive: true, lastCustomerMessageAt: new Date("2026-11-06T11:00:00Z"), now: NOW };
   test("libera para quem vê a conversa, com o número ativo e dentro das 24 horas", () => {
     expect(replyBlockReason(base)).toBeNull();
-    // Não precisa ter assumido (2026-11-24): a régua de quem vê fica em canSeeConversation.
+    // Não precisa ter assumido (2026-11-24): todo integrante vê e responde.
     expect(replyBlockReason({ ...base, status: "needs_human" })).toBeNull();
     expect(replyBlockReason({ ...base, status: "ai_active" })).toBeNull();
   });
