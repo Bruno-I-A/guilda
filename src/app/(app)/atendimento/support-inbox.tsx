@@ -3,7 +3,7 @@
 import { AlertTriangle, ArrowLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Hand, ImageOff, LoaderCircle, Maximize2, Paperclip, Plus, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -48,10 +48,25 @@ function AgentTestChip() {
   );
 }
 
-const TIME_FORMAT = new Intl.DateTimeFormat("pt-BR", { timeZone: APP_TIME_ZONE, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+const TIME_FORMAT = new Intl.DateTimeFormat("pt-BR", { timeZone: APP_TIME_ZONE, hour: "2-digit", minute: "2-digit" });
+const DAY_FORMAT = new Intl.DateTimeFormat("pt-BR", { timeZone: APP_TIME_ZONE, day: "2-digit", month: "long", year: "numeric" });
+const DAY_KEY_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" });
 
 function shortTime(value: string): string {
-  return TIME_FORMAT.format(new Date(value)).replace(",", "");
+  return TIME_FORMAT.format(new Date(value));
+}
+
+function dayKey(value: string | Date): string {
+  return DAY_KEY_FORMAT.format(typeof value === "string" ? new Date(value) : value);
+}
+
+function dayLabel(value: string): string {
+  const date = new Date(value);
+  const today = new Date();
+  const yesterday = new Date(today.getTime() - 86_400_000);
+  if (dayKey(date) === dayKey(today)) return "Hoje";
+  if (dayKey(date) === dayKey(yesterday)) return "Ontem";
+  return DAY_FORMAT.format(date).replace(/^./, (letter) => letter.toUpperCase());
 }
 
 function inboxHref(filter: SupportFilter, conversationId?: string): string {
@@ -129,7 +144,7 @@ const DELIVERY_ICONS: Record<DeliveryState, React.ReactNode> = {
   sending: <LoaderCircle className="size-3 animate-spin" aria-hidden />,
   sent: <CheckIcon className="size-3" aria-hidden />,
   delivered: <CheckCheck className="size-3" aria-hidden />,
-  read: <CheckCheck className="size-3 text-primary" aria-hidden />,
+  read: <CheckCheck className="size-3" aria-hidden />,
   failed: <AlertTriangle className="size-3 text-destructive" aria-hidden />,
 };
 
@@ -167,23 +182,40 @@ function MessageImage({ src, caption }: { src: string; caption: string | null })
 
 function TimelineItem({ item }: { item: SupportTimelineItem }) {
   if (item.kind === "event") {
-    return <li className="py-2 text-center text-xs text-muted-foreground"><span className="inline-flex rounded-md border bg-background/70 px-2 py-1">{item.text} · {shortTime(item.at)}</span></li>;
+    return (
+      <li className="flex items-center gap-3 py-2 text-xs text-muted-foreground">
+        <span className="h-px flex-1 bg-border/70" aria-hidden />
+        <span className="shrink-0 text-center">{item.text} · <span className="font-mono tabular-nums">{shortTime(item.at)}</span></span>
+        <span className="h-px flex-1 bg-border/70" aria-hidden />
+      </li>
+    );
   }
   if (item.kind === "note") {
     return (
-      <li className="mx-auto w-full max-w-prose rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
-        <span className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+      <li className="mx-auto my-1 w-full max-w-2xl rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm shadow-sm">
+        <span className="flex flex-wrap items-center gap-x-2 text-xs font-medium text-muted-foreground">
           <StickyNote className="size-3 text-warning" aria-hidden /> Nota interna · {item.author} · {shortTime(item.at)}
         </span>
-        <p className="mt-1 whitespace-pre-wrap break-words">{item.text}</p>
+        <p className="mt-2 whitespace-pre-wrap break-words leading-6 text-foreground">{item.text}</p>
       </li>
     );
   }
   const outbound = item.direction === "outbound";
   return (
-    <li className={cn("flex", outbound ? "justify-end" : "justify-start")}>
-      <div className={cn("grid max-w-[88%] gap-2 rounded-md border px-3.5 py-2.5 text-[0.95rem] leading-relaxed shadow-sm sm:max-w-[74%]", outbound ? "border-primary/60 bg-primary/20" : "border-silver/25 bg-accent/70")}>
-        <span className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground"><span>{item.author}</span><span className="font-mono tabular-nums">{shortTime(item.at)}</span></span>
+    <li className={cn("flex py-1", outbound ? "justify-end" : "justify-start")}>
+      <div className={cn(
+        "grid min-w-36 max-w-[92%] gap-2 rounded-xl border px-4 py-3 text-base leading-6 shadow-sm sm:max-w-[72%] lg:max-w-[68%]",
+        outbound
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border/80 bg-card text-card-foreground",
+      )}>
+        <span className={cn(
+          "flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs",
+          outbound ? "text-primary-foreground/75" : "text-muted-foreground",
+        )}>
+          <span className="font-medium">{item.author}</span>
+          <span className="font-mono tabular-nums">{shortTime(item.at)}</span>
+        </span>
         {item.image ? (
           <>
             <MessageImage src={item.image.src} caption={item.image.caption} />
@@ -193,11 +225,16 @@ function TimelineItem({ item }: { item: SupportTimelineItem }) {
           <MessageFile file={item.file} />
         ) : item.audio ? (
           <MessageAudio audio={item.audio} outbound={outbound} />
+        ) : !item.isText ? (
+          <span className={cn("flex items-center gap-2 text-sm", outbound ? "text-primary-foreground/85" : "text-muted-foreground")}>
+            <AlertTriangle className="size-4 shrink-0" aria-hidden />
+            {item.text}
+          </span>
         ) : (
-          <p className={cn("whitespace-pre-wrap break-words", !item.isText && "italic text-muted-foreground")}>{item.text}</p>
+          <p className="whitespace-pre-wrap break-words">{item.text}</p>
         )}
         {item.delivery ? (
-          <span className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
+          <span className={cn("flex items-center justify-end gap-1 text-xs", outbound ? "text-primary-foreground/75" : "text-muted-foreground")}>
             {DELIVERY_ICONS[item.delivery]} {item.failure ?? DELIVERY_LABELS[item.delivery]}
           </span>
         ) : null}
@@ -412,8 +449,17 @@ function ConversationPanel({ conversation, filter, onContext }: { conversation: 
           )}
         </div>
       </header>
-      <ol className="mx-auto grid min-h-0 w-full max-w-5xl flex-1 content-start gap-3 overflow-y-auto bg-muted/35 p-4 sm:p-6 lg:px-8" aria-label="Histórico da conversa">
-        {conversation.timeline.map((item) => <TimelineItem key={`${item.kind}-${item.id}`} item={item} />)}
+      <ol className="mx-auto grid min-h-0 w-full max-w-6xl flex-1 content-start gap-1 overflow-y-auto bg-muted/25 p-3 sm:p-5 lg:px-8" aria-label="Histórico da conversa">
+        {conversation.timeline.map((item, index) => (
+          <Fragment key={`${item.kind}-${item.id}`}>
+            {index === 0 || dayKey(conversation.timeline[index - 1]!.at) !== dayKey(item.at) ? (
+              <li className="sticky top-2 z-10 mx-auto my-3 rounded-md border border-border/80 bg-background px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm">
+                {dayLabel(item.at)}
+              </li>
+            ) : null}
+            <TimelineItem item={item} />
+          </Fragment>
+        ))}
         <li ref={end} aria-hidden />
       </ol>
       <Composer key={`${conversation.id}-${conversation.replyBlocked ?? "ok"}`} conversation={conversation} />

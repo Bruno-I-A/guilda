@@ -212,7 +212,9 @@ function eventLabel(eventType: string, actor: string | null, detail: Record<stri
   if (eventType === "reopened") return `${who} reabriu a conversa`;
   if (eventType === "contact_linked") return typeof detail.note === "string" ? `${who}: ${detail.note}` : null;
   if (eventType === "status_changed" && status) return `${who} marcou como aguardando cliente`;
-  if (eventType === "ai_paused" && detail.reason === "business_app_message") return "Respondida pelo celular";
+  // A própria mensagem já aparece à direita com autor "Celular". Repetir um
+  // evento depois de cada resposta escondia a conversa real entre etiquetas.
+  if (eventType === "ai_paused" && detail.reason === "business_app_message") return null;
   return null;
 }
 
