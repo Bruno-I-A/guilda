@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import * as schema from "@/db/schema";
 import { withOrgTx } from "@/db/org-tx";
@@ -247,30 +247,18 @@ export async function cleanupRemovedOrganizationMemberClans(
         ),
       );
 
-    // Sair da organização também corta o Telegram. Sem isto o vínculo do bot
-    // sobrevivia à remoção: o Mural, as mudanças de fechamento e o resumo
-    // diário continuavam chegando no celular de quem já não é da Guilda,
-    // porque as duas rotas de envio enumeram `telegram_connections` e não a
-    // tabela de membros. Um token de vínculo pendente também perde a validade.
-    const now = new Date();
+    // Sair da organização também desliga o WhatsApp dos avisos (antes, o
+    // Telegram). O envio já exige o vínculo em `member`, mas o número
+    // confirmado seguiria virando comando da Guilda: desconfirmado, a mensagem
+    // dessa pessoa volta a ser de cliente, no Atendimento. A linha fica, com o
+    // histórico dos comandos.
     await tx
-      .update(schema.telegramConnections)
-      .set({ revokedAt: now })
+      .update(schema.memberWhatsAppConnections)
+      .set({ enabled: false, verifiedAt: null, verificationCodeHash: null, verificationExpiresAt: null, updatedAt: new Date() })
       .where(
         and(
-          eq(schema.telegramConnections.orgId, orgId),
-          eq(schema.telegramConnections.userId, userId),
-          isNull(schema.telegramConnections.revokedAt),
-        ),
-      );
-    await tx
-      .update(schema.telegramLinkTokens)
-      .set({ consumedAt: now })
-      .where(
-        and(
-          eq(schema.telegramLinkTokens.orgId, orgId),
-          eq(schema.telegramLinkTokens.userId, userId),
-          isNull(schema.telegramLinkTokens.consumedAt),
+          eq(schema.memberWhatsAppConnections.orgId, orgId),
+          eq(schema.memberWhatsAppConnections.userId, userId),
         ),
       );
   });

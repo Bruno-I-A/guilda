@@ -314,16 +314,61 @@ export type WhatsAppTemplate = Readonly<{
   name: string;
   language: string;
   status: string;
+  category?: string;
   rejectedReason?: string;
 }>;
 
+/**
+ * Mensagem com até três botões de resposta (2026-11-24, avisos da Guilda). Só
+ * dentro da janela de 24 h; o toque volta pelo webhook com o id do botão.
+ */
+export async function sendWhatsAppButtons(
+  input: { phoneNumberId: string; accessToken: string; to: string; text: string; buttons: readonly { id: string; title: string }[] },
+  config: MetaServerConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  if (input.buttons.length < 1 || input.buttons.length > 3) throw new MetaGraphError("send_message", 400);
+  const response = await fetchImpl(graphUrl(config, `/${input.phoneNumberId}/messages`), {
+    method: "POST",
+    headers: { authorization: `Bearer ${input.accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: input.to,
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: input.text.slice(0, 1024) },
+        action: { buttons: input.buttons.map((button) => ({ type: "reply", reply: { id: button.id.slice(0, 256), title: button.title.slice(0, 20) } })) },
+      },
+    }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const payload = await responsePayload(response);
+  const sent = Array.isArray(payload.messages) ? (payload.messages[0] as { id?: unknown } | undefined) : undefined;
+  if (!response.ok || typeof sent?.id !== "string") throw graphError("send_message", response, payload);
+  return sent.id;
+}
+
+/** Parâmetro de botão do modelo: a resposta rápida leva o payload; o link, a variável da URL. */
+export type WhatsAppTemplateButtonParam =
+  | Readonly<{ type: "quick_reply"; index: number; payload: string }>
+  | Readonly<{ type: "url"; index: number; text: string }>;
+
 /** Envia um modelo previamente aprovado; é a única saída permitida fora da janela de 24 h. */
 export async function sendWhatsAppTemplate(
-  input: { phoneNumberId: string; accessToken: string; to: string; name: string; language: string; bodyParams: string[] },
+  input: { phoneNumberId: string; accessToken: string; to: string; name: string; language: string; bodyParams: string[]; buttons?: readonly WhatsAppTemplateButtonParam[] },
   config: MetaServerConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   const url = graphUrl(config, `/${input.phoneNumberId}/messages`);
+  const buttonComponents = (input.buttons ?? []).map((button) => ({
+    type: "button",
+    sub_type: button.type,
+    index: String(button.index),
+    parameters: [button.type === "quick_reply" ? { type: "payload", payload: button.payload } : { type: "text", text: button.text }],
+  }));
   const response = await fetchImpl(url, {
     method: "POST",
     headers: { authorization: `Bearer ${input.accessToken}`, "content-type": "application/json" },
@@ -334,7 +379,7 @@ export async function sendWhatsAppTemplate(
       template: {
         name: input.name,
         language: { code: input.language },
-        components: [{ type: "body", parameters: input.bodyParams.map((text) => ({ type: "text", text })) }],
+        components: [{ type: "body", parameters: input.bodyParams.map((text) => ({ type: "text", text })) }, ...buttonComponents],
       },
     }),
     cache: "no-store",
@@ -355,6 +400,7 @@ function parseTemplate(value: unknown): WhatsAppTemplate | null {
     name: item.name,
     language: item.language,
     status: item.status,
+    ...(typeof item.category === "string" ? { category: item.category } : {}),
     ...(typeof item.rejected_reason === "string" ? { rejectedReason: item.rejected_reason } : {}),
   };
 }
@@ -372,8 +418,12 @@ export async function getWhatsAppTemplate(
   return payload.data.map(parseTemplate).find((template): template is WhatsAppTemplate => Boolean(template)) ?? null;
 }
 
+export type WhatsAppTemplateButtonDefinition =
+  | Readonly<{ type: "QUICK_REPLY"; text: string }>
+  | Readonly<{ type: "URL"; text: string; url: string; example: string }>;
+
 export async function createWhatsAppUtilityTemplate(
-  input: { wabaId: string; accessToken: string; name: string; body: string; examples: string[] },
+  input: { wabaId: string; accessToken: string; name: string; body: string; examples: readonly string[]; buttons?: readonly WhatsAppTemplateButtonDefinition[] },
   config: MetaServerConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<WhatsAppTemplate> {
@@ -386,14 +436,30 @@ export async function createWhatsAppUtilityTemplate(
       language: "pt_BR",
       category: "UTILITY",
       allow_category_change: true,
-      components: [{ type: "BODY", text: input.body, example: { body_text: [input.examples] } }],
+      components: [
+        { type: "BODY", text: input.body, example: { body_text: [input.examples] } },
+        ...(input.buttons?.length
+          ? [{
+              type: "BUTTONS",
+              buttons: input.buttons.map((button) => button.type === "URL"
+                ? { type: "URL", text: button.text, url: button.url, example: [button.example] }
+                : { type: "QUICK_REPLY", text: button.text }),
+            }]
+          : []),
+      ],
     }),
     cache: "no-store",
     signal: AbortSignal.timeout(15_000),
   });
   const payload = await responsePayload(response);
   if (!response.ok || typeof payload.id !== "string") throw graphError("create_template", response, payload);
-  return { id: payload.id, name: input.name, language: "pt_BR", status: typeof payload.status === "string" ? payload.status : "PENDING" };
+  return {
+    id: payload.id,
+    name: input.name,
+    language: "pt_BR",
+    status: typeof payload.status === "string" ? payload.status : "PENDING",
+    ...(typeof payload.category === "string" ? { category: payload.category } : {}),
+  };
 }
 
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;

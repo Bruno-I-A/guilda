@@ -31,13 +31,12 @@ import {
   loadClanScopedFacts,
 } from "@/lib/clans/facts";
 import { createTaskRecord } from "@/lib/tasks/create";
+import { activeClanMembershipsForUser } from "@/lib/tasks/assignee-clan";
 import { transitionTaskForActor } from "@/lib/tasks/transition-service";
 import { findCompanyFlowTaskLink } from "@/lib/company-flows/managed-task";
-import {
-  enqueueTelegramNotificationIfEnabled,
-  notificationPayload,
-} from "@/lib/telegram/notifications";
-import { taskUrl } from "@/lib/telegram/notification-payload";
+import { enqueueMemberNotice } from "@/lib/notices/enqueue";
+import { dueDateLabel, taskPath } from "@/lib/notices/links";
+import { taskButton } from "@/lib/notices/notice";
 
 /**
  * Server Actions de tarefas.
@@ -110,44 +109,6 @@ const createTaskSchema = z.discriminatedUnion("assignmentType", [
     clanId: z.uuid("Escolha um clã válido."),
   }),
 ]);
-
-async function activeClanMembershipsForUser(
-  tx: OrgTx,
-  orgId: string,
-  userId: string,
-): Promise<Array<{ clanId: string; isPrimary: boolean }>> {
-  await lockActiveClansForMembershipRead(tx, orgId);
-  return tx
-    .select({
-      clanId: schema.clanMemberships.clanId,
-      isPrimary: schema.clanMemberships.isPrimary,
-    })
-    .from(schema.clanMemberships)
-    .innerJoin(
-      schema.clans,
-      and(
-        eq(schema.clans.id, schema.clanMemberships.clanId),
-        eq(schema.clans.orgId, schema.clanMemberships.orgId),
-      ),
-    )
-    .innerJoin(
-      schema.member,
-      and(
-        eq(schema.member.userId, schema.clanMemberships.userId),
-        eq(schema.member.organizationId, schema.clanMemberships.orgId),
-      ),
-    )
-    .where(
-      and(
-        eq(schema.clanMemberships.orgId, orgId),
-        eq(schema.clanMemberships.userId, userId),
-        eq(schema.clans.orgId, orgId),
-        eq(schema.clans.active, true),
-        eq(schema.member.organizationId, orgId),
-        eq(schema.member.userId, userId),
-      ),
-    );
-}
 
 export async function createTask(
   input: z.input<typeof createTaskSchema>,
@@ -494,17 +455,17 @@ export async function claimTask(input: {
       .returning({ id: schema.taskEvents.id });
 
     if (task.creatorId !== ctx.userId) {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;
-      await enqueueTelegramNotificationIfEnabled(tx, {
+      await enqueueMemberNotice(tx, {
         orgId: ctx.orgId,
         userId: task.creatorId,
-        eventType: "task_started",
         dedupeKey: `task-event:${event.id}:started`,
-        payload: notificationPayload(
-          "tasks",
-          `▶️ ${membership.name} assumiu e iniciou a missão\n\n${task.title}`,
-          [[{ text: "Ver missão", url: taskUrl(task.id, baseUrl) }]],
-        ),
+        preference: "tasks",
+        notice: {
+          family: "mission_update",
+          title: task.title,
+          update: `${membership.name} assumiu e iniciou a missão`,
+          path: taskPath(task.id),
+        },
       });
     }
 
@@ -632,23 +593,23 @@ export async function transferTask(input: {
       })
       .returning({ id: schema.taskTransfers.id });
 
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;
     if (data.assigneeId !== ctx.userId) {
-      await enqueueTelegramNotificationIfEnabled(tx, {
+      await enqueueMemberNotice(tx, {
         orgId: ctx.orgId,
         userId: data.assigneeId,
-        eventType: "task_transferred_in",
         dedupeKey: `task-transfer:${transfer.id}:incoming`,
-        payload: notificationPayload(
-          "tasks",
-          `⚔️ Missão atribuída a você\n\n${task.title}`,
-          [[
-            {
-              text: "Abrir na Guilda",
-              url: taskUrl(task.id, baseUrl),
-            },
-          ]],
-        ),
+        preference: "tasks",
+        notice: {
+          family: "new_mission",
+          heading: "Missão transferida para você",
+          title: task.title,
+          due: dueDateLabel(task.dueDate),
+          xp: task.xpValue,
+          path: taskPath(task.id),
+          ...(task.status === "pending" || task.status === "rejected"
+            ? { button: taskButton(task.status === "rejected" ? "resume" : "start", task.id) }
+            : {}),
+        },
       });
     }
     if (
@@ -656,21 +617,17 @@ export async function transferTask(input: {
       task.assigneeId !== data.assigneeId &&
       task.assigneeId !== ctx.userId
     ) {
-      await enqueueTelegramNotificationIfEnabled(tx, {
+      await enqueueMemberNotice(tx, {
         orgId: ctx.orgId,
         userId: task.assigneeId,
-        eventType: "task_transferred_out",
         dedupeKey: `task-transfer:${transfer.id}:outgoing`,
-        payload: notificationPayload(
-          "tasks",
-          `🔄 Missão transferida para outra pessoa\n\n${task.title}`,
-          [[
-            {
-              text: "Ver missão",
-              url: taskUrl(task.id, baseUrl),
-            },
-          ]],
-        ),
+        preference: "tasks",
+        notice: {
+          family: "mission_update",
+          title: task.title,
+          update: "Missão transferida para outra pessoa",
+          path: taskPath(task.id),
+        },
       });
     }
 

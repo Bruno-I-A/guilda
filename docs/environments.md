@@ -34,7 +34,6 @@ O que está de pé:
 - Role **`guilda_app`** não-superuser criado à mão, com `ALTER DEFAULT
   PRIVILEGES` para o dono, de modo que toda tabela criada pelas migrations já
   nasça acessível à aplicação.
-- **Bot do Telegram exclusivo** de teste, em modo `polling`.
 - 24 empresas fictícias carregadas para exercitar listas e filtros.
 
 **Ressalva conhecida:** o serviço vive dentro do projeto `appcontabil`, junto da
@@ -70,8 +69,6 @@ cofre continuam exclusivos de cada ambiente da Guilda.
 | `FLOW_SECRETS_KEY` | opcional, mas necessária para o cofre Gov.br do Fluxo |
 | `BETTER_AUTH_URL` | URL da homologação, **sem barra no fim e sem caminho** |
 | `NEXT_PUBLIC_APP_URL` | idêntica à anterior |
-| `TELEGRAM_BOT_TOKEN` | **bot exclusivo**; nunca o da produção |
-| `TELEGRAM_UPDATE_MODE` | vazio (`polling` é o padrão) |
 | `WHATSAPP_APP_SECRET` | segredo do app Meta Tech Provider aprovado da Shift |
 | `WHATSAPP_APP_ID` | ID público do app Meta Tech Provider aprovado da Shift |
 | `WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID` | configuração de coexistência do mesmo app Tech Provider |
@@ -128,12 +125,7 @@ continue apontando para o CRM da Shift. Avisos globais da conta, como
    `\c homolodacao` sozinho, numa linha, e confirme que o prompt mudou antes de
    colar qualquer coisa — comando de barra invertida consome a linha inteira.
 
-4. **Token de bot compartilhado com a produção.** O worker usa long polling e
-   remove o webhook existente antes de começar; cada update do Telegram é
-   entregue uma única vez. A homologação passaria a **consumir as mensagens da
-   produção**, que pararia de responder sem emitir erro.
-
-5. **Reutilizar `BETTER_AUTH_SECRET` da produção** faz uma sessão de um ambiente
+4. **Reutilizar `BETTER_AUTH_SECRET` da produção** faz uma sessão de um ambiente
    valer no outro.
 
 ## Publicação de uma versão
@@ -153,7 +145,7 @@ continue apontando para o CRM da Shift. Avisos globais da conta, como
 
 Serviço `guilda-fiscal` no projeto `appcontabil`, **mesma imagem** do app,
 com `GUILDA_SERVICE=fiscal`: o `start-production.mjs` sobe só
-`scripts/fiscal-service.ts` (sem migrations, sem Next, sem Telegram). É o
+`scripts/fiscal-service.ts` (sem migrations, sem Next, sem workers). É o
 único processo com o certificado A1 do escritório.
 
 - **Um serviço só, o da produção** (decisão de 2026-10-15): branch `main`,

@@ -5,7 +5,7 @@ vi.mock("server-only", () => ({}));
 import { shouldNotifyTaskCreation } from "./create";
 
 describe("notificação da criação de missão", () => {
-  test("não repete no Telegram as missões geradas por Informativo", () => {
+  test("missão de Informativo não avisa uma a uma (a confirmação agrupa)", () => {
     expect(shouldNotifyTaskCreation("informativo-1")).toBe(false);
   });
 

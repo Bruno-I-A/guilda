@@ -6,12 +6,9 @@ import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { calculateTaskXp } from "@/domain/xp";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
-import { encodeTaskCallback } from "@/lib/telegram/endpoint";
-import {
-  enqueueTelegramNotificationIfEnabled,
-  notificationPayload,
-} from "@/lib/telegram/notifications";
-import { dueDateLabel, taskUrl } from "@/lib/telegram/notification-payload";
+import { enqueueClanNotice, enqueueMemberNotice } from "@/lib/notices/enqueue";
+import { dueDateLabel, taskPath } from "@/lib/notices/links";
+import { taskButton } from "@/lib/notices/notice";
 
 export type CreateTaskRecordInput = {
   orgId: string;
@@ -34,8 +31,8 @@ export type CreateTaskRecordInput = {
 };
 
 /**
- * O Informativo já publica um único aviso no Mural e no Telegram. As missões
- * que compõem esse pacote não devem repetir o mesmo aviso uma a uma.
+ * Missão de Informativo não avisa uma a uma: a confirmação manda um aviso
+ * agrupado por pessoa (`enqueueInformativeAssignmentNotices`, 2026-11-24).
  */
 export function shouldNotifyTaskCreation(
   informativeId: string | null | undefined,
@@ -43,7 +40,72 @@ export function shouldNotifyTaskCreation(
   return !informativeId;
 }
 
-/** Núcleo transacional compartilhado pela UI e pela confirmação via Telegram. */
+/**
+ * Aviso de missão nova pelo WhatsApp: à pessoa responsável, com o botão
+ * Iniciar; missão só do clã, a todos do clã. Quem cria para si mesmo não é
+ * avisado da própria missão (2026-11-24).
+ */
+async function notifyTaskCreated(
+  tx: OrgTx,
+  input: {
+    orgId: string;
+    taskId: string;
+    creatorId: string;
+    assigneeId: string | null;
+    clanId: string | null;
+    title: string;
+    dueDate: Date | null;
+    xpValue: number;
+  },
+): Promise<void> {
+  const [clan] = input.clanId
+    ? await tx
+        .select({ name: schema.clans.name })
+        .from(schema.clans)
+        .where(and(eq(schema.clans.orgId, input.orgId), eq(schema.clans.id, input.clanId)))
+        .limit(1)
+    : [];
+  const context = clan ? `clã ${clan.name}` : undefined;
+  if (input.assigneeId) {
+    if (input.assigneeId === input.creatorId) return;
+    await enqueueMemberNotice(tx, {
+      orgId: input.orgId,
+      userId: input.assigneeId,
+      dedupeKey: `task:${input.taskId}:assigned`,
+      preference: "tasks",
+      notice: {
+        family: "new_mission",
+        heading: "Nova missão para você",
+        title: input.title,
+        ...(context ? { context } : {}),
+        due: dueDateLabel(input.dueDate),
+        xp: input.xpValue,
+        path: taskPath(input.taskId),
+        button: taskButton("start", input.taskId),
+      },
+    });
+    return;
+  }
+  if (!input.clanId) return;
+  await enqueueClanNotice(tx, {
+    orgId: input.orgId,
+    clanId: input.clanId,
+    dedupeKey: `task:${input.taskId}:clan-created`,
+    preference: "tasks",
+    exceptUserIds: [input.creatorId],
+    notice: {
+      family: "new_mission",
+      heading: clan ? `Nova missão para o clã ${clan.name}` : "Nova missão para o seu clã",
+      title: input.title,
+      ...(context ? { context } : {}),
+      due: dueDateLabel(input.dueDate),
+      xp: input.xpValue,
+      path: taskPath(input.taskId),
+    },
+  });
+}
+
+/** Núcleo transacional compartilhado pela UI, pelo MCP e pelos Informativos. */
 export async function createTaskRecord(
   tx: OrgTx,
   input: CreateTaskRecordInput,
@@ -126,79 +188,17 @@ export async function createTaskRecord(
     toStatus: "pending",
   });
 
-  if (shouldNotifyTaskCreation(input.informativeId) && input.assigneeId) {
-    await enqueueTelegramNotificationIfEnabled(tx, {
+  if (shouldNotifyTaskCreation(input.informativeId)) {
+    await notifyTaskCreated(tx, {
       orgId: input.orgId,
-      userId: input.assigneeId,
-      eventType: "task_assigned",
-      dedupeKey: `task:${task.id}:assigned`,
-      payload: notificationPayload(
-        "tasks",
-        `⚔️ Nova missão atribuída\n\n${input.title}\nPrazo: ${dueDateLabel(input.dueDate ?? null)}\nRecompensa: ${xpValue} XP`,
-        [[
-          {
-            text: "Iniciar missão",
-            callbackData: encodeTaskCallback("start", task.id),
-          },
-          {
-            text: "Abrir na Guilda",
-            url: taskUrl(
-              task.id,
-              process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL,
-            ),
-          },
-        ]],
-      ),
+      taskId: task.id,
+      creatorId: input.creatorId,
+      assigneeId: input.assigneeId,
+      clanId: input.clanId ?? null,
+      title: input.title,
+      dueDate: input.dueDate ?? null,
+      xpValue,
     });
-  } else if (shouldNotifyTaskCreation(input.informativeId) && input.clanId) {
-    const clanMembers = await tx
-      .select({ userId: schema.clanMemberships.userId })
-      .from(schema.clanMemberships)
-      .innerJoin(
-        schema.clans,
-        and(
-          eq(schema.clans.id, schema.clanMemberships.clanId),
-          eq(schema.clans.orgId, schema.clanMemberships.orgId),
-        ),
-      )
-      .innerJoin(
-        schema.member,
-        and(
-          eq(schema.member.userId, schema.clanMemberships.userId),
-          eq(schema.member.organizationId, schema.clanMemberships.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(schema.clanMemberships.orgId, input.orgId),
-          eq(schema.clanMemberships.clanId, input.clanId),
-          eq(schema.clans.orgId, input.orgId),
-          eq(schema.clans.active, true),
-          eq(schema.member.organizationId, input.orgId),
-        ),
-      );
-
-    for (const clanMember of clanMembers) {
-      await enqueueTelegramNotificationIfEnabled(tx, {
-        orgId: input.orgId,
-        userId: clanMember.userId,
-        eventType: "task_clan_created",
-        dedupeKey: `task:${task.id}:clan-created:member:${clanMember.userId}`,
-        payload: notificationPayload(
-          "tasks",
-          `🛡️ Nova missão para o seu clã\n\n${input.title}\nPrazo: ${dueDateLabel(input.dueDate ?? null)}\nRecompensa: ${xpValue} XP`,
-          [[
-            {
-              text: "Abrir na Guilda",
-              url: taskUrl(
-                task.id,
-                process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL,
-              ),
-            },
-          ]],
-        ),
-      });
-    }
   }
 
   return { id: task.id, xpValue };

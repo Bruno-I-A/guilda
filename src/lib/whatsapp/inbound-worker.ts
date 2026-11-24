@@ -11,7 +11,9 @@ import { matchTestKeyword } from "@/domain/support-agent";
 import { statusAfterCustomerMessage } from "@/domain/support-inbox";
 import { loadAgentSettings, startAgentRound } from "@/lib/support/agent/settings";
 
-import { recordMemberWhatsAppInbound, whatsAppPhoneVariants } from "./member-notifications";
+import { routeMemberMessage } from "./member-commands";
+import { parseMemberInbound } from "./member-inbound";
+import { whatsAppPhoneVariants } from "./member-notifications";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -476,14 +478,12 @@ async function processClaim(claim: InboundClaim): Promise<void> {
       .limit(1);
     if (!event) throw new Error("Lease do webhook expirou");
 
+    // Mensagem de integrante com número confirmado (ou o código que o
+    // confirma) é da Guilda, não do Atendimento: vira comando (2026-11-24).
+    const memberMessages = new Map(parseMemberInbound(event.payload).map((member) => [member.externalId, member]));
     for (const message of normalizeInboundMessages(event.payload)) {
-      // Mensagem de um integrante é só o sinal que abre a janela de serviço
-      // para os avisos internos. Ela não pode nascer como atendimento de cliente.
-      if (message.direction === "inbound" && await recordMemberWhatsAppInbound(tx, {
-        orgId: claim.orgId,
-        phoneE164: `+${message.contactWhatsAppId}`,
-        occurredAt: message.occurredAt,
-      })) {
+      const member = message.direction === "inbound" ? memberMessages.get(message.externalId) : undefined;
+      if (member && await routeMemberMessage(tx, { orgId: claim.orgId, message: member })) {
         continue;
       }
       await materializeMessage(tx, {

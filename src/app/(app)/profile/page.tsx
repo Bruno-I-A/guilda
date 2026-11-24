@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { TrendingDown, TrendingUp } from "lucide-react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
@@ -22,8 +22,7 @@ import { listMcpAgentKeys } from "@/lib/mcp/access";
 import { initials, ROLE_LABELS } from "@/lib/people";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 import { formatDateTime } from "@/lib/task-ui";
-import { getTelegramConfig } from "@/lib/telegram/config";
-import { getTelegramBotUsername } from "@/lib/telegram/client";
+import { hasOpenMemberWhatsAppWindow, MEMBER_WINDOW_MS } from "@/lib/whatsapp/member-notifications";
 import {
   countCompletedTasks,
   getUserXpTotal,
@@ -31,9 +30,9 @@ import {
 } from "@/lib/xp-queries";
 
 import { McpKeyManager } from "../settings/mcp-key-manager";
-import { TelegramSettings } from "./telegram-settings";
+import { NotificationPreferences, type NotificationPreferencesView } from "./notification-preferences";
 import { WhatsAppSettings } from "./whatsapp-settings";
-import type { TelegramPreferencesView } from "./telegram-types";
+import { WhatsAppTemplates } from "./whatsapp-templates";
 
 export const metadata: Metadata = { title: "Perfil" };
 
@@ -47,12 +46,13 @@ const REASON_LABELS: Record<string, string> = {
   bonus: "Bônus",
 };
 
-const DEFAULT_TELEGRAM_PREFERENCES: TelegramPreferencesView = {
+/** Os padrões da tabela: fechamentos desligado (iria à Guilda inteira). */
+const DEFAULT_PREFERENCES: NotificationPreferencesView = {
   taskNotifications: true,
   approvalNotifications: true,
   deadlineReminders: true,
   xpNotifications: true,
-  closingNotifications: true,
+  closingNotifications: false,
   campaignNotifications: true,
   muralNotifications: true,
   dailySummary: false,
@@ -69,43 +69,26 @@ export default async function ProfilePage() {
     redirect("/onboarding");
   }
 
-  const [totalXp, completedCount, history, telegramData, whatsAppData, botUsername, mcpKeys] = await Promise.all([
+  const isAdmin = member.role === "owner" || member.role === "admin";
+  const [totalXp, completedCount, history, whatsAppData, mcpKeys] = await Promise.all([
     getUserXpTotal(session.orgId, session.user.id),
     countCompletedTasks(session.orgId, session.user.id),
     getXpHistory(session.orgId, session.user.id),
     withOrgTx(session.orgId, async (tx) => {
-      const [connection, preferences] = await Promise.all([
-        tx.query.telegramConnections.findFirst({
-          where: and(
-            eq(schema.telegramConnections.orgId, session.orgId),
-            eq(schema.telegramConnections.userId, session.user.id),
-            isNull(schema.telegramConnections.revokedAt),
-          ),
-          orderBy: [desc(schema.telegramConnections.connectedAt)],
-        }),
-        tx.query.telegramPreferences.findFirst({
-          where: and(
-            eq(schema.telegramPreferences.orgId, session.orgId),
-            eq(schema.telegramPreferences.userId, session.user.id),
-          ),
-        }),
-      ]);
-      return { connection, preferences };
-    }),
-    withOrgTx(session.orgId, async (tx) => {
-      const [connection, config] = await Promise.all([
+      const [connection, preferences, templates] = await Promise.all([
         tx.query.memberWhatsAppConnections.findFirst({ where: and(eq(schema.memberWhatsAppConnections.orgId, session.orgId), eq(schema.memberWhatsAppConnections.userId, session.user.id)) }),
-        tx.query.memberWhatsAppNotificationConfig.findFirst({ where: eq(schema.memberWhatsAppNotificationConfig.orgId, session.orgId) }),
+        tx.query.memberNotificationPreferences.findFirst({ where: and(eq(schema.memberNotificationPreferences.orgId, session.orgId), eq(schema.memberNotificationPreferences.userId, session.user.id)) }),
+        isAdmin ? tx.query.memberWhatsAppTemplates.findMany({ where: eq(schema.memberWhatsAppTemplates.orgId, session.orgId) }) : Promise.resolve([]),
       ]);
-      return { connection, config };
+      return { connection, preferences, templates };
     }),
-    getTelegramBotUsername(),
     listMcpAgentKeys(session.orgId, session.user.id),
   ]);
   const progress = levelProgress(totalXp);
   const xpIntoLevel = progress.totalXp - progress.currentLevelXp;
   const xpLevelSpan = progress.nextLevelXp - progress.currentLevelXp;
-  const telegramConfig = getTelegramConfig();
+  const whatsApp = whatsAppData.connection;
+  const prefs = whatsAppData.preferences;
 
   return (
     <div className="grid gap-6">
@@ -146,54 +129,46 @@ export default async function ProfilePage() {
         </p>
       </section>
 
-      <TelegramSettings
-        key={telegramData.connection?.id ?? "telegram-disconnected"}
-        connection={
-          telegramData.connection
-            ? {
-                id: telegramData.connection.id,
-                username: telegramData.connection.username,
-                displayName:
-                  [
-                    telegramData.connection.firstName,
-                    telegramData.connection.lastName,
-                  ]
-                    .filter(Boolean)
-                    .join(" ") || null,
-                connectedAt: formatDateTime(telegramData.connection.connectedAt),
-              }
-            : null
-        }
-        preferences={
-          telegramData.preferences
-            ? {
-                taskNotifications: telegramData.preferences.taskNotifications,
-                approvalNotifications:
-                  telegramData.preferences.approvalNotifications,
-                deadlineReminders: telegramData.preferences.deadlineReminders,
-                xpNotifications: telegramData.preferences.xpNotifications,
-                closingNotifications: telegramData.preferences.closingNotifications,
-                campaignNotifications:
-                  telegramData.preferences.campaignNotifications,
-                muralNotifications: telegramData.preferences.muralNotifications,
-                dailySummary: telegramData.preferences.dailySummary,
-                dailySummaryTime: telegramData.preferences.dailySummaryTime,
-                timezone: telegramData.preferences.timezone,
-                quietHoursStart: telegramData.preferences.quietHoursStart,
-                quietHoursEnd: telegramData.preferences.quietHoursEnd,
-              }
-            : DEFAULT_TELEGRAM_PREFERENCES
-        }
-        botUsername={botUsername}
-        configured={Boolean(telegramConfig.botToken && botUsername)}
+      <WhatsAppSettings
+        key={whatsApp?.id ?? "whatsapp-sem-numero"}
+        connection={whatsApp ? {
+          phone: whatsApp.phoneE164,
+          enabled: whatsApp.enabled,
+          verifiedAt: whatsApp.verifiedAt ? formatDateTime(whatsApp.verifiedAt) : null,
+          windowOpenUntil: whatsApp.lastInboundAt && hasOpenMemberWhatsAppWindow(whatsApp.lastInboundAt)
+            ? formatDateTime(new Date(whatsApp.lastInboundAt.getTime() + MEMBER_WINDOW_MS))
+            : null,
+        } : null}
       />
 
-      <WhatsAppSettings
-        key={whatsAppData.connection?.id ?? "whatsapp-disconnected"}
-        connection={whatsAppData.connection ? { phone: whatsAppData.connection.phoneE164, enabled: whatsAppData.connection.enabled, lastInboundAt: whatsAppData.connection.lastInboundAt?.toISOString() ?? null } : null}
-        templateStatus={whatsAppData.config?.templateStatus ?? null}
-        canManageTemplate={member.role === "owner" || member.role === "admin"}
+      <NotificationPreferences
+        preferences={prefs ? {
+          taskNotifications: prefs.taskNotifications,
+          approvalNotifications: prefs.approvalNotifications,
+          deadlineReminders: prefs.deadlineReminders,
+          xpNotifications: prefs.xpNotifications,
+          closingNotifications: prefs.closingNotifications,
+          campaignNotifications: prefs.campaignNotifications,
+          muralNotifications: prefs.muralNotifications,
+          dailySummary: prefs.dailySummary,
+          dailySummaryTime: prefs.dailySummaryTime,
+          timezone: prefs.timezone,
+          quietHoursStart: prefs.quietHoursStart,
+          quietHoursEnd: prefs.quietHoursEnd,
+        } : DEFAULT_PREFERENCES}
       />
+
+      {isAdmin ? (
+        <WhatsAppTemplates
+          templates={whatsAppData.templates.map((template) => ({
+            key: template.key,
+            name: template.name,
+            status: template.status,
+            category: template.category,
+            rejectedReason: template.rejectedReason,
+          }))}
+        />
+      ) : null}
 
       <McpKeyManager
         selfService

@@ -53,7 +53,7 @@
   --color-bronze: var(--bronze);
   --color-success: var(--success);
   --color-warning: var(--warning);
-  --color-telegram: var(--telegram);
+  --color-whatsapp: var(--whatsapp);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -124,8 +124,8 @@
   --category-rh: oklch(0.77 0.09 330);
   --category-financeiro: oklch(0.75 0.09 290);
   --category-sucesso-do-cliente: oklch(0.76 0.085 160);
-  /* Cor de marca externa do Telegram (#2AABEE). Token só para não ficar solta. */
-  --telegram: #2aabee;
+  /* Cor de marca externa do WhatsApp (#25D366), a mesma nos dois temas. Só no ícone. */
+  --whatsapp: #25d366;
   /* Brasão: ferro do escudo, aresta polida, bisel interno e o entalhe de Yggdrasil. */
   --crest-plate: oklch(0.235 0.025 252);
   --crest-edge: oklch(0.78 0.012 240);

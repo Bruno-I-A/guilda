@@ -46,10 +46,6 @@ import {
 import { lookupCnpj, type CnpjLookupData } from "@/lib/cnpj-lookup";
 import { completeTaskFromSystem } from "@/lib/tasks/complete";
 import { createTaskRecord } from "@/lib/tasks/create";
-import {
-  enqueueTelegramClanBroadcast,
-  notificationPayload,
-} from "@/lib/telegram/notifications";
 import { enqueueMemberNewClientNotifications } from "@/lib/whatsapp/member-notifications";
 
 const activitySchema = z.object({
@@ -588,27 +584,8 @@ export async function createCompanyFlow(
         eq(schema.companyFlows.id, flow.id),
       ));
 
-    // A equipe inteira do Societário fica sabendo, não só a liderança.
-    await enqueueTelegramClanBroadcast(tx, {
-      orgId: ctx.orgId,
-      clanId: data.clanId,
-      eventType: "company_flow_created",
-      dedupeKey: `company-flow:${flow.id}:created`,
-      payload: notificationPayload(
-        "tasks",
-        [
-          `📜 Novo fluxo no Societário`,
-          "",
-          `${COMPANY_FLOW_KIND_LABELS[data.kind]} — ${nomeEmpresa}`,
-          responsavel
-            ? `Responsável: ${responsavel.userName ?? "definido"} — aguardando a confirmação de recebimento.`
-            : "Sem responsável definido — disponível para assumir.",
-        ].join("\n"),
-      ),
-      // Quem recebeu a missão nominal já foi avisado por createTaskRecord.
-      exceptUserId: responsavel?.userId,
-    });
-
+    // A equipe inteira do clã fica sabendo pelo aviso de novo cliente no
+    // WhatsApp (o broadcast do Telegram saiu em 2026-11-24: repetia o mesmo).
     await enqueueMemberNewClientNotifications(tx, {
       orgId: ctx.orgId,
       clanId: data.clanId,

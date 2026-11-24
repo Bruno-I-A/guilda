@@ -12,6 +12,7 @@ import {
   resolveCoexistencePhone,
   sendWhatsAppMedia,
   sendWhatsAppAudio,
+  sendWhatsAppButtons,
   sendWhatsAppTemplate,
   subscribeWhatsAppWebhook,
   uploadWhatsAppMedia,
@@ -31,6 +32,44 @@ function fetchReturning(payload: unknown, status = 200) {
     }),
   ) as unknown as typeof fetch;
 }
+
+describe("avisos da Guilda pela Meta", () => {
+  function bodyOf(fetchImpl: typeof fetch): Record<string, unknown> {
+    const call = (fetchImpl as unknown as { mock: { calls: [unknown, RequestInit][] } }).mock.calls[0];
+    return JSON.parse(String(call[1].body));
+  }
+
+  test("botões de resposta saem como mensagem interativa", async () => {
+    const send = fetchReturning({ messages: [{ id: "wamid.btn" }] });
+    const id = await sendWhatsAppButtons({ phoneNumberId: "222222", accessToken: "EA-token", to: "5554999990000", text: "Entrega para a sua aprovação", buttons: [{ id: "task:approve:1", title: "Aprovar" }] }, config, send);
+    expect(id).toBe("wamid.btn");
+    expect(bodyOf(send)).toMatchObject({ type: "interactive", interactive: { type: "button", body: { text: "Entrega para a sua aprovação" }, action: { buttons: [{ type: "reply", reply: { id: "task:approve:1", title: "Aprovar" } }] } } });
+  });
+
+  test("mais de três botões é recusado antes de chamar a Meta", async () => {
+    const send = fetchReturning({});
+    await expect(sendWhatsAppButtons({ phoneNumberId: "1", accessToken: "t", to: "55", text: "x", buttons: [1, 2, 3, 4].map((n) => ({ id: String(n), title: String(n) })) }, config, send)).rejects.toThrow();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  test("modelo leva o payload da resposta rápida e a variável do link", async () => {
+    const send = fetchReturning({ messages: [{ id: "wamid.tpl" }] });
+    await sendWhatsAppTemplate({ phoneNumberId: "222222", accessToken: "EA-token", to: "5554999990000", name: "guilda_aprovacao", language: "pt_BR", bodyParams: ["Ana", "Folha", "40"], buttons: [{ type: "quick_reply", index: 0, payload: "task:approve:1" }, { type: "url", index: 1, text: "t-1" }] }, config, send);
+    const template = bodyOf(send).template as { components: unknown[] };
+    expect(template.components).toEqual([
+      { type: "body", parameters: [{ type: "text", text: "Ana" }, { type: "text", text: "Folha" }, { type: "text", text: "40" }] },
+      { type: "button", sub_type: "quick_reply", index: "0", parameters: [{ type: "payload", payload: "task:approve:1" }] },
+      { type: "button", sub_type: "url", index: "1", parameters: [{ type: "text", text: "t-1" }] },
+    ]);
+  });
+
+  test("cria o modelo com resposta rápida e botão de link", async () => {
+    const create = fetchReturning({ id: "tpl-1", status: "PENDING", category: "UTILITY" });
+    const created = await createWhatsAppUtilityTemplate({ wabaId: "333333", accessToken: "EA-token", name: "guilda_aprovacao", body: "{{1}} entregou. Fim.", examples: ["Ana"], buttons: [{ type: "QUICK_REPLY", text: "Aprovar" }, { type: "URL", text: "Abrir na Guilda", url: "https://guilda.example/w/{{1}}", example: "https://guilda.example/w/t-1" }] }, config, create);
+    expect(created).toMatchObject({ id: "tpl-1", status: "PENDING", category: "UTILITY" });
+    expect((bodyOf(create).components as unknown[])[1]).toEqual({ type: "BUTTONS", buttons: [{ type: "QUICK_REPLY", text: "Aprovar" }, { type: "URL", text: "Abrir na Guilda", url: "https://guilda.example/w/{{1}}", example: ["https://guilda.example/w/t-1"] }] });
+  });
+});
 
 describe("cliente seguro da Meta", () => {
   test("sobe arquivo no número conectado e envia o id como documento com legenda", async () => {

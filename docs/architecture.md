@@ -11,14 +11,14 @@ substituem as regras de domínio.
 flowchart TB
     subgraph Clientes
       B[Navegador]
-      TG[Telegram]
+      WA[WhatsApp do escritório]
     end
 
     subgraph Aplicação Next.js
       UI[App Router]
       SA[Server Actions e APIs]
       D[Domínio]
-      W[Worker Telegram]
+      W[Worker de atendimento e avisos]
     end
 
     subgraph Dados
@@ -28,7 +28,7 @@ flowchart TB
     end
 
     B --> UI --> SA --> D --> DB
-    TG --> W --> SA
+    WA --> W --> SA
     DB --> RLS
     M --> DB
     SA --> EXT[Claude API / BrasilAPI]
@@ -83,7 +83,8 @@ O container final executa:
 
 1. migrations com `MIGRATION_DATABASE_URL`;
 2. aplicação Next.js com `DATABASE_URL` restrita;
-3. worker do Telegram, quando configurado.
+3. worker de atendimento (`support-worker`): WhatsApp do Atendimento, avisos e
+   pedidos de missão da equipe, quando o WhatsApp está configurado.
 
 Uma falha de migration impede a aplicação de iniciar com schema incompatível.
 Produção e homologação usam serviços, bancos, volumes e segredos independentes.

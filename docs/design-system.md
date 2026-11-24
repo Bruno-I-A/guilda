@@ -86,8 +86,8 @@ Só tokens. **Nenhuma cor crua do Tailwind em `.tsx`.**
 | `--silver` | Prata fosca, dado neutro | — |
 | `--success` | "Deu certo", concluído, em dia | — |
 | `--warning` | "Atenção", pendente, vence hoje | Qualquer coisa que sugira prêmio |
+| `--whatsapp` | Cor de marca do WhatsApp, só no ícone | Qualquer outra coisa |
 | `--destructive` | Erro, atraso, ação irreversível | — |
-| `--telegram` | Cor de marca do Telegram | Qualquer outra coisa |
 
 `--warning` é cobre **saturado** (chroma 0.14) enquanto `--gold` é fosco (0.08).
 A saturação é deliberada: é ela que impede o usuário de confundir "atenção" com
