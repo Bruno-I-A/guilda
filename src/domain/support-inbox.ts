@@ -1,4 +1,3 @@
-import { isAdminRole } from "./guild-permissions";
 import type { OrgRole } from "./task-state";
 
 /**
@@ -38,16 +37,6 @@ export interface SupportViewer {
   clanIds: readonly string[];
 }
 
-/** Admin vê tudo; membro vê as filas dos clãs dele e o que está atribuído a ele. */
-export function canSeeConversation(
-  viewer: SupportViewer,
-  conversation: { assignedClanId: string | null; assignedUserId: string | null },
-): boolean {
-  if (isAdminRole(viewer.role)) return true;
-  if (conversation.assignedUserId === viewer.userId) return true;
-  return conversation.assignedClanId !== null && viewer.clanIds.includes(conversation.assignedClanId);
-}
-
 /** A Meta só aceita texto livre até 24 horas depois da última mensagem do cliente. */
 export const REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -57,8 +46,8 @@ export function replyWindowIsOpen(lastCustomerMessageAt: Date | null, now: Date)
 
 /**
  * Quem vê a conversa responde, sem precisar assumir (2026-11-24, pedido do
- * Bruno; antes só quem assumiu). Quem vê é canSeeConversation; o que a
- * resposta muda na conversa é conversationAfterTeamReply.
+ * Bruno; antes só quem assumiu). Todo integrante vê todas as conversas da
+ * organização; o que a resposta muda na conversa é conversationAfterTeamReply.
  */
 export function replyBlockReason(input: {
   status: SupportStatus;

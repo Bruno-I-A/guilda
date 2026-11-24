@@ -2,13 +2,11 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, ne, notInArray, or, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, ne, notInArray, type SQL } from "drizzle-orm";
 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
-import { isAdminRole } from "@/domain/guild-permissions";
 import {
-  canSeeConversation,
   conversationAfterTeamReply,
   deliveryFailureMessage,
   deliveryState,
@@ -45,11 +43,12 @@ export async function loadSupportViewer(tx: OrgTx, input: { orgId: string; userI
   return { userId: input.userId, role: input.role, clanIds: rows.map((row) => row.clanId) };
 }
 
-/** A mesma régua de canSeeConversation, em SQL: o filtro roda antes de qualquer linha sair do banco. */
-function visibleTo(viewer: SupportViewer): SQL | undefined {
-  if (isAdminRole(viewer.role)) return undefined;
-  return or(eq(c.assignedUserId, viewer.userId), viewer.clanIds.length ? inArray(c.assignedClanId, [...viewer.clanIds]) : undefined);
-}
+/*
+ * Quem vê (2026-11-24, decisão do Bruno): todo integrante da organização vê
+ * todas as conversas e pode responder, como no WhatsApp do celular. Antes,
+ * membro via só o próprio clã e o que era dele, e a conversa sem setor ficava
+ * só com o admin. O isolamento entre organizações continua no RLS (withOrgTx).
+ */
 
 function filterWhere(filter: SupportFilter, viewer: SupportViewer): SQL | undefined {
   if (filter === "needs_human") return eq(c.status, "needs_human");
@@ -81,7 +80,7 @@ export async function loadSupportQueue(
   tx: OrgTx,
   input: { orgId: string; viewer: SupportViewer; filter: SupportFilter },
 ): Promise<{ rows: SupportQueueRow[]; counts: Record<SupportFilter, number> }> {
-  const visible = visibleTo(input.viewer);
+
   const rows = await tx
     .select({
       id: c.id,
@@ -101,7 +100,7 @@ export async function loadSupportQueue(
     .leftJoin(schema.clients, and(eq(schema.clients.orgId, c.orgId), eq(schema.clients.id, c.clientId)))
     .leftJoin(schema.clans, and(eq(schema.clans.orgId, c.orgId), eq(schema.clans.id, c.assignedClanId)))
     .leftJoin(schema.user, eq(schema.user.id, c.assignedUserId))
-    .where(and(eq(c.orgId, input.orgId), filterWhere(input.filter, input.viewer), visible))
+    .where(and(eq(c.orgId, input.orgId), filterWhere(input.filter, input.viewer)))
     .orderBy(desc(c.lastMessageAt))
     .limit(QUEUE_LIMIT);
 
@@ -116,15 +115,15 @@ export async function loadSupportQueue(
   const lastById = new Map(lastMessages.map((row) => [row.conversationId, row]));
   const suggestions = await loadLatestSuggestions(tx, input.orgId, ids);
 
-  const statusCounts = await tx.select({ status: c.status, total: count() }).from(c).where(and(eq(c.orgId, input.orgId), visible)).groupBy(c.status);
+  const statusCounts = await tx.select({ status: c.status, total: count() }).from(c).where(eq(c.orgId, input.orgId)).groupBy(c.status);
   const [open] = await tx
     .select({ total: count() })
     .from(c)
-    .where(and(eq(c.orgId, input.orgId), filterWhere("open", input.viewer), visible));
+    .where(and(eq(c.orgId, input.orgId), filterWhere("open", input.viewer)));
   const [mine] = await tx
     .select({ total: count() })
     .from(c)
-    .where(and(eq(c.orgId, input.orgId), filterWhere("mine", input.viewer), visible));
+    .where(and(eq(c.orgId, input.orgId), filterWhere("mine", input.viewer)));
   const of = (status: SupportStatus) => statusCounts.find((row) => row.status === status)?.total ?? 0;
 
   return {
@@ -245,7 +244,7 @@ export async function loadSupportConversation(
     .leftJoin(schema.clans, and(eq(schema.clans.orgId, c.orgId), eq(schema.clans.id, c.assignedClanId)))
     .leftJoin(schema.user, eq(schema.user.id, c.assignedUserId))
     .where(and(eq(c.orgId, input.orgId), eq(c.id, input.conversationId)));
-  if (!row || !canSeeConversation(input.viewer, row)) return null;
+  if (!row) return null;
 
   const recent = await tx
     .select({
@@ -446,11 +445,7 @@ export async function loadSupportMediaReference(
       ),
     )
     .limit(1);
-  if (
-    !row ||
-    (row.messageType !== "image" && row.messageType !== "document" && row.messageType !== "audio") ||
-    !canSeeConversation(input.viewer, row)
-  ) {
+  if (!row || (row.messageType !== "image" && row.messageType !== "document" && row.messageType !== "audio")) {
     return null;
   }
   const mediaId = row.content.id;
@@ -473,14 +468,14 @@ export async function countActiveSupportChannels(tx: OrgTx, orgId: string): Prom
 
 type Command = { orgId: string; viewer: SupportViewer; conversationId: string; now: Date };
 
-/** Trava a conversa e confere a visibilidade: conversa alheia responde como inexistente. */
+/** Trava a conversa da organização; de outra organização, o RLS responde como inexistente. */
 async function lockConversation(tx: OrgTx, input: Command) {
   const [row] = await tx
     .select({ id: c.id, status: c.status, channelId: c.channelId, contactId: c.contactId, clientId: c.clientId, assignedClanId: c.assignedClanId, assignedUserId: c.assignedUserId, aiPausedAt: c.aiPausedAt })
     .from(c)
     .where(and(eq(c.orgId, input.orgId), eq(c.id, input.conversationId)))
     .for("update");
-  return row && canSeeConversation(input.viewer, row) ? row : null;
+  return row ?? null;
 }
 
 const NOT_FOUND = "Conversa não encontrada.";

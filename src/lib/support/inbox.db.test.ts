@@ -134,34 +134,34 @@ test("abertas é a fila sem atendente; depois de assumir, a conversa fica só em
   expect(mine.rows.map((row) => row.id)).toContain(id);
 });
 
-test("membro só vê o clã dele; sem setor, só admin; outra organização não vê nada", async () => {
+test("todo integrante vê todas as conversas, com ou sem setor; outra organização não vê nada", async () => {
   const { loadSupportQueue, loadSupportConversation } = await import("./inbox");
   const { id } = await customerSays("5554911110002", "Oi");
   const see = (viewer: SupportViewer) => tx((t) => loadSupportQueue(t, { orgId: ORG, viewer, filter: "open" }));
   const open = (viewer: SupportViewer) => tx((t) => loadSupportConversation(t, { orgId: ORG, viewer, conversationId: id, now: NOW }));
 
-  expect((await see(admin)).rows.map((row) => row.id)).toContain(id);
-  expect((await see(fiscal)).rows.map((row) => row.id)).not.toContain(id);
-  expect(await open(fiscal)).toBeNull();
-
-  await setClan(id, FISCAL);
-  expect((await see(fiscal)).rows.map((row) => row.id)).toContain(id);
-  expect((await see(rh)).rows.map((row) => row.id)).not.toContain(id);
-  expect(await open(rh)).toBeNull();
+  // 2026-11-24, decisão do Bruno: antes só o admin via a conversa sem setor.
+  for (const viewer of [admin, fiscal, rh]) expect((await see(viewer)).rows.map((row) => row.id)).toContain(id);
   expect((await open(fiscal))?.timeline.findLast((item) => item.kind === "message")).toMatchObject({ kind: "message", text: "Oi", direction: "inbound" });
+
+  // Encaminhada a um clã, continua visível para quem é de outro clã.
+  await setClan(id, FISCAL);
+  expect((await see(rh)).rows.map((row) => row.id)).toContain(id);
+  expect(await open(rh)).not.toBeNull();
 
   const other = await tx((t) => loadSupportQueue(t, { orgId: OTHER, viewer: admin, filter: "open" }), OTHER);
   expect(other.rows).toEqual([]);
+  expect(await tx((t) => loadSupportConversation(t, { orgId: OTHER, viewer: admin, conversationId: id, now: NOW }), OTHER)).toBeNull();
 }, 30_000);
 
-test("os comandos respeitam a mesma visibilidade", async () => {
+test("quem é de outro clã também assume, anota e resolve", async () => {
   const { takeSupportConversation, addSupportNote, resolveSupportConversation } = await import("./inbox");
   const { id } = await customerSays("5554911110003", "Oi");
   await setClan(id, FISCAL);
   const base = { orgId: ORG, conversationId: id, now: NOW };
-  expect((await tx((t) => takeSupportConversation(t, { ...base, viewer: rh }))).ok).toBe(false);
-  expect((await tx((t) => addSupportNote(t, { ...base, viewer: rh, text: "x" }))).ok).toBe(false);
-  expect((await tx((t) => resolveSupportConversation(t, { ...base, viewer: rh }))).ok).toBe(false);
+  expect((await tx((t) => takeSupportConversation(t, { ...base, viewer: rh }))).ok).toBe(true);
+  expect((await tx((t) => addSupportNote(t, { ...base, viewer: rh, text: "x" }))).ok).toBe(true);
+  expect((await tx((t) => resolveSupportConversation(t, { ...base, viewer: rh }))).ok).toBe(true);
 });
 
 test("quem vê responde sem assumir; a resposta vai para a fila uma vez, mesmo com clique duplo", async () => {
@@ -171,9 +171,6 @@ test("quem vê responde sem assumir; a resposta vai para a fila uma vez, mesmo c
   const base = { orgId: ORG, conversationId: id, now: NOW };
   const reply = (requestId: string, viewer = fiscal, text = "Até sexta") => tx((t) => sendSupportReply(t, { ...base, viewer, text, requestId }));
   const current = async () => (await tx((t) => t.select().from(schema.supportConversations).where(eq(schema.supportConversations.id, id))))[0];
-
-  // Quem é de outro clã nem vê a conversa.
-  expect(await reply(uuid(1), rh)).toEqual({ ok: false, error: "Conversa não encontrada." });
 
   // Sem responsável: a Ana responde sem assumir e passa a ser a responsável (2026-11-24).
   expect((await reply(uuid(2))).ok).toBe(true);
@@ -206,7 +203,7 @@ test("anexo sai de conversa visível, fica no histórico e é enviado uma vez", 
   const media = { ...base, viewer: admin, mediaId: "123456789", kind: "document" as const, mimeType: "application/pdf", filename: "balanco.pdf", caption: "Segue o balanço" };
   // Não precisa ter assumido (2026-11-24): quem vê a conversa manda o arquivo.
   expect(await tx((t) => checkSupportMediaReply(t, { ...base, viewer: admin }))).toMatchObject({ ok: true, data: { channelId, alreadyQueued: false } });
-  expect((await tx((t) => checkSupportMediaReply(t, { ...base, viewer: rh }))).ok).toBe(false);
+  expect((await tx((t) => checkSupportMediaReply(t, { ...base, viewer: rh }))).ok).toBe(true);
   expect(await tx((t) => sendSupportMedia(t, media))).toEqual({ ok: true });
   expect(await tx((t) => sendSupportMedia(t, media))).toEqual({ ok: true });
   expect(await tx((t) => checkSupportMediaReply(t, { ...base, viewer: admin }))).toMatchObject({ ok: true, data: { alreadyQueued: true } });
@@ -414,7 +411,7 @@ test("nota interna aparece só na tela, não vira mensagem nem saída, e não se
   await expect(tx((t) => t.delete(schema.supportConversationNotes).where(eq(schema.supportConversationNotes.conversationId, id)))).rejects.toThrow();
 });
 
-test("foto recebida aparece no histórico e só pode ser aberta por quem vê a conversa", async () => {
+test("foto recebida aparece no histórico e qualquer integrante abre", async () => {
   seq += 1;
   const { runSupportInboundCycle } = await import("@/lib/whatsapp/inbound-worker");
   await tx((t) =>
@@ -448,7 +445,6 @@ test("foto recebida aparece no histórico e só pode ser aberta por quem vê a c
   expect(view?.timeline.find((item) => item.kind === "message" && item.id === message.id)).toMatchObject({
     image: { src: `/api/atendimento/media/${message.id}`, caption: "Comprovante" },
   });
-  expect(await tx((t) => loadSupportMediaReference(t, { orgId: ORG, viewer: fiscal, messageId: message.id }))).toBeNull();
   await setClan(message.conversationId, FISCAL);
   expect(await tx((t) => loadSupportMediaReference(t, { orgId: ORG, viewer: fiscal, messageId: message.id }))).toEqual({
     channelId,
@@ -456,10 +452,10 @@ test("foto recebida aparece no histórico e só pode ser aberta por quem vê a c
     kind: "image",
     filename: "documento",
   });
-  expect(await tx((t) => loadSupportMediaReference(t, { orgId: ORG, viewer: rh, messageId: message.id }))).toBeNull();
+  expect(await tx((t) => loadSupportMediaReference(t, { orgId: ORG, viewer: rh, messageId: message.id }))).not.toBeNull();
 });
 
-test("documento recebido aparece para baixar, com legenda, e só para quem vê a conversa", async () => {
+test("documento recebido aparece para baixar, com legenda, para qualquer integrante", async () => {
   seq += 1;
   const { runSupportInboundCycle } = await import("@/lib/whatsapp/inbound-worker");
   await tx((t) =>
@@ -493,7 +489,6 @@ test("documento recebido aparece para baixar, com legenda, e só para quem vê a
     image: null,
     file: { href: `/api/atendimento/media/${message.id}`, name: "guia-inss-10-2026.pdf", caption: "Consegue recalcular?", isPdf: true },
   });
-  expect(await tx((t) => loadSupportMediaReference(t, { orgId: ORG, viewer: fiscal, messageId: message.id }))).toBeNull();
   await setClan(message.conversationId, FISCAL);
   expect(await tx((t) => loadSupportMediaReference(t, { orgId: ORG, viewer: fiscal, messageId: message.id }))).toEqual({
     channelId,
@@ -629,8 +624,8 @@ test("nota de voz: a mesma régua da resposta, entra uma vez só e sai à Meta c
   const base = { orgId: ORG, conversationId: id, now: NOW, requestId: uuid(30) };
   const check = (viewer: SupportViewer) => tx((t) => checkSupportAudioReply(t, { ...base, viewer }));
 
-  // Quem é de outro clã é recusado antes de converter e subir o áudio; quem vê grava sem assumir.
-  expect((await check(rh)).ok).toBe(false);
+  // Todo integrante grava sem assumir (2026-11-24), inclusive de outro clã.
+  expect((await check(rh)).ok).toBe(true);
   expect(await check(fiscal)).toEqual({ ok: true, data: { channelId, duplicate: false } });
   await tx((t) => takeSupportConversation(t, { ...base, viewer: fiscal }));
 

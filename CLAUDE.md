@@ -511,10 +511,12 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
 
 - **Toda conversa nova nasce em "Precisa de pessoa"**, porque não há IA para o estado
   "IA atendendo". Quando o agente entrar, é ele quem muda isso.
-- **Quem vê**: admin vê tudo; membro vê os clãs dele e o que está atribuído a ele
-  (`canSeeConversation`, repetida em SQL em `visibleTo`). Conversa sem setor só o admin vê,
-  até ser transferida. É o padrão mais fechado, até o Bruno confirmar quem atende (pendência
-  do desenho). Conversa alheia responde como inexistente.
+- **Quem vê (2026-11-24, decisão do Bruno)**: **todo integrante vê todas as conversas** da
+  organização e age nelas (responde, assume, anota, resolve, abre mídia), como no WhatsApp do
+  celular. Antes era o padrão mais fechado (membro via só o próprio clã e o que era dele; sem
+  setor, só admin), e os integrantes não viam as ~130 conversas da fila. `canSeeConversation` e
+  `visibleTo` saíram; os filtros "Minhas" e "Precisa de pessoa" dão o foco. Conversa de outra
+  organização continua inexistente pelo RLS. Configurações do Atendimento seguem só de admin.
 - **Quem vê a conversa responde (2026-11-24, pedido do Bruno; antes só quem assumiu)**: texto,
   arquivo e nota de voz. A conversa continua com quem está; sem responsável, fica com quem
   respondeu ("respondeu e ficou com a conversa"); sai de "IA atendendo"/"Precisa de pessoa" e a IA
