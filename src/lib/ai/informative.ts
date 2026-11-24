@@ -3,13 +3,10 @@ import "server-only";
 import { createHash } from "node:crypto";
 
 import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 
 import { getAiConfig } from "./config";
-import {
-  informativeExtractionSchema,
-  type InformativeExtraction,
-} from "./informative-schema";
+import { informativeOutputFormat } from "./informative-output";
+import { type InformativeExtraction } from "./informative-schema";
 
 const MAX_INFORMATIVE_LENGTH = 12_000;
 
@@ -188,7 +185,7 @@ export async function extractFlowActions(
         .digest("hex"),
     },
     output_config: {
-      format: zodOutputFormat(informativeExtractionSchema),
+      format: informativeOutputFormat(),
     },
   });
   if (!response.parsed_output) {
@@ -236,7 +233,7 @@ export async function extractInformative(
         .digest("hex"),
     },
     output_config: {
-      format: zodOutputFormat(informativeExtractionSchema),
+      format: informativeOutputFormat(),
     },
   });
   if (!response.parsed_output) {

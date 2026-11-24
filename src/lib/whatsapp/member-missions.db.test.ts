@@ -205,6 +205,13 @@ describe("resposta escrita, texto curto e falha", () => {
     expect((await repliesTo("ana")).some((r) => r.text?.startsWith("Não entendi o pedido."))).toBe(true);
   });
 
+  test("o motivo lido no celular não traz o JSON técnico do SDK", async () => {
+    const { failureReason } = await import("./member-commands");
+    expect(failureReason(new Error('Failed to parse structured output: Error: Failed to parse structured output: [ { "origin": "string", "code": "too_small" } ]'))).toBe("a IA devolveu um formato inesperado");
+    expect(failureReason(new Error("Failed to parse structured output: A IA devolveu um formato inesperado (tasks.0.title: curto)."))).toBe("A IA devolveu um formato inesperado (tasks.0.title: curto).");
+    expect(failureReason(Object.assign(new Error("x"), { status: 529 }))).toBe("a IA respondeu com erro 529");
+  });
+
   test("erro da IA vira resposta com o motivo, sem tentar de novo em silêncio", async () => {
     draftPayload.current = Object.assign(new Error("Overloaded"), { status: 529 });
     await send("ana", "w.ana.falha", { text: "Rui, revisar o balancete da ACME" });

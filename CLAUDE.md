@@ -277,6 +277,10 @@ uso até ele autorizar apagar). Desenho em
   A mensagem vai para `member_whatsapp_commands` (única por wamid; o `guilda_app` não
   apaga) e o `runMemberCommandCycle` do `support-worker` responde; a prévia, a resposta e
   a marcação de lido gravam juntas. Botões dos avisos passam por `transitionTaskForActor`.
+  - **Resposta da IA é limpa antes de validar** (`informativeOutputFormat`, vale também para o
+    painel e o Fluxo): a IA devolvia texto vazio onde o esquema pede uma letra ("too_small") e o
+    SDK recusava a resposta inteira. Vazio vira nulo, descrição e trecho herdam o título, item
+    vazio sai. Não voltar a passar `zodOutputFormat(informativeExtractionSchema)` direto.
   - **Falha nunca é silenciosa** (primeiro teste real, 2026-11-24: o Bruno ficou no
     "Analisando…"): erro da IA ou do banco responde "Não consegui analisar o pedido: <motivo>"
     e a mensagem sai da fila (`fail`). Não voltar a só devolver à fila.

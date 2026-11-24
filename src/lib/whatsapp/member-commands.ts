@@ -436,8 +436,14 @@ export function failureReason(error: unknown): string {
   }
   const name = error instanceof Error ? error.name : "";
   if (/timeout|connection/i.test(name)) return "a IA demorou demais para responder";
-  const message = error instanceof Error ? error.message : "falha desconhecida";
-  return message.replace(/\s+/g, " ").trim().slice(0, 160) || "falha desconhecida";
+  // O SDK embrulha a falha de leitura ("Failed to parse structured output: Error: …")
+  // e a lista técnica da validação não diz nada para quem lê no celular.
+  const message = (error instanceof Error ? error.message : "falha desconhecida")
+    .replace(/(Failed to parse structured output( as JSON)?:\s*(Error:\s*)?)+/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (/^[[{]/.test(message)) return "a IA devolveu um formato inesperado";
+  return message.slice(0, 160) || "falha desconhecida";
 }
 
 /**
