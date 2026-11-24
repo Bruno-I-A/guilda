@@ -9,7 +9,7 @@ import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { matchTestKeyword } from "@/domain/support-agent";
 import { statusAfterCustomerMessage } from "@/domain/support-inbox";
-import { loadAgentSettings, startTestRound } from "@/lib/support/agent/settings";
+import { loadAgentSettings, startAgentRound } from "@/lib/support/agent/settings";
 
 import { recordMemberWhatsAppInbound, whatsAppPhoneVariants } from "./member-notifications";
 
@@ -333,11 +333,15 @@ async function materializeMessage(
         updatedAt: new Date(),
       })
       .where(eq(schema.supportConversations.id, conversation.id));
-    // Teste do agente: a palavra-chave no começo da mensagem abre (ou reinicia) a rodada.
+    // Agente (2026-11-23): a palavra-chave abre ou reinicia a rodada no teste e no modo
+    // "Todos"; no modo "Todos", toda conversa nova já começa com o agente.
     if (input.message.direction === "inbound" && input.message.actor === "customer") {
       const settings = await loadAgentSettings(tx, input.orgId);
-      if (settings.testEnabled && matchTestKeyword(input.message.text ?? null, settings.testKeyword).matched) {
-        await startTestRound(tx, { orgId: input.orgId, conversationId: conversation.id, at: input.message.occurredAt });
+      const at = input.message.occurredAt;
+      if (settings.mode !== "off" && matchTestKeyword(input.message.text ?? null, settings.testKeyword).matched) {
+        await startAgentRound(tx, { orgId: input.orgId, conversationId: conversation.id, at, reason: "test_keyword" });
+      } else if (settings.mode === "live" && conversation.created) {
+        await startAgentRound(tx, { orgId: input.orgId, conversationId: conversation.id, at, reason: "agent_live" });
       }
     }
   }

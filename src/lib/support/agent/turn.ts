@@ -6,9 +6,11 @@ import { and, asc, desc, eq, gte, ne } from "drizzle-orm";
 
 import { withOrgTx, type OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
+import { hoursAt, localClock } from "@/domain/business-hours";
 import { companyDisplayName } from "@/domain/company-display-name";
 import { enqueueMemberSupportHandoffNotifications } from "@/lib/whatsapp/member-notifications";
 
+import { loadBusinessSchedule } from "../business-hours";
 import type { OpcoesClassificacao, ResultadoClassificacao } from "../triage/classificacao";
 import { retrieveApprovedKnowledge } from "../triage/knowledge";
 import { loadTurnInput, suggestionFields, TRIAGE_PROMPT_VERSION, type Candidate, type Classifier } from "../triage/turn-input";
@@ -51,7 +53,16 @@ function agentRecord(result: Record<string, unknown> | null): AgentRunRecord | n
  */
 async function applyAgentDecision(
   tx: OrgTx,
-  input: { orgId: string; candidate: Candidate; runId: string; startedAt: Date; decision: AgentDecision; now: Date },
+  input: {
+    orgId: string;
+    candidate: Candidate;
+    runId: string;
+    startedAt: Date;
+    decision: AgentDecision;
+    now: Date;
+    /** Fora do expediente, a abertura: o aviso à equipe espera por ela. */
+    noticeAt: Date | null;
+  },
 ): Promise<string | null> {
   const where = and(eq(c.orgId, input.orgId), eq(c.id, input.candidate.conversationId));
   const [row] = await tx
@@ -60,7 +71,7 @@ async function applyAgentDecision(
     .where(where)
     .for("update");
   if (!row) return "conversa_sumiu";
-  if (!(await loadAgentSettings(tx, input.orgId)).testEnabled) return "teste_desligado";
+  if ((await loadAgentSettings(tx, input.orgId)).mode === "off") return "agente_desligado";
   if (row.status !== "ai_active") return "pessoa_assumiu";
   if (row.startedAt?.getTime() !== input.startedAt.getTime()) return "rodada_reiniciada";
   const [latest] = await tx
@@ -156,6 +167,8 @@ async function applyAgentDecision(
       },
     });
     // Só quem foi escolhido fica sabendo no WhatsApp pessoal, na mesma transação do encaminhamento.
+    // Fora do expediente o aviso espera a abertura (2026-11-23, decisão do Bruno); a regra das
+    // 24 horas da Meta é conferida no envio, então um aviso segurado pode não sair.
     if (choice && input.decision.clanName) {
       await enqueueMemberSupportHandoffNotifications(tx, {
         orgId: input.orgId,
@@ -165,6 +178,7 @@ async function applyAgentDecision(
         clanName: input.decision.clanName,
         contactName: company ? companyDisplayName(company.name) : (contact.displayName ?? contact.phone ?? contact.whatsappId),
         summary: input.decision.summary,
+        scheduledFor: input.noticeAt,
       });
     }
   } else {
@@ -222,13 +236,27 @@ export async function runAgentTurn(
       .where(and(eq(schema.clans.orgId, orgId), eq(schema.clans.active, true)));
     const knowledge = await retrieveApprovedKnowledge(tx, orgId, input.current);
     const roster = await loadRoutingRoster(tx, orgId);
+    const schedule = await loadBusinessSchedule(tx, orgId, localClock(new Date()).day);
     const records = previous.map((row) => agentRecord(row.result)).filter((record): record is AgentRunRecord => record !== null);
-    return { runId: run.id, startedAt, channelId: conversation.channelId, facts: roundFacts(records), runsInRound: previous.length, input, clans, knowledge, roster };
+    return {
+      runId: run.id,
+      startedAt,
+      channelId: conversation.channelId,
+      facts: roundFacts(records),
+      runsInRound: previous.length,
+      input,
+      clans,
+      knowledge,
+      roster,
+      schedule,
+    };
   });
   if (!claimed) return false;
 
   const started = Date.now();
   const now = new Date();
+  // Expediente (2026-11-23): fora dele, a fala diz quando a equipe volta e o aviso espera.
+  const hours = hoursAt(claimed.schedule, now);
   let result: ResultadoClassificacao | null = null;
   let decision = decideBeforeClassifying({
     current: claimed.input.current,
@@ -236,6 +264,7 @@ export async function runAgentTurn(
     runsInRound: claimed.runsInRound,
     clans: claimed.clans,
     now,
+    hours,
   });
   let attachment: AttachmentRecord | null = null;
   if (!decision) {
@@ -252,7 +281,7 @@ export async function runAgentTurn(
       roster: claimed.roster,
       anexo: loaded?.anexo ?? null,
     });
-    decision = decideAfterClassifying({ result, facts: claimed.facts, clans: claimed.clans, now });
+    decision = decideAfterClassifying({ result, facts: claimed.facts, clans: claimed.clans, now, hours });
   }
   const final = decision;
   const fallback = result?.classificacao.fallback?.motivo ?? null;
@@ -264,6 +293,7 @@ export async function runAgentTurn(
       startedAt: claimed.startedAt,
       decision: final,
       now: new Date(),
+      noticeAt: hours.open ? null : hours.nextOpening,
     });
     await tx
       .update(runs)

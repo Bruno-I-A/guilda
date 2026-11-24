@@ -26,20 +26,24 @@ export function matchTestKeyword(text: string | null, keyword: string | null): {
   return { matched: true, rest: original.slice(first[0].length).replace(/^[\s\p{P}]+/u, "") };
 }
 
+/** Modo do agente (2026-11-23): desligado, só teste (palavra-chave) ou todos os clientes. */
+export type AgentMode = "off" | "test" | "live";
+export const AGENT_MODES = ["off", "test", "live"] as const satisfies readonly AgentMode[];
+
 /**
- * Mensagem da IA só sai à Meta dentro da rodada que a gerou, com o teste
- * ligado e sem pessoa no comando. Devolve o motivo do bloqueio, ou null.
+ * Mensagem da IA só sai à Meta com o agente ligado (teste ou todos), dentro
+ * da rodada que a gerou e sem pessoa no comando. Devolve o motivo, ou null.
  */
 export function agentDeliveryBlock(input: {
   payloadRound: unknown;
   roundStartedAt: Date | null;
   status: string;
-  testEnabled: boolean;
+  mode: AgentMode;
 }): string | null {
-  if (!input.testEnabled) return "Teste do agente desligado: a mensagem da IA ficou na Guilda.";
+  if (input.mode === "off") return "Agente de IA desligado: a mensagem da IA ficou na Guilda.";
   const round = typeof input.payloadRound === "string" ? new Date(input.payloadRound).getTime() : Number.NaN;
   if (!input.roundStartedAt || round !== input.roundStartedAt.getTime()) {
-    return "Mensagem da IA fora da rodada de teste: ficou na Guilda.";
+    return "Mensagem da IA fora da rodada do agente: ficou na Guilda.";
   }
   if (input.status === "human_active" || input.status === "resolved") {
     return "Uma pessoa assumiu a conversa: a mensagem da IA ficou na Guilda.";

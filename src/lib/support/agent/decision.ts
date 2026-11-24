@@ -4,6 +4,7 @@
  * vez; resposta da base; pergunta de esclarecimento (teto de 3); senão
  * encaminha ao clã. Pura: a gravação e as travas de estado ficam em turn.ts.
  */
+import { ALWAYS_OPEN, openingPhrase, type HoursNow } from "@/domain/business-hours";
 import { APP_TIME_ZONE } from "@/lib/date-time";
 
 import { MARCADOR_PERGUNTA_ESCLARECIMENTO, type ResultadoClassificacao, type SetorValido } from "../triage/classificacao";
@@ -65,9 +66,20 @@ function hourInBrasilia(now: Date): number {
   return Number.parseInt(hour ?? "0", 10);
 }
 
-/** Cumprimenta só na primeira fala da rodada, sem nome (o do perfil nem sempre é real). */
-function opening(facts: RoundFacts, now: Date): string {
-  return facts.aiSpoke ? "" : `${greetingForHour(hourInBrasilia(now))}! `;
+const OUT_OF_HOURS = "Estamos fora do horário de atendimento";
+
+function greeting(now: Date): string {
+  return `${greetingForHour(hourInBrasilia(now))}!`;
+}
+
+/**
+ * Cumprimenta só na primeira fala da rodada, sem nome (o do perfil nem sempre é
+ * real). Fora do expediente (2026-11-23) a primeira fala diz quando a equipe volta.
+ */
+function opening(facts: RoundFacts, now: Date, hours: HoursNow): string {
+  if (facts.aiSpoke) return "";
+  if (hours.open) return `${greeting(now)} `;
+  return `${greeting(now)} ${OUT_OF_HOURS} e a equipe retorna ${openingPhrase(hours.nextOpening, now)}. Enquanto isso, já adianto seu atendimento. `;
 }
 
 function handoff(input: {
@@ -77,15 +89,28 @@ function handoff(input: {
   clans: readonly Clan[];
   facts: RoundFacts;
   now: Date;
+  hours: HoursNow;
   suggestedAttendant?: string | null;
 }): AgentDecision {
   const clan = input.reason === "classified" ? clanForSector(input.sector, input.clans) : null;
-  const where = clan
-    ? `Encaminhei ao setor ${SECTOR_LABELS[input.sector]}. Uma pessoa da equipe continua o atendimento por aqui.`
-    : "Encaminhei para a nossa equipe. Uma pessoa continua o atendimento por aqui.";
+  const back = openingPhrase(input.hours.nextOpening, input.now);
+  let start: string;
+  let where: string;
+  if (input.hours.open) {
+    start = opening(input.facts, input.now, input.hours);
+    where = clan
+      ? `Encaminhei ao setor ${SECTOR_LABELS[input.sector]}. Uma pessoa da equipe continua o atendimento por aqui.`
+      : "Encaminhei para a nossa equipe. Uma pessoa continua o atendimento por aqui.";
+  } else {
+    // A volta da equipe vai no encaminhamento; na primeira fala, o aviso não se repete.
+    start = input.facts.aiSpoke ? "" : `${greeting(input.now)} ${OUT_OF_HOURS}. `;
+    where = clan
+      ? `Encaminhei ao setor ${SECTOR_LABELS[input.sector]}. A equipe retorna ${back} e continua daqui.`
+      : `Encaminhei para a nossa equipe, que retorna ${back} e continua daqui.`;
+  }
   return {
     kind: "handoff",
-    text: `${opening(input.facts, input.now)}${where}`,
+    text: `${start}${where}`,
     sector: input.sector,
     clanId: clan?.id ?? null,
     clanName: clan?.name ?? null,
@@ -102,14 +127,17 @@ export function decideBeforeClassifying(input: {
   runsInRound: number;
   clans: readonly Clan[];
   now: Date;
+  /** Expediente agora; sem ele, conta como aberto (o texto de sempre). */
+  hours?: HoursNow;
 }): AgentDecision | null {
+  const hours = input.hours ?? ALWAYS_OPEN;
   if (input.runsInRound >= AGENT_TURN_CAP) {
-    return handoff({ sector: "outro", summary: "", reason: "turn_cap", clans: input.clans, facts: input.facts, now: input.now });
+    return handoff({ sector: "outro", summary: "", reason: "turn_cap", clans: input.clans, facts: input.facts, now: input.now, hours });
   }
   if (ehSaudacaoSemAssunto(input.current)) {
     return input.facts.askedSubject
       ? { kind: "wait" }
-      : { kind: "ask_subject", text: `${opening(input.facts, input.now)}${ASK_SUBJECT_TEXT}` };
+      : { kind: "ask_subject", text: `${opening(input.facts, input.now, hours)}${ASK_SUBJECT_TEXT}` };
   }
   return null;
 }
@@ -119,12 +147,14 @@ export function decideAfterClassifying(input: {
   facts: RoundFacts;
   clans: readonly Clan[];
   now: Date;
+  hours?: HoursNow;
 }): AgentDecision {
+  const hours = input.hours ?? ALWAYS_OPEN;
   const { classificacao, respostaDireta, perguntaEsclarecimento } = input.result;
   const fallback = classificacao.fallback?.motivo ?? null;
-  const start = opening(input.facts, input.now);
+  const start = opening(input.facts, input.now, hours);
   if (fallback && AI_FAILURE_REASONS.has(fallback)) {
-    return handoff({ sector: "outro", summary: "", reason: "ai_failure", clans: input.clans, facts: input.facts, now: input.now });
+    return handoff({ sector: "outro", summary: "", reason: "ai_failure", clans: input.clans, facts: input.facts, now: input.now, hours });
   }
   if (respostaDireta) {
     const question = perguntaEsclarecimento ? `\n\n${MARCADOR_PERGUNTA_ESCLARECIMENTO} ${perguntaEsclarecimento}` : "";
@@ -145,6 +175,7 @@ export function decideAfterClassifying(input: {
     clans: input.clans,
     facts: input.facts,
     now: input.now,
+    hours,
     suggestedAttendant: classificacao.atendente_sugerido ?? null,
   });
 }

@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  date,
   foreignKey,
   index,
   integer,
@@ -254,7 +255,10 @@ export const supportConversations = pgTable(
     summary: text("summary"),
     aiPausedAt: timestamp("ai_paused_at", { withTimezone: true }),
     aiPauseReason: varchar("ai_pause_reason", { length: 120 }),
-    /** Início da rodada do teste do agente; nulo fora de teste (2026-11-19). */
+    /**
+     * Início da rodada do agente (2026-11-19): pela palavra-chave ou, com o
+     * agente para todos, pela conversa nova. O nome é histórico.
+     */
     aiTestStartedAt: timestamp("ai_test_started_at", { withTimezone: true }),
     /**
      * Empresa desta conversa (2026-11-23): uma das empresas do número. A FK
@@ -599,9 +603,13 @@ export const supportKnowledgeEntries = pgTable(
   ],
 );
 
+/** Modo do agente (2026-11-23): desligado, só teste (palavra-chave) ou todos os clientes. */
+export const supportAgentMode = pgEnum("support_agent_mode", ["off", "test", "live"]);
+
 /**
- * Teste do agente (2026-11-19): interruptor e palavra-chave por organização.
- * Só admin muda; desligar encerra as rodadas abertas e segura a fila da IA.
+ * Agente de IA por organização: modo e palavra-chave do teste (2026-11-19,
+ * modo em 2026-11-23). Só admin muda; desligar encerra as rodadas abertas e
+ * segura a fila da IA.
  */
 export const supportAgentSettings = pgTable(
   "support_agent_settings",
@@ -609,6 +617,8 @@ export const supportAgentSettings = pgTable(
     orgId: text("org_id")
       .primaryKey()
       .references(() => organization.id, { onDelete: "cascade" }),
+    agentMode: supportAgentMode("agent_mode").notNull().default("off"),
+    // Legado (0110): o modo agora é agent_mode; a coluna fica no banco sem uso.
     testEnabled: boolean("test_enabled").notNull().default(false),
     testKeyword: varchar("test_keyword", { length: 40 }),
     updatedBy: text("updated_by").references(() => user.id),
@@ -616,8 +626,39 @@ export const supportAgentSettings = pgTable(
   },
   (t) => [
     check("support_agent_settings_keyword_check", sql`${t.testKeyword} IS NULL OR ${t.testKeyword} ~ '^[a-z0-9]{3,40}$'`),
-    check("support_agent_settings_enabled_check", sql`NOT ${t.testEnabled} OR ${t.testKeyword} IS NOT NULL`),
+    check("support_agent_settings_mode_keyword_check", sql`${t.agentMode} <> 'test' OR ${t.testKeyword} IS NOT NULL`),
   ],
+);
+
+/**
+ * Expediente do escritório (2026-11-23): a semana, com até dois períodos por
+ * dia, horário de Brasília. Sem linha, o escritório conta como sempre aberto.
+ * Forma: { "1": [["08:00","12:00"],["13:30","18:00"]], ..., "7": [] }.
+ */
+export const supportBusinessHours = pgTable("support_business_hours", {
+  orgId: text("org_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  week: jsonb("week").$type<Record<string, [string, string][]>>().notNull(),
+  updatedBy: text("updated_by").references(() => user.id),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Dia especial (feriado, meio período): sem períodos, fechado o dia todo. */
+export const supportSpecialDays = pgTable(
+  "support_special_days",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    day: date("day", { mode: "string" }).notNull(),
+    name: varchar("name", { length: 80 }).notNull(),
+    periods: jsonb("periods").$type<[string, string][]>().notNull().default([]),
+    createdBy: text("created_by").references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("support_special_days_org_day_uidx").on(t.orgId, t.day)],
 );
 
 /**

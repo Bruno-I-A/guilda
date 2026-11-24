@@ -202,7 +202,9 @@ export interface SupportConversationView {
 function eventLabel(eventType: string, actor: string | null, detail: Record<string, unknown>, status: string | undefined): string | null {
   const who = actor ?? (typeof detail.actorLabel === "string" ? detail.actorLabel : "Sistema");
   if (eventType === "ai_resumed" && detail.reason === "test_keyword") return "Teste do agente iniciado pela palavra-chave";
+  if (eventType === "ai_resumed" && detail.reason === "agent_live") return "Agente de IA começou o atendimento";
   if (eventType === "ai_paused" && detail.reason === "test_disabled") return `${who} desligou o teste do agente`;
+  if (eventType === "ai_paused" && detail.reason === "agent_disabled") return `${who} desligou o agente de IA`;
   if (eventType === "assigned") return typeof detail.note === "string" ? `${who}: ${detail.note}` : `${who} assumiu a conversa`;
   if (eventType === "resolved") return `${who} resolveu a conversa`;
   if (eventType === "reopened") return `${who} reabriu a conversa`;

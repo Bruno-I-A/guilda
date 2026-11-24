@@ -581,6 +581,22 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
   existe no servidor pelos Informativos. Ligar exige o aviso de privacidade ao cliente
   (transferência internacional), como no Scharff. Preços de certificado ainda estão no prompt
   (`BLOCO_CONHECIMENTO`); a Base de conhecimento editável vem depois.
+- **Agente para todos e expediente (2026-11-23, pedido do Bruno)**: o interruptor do teste virou
+  o **modo do agente** (`support_agent_settings.agent_mode`: `off` · `test` · `live`; a 0110 copiou o
+  teste ligado para `test` e deixou `test_enabled` sem uso no banco). Em **Todos os clientes** toda
+  conversa NOVA abre rodada sem palavra-chave (`startAgentRound`, `reason: "agent_live"`); a que já
+  está com a equipe continua com a equipe, e a palavra ainda reinicia a rodada para testar. Ligar
+  "Todos" pede confirmação: **o aviso de privacidade ao cliente continua pendente e é do Bruno**
+  antes de ligar. Desligar segue sendo o freio; de "Todos" para "Só teste" as rodadas abertas
+  terminam. **Expediente** (`support_business_hours`, `support_special_days`, contas puras em
+  `src/domain/business-hours.ts`): semana com até dois períodos por dia e dias especiais (feriado
+  ou horário próprio), com sugestão dos feriados nacionais do ano; sem semana salva, conta como
+  sempre aberto. Fora do expediente o agente faz a triagem igual, a primeira fala diz "Estamos
+  fora do horário de atendimento e a equipe retorna {segunda-feira, 23/11, às 8h}" e o
+  encaminhamento diz quando a equipe continua; o aviso no WhatsApp de quem recebeu a conversa fica
+  agendado para a abertura (`scheduled_for`), e a regra das 24 horas da Meta é conferida no envio
+  (aviso segurado pode não sair). Desenho em
+  `docs/superpowers/specs/2026-11-23-expediente-e-agente-ligado-design.md`.
 - **Teste do agente (2026-11-19, pedido do Bruno)**: em Atendimento → Configurações, só admin
   liga o interruptor e escolhe a palavra-chave (`support_agent_settings`). Mensagem do cliente
   que COMEÇA com a palavra abre uma rodada (`status = 'ai_active'`, `ai_test_started_at`): só

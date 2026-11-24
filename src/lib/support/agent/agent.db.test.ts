@@ -115,8 +115,8 @@ async function cycle() {
 }
 
 async function setAgent(enabled: boolean, keyword = "batata") {
-  const { saveAgentTestSettings } = await import("./settings");
-  return tx((t) => saveAgentTestSettings(t, { orgId: ORG, userId: "admin", enabled, keyword, now: new Date() }));
+  const { saveAgentSettings } = await import("./settings");
+  return tx((t) => saveAgentSettings(t, { orgId: ORG, userId: "admin", mode: enabled ? "test" : "off", keyword, now: new Date() }));
 }
 
 async function conversation(id: string) {
@@ -384,9 +384,9 @@ test("o worker envia a fala da rodada e segura a de rodada antiga ou sem rodada"
   expect(sent.filter((row) => row.to === "5554900000003")).toEqual([{ to: "5554900000003", text: `Bom dia! ${ASK}` }]);
   const restarted = (await outboxOf(await customerIdFor("5554900000003"))).filter((row) => row.status === "failed");
   expect(restarted).toHaveLength(2);
-  expect(restarted.every((row) => row.lastError === "Mensagem da IA fora da rodada de teste: ficou na Guilda.")).toBe(true);
+  expect(restarted.every((row) => row.lastError === "Mensagem da IA fora da rodada do agente: ficou na Guilda.")).toBe(true);
   expect(sent.some((row) => row.to === "5554900000008")).toBe(false);
-  expect(await outboxOf(manual)).toEqual([expect.objectContaining({ status: "failed", lastError: "Mensagem da IA fora da rodada de teste: ficou na Guilda." })]);
+  expect(await outboxOf(manual)).toEqual([expect.objectContaining({ status: "failed", lastError: "Mensagem da IA fora da rodada do agente: ficou na Guilda." })]);
 });
 
 async function customerIdFor(whatsappId: string): Promise<string> {
@@ -409,7 +409,7 @@ test("desligar o teste encerra a rodada aberta e segura o que estava na fila", a
 
   const result = await setAgent(false);
   expect(result.ok && result.data?.closedRounds).toBeGreaterThanOrEqual(1);
-  expect(await conversation(id)).toMatchObject({ status: "needs_human", aiPauseReason: "test_disabled" });
+  expect(await conversation(id)).toMatchObject({ status: "needs_human", aiPauseReason: "agent_disabled" });
 
   const sent: string[] = [];
   const fetchSpy = (async (_url: URL, init: RequestInit) => {
@@ -418,11 +418,11 @@ test("desligar o teste encerra a rodada aberta e segura o que estava na fila", a
   }) as unknown as typeof fetch;
   await runSupportOutboxCycle(50, fetchSpy);
   expect(sent).not.toContain("5554900000007");
-  expect(await outboxOf(id)).toEqual([expect.objectContaining({ status: "failed", lastError: "Teste do agente desligado: a mensagem da IA ficou na Guilda." })]);
+  expect(await outboxOf(id)).toEqual([expect.objectContaining({ status: "failed", lastError: "Agente de IA desligado: a mensagem da IA ficou na Guilda." })]);
 
   const { loadSupportConversation } = await import("../inbox");
   const view = await tx((t) => loadSupportConversation(t, { orgId: ORG, viewer: admin, conversationId: id, now: new Date() }));
-  expect(view?.timeline.some((item) => item.kind === "event" && item.text === "Bruno desligou o teste do agente")).toBe(true);
+  expect(view?.timeline.some((item) => item.kind === "event" && item.text === "Bruno desligou o agente de IA")).toBe(true);
 });
 
 test("fora da janela de 24 horas, o aviso de conversa não sai (ainda não há modelo para ele)", async () => {
@@ -579,4 +579,80 @@ test("a configuração recusa palavra inválida e não se apaga", async () => {
     tx((t) => t.update(schema.supportAgentSettings).set({ testKeyword: "Com Espaço" }).where(eq(schema.supportAgentSettings.orgId, ORG))),
   ).rejects.toThrow();
   await expect(tx((t) => t.delete(schema.supportAgentSettings))).rejects.toThrow();
+});
+
+test("a migração 0110 leva o teste ligado para o modo Só teste", async () => {
+  const { readFileSync } = await import("node:fs");
+  const statement = readFileSync("src/db/migrations/0110_support-agent-mode-business-hours.sql", "utf8")
+    .split("--> statement-breakpoint")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith('UPDATE "support_agent_settings"'));
+  expect(statement).toBeTruthy();
+  await client.exec("RESET ROLE;");
+  try {
+    // Como estava antes da 0110: teste ligado no booleano antigo.
+    await client.exec(`UPDATE support_agent_settings SET test_enabled = true, agent_mode = 'off', test_keyword = 'batata' WHERE org_id = '${ORG}';`);
+    await client.exec(statement!);
+    const { rows } = await client.query<{ agent_mode: string }>(`SELECT agent_mode FROM support_agent_settings WHERE org_id = '${ORG}'`);
+    expect(rows[0]?.agent_mode).toBe("test");
+    await client.exec(`UPDATE support_agent_settings SET test_enabled = false, agent_mode = 'off' WHERE org_id = '${ORG}';`);
+  } finally {
+    await client.exec("SET ROLE guilda_app;");
+  }
+});
+
+test("com o agente para todos, conversa nova abre rodada sem palavra; a que está com a equipe não", async () => {
+  const { saveAgentSettings } = await import("./settings");
+  const mode = (value: "off" | "live") => tx((t) => saveAgentSettings(t, { orgId: ORG, userId: "admin", mode: value, keyword: "", now: new Date() }));
+  setClock(2000);
+  // Já existe e está com a equipe antes de ligar.
+  const existing = await customerSays("5554900000090", "Oi, sobre a guia", 1950);
+  expect(await conversation(existing)).toMatchObject({ status: "needs_human", aiTestStartedAt: null });
+  expect(await mode("live")).toEqual({ ok: true, data: { closedRounds: 0 } });
+
+  const fresh = await customerSays("5554900000091", "Preciso da guia do DAS", 1990);
+  expect(await conversation(fresh)).toMatchObject({ status: "ai_active", aiTestStartedAt: at(1990) });
+  await customerSays("5554900000090", "Alguém pode ver?", 1995);
+  expect(await conversation(existing)).toMatchObject({ status: "needs_human", aiTestStartedAt: null });
+
+  replies = [{ setor: "fiscal" }];
+  await cycle();
+  expect((await aiTexts(fresh)).at(-1)).toMatch(/Encaminhei ao setor Fiscal/);
+  const { loadSupportConversation } = await import("../inbox");
+  const view = await tx((t) => loadSupportConversation(t, { orgId: ORG, viewer: admin, conversationId: fresh, now: new Date() }));
+  expect(view?.timeline.some((item) => item.kind === "event" && item.text === "Agente de IA começou o atendimento")).toBe(true);
+  await mode("off");
+});
+
+test("fora do expediente: o agente avisa, encaminha e o aviso à equipe espera a abertura", async () => {
+  const { saveBusinessWeek, clearBusinessWeek } = await import("../business-hours");
+  const open = [["08:00", "12:00"], ["13:30", "18:00"]] as const;
+  // Só segunda: o relógio do teste é quinta, 19/11, às 9h (T0) mais os segundos.
+  await tx((t) => saveBusinessWeek(t, { orgId: ORG, userId: "admin", week: { 1: open, 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] }, now: new Date() }));
+  await setAgent(true);
+  // A conversa da empresa da Ana na Carteira: o assunto da Carteira vai para ela, que conectou o WhatsApp.
+  const { addSupportContactClient } = await import("../inbox");
+  setClock(3000);
+  const id = await customerSays("5554900000092", "oi", 2980);
+  await tx((t) => addSupportContactClient(t, { orgId: ORG, viewer: admin, conversationId: id, now: new Date(), clientId: COMPANY }));
+  await customerSays("5554900000092", "batata, preciso da guia atrasada", 2990);
+  replies = [{ setor: "fiscal", atendente: "carteira" }];
+  await cycle();
+  expect((await aiTexts(id)).at(-1)).toBe(
+    "Bom dia! Estamos fora do horário de atendimento. Encaminhei ao setor Fiscal. A equipe retorna segunda-feira, 23/11, às 8h e continua daqui.",
+  );
+  expect(await conversation(id)).toMatchObject({ status: "needs_human", assignedUserId: "ana" });
+  const notices = () => tx((t) => t.select().from(schema.memberWhatsAppOutbox).where(eq(schema.memberWhatsAppOutbox.supportConversationId, id)));
+  expect((await notices()).map((notice) => ({ userId: notice.userId, scheduledFor: notice.scheduledFor }))).toEqual([
+    { userId: "ana", scheduledFor: new Date("2026-11-23T11:00:00Z") },
+  ]);
+
+  // Antes da abertura o worker de avisos não pega este aviso.
+  const { runMemberWhatsAppNotificationCycle } = await import("@/lib/whatsapp/member-notification-worker");
+  const fetchSpy = (async () => new Response(JSON.stringify({ messages: [{ id: "wamid.aviso" }] }), { status: 200 })) as unknown as typeof fetch;
+  await runMemberWhatsAppNotificationCycle(20, fetchSpy);
+  expect((await notices()).map((notice) => notice.status)).toEqual(["pending"]);
+
+  await tx((t) => clearBusinessWeek(t, ORG));
+  await setAgent(false);
 });

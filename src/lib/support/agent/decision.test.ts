@@ -174,3 +174,42 @@ describe("depois da leitura", () => {
     }
   });
 });
+
+describe("fora do expediente (2026-11-23)", () => {
+  // Quinta, 19/11, às 9h; a equipe volta amanhã, sexta, às 8h (11:00Z).
+  const CLOSED = { open: false, nextOpening: new Date("2026-11-20T11:00:00Z"), closesAt: null };
+
+  test("a primeira fala avisa quando a equipe volta e segue a triagem", () => {
+    expect(decideBeforeClassifying({ current: "oi", facts: FIRST, runsInRound: 0, clans: CLANS, now: NOW, hours: CLOSED })).toEqual({
+      kind: "ask_subject",
+      text: `Bom dia! Estamos fora do horário de atendimento e a equipe retorna amanhã às 8h. Enquanto isso, já adianto seu atendimento. ${ASK_SUBJECT_TEXT}`,
+    });
+  });
+
+  test("o encaminhamento diz quando a equipe continua", () => {
+    expect(decideAfterClassifying({ result: result({}), facts: SPOKE, clans: CLANS, now: NOW, hours: CLOSED })).toMatchObject({
+      kind: "handoff",
+      clanId: "clan-fiscal",
+      text: "Encaminhei ao setor Fiscal. A equipe retorna amanhã às 8h e continua daqui.",
+    });
+  });
+
+  test("encaminhar na primeira fala não repete o aviso", () => {
+    expect(decideBeforeClassifying({ current: "preciso da guia", facts: FIRST, runsInRound: AGENT_TURN_CAP, clans: CLANS, now: NOW, hours: CLOSED })).toMatchObject({
+      kind: "handoff",
+      text: "Bom dia! Estamos fora do horário de atendimento. Encaminhei para a nossa equipe, que retorna amanhã às 8h e continua daqui.",
+    });
+  });
+
+  test("sem próxima abertura, fala do próximo expediente", () => {
+    expect(
+      decideAfterClassifying({ result: result({}), facts: SPOKE, clans: CLANS, now: NOW, hours: { open: false, nextOpening: null, closesAt: null } }),
+    ).toMatchObject({ text: "Encaminhei ao setor Fiscal. A equipe retorna no próximo expediente e continua daqui." });
+  });
+
+  test("aberto, o texto é o de sempre", () => {
+    expect(
+      decideAfterClassifying({ result: result({}), facts: SPOKE, clans: CLANS, now: NOW, hours: { open: true, nextOpening: null, closesAt: null } }),
+    ).toMatchObject({ text: "Encaminhei ao setor Fiscal. Uma pessoa da equipe continua o atendimento por aqui." });
+  });
+});
