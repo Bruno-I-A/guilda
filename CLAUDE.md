@@ -517,6 +517,17 @@ passo por vez. **Ainda não há IA, Base nem Métricas.**
   setor, só admin), e os integrantes não viam as ~130 conversas da fila. `canSeeConversation` e
   `visibleTo` saíram; os filtros "Minhas" e "Precisa de pessoa" dão o foco. Conversa de outra
   organização continua inexistente pelo RLS. Configurações do Atendimento seguem só de admin.
+- **Nome do contato (2026-11-24, pedido do Bruno)**: o lápis ao lado do nome, no topo da
+  conversa, dá um nome ao número (`support_contacts.custom_name`, migração 0111). Ele vence o do
+  perfil (`display_name`, que a Meta reescreve a cada mensagem), vale em todas as conversas do
+  número, na fila e no aviso à equipe, e não muda nada no WhatsApp do cliente. Vazio volta ao do
+  perfil; a troca fica no histórico (`contact_renamed`). Qualquer integrante troca. A regra do
+  nome mostrado é `contactName` (equipe → perfil → telefone formatado por `formatPhone`).
+- **Fila (2026-11-24, escolha do Bruno)**: sem "Sem setor" em toda linha (o clã só aparece quando
+  há); sem empresa, o telefone vai na linha de baixo, sem criar linha nova; quem espera resposta
+  fica em negrito com um ponto azul, e a prévia começa com "Você:" ou "IA:" quando a última fala é
+  nossa. Medido renderizado: linha de 88 px (108 com empresa) em 375 e 1280 px. No celular, editar
+  o nome leva a coluna do nome para uma linha inteira (`max-sm:has-[form]:basis-full`).
 - **Quem vê a conversa responde (2026-11-24, pedido do Bruno; antes só quem assumiu)**: texto,
   arquivo e nota de voz. A conversa continua com quem está; sem responsável, fica com quem
   respondeu ("respondeu e ficou com a conversa"); sai de "IA atendendo"/"Precisa de pessoa" e a IA

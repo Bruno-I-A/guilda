@@ -8,6 +8,7 @@ import { withOrgTx, type OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { hoursAt, localClock } from "@/domain/business-hours";
 import { companyDisplayName } from "@/domain/company-display-name";
+import { contactName } from "@/domain/support-inbox";
 import { enqueueMemberSupportHandoffNotifications } from "@/lib/whatsapp/member-notifications";
 
 import { loadBusinessSchedule } from "../business-hours";
@@ -87,6 +88,7 @@ async function applyAgentDecision(
     .select({
       whatsappId: schema.supportContacts.whatsappId,
       displayName: schema.supportContacts.displayName,
+      customName: schema.supportContacts.customName,
       phone: schema.supportContacts.phoneE164,
     })
     .from(schema.supportContacts)
@@ -176,7 +178,7 @@ async function applyAgentDecision(
         conversationId: input.candidate.conversationId,
         roundKey: input.startedAt.toISOString(),
         clanName: input.decision.clanName,
-        contactName: company ? companyDisplayName(company.name) : (contact.displayName ?? contact.phone ?? contact.whatsappId),
+        contactName: company ? companyDisplayName(company.name) : contactName(contact),
         summary: input.decision.summary,
         scheduledFor: input.noticeAt,
       });

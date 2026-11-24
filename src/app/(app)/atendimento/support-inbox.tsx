@@ -13,7 +13,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Textarea } from "@/components/ui/textarea";
 import { formatCnpj } from "@/domain/cnpj";
 import { SUPPORT_UPLOAD_ACCEPT, SUPPORT_UPLOAD_MAX_FILES, validateSupportCaption, validateSupportUpload } from "@/domain/support-upload";
-import { contactInitials, DELIVERY_LABELS, elapsedLabel, enterSends, SUPPORT_FILTERS, SUPPORT_STATUS_LABELS, type DeliveryState, type SupportFilter, type SupportStatus } from "@/domain/support-inbox";
+import { contactInitials, DELIVERY_LABELS, elapsedLabel, enterSends, formatPhone, SUPPORT_FILTERS, SUPPORT_STATUS_LABELS, type DeliveryState, type SupportFilter, type SupportStatus } from "@/domain/support-inbox";
 import type { ActionResult } from "@/lib/action-context";
 import { APP_TIME_ZONE } from "@/lib/date-time";
 import type { SupportConversationView, SupportQueueRow, SupportTimelineItem } from "@/lib/support/inbox";
@@ -23,6 +23,7 @@ import { addContactCompany, addNote, markWaiting, removeContactCompany, reopenCo
 import { MessageAudio } from "./message-audio";
 import { MessageFile } from "./message-file";
 import { ComposerAttachmentList } from "./composer-attachments";
+import { ContactNameEditor } from "./contact-name-editor";
 import { VoiceRecorder } from "./voice-recorder";
 import { companyDisplayName } from "@/domain/company-display-name";
 
@@ -104,9 +105,16 @@ function ContactAvatar({ name, id }: { name: string; id: string }) {
   );
 }
 
-function QueueItem({ row, active, filter, now }: { row: SupportQueueRow; active: boolean; filter: SupportFilter; now: Date }) {
+export function QueueItem({ row, active, filter, now }: { row: SupportQueueRow; active: boolean; filter: SupportFilter; now: Date }) {
   const attention = row.status === "needs_human";
   const secondary = row.clientName ? companyDisplayName(row.clientName) : null;
+  // Sem empresa, o telefone vai na linha de baixo (sem criar linha), se o nome já não for ele (2026-11-24).
+  const formatted = row.phone ? formatPhone(row.phone) : null;
+  const phone = !row.clientName && formatted !== row.contactName ? formatted : null;
+  // O clã só aparece quando há; "Sem setor" em toda linha só poluía (2026-11-24).
+  const owner = row.assignedToMe ? "Com você" : (row.assigneeName ?? row.clanName);
+  const author = row.lastAuthor === "team" ? "Você: " : row.lastAuthor === "ai" ? "IA: " : "";
+  const hasMeta = Boolean(phone) || attention || row.status === "waiting_customer" || row.agentTest || row.aiUrgent || Boolean(owner);
   return (
     <li>
       <Link
@@ -118,22 +126,29 @@ function QueueItem({ row, active, filter, now }: { row: SupportQueueRow; active:
         <ContactAvatar name={row.contactName} id={row.id} />
         <span className="grid min-w-0 gap-1">
           <span className="flex min-w-0 items-baseline justify-between gap-2">
-            <span className="truncate text-sm font-semibold text-foreground">{row.contactName}</span>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className={cn("truncate text-sm text-foreground", row.waitingReply ? "font-semibold" : "font-medium")}>{row.contactName}</span>
+              {/* Destaca quem espera resposta: a última fala é do cliente (2026-11-24). */}
+              {row.waitingReply ? <span className="size-2 shrink-0 rounded-full bg-primary" role="img" aria-label="Aguardando resposta" /> : null}
+            </span>
             {row.lastMessageAt ? (
-              <span className={cn("shrink-0 font-mono text-xs tabular-nums", row.waitingReply ? "text-foreground" : "text-muted-foreground")}>
+              <span className={cn("shrink-0 font-mono text-xs tabular-nums", row.waitingReply ? "font-semibold text-primary" : "text-muted-foreground")}>
                 {elapsedLabel(new Date(row.lastMessageAt), now)}
               </span>
             ) : null}
           </span>
           {secondary ? <span className="truncate text-xs text-muted-foreground">{secondary}</span> : null}
-          <span className={cn("truncate text-sm", row.waitingReply ? "text-foreground" : "text-muted-foreground")}>{row.lastMessage ?? "Conversa iniciada"}</span>
-          <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-            {attention ? <span className="inline-flex shrink-0 items-center gap-1 font-medium text-destructive"><span className="size-1.5 rounded-full bg-destructive" /> Precisa de pessoa</span> : null}
-            {row.status === "waiting_customer" ? <span className="shrink-0">Aguardando cliente</span> : null}
-            {row.agentTest ? <span className="inline-flex shrink-0 items-center gap-1"><Bot className="size-3" aria-hidden /> IA atendendo</span> : null}
-            {row.aiUrgent ? <span className="shrink-0 text-warning">Urgente pela IA</span> : null}
-            <span className="truncate">{row.assignedToMe ? "Com você" : (row.assigneeName ?? row.clanName ?? "Sem setor")}</span>
-          </span>
+          <span className={cn("truncate text-sm", row.waitingReply ? "text-foreground" : "text-muted-foreground")}>{author}{row.lastMessage ?? "Conversa iniciada"}</span>
+          {hasMeta ? (
+            <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              {phone ? <span className="shrink-0 tabular-nums">{phone}</span> : null}
+              {attention ? <span className="inline-flex shrink-0 items-center gap-1 font-medium text-destructive"><span className="size-1.5 rounded-full bg-destructive" /> Precisa de pessoa</span> : null}
+              {row.status === "waiting_customer" ? <span className="shrink-0">Aguardando cliente</span> : null}
+              {row.agentTest ? <span className="inline-flex shrink-0 items-center gap-1"><Bot className="size-3" aria-hidden /> IA atendendo</span> : null}
+              {row.aiUrgent ? <span className="shrink-0 text-warning">Urgente pela IA</span> : null}
+              {owner ? <span className="truncate">{owner}</span> : null}
+            </span>
+          ) : null}
         </span>
       </Link>
     </li>
@@ -413,18 +428,29 @@ function ConversationPanel({ conversation, filter, onContext }: { conversation: 
   return (
     <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background" aria-label={`Conversa com ${conversation.contactName}`}>
       <header className="grid shrink-0 border-b bg-card">
-        <div className="flex min-h-16 min-w-0 items-center gap-3 px-4 py-2.5">
+        {/* No celular, editar o nome leva a coluna do nome para uma linha inteira (2026-11-24). */}
+        <div className="flex min-h-16 min-w-0 flex-wrap items-center gap-3 px-4 py-2.5">
           <Button asChild size="icon-sm" variant="ghost" className="touch-target lg:hidden">
             <Link href={inboxHref(filter)} aria-label="Voltar para a fila"><ArrowLeft aria-hidden /></Link>
           </Button>
           <ContactAvatar name={conversation.contactName} id={conversation.id} />
-          <div className="grid min-w-0 flex-1 gap-1">
-            <span className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="truncate text-base font-semibold">{conversation.contactName}</span>
+          <div className="grid min-w-0 flex-1 gap-1 max-sm:has-[form]:order-last max-sm:has-[form]:basis-full">
+            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <ContactNameEditor
+                key={`${conversation.id}:${conversation.customName ?? ""}`}
+                conversationId={conversation.id}
+                name={conversation.contactName}
+                customName={conversation.customName}
+                whatsAppName={conversation.whatsAppName}
+              />
               <StatusChip status={conversation.status} />
               {conversation.agentTest ? <AgentTestChip /> : null}
             </span>
-            <span className="truncate text-xs text-muted-foreground">{conversation.phone ?? "Número não informado"} · {conversation.client?.name ?? "Empresa não vinculada"}{conversation.assigneeName ? ` · ${conversation.assignedToMe ? "com você" : `com ${conversation.assigneeName}`}` : ""}</span>
+            <span className="truncate text-xs text-muted-foreground">
+              {conversation.customName && conversation.whatsAppName ? `WhatsApp: ${conversation.whatsAppName} · ` : ""}
+              {conversation.phone ? formatPhone(conversation.phone) : "Número não informado"} · {conversation.client?.name ?? "Empresa não vinculada"}
+              {conversation.assigneeName ? ` · ${conversation.assignedToMe ? "com você" : `com ${conversation.assigneeName}`}` : ""}
+            </span>
           </div>
           <Button type="button" size="sm" variant="ghost" onClick={onContext}><Building2 aria-hidden /> Contexto</Button>
         </div>

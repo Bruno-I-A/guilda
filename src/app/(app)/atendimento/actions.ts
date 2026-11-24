@@ -12,6 +12,7 @@ import {
   loadSupportViewer,
   markSupportWaiting,
   removeSupportContactClient,
+  renameSupportContact,
   reopenSupportConversation,
   resolveSupportConversation,
   sendSupportReply,
@@ -123,4 +124,13 @@ export async function setConversationCompany(input: z.input<typeof conversationC
   const parsed = conversationCompanySchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Empresa inválida.");
   return run((tx, base) => setSupportConversationClient(tx, { ...base, ...parsed.data }));
+}
+
+const renameSchema = z.object({ conversationId, name: z.string().max(200, "Nome muito longo.") });
+
+/** Nome do contato dado pela equipe (2026-11-24); vazio volta ao do WhatsApp. */
+export async function renameContact(input: z.input<typeof renameSchema>): Promise<ActionResult> {
+  const parsed = renameSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Nome inválido.");
+  return run((tx, base) => renameSupportContact(tx, { ...base, ...parsed.data }));
 }

@@ -101,6 +101,7 @@ export const supportConversationEventType = pgEnum(
     "resolved",
     "reopened",
     "contact_linked",
+    "contact_renamed",
   ],
 );
 
@@ -176,6 +177,8 @@ export const supportContacts = pgTable(
     whatsappId: varchar("whatsapp_id", { length: 32 }).notNull(),
     phoneE164: varchar("phone_e164", { length: 20 }),
     displayName: varchar("display_name", { length: 255 }),
+    /** Nome dado pela equipe (2026-11-24): vence o do perfil, que a Meta reescreve. */
+    customName: varchar("custom_name", { length: 80 }),
     linkedBy: text("linked_by").references(() => user.id),
     linkedAt: timestamp("linked_at", { withTimezone: true }),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),

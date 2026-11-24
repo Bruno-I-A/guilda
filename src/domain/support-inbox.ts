@@ -113,6 +113,32 @@ export function elapsedLabel(from: Date, now: Date): string {
   return `${Math.floor(hours / 24)} d`;
 }
 
+/** Telefone do Brasil como se lê, "(54) 99930-7239"; de outro país, como veio. */
+export function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  const local = digits.startsWith("55") && (digits.length === 12 || digits.length === 13) ? digits.slice(2) : null;
+  if (!local) return value;
+  const area = local.slice(0, 2);
+  const number = local.slice(2);
+  return `(${area}) ${number.slice(0, number.length - 4)}-${number.slice(-4)}`;
+}
+
+export const CONTACT_NAME_MAX = 80;
+
+/** Nome digitado pela equipe: espaços limpos, até 80 letras; vazio volta ao do WhatsApp. */
+export function normalizeContactName(value: string): string | null {
+  const clean = value.replace(/\s+/g, " ").trim().slice(0, CONTACT_NAME_MAX).trim();
+  return clean || null;
+}
+
+/**
+ * Nome do contato na tela (2026-11-24, pedido do Bruno): o dado pela equipe
+ * vence o do perfil do WhatsApp, que a Meta reescreve a cada mensagem.
+ */
+export function contactName(input: { customName: string | null; displayName: string | null; phone: string | null; whatsappId: string }): string {
+  return input.customName?.trim() || input.displayName?.trim() || formatPhone(input.phone ?? input.whatsappId);
+}
+
 /** Avatar legível mesmo quando o nome do WhatsApp começa com emoji ou é só um número. */
 export function contactInitials(name: string): string {
   const words = name.match(/[\p{L}\p{N}]+/gu) ?? [];

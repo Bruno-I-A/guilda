@@ -778,6 +778,13 @@
       "when": 1795528800000,
       "tag": "0110_support-agent-mode-business-hours",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1795536000000,
+      "tag": "0111_support-contact-custom-name",
+      "breakpoints": true
     }
   ]
 }
