@@ -277,6 +277,12 @@ uso até ele autorizar apagar). Desenho em
   A mensagem vai para `member_whatsapp_commands` (única por wamid; o `guilda_app` não
   apaga) e o `runMemberCommandCycle` do `support-worker` responde; a prévia, a resposta e
   a marcação de lido gravam juntas. Botões dos avisos passam por `transitionTaskForActor`.
+  - **Falha nunca é silenciosa** (primeiro teste real, 2026-11-24: o Bruno ficou no
+    "Analisando…"): erro da IA ou do banco responde "Não consegui analisar o pedido: <motivo>"
+    e a mensagem sai da fila (`fail`). Não voltar a só devolver à fila.
+  - **"sim"/"ok"/"pode criar" confirmam e "não"/"cancelar" cancelam a última prévia aberta**
+    daquele número (`shortAnswer`, `latestPendingDraft`): a pessoa responde escrevendo.
+    Outro texto com menos de 10 letras recebe a explicação, sem chamar a IA.
 - Lembretes do dia (prazo, fechamentos pendentes, resumo) rodam no `support-worker`
   uma vez por minuto, no horário do resumo de cada um (`queueScheduledMemberNotices`).
 

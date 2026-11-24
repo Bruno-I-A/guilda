@@ -23,7 +23,10 @@ vi.mock("@/lib/informatives/draft", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/informatives/draft")>();
   return {
     ...original,
-    buildInformativeDraft: vi.fn(async () => ({ ok: true, payload: draftPayload.current, model: "teste" })),
+    buildInformativeDraft: vi.fn(async () => {
+      if (draftPayload.current instanceof Error) throw draftPayload.current;
+      return { ok: true, payload: draftPayload.current, model: "teste" };
+    }),
   };
 });
 
@@ -167,6 +170,50 @@ describe("integrante que não lidera clã pede missão avulsa", () => {
 
   test("a prévia avulsa não se apaga pelo guilda_app", async () => {
     await expect(client.exec(`DELETE FROM member_mission_drafts`)).rejects.toThrow();
+  });
+});
+
+describe("resposta escrita, texto curto e falha", () => {
+  test("\"sim\" confirma a última prévia aberta e \"não\" cancela", async () => {
+    draftPayload.current = payloadFor([
+      { ...core, title: "Separar os extratos", dueDate: null, assignmentType: "individual", assigneeId: "ana", assigneeName: "Ana Souza", clanId: RH, clanName: "RH" },
+    ]);
+    await send("rui", "w.rui.pedido2", { text: "Ana, separar os extratos da ACME" });
+    await cycle();
+    await send("rui", "w.rui.sim", { text: "Sim!" });
+    await cycle();
+    expect(await db.select().from(schema.tasks).where(eq(schema.tasks.title, "Separar os extratos"))).toHaveLength(1);
+
+    await send("rui", "w.rui.pedido3", { text: "Ana, conferir o FGTS da ACME" });
+    await cycle();
+    await send("rui", "w.rui.nao", { text: "não" });
+    await cycle();
+    const last = await db.select().from(schema.memberMissionDrafts).where(eq(schema.memberMissionDrafts.requestedBy, "rui"));
+    expect(last.filter((d) => d.status === "cancelled").length).toBeGreaterThan(0);
+
+    await send("rui", "w.rui.sim2", { text: "ok" });
+    await cycle();
+    expect((await repliesTo("rui")).some((r) => r.text?.startsWith("Não há prévia aberta para confirmar."))).toBe(true);
+  });
+
+  test("texto curto recebe a explicação sem chamar a IA", async () => {
+    const { buildInformativeDraft } = await import("@/lib/informatives/draft");
+    const calls = vi.mocked(buildInformativeDraft).mock.calls.length;
+    await send("ana", "w.ana.oi", { text: "oi" });
+    await cycle();
+    expect(vi.mocked(buildInformativeDraft).mock.calls.length).toBe(calls);
+    expect((await repliesTo("ana")).some((r) => r.text?.startsWith("Não entendi o pedido."))).toBe(true);
+  });
+
+  test("erro da IA vira resposta com o motivo, sem tentar de novo em silêncio", async () => {
+    draftPayload.current = Object.assign(new Error("Overloaded"), { status: 529 });
+    await send("ana", "w.ana.falha", { text: "Rui, revisar o balancete da ACME" });
+    const result = await cycle();
+    expect(result.failed).toBe(1);
+    const [command] = await db.select().from(schema.memberWhatsAppCommands).where(eq(schema.memberWhatsAppCommands.externalId, "w.ana.falha"));
+    expect(command.status).toBe("failed");
+    expect((await repliesTo("ana")).some((r) => r.text?.startsWith("Não consegui analisar o pedido: a IA respondeu com erro 529."))).toBe(true);
+    expect(await cycle()).toEqual({ claimed: 0, failed: 0 });
   });
 });
 

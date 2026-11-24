@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomInt } from "node:crypto";
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { type OrgTx, withOrgTx } from "@/db/org-tx";
@@ -14,6 +14,7 @@ import { cancelInformative, confirmInformative } from "@/lib/informatives/confir
 import { buildInformativeDraft, draftIsBlocked, saveInformativeDraftTx, type InformativeActor } from "@/lib/informatives/draft";
 import { draftPreview } from "@/lib/informatives/preview";
 import { enqueueMemberReply } from "@/lib/notices/enqueue";
+import { appLink } from "@/lib/notices/links";
 import { messageDraftPreview, planFromInformative } from "@/lib/tasks/message-draft-plan";
 import { decideMessageMissionDraft, saveMessageMissionDraftTx } from "@/lib/tasks/message-drafts";
 import { transitionTaskForActor } from "@/lib/tasks/transition-service";
@@ -187,33 +188,68 @@ async function loadCommand(claimed: Claim): Promise<{ command: Command; actor: I
   });
 }
 
+type PendingDraft = Readonly<{ type: "mission" | "draft"; draftId: string; decision: "confirm" | "cancel" }>;
+
+/** Confirma ou cancela a prévia: missão avulsa ou Informativo, sempre da mesma conexão. */
+async function decideDraft(command: Command, actor: InformativeActor, draft: PendingDraft): Promise<string> {
+  if (draft.type === "mission") {
+    const result = await decideMessageMissionDraft({
+      orgId: actor.orgId,
+      userId: actor.userId,
+      connectionId: command.connectionId,
+      draftId: draft.draftId,
+      decision: draft.decision,
+    });
+    return result.message;
+  }
+  if (!(await withOrgTx(actor.orgId, (tx) => handlesInformatives(tx, actor.orgId, actor.userId)))) {
+    return "Só líder de clã, admin ou dono confirma Informativo por aqui.";
+  }
+  const options = { whatsappConnectionId: command.connectionId };
+  const result = draft.decision === "confirm"
+    ? await confirmInformative(actor, draft.draftId, options)
+    : await cancelInformative(actor, draft.draftId, options);
+  return result.message;
+}
+
+/** A prévia aberta mais recente da pessoa neste número (avulsa ou Informativo). */
+async function latestPendingDraft(command: Command, now = new Date()): Promise<{ type: "mission" | "draft"; draftId: string } | null> {
+  return withOrgTx(command.orgId, async (tx) => {
+    const [mission] = await tx.select({ id: schema.memberMissionDrafts.id, createdAt: schema.memberMissionDrafts.createdAt })
+      .from(schema.memberMissionDrafts)
+      .where(and(
+        eq(schema.memberMissionDrafts.orgId, command.orgId),
+        eq(schema.memberMissionDrafts.requestedBy, command.userId),
+        eq(schema.memberMissionDrafts.connectionId, command.connectionId),
+        eq(schema.memberMissionDrafts.status, "pending"),
+        gt(schema.memberMissionDrafts.expiresAt, now),
+      ))
+      .orderBy(desc(schema.memberMissionDrafts.createdAt))
+      .limit(1);
+    const [informative] = await tx.select({ id: schema.informatives.id, createdAt: schema.informatives.createdAt })
+      .from(schema.informatives)
+      .where(and(
+        eq(schema.informatives.orgId, command.orgId),
+        eq(schema.informatives.requestedBy, command.userId),
+        eq(schema.informatives.whatsappConnectionId, command.connectionId),
+        eq(schema.informatives.status, "pending"),
+        gt(schema.informatives.expiresAt, now),
+      ))
+      .orderBy(desc(schema.informatives.createdAt))
+      .limit(1);
+    if (mission && (!informative || mission.createdAt >= informative.createdAt)) return { type: "mission", draftId: mission.id };
+    return informative ? { type: "draft", draftId: informative.id } : null;
+  });
+}
+
 async function handleButton(claimed: Claim, command: Command, actor: InformativeActor): Promise<void> {
   const button = parseMemberButton(command.buttonId);
   if (!button) {
     await replyAndFinish(claimed, command, "Não reconheci esse botão. Abra a missão na Guilda para continuar.");
     return;
   }
-  if (button.type === "mission") {
-    const result = await decideMessageMissionDraft({
-      orgId: claimed.orgId,
-      userId: actor.userId,
-      connectionId: command.connectionId,
-      draftId: button.draftId,
-      decision: button.decision,
-    });
-    await replyAndFinish(claimed, command, result.message);
-    return;
-  }
-  if (button.type === "draft") {
-    if (!(await withOrgTx(claimed.orgId, (tx) => handlesInformatives(tx, claimed.orgId, actor.userId)))) {
-      await replyAndFinish(claimed, command, "Só líder de clã, admin ou dono confirma Informativo por aqui.");
-      return;
-    }
-    const options = { whatsappConnectionId: command.connectionId };
-    const result = button.decision === "confirm"
-      ? await confirmInformative(actor, button.draftId, options)
-      : await cancelInformative(actor, button.draftId, options);
-    await replyAndFinish(claimed, command, result.message);
+  if (button.type === "mission" || button.type === "draft") {
+    await replyAndFinish(claimed, command, await decideDraft(command, actor, { type: button.type, draftId: button.draftId, decision: button.decision }));
     return;
   }
   const result = await transitionTaskForActor({
@@ -316,8 +352,38 @@ async function handleRequest(claimed: Claim, command: Command, actor: Informativ
 }
 
 async function handleText(claimed: Claim, command: Command, actor: InformativeActor, deps: CycleDeps): Promise<void> {
+  const text = command.text?.trim() ?? "";
+  // "sim" e "não" respondem à última prévia: o botão nem sempre aparece, e a
+  // pessoa responde escrevendo (2026-11-24, primeiro teste do Bruno).
+  const answer = shortAnswer(text);
+  if (answer) {
+    const pending = await latestPendingDraft(command);
+    await replyAndFinish(
+      claimed,
+      command,
+      pending
+        ? await decideDraft(command, actor, { ...pending, decision: answer })
+        : `Não há prévia aberta para ${answer === "confirm" ? "confirmar" : "cancelar"}. ${MISSION_GUIDANCE}`,
+    );
+    return;
+  }
+  // Texto curto não vale a chamada à IA, que recusaria de qualquer jeito.
+  if (text.length < 10) {
+    await replyAndFinish(claimed, command, `Não entendi o pedido. ${MISSION_GUIDANCE}`);
+    return;
+  }
   await acknowledge(claimed, command, "Analisando o pedido e conferindo os responsáveis…", deps.fetchImpl);
-  await handleRequest(claimed, command, actor, command.text?.trim() ?? "");
+  await handleRequest(claimed, command, actor, text);
+}
+
+const YES = new Set(["sim", "s", "ok", "okay", "confirmo", "confirma", "confirmar", "criar", "cria", "pode criar", "pode", "pode sim", "isso", "certo", "sim pode criar"]);
+const NO = new Set(["nao", "n", "cancelar", "cancela", "cancelo", "nao criar", "nao precisa"]);
+
+export function shortAnswer(text: string): "confirm" | "cancel" | null {
+  const clean = text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
+  if (YES.has(clean)) return "confirm";
+  if (NO.has(clean)) return "cancel";
+  return null;
 }
 
 const MEDIA_ACK: Record<string, string> = {
@@ -363,11 +429,43 @@ async function processCommand(claimed: Claim, deps: CycleDeps): Promise<void> {
   await replyAndFinish(claimed, command, `Por aqui eu leio texto, áudio, foto e PDF. ${MISSION_GUIDANCE}`);
 }
 
+/** O motivo que a pessoa lê: sem detalhe técnico além do código. */
+export function failureReason(error: unknown): string {
+  if (error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number") {
+    return `a IA respondeu com erro ${(error as { status: number }).status}`;
+  }
+  const name = error instanceof Error ? error.name : "";
+  if (/timeout|connection/i.test(name)) return "a IA demorou demais para responder";
+  const message = error instanceof Error ? error.message : "falha desconhecida";
+  return message.replace(/\s+/g, " ").trim().slice(0, 160) || "falha desconhecida";
+}
+
+/**
+ * Antes, a falha voltava à fila e desistia em silêncio depois de 3 tentativas:
+ * a pessoa ficava olhando o "Analisando…" (primeiro teste do Bruno, 2026-11-24).
+ * Agora ela sempre lê o motivo, e a mensagem sai da fila.
+ */
 async function fail(claimed: Claim, error: unknown): Promise<void> {
-  const detail = (error instanceof Error ? error.message : "falha desconhecida").slice(0, 500);
-  await withOrgTx(claimed.orgId, (tx) => tx.update(schema.memberWhatsAppCommands)
-    .set({ status: sql`CASE WHEN ${schema.memberWhatsAppCommands.attemptCount} >= 3 THEN 'failed' ELSE 'pending' END`, lastError: detail, lockedAt: null, lockToken: null })
-    .where(doneWhere(claimed))).catch(() => undefined);
+  const detail = (error instanceof Error ? `${error.name}: ${error.message}` : "falha desconhecida").slice(0, 500);
+  try {
+    await withOrgTx(claimed.orgId, async (tx) => {
+      const command = await tx.query.memberWhatsAppCommands.findFirst({ where: doneWhere(claimed), columns: { id: true, userId: true } });
+      if (!command) return;
+      await enqueueMemberReply(tx, {
+        orgId: claimed.orgId,
+        userId: command.userId,
+        dedupeKey: `whatsapp-command:${command.id}:error`,
+        text: `Não consegui analisar o pedido: ${failureReason(error)}. Tente de novo em instantes; se continuar, crie pela Guilda: ${appLink("tasks/new")}`,
+      });
+      await tx.update(schema.memberWhatsAppCommands)
+        .set({ status: "failed", lastError: detail, processedAt: new Date(), lockedAt: null, lockToken: null })
+        .where(doneWhere(claimed));
+    });
+  } catch {
+    await withOrgTx(claimed.orgId, (tx) => tx.update(schema.memberWhatsAppCommands)
+      .set({ status: sql`CASE WHEN ${schema.memberWhatsAppCommands.attemptCount} >= 3 THEN 'failed' ELSE 'pending' END`, lastError: detail, lockedAt: null, lockToken: null })
+      .where(doneWhere(claimed))).catch(() => undefined);
+  }
 }
 
 export async function runMemberCommandCycle(
@@ -383,7 +481,9 @@ export async function runMemberCommandCycle(
     } catch (error) {
       console.error("Falha ao responder mensagem de integrante no WhatsApp", {
         orgId: claimed.orgId,
-        error: error instanceof Error ? error.message : "erro desconhecido",
+        name: error instanceof Error ? error.name : typeof error,
+        status: error && typeof error === "object" && "status" in error ? (error as { status?: unknown }).status : undefined,
+        error: error instanceof Error ? error.message.slice(0, 500) : "erro desconhecido",
       });
       await fail(claimed, error);
       failed++;
