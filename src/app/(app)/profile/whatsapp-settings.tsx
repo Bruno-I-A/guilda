@@ -72,7 +72,7 @@ export function WhatsAppSettings({ connection }: { connection: WhatsAppConnectio
               </h2>
             </CardTitle>
             <CardDescription>
-              Os avisos das suas missões chegam pelo WhatsApp do escritório. Líder de clã, admin e dono também criam missões por mensagem.
+              Os avisos das suas missões chegam pelo WhatsApp do escritório, e por lá você pede missão por texto, áudio, foto ou PDF.
             </CardDescription>
           </div>
           <Badge variant={verified ? "secondary" : "outline"}>

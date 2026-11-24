@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { draftButtonId, parseMemberButton, parseMemberInbound } from "./member-inbound";
+import { draftButtonId, missionButtonId, parseMemberButton, parseMemberInbound } from "./member-inbound";
 
 const TASK = "11111111-1111-4111-8111-111111111111";
 
@@ -18,9 +18,27 @@ describe("mensagem do integrante", () => {
       ["text", "Ana, conferir a folha até sexta", null],
       ["button", "Aprovar", `task:approve:${TASK}`],
       ["button", "Iniciar missão", `task:start:${TASK}`],
-      ["other", null, null],
+      ["media", null, null],
     ]);
+    expect(parsed[3].media).toEqual({ id: "1" });
     expect(parsed[0].occurredAt.toISOString()).toBe(new Date(1795622400 * 1000).toISOString());
+  });
+
+  it("foto e PDF levam o id da mídia, o tipo e a legenda; vídeo não", () => {
+    const parsed = parseMemberInbound({
+      messages: [
+        { id: "w.img", from: "5554999990000", type: "image", image: { id: "123", mime_type: "image/jpeg", caption: "Ana, conferir até sexta" } },
+        { id: "w.pdf", from: "5554999990000", type: "document", document: { id: "456", mime_type: "application/pdf", filename: "guia.pdf" } },
+        { id: "w.vid", from: "5554999990000", type: "video", video: { id: "789" } },
+        { id: "w.bad", from: "5554999990000", type: "image", image: { id: "../x" } },
+      ],
+    });
+    expect(parsed.map((m) => [m.kind, m.media ?? null])).toEqual([
+      ["media", { id: "123", mimeType: "image/jpeg", caption: "Ana, conferir até sexta" }],
+      ["media", { id: "456", mimeType: "application/pdf", filename: "guia.pdf" }],
+      ["other", null],
+      ["other", null],
+    ]);
   });
 
   it("ignora mensagem sem id ou com remetente estranho", () => {
@@ -33,6 +51,7 @@ describe("id do botão", () => {
   it("aceita só missão e prévia com uuid", () => {
     expect(parseMemberButton(`task:start:${TASK}`)).toEqual({ type: "task", action: "start", taskId: TASK });
     expect(parseMemberButton(draftButtonId("confirm", TASK))).toEqual({ type: "draft", decision: "confirm", draftId: TASK });
+    expect(parseMemberButton(missionButtonId("cancel", TASK))).toEqual({ type: "mission", decision: "cancel", draftId: TASK });
     expect(parseMemberButton(`task:delete:${TASK}`)).toBeNull();
     expect(parseMemberButton("task:start:1; drop table")).toBeNull();
     expect(parseMemberButton(undefined)).toBeNull();

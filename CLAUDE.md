@@ -256,13 +256,27 @@ uso até ele autorizar apagar). Desenho em
   preferência de fechamentos começa **desligada** para quem não tinha no Telegram
   (cada mudança de fechamento iria à Guilda inteira, e fora da janela custa). O aviso
   do Fluxo no Societário saiu: o "novo cliente" já avisa o mesmo clã.
-- **Criar missão por mensagem**, igual ao Telegram: líder de clã, admin e dono; a IA dos
-  Informativos monta a prévia e a pessoa confirma pelo botão. A mensagem vai para
-  `member_whatsapp_commands` (única por wamid; o `guilda_app` não apaga) e o
-  `runMemberCommandCycle` do `support-worker` responde; a prévia, a resposta e a
-  marcação de lido gravam juntas (`saveInformativeDraftTx`). O Informativo guarda
-  `whatsapp_connection_id`: só o mesmo número confirma. Botões passam por
-  `transitionTaskForActor`, como a tela. Áudio ainda não (responde que lê só texto).
+- **Criar missão por mensagem: todo integrante, por texto, áudio, foto ou PDF**
+  (2026-11-24, segundo pedido do Bruno no mesmo dia; o primeiro desenho era só líder).
+  A mesma IA dos Informativos lê o pedido, em dois caminhos:
+  - **líder de clã, admin e dono → Informativo**, como no Telegram (pode criar empresa,
+    Fluxo, fechamento e aviso no Mural). O Informativo guarda `whatsapp_connection_id`:
+    só o mesmo número confirma (`draft:confirm|cancel:<id>`).
+  - **os demais → missão avulsa** (`member_mission_drafts`, migração 0113;
+    `planFromInformative` e `decideMessageMissionDraft` em `src/lib/tasks/`), com a
+    régua do formulário: pessoa da organização com o clã tirado dos vínculos dela
+    (`activeClanMembershipsForUser` + `resolveAssigneeClan`) ou clã ativo; empresa só se
+    já cadastrada. Nada de criar empresa, Fluxo ou fechamento por esse caminho. Até 10
+    missões por mensagem; nome não achado ou destino incerto pede para mandar de novo.
+    Tudo ou nada na confirmação; só o mesmo número confirma (`mission:confirm|cancel:<id>`).
+  - **Arquivo vira texto antes** (`readMemberMedia`): áudio pela transcrição da OpenAI
+    (sem `OPENAI_API_KEY` responde que não lê áudio), foto e PDF (3 primeiras páginas)
+    pela Anthropic (`readMissionAttachment`, o conteúdo é dado, nunca instrução). A prévia
+    começa com "Entendi assim: «…»". O arquivo não fica guardado. Vídeo e outros formatos
+    recebem a explicação do que se lê.
+  A mensagem vai para `member_whatsapp_commands` (única por wamid; o `guilda_app` não
+  apaga) e o `runMemberCommandCycle` do `support-worker` responde; a prévia, a resposta e
+  a marcação de lido gravam juntas. Botões dos avisos passam por `transitionTaskForActor`.
 - Lembretes do dia (prazo, fechamentos pendentes, resumo) rodam no `support-worker`
   uma vez por minuto, no horário do resumo de cada um (`queueScheduledMemberNotices`).
 

@@ -31,6 +31,7 @@ import {
   loadClanScopedFacts,
 } from "@/lib/clans/facts";
 import { createTaskRecord } from "@/lib/tasks/create";
+import { activeClanMembershipsForUser } from "@/lib/tasks/assignee-clan";
 import { transitionTaskForActor } from "@/lib/tasks/transition-service";
 import { findCompanyFlowTaskLink } from "@/lib/company-flows/managed-task";
 import { enqueueMemberNotice } from "@/lib/notices/enqueue";
@@ -108,44 +109,6 @@ const createTaskSchema = z.discriminatedUnion("assignmentType", [
     clanId: z.uuid("Escolha um clã válido."),
   }),
 ]);
-
-async function activeClanMembershipsForUser(
-  tx: OrgTx,
-  orgId: string,
-  userId: string,
-): Promise<Array<{ clanId: string; isPrimary: boolean }>> {
-  await lockActiveClansForMembershipRead(tx, orgId);
-  return tx
-    .select({
-      clanId: schema.clanMemberships.clanId,
-      isPrimary: schema.clanMemberships.isPrimary,
-    })
-    .from(schema.clanMemberships)
-    .innerJoin(
-      schema.clans,
-      and(
-        eq(schema.clans.id, schema.clanMemberships.clanId),
-        eq(schema.clans.orgId, schema.clanMemberships.orgId),
-      ),
-    )
-    .innerJoin(
-      schema.member,
-      and(
-        eq(schema.member.userId, schema.clanMemberships.userId),
-        eq(schema.member.organizationId, schema.clanMemberships.orgId),
-      ),
-    )
-    .where(
-      and(
-        eq(schema.clanMemberships.orgId, orgId),
-        eq(schema.clanMemberships.userId, userId),
-        eq(schema.clans.orgId, orgId),
-        eq(schema.clans.active, true),
-        eq(schema.member.organizationId, orgId),
-        eq(schema.member.userId, userId),
-      ),
-    );
-}
 
 export async function createTask(
   input: z.input<typeof createTaskSchema>,

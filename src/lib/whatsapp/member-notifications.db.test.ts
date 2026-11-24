@@ -14,6 +14,12 @@ vi.mock("@/db", () => ({ db }));
 
 const ORG = "org-whatsapp-member";
 
+// A IA dos Informativos é simulada: aqui só importa que todo integrante é ouvido.
+vi.mock("@/lib/informatives/draft", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/informatives/draft")>()),
+  buildInformativeDraft: vi.fn(async () => ({ ok: false, message: "Não achei uma tarefa nessa mensagem." })),
+}));
+
 beforeAll(async () => {
   await applyMigrations(client);
   await client.exec(`
@@ -154,12 +160,12 @@ describe("botões dos avisos", () => {
     expect(commands.every((command) => command.status === "done")).toBe(true);
   });
 
-  test("texto de quem não lidera clã recebe a explicação, sem chamar a IA", async () => {
+  test("texto de quem não lidera clã também é lido pela IA (todos pedem missão)", async () => {
     const [command] = await db.select().from(schema.memberWhatsAppCommands).where(eq(schema.memberWhatsAppCommands.externalId, "wamid.pedido"));
     expect(command.status).toBe("done");
     const replies = await db.select({ key: schema.memberWhatsAppOutbox.dedupeKey, payload: schema.memberWhatsAppOutbox.payload })
       .from(schema.memberWhatsAppOutbox).where(eq(schema.memberWhatsAppOutbox.dedupeKey, `whatsapp-command:${command.id}:reply`));
-    expect(JSON.stringify(replies[0].payload)).toContain("líder de clã, admin ou dono");
+    expect(JSON.stringify(replies[0].payload)).toContain("Não achei uma tarefa nessa mensagem.");
   });
 });
 

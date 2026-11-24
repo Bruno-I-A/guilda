@@ -157,3 +157,23 @@ como lido: se o processo cair no meio, a IA roda de novo, mas não sai prévia d
   confirmado vira Atendimento.
 - Worker com `fetch` falso: janela aberta manda texto/botão; fechada manda o modelo
   com os parâmetros; modelo pendente não envia; silêncio adia.
+
+## Adendo (2026-11-24, mesmo dia): todos pedem missão, por texto, áudio, foto ou PDF
+
+Depois de ver o desenho, o Bruno pediu: "todos devem poder criar missões pelo WhatsApp,
+vamos habilitar para entender áudios e imagens também". O que mudou:
+
+- **Dois caminhos, a mesma IA.** Líder de clã, admin e dono continuam pelo Informativo
+  (pode criar empresa, Fluxo, fechamento e aviso no Mural). Os demais pedem **missão
+  avulsa**, com a régua do formulário de missão: pessoa da organização (o clã sai dos
+  vínculos dela) ou clã ativo, empresa só se já cadastrada. Por esse caminho nada cria
+  empresa, Fluxo ou fechamento: isso continua sendo do Informativo.
+- **Prévia própria** (`member_mission_drafts`, migração 0113): até 10 missões por
+  mensagem, botões **Criar** e **Cancelar**, 30 minutos, só o mesmo número confirma, tudo
+  ou nada (se a pessoa saiu da Guilda ou o clã fechou no meio, nada é criado).
+- **Arquivo vira texto antes da IA**: áudio pela transcrição da OpenAI (a mesma do
+  Atendimento), foto e PDF (3 primeiras páginas) pela Anthropic. A prévia começa com
+  "Entendi assim: «…»", para a pessoa conferir o que foi entendido. O arquivo não fica
+  guardado. Vídeo e outros formatos recebem a explicação do que se lê.
+- **Privacidade**: o áudio da equipe vai à OpenAI e a foto/PDF à Anthropic, como já
+  acontece com o texto do Informativo. É conteúdo interno do escritório.

@@ -1770,10 +1770,15 @@ export const memberWhatsAppCommands = pgTable(
     userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
     connectionId: uuid("connection_id").notNull().references(() => memberWhatsAppConnections.id, { onDelete: "cascade" }),
     externalId: varchar("external_id", { length: 255 }).notNull(),
-    kind: varchar("kind", { length: 20 }).$type<"text" | "button" | "other">().notNull(),
+    kind: varchar("kind", { length: 20 }).$type<"text" | "button" | "media" | "other">().notNull(),
     messageType: varchar("message_type", { length: 40 }).notNull(),
     text: text("text"),
     buttonId: varchar("button_id", { length: 255 }),
+    /** Áudio, foto ou PDF (2026-11-24): o arquivo fica na Meta; aqui só o id. */
+    mediaId: varchar("media_id", { length: 64 }),
+    mediaMime: varchar("media_mime", { length: 120 }),
+    mediaCaption: text("media_caption"),
+    mediaFilename: varchar("media_filename", { length: 255 }),
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
     status: varchar("status", { length: 20 }).$type<"pending" | "processing" | "done" | "failed">().notNull().default("pending"),
     lockedAt: timestamp("locked_at", { withTimezone: true }),
@@ -1786,8 +1791,34 @@ export const memberWhatsAppCommands = pgTable(
   (t) => [
     uniqueIndex("member_whatsapp_commands_org_external_uidx").on(t.orgId, t.externalId),
     index("member_whatsapp_commands_pending_idx").on(t.status, t.createdAt, t.lockedAt),
-    check("member_whatsapp_commands_kind_check", sql`${t.kind} IN ('text', 'button', 'other')`),
+    check("member_whatsapp_commands_kind_check", sql`${t.kind} IN ('text', 'button', 'media', 'other')`),
     check("member_whatsapp_commands_status_check", sql`${t.status} IN ('pending', 'processing', 'done', 'failed')`),
+  ],
+);
+
+/**
+ * Prévia da missão avulsa pedida pelo WhatsApp por quem não lidera clã
+ * (2026-11-24). Líder, admin e dono seguem pelo Informativo. Nada nasce antes
+ * do botão, e só a mesma conexão confirma. Não se apaga.
+ */
+export const memberMissionDrafts = pgTable(
+  "member_mission_drafts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+    requestedBy: text("requested_by").notNull().references(() => user.id, { onDelete: "cascade" }),
+    connectionId: uuid("connection_id").notNull().references(() => memberWhatsAppConnections.id, { onDelete: "cascade" }),
+    sourceText: text("source_text").notNull(),
+    payload: jsonb("payload").$type<unknown>().notNull(),
+    status: varchar("status", { length: 20 }).$type<"pending" | "confirmed" | "cancelled">().notNull().default("pending"),
+    createdTaskIds: jsonb("created_task_ids").$type<unknown>(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("member_mission_drafts_org_user_status_idx").on(t.orgId, t.requestedBy, t.status),
+    check("member_mission_drafts_status_check", sql`${t.status} IN ('pending', 'confirmed', 'cancelled')`),
   ],
 );
 
