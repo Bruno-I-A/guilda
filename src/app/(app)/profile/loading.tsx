@@ -3,8 +3,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 /**
  * Esqueleto do /profile.
  *
- * O perfil resolve cinco coisas em paralelo (XP total, missões concluídas,
- * histórico do ledger, conexão do Telegram e o usuário do bot). A silhueta:
+ * O perfil resolve em paralelo o XP total, as missões concluídas, o histórico
+ * do ledger e o WhatsApp com as preferências dos avisos. A silhueta:
  * cabeçalho, identidade, o card de vitrine com a constelação e a barra de
  * XP, e as seções de preferências e histórico.
  */
@@ -12,8 +12,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 /** A constelação é um SVG 680x300 — o bloco reserva a mesma proporção. */
 const CONSTELLATION_ASPECT = "aspect-[68/30]";
 
-/** Chaves de notificação do Telegram: linhas com rótulo + interruptor. */
-const TELEGRAM_ROWS = ["w-40", "w-48", "w-36", "w-44"] as const;
+/** Preferências dos avisos: linhas com rótulo + interruptor. */
+const PREFERENCE_ROWS = ["w-40", "w-48", "w-36", "w-44"] as const;
 
 /** Últimos lançamentos do ledger de XP. */
 const HISTORY_ROWS = ["w-2/3", "w-1/2", "w-3/5", "w-2/5", "w-3/4"] as const;
@@ -54,14 +54,23 @@ export default function ProfileLoading() {
           <Skeleton className="h-3.5 w-full max-w-md rounded-none" />
         </section>
 
-        {/* Notificações do Telegram */}
+        {/* WhatsApp: número e confirmação */}
+        <section className="panel-cut grid gap-4 p-5">
+          <div className="grid gap-2">
+            <Skeleton className="h-4 w-32 rounded-none" />
+            <Skeleton className="h-3.5 w-72 max-w-full rounded-none" />
+          </div>
+          <Skeleton className="h-8 w-full rounded-none" />
+        </section>
+
+        {/* Avisos: preferências */}
         <section className="panel-cut grid gap-4 p-5">
           <div className="grid gap-2">
             <Skeleton className="h-4 w-40 rounded-none" />
             <Skeleton className="h-3.5 w-64 max-w-full rounded-none" />
           </div>
           <div className="grid gap-3">
-            {TELEGRAM_ROWS.map((width, index) => (
+            {PREFERENCE_ROWS.map((width, index) => (
               <div key={index} className="flex items-center justify-between gap-3">
                 <Skeleton className={`h-3.5 rounded-none ${width}`} />
                 <Skeleton className="h-5 w-9 shrink-0 rounded-none" />

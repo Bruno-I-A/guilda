@@ -22,6 +22,10 @@ import {
 } from "@/domain/commitments";
 import { createClosingPeriod } from "@/lib/closings/period-writes";
 import { createTaskRecord } from "@/lib/tasks/create";
+import {
+  enqueueInformativeAssignmentNotices,
+  type InformativeNoticeTask,
+} from "@/lib/notices/informative";
 import { completeTaskFromSystem } from "@/lib/tasks/complete";
 import {
   amendmentClientRegistrationUpdate,
@@ -38,7 +42,7 @@ import type { InformativeActor } from "./draft";
 
 /**
  * Confirmação transacional de um informativo — a única porta que cria
- * missões. Compartilhada pelo bot do Telegram e pelo painel: o que muda é
+ * missões. Compartilhada pelo WhatsApp, pelo painel e pelo MCP: o que muda é
  * apenas de onde vem a decisão sobre as missões pendentes.
  */
 
@@ -269,7 +273,7 @@ async function applyPendingDecisions(
 export async function cancelInformative(
   actor: InformativeActor,
   informativeId: string,
-  options: { connectionId?: string | null } = {},
+  options: { whatsappConnectionId?: string | null } = {},
 ): Promise<InformativeResult> {
   return withOrgTx(actor.orgId, async (tx): Promise<InformativeResult> => {
     const informative = await lockInformative(tx, actor, informativeId, options);
@@ -312,7 +316,7 @@ async function lockInformative(
   tx: OrgTx,
   actor: InformativeActor,
   informativeId: string,
-  options: { connectionId?: string | null },
+  options: { whatsappConnectionId?: string | null },
 ): Promise<
   | { ok: true; row: typeof schema.informatives.$inferSelect }
   | { ok: false; message: string }
@@ -329,8 +333,8 @@ async function lockInformative(
     )
     .for("update");
   if (!row) return { ok: false, message: "Informativo não encontrado." };
-  // O Telegram exige que a decisão venha da mesma conversa que pediu a prévia.
-  if (options.connectionId && row.connectionId !== options.connectionId) {
+  // Pelo WhatsApp, a decisão vem do mesmo número que pediu a prévia.
+  if (options.whatsappConnectionId && row.whatsappConnectionId !== options.whatsappConnectionId) {
     return { ok: false, message: "Informativo não encontrado." };
   }
   return { ok: true, row };
@@ -340,7 +344,7 @@ export async function confirmInformative(
   actor: InformativeActor,
   informativeId: string,
   options: {
-    connectionId?: string | null;
+    whatsappConnectionId?: string | null;
     decisions?: readonly InformativeTaskDecision[];
     expectedRevision?: string;
   } = {},
@@ -590,6 +594,7 @@ export async function confirmInformative(
     }
 
     const taskIds: string[] = [];
+    const createdForNotice: InformativeNoticeTask[] = [];
     const periodClosingIds = new Map<string, string>();
     for (const task of tasks) {
       let closingId: string | null = null;
@@ -638,6 +643,13 @@ export async function confirmInformative(
         dueDate: dueDateOf(task.dueDate),
       });
       taskIds.push(created.id);
+      createdForNotice.push({
+        id: created.id,
+        assigneeId: task.assigneeId,
+        title: `${task.title}${companySuffix}`.slice(0, 200),
+        dueDate: dueDateOf(task.dueDate),
+        xpValue: created.xpValue,
+      });
 
       // O "Att." do informativo fica registrado como sugestão, inclusive
       // quando o nome não foi reconhecido — é a trilha que o líder lê.
@@ -864,6 +876,15 @@ export async function confirmInformative(
         createdTaskIds: taskIds,
       })
       .where(eq(schema.informatives.id, informative.id));
+
+    // Quem recebeu missão é avisado uma vez, pelo WhatsApp (2026-11-24).
+    await enqueueInformativeAssignmentNotices(tx, {
+      orgId: actor.orgId,
+      informativeId: informative.id,
+      requesterId: actor.userId,
+      companyName: payload.company.legalName ?? null,
+      tasks: createdForNotice,
+    });
 
     const flow = linkedFlow?.flow;
     if (taskIds.length === 0) {

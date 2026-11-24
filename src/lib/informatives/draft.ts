@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, eq, inArray } from "drizzle-orm";
 
-import { withOrgTx } from "@/db/org-tx";
+import { type OrgTx, withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import {
   resolveSectorClan,
@@ -29,12 +29,12 @@ import {
   listInformativeRoutingRules,
   listOrgMembers,
 } from "@/lib/org";
-import { isDetailedInformativeMessage } from "@/lib/telegram/informative-detection";
+import { isDetailedInformativeMessage } from "@/lib/informatives/detection";
 import { CONTABILIDADE_CLAN_SLUG } from "@/lib/clans/rules";
 
 /**
  * Construção da prévia de um informativo — compartilhada pelas DUAS portas de
- * entrada (bot do Telegram e painel). O que muda entre elas é apenas quem
+ * entrada (WhatsApp do escritório e painel). O que muda entre elas é apenas quem
  * apresenta o resultado; a extração, o roteamento e a persistência são os
  * mesmos.
  */
@@ -631,15 +631,26 @@ export async function buildInformativeDraft(
  * Persiste a prévia, cancelando a anterior ainda pendente da mesma pessoa —
  * uma prévia aberta por vez evita confirmar o rascunho errado.
  */
-export async function saveInformativeDraft(input: {
+export type SaveInformativeDraftInput = {
   actor: InformativeActor;
   payload: InformativeDraftPayload;
   model: string;
   sourceText: string;
-  source: "telegram" | "panel";
-  connectionId: string | null;
-}): Promise<{ id: string }> {
-  return withOrgTx(input.actor.orgId, async (tx) => {
+  source: "panel" | "whatsapp";
+  /** Pedido pelo WhatsApp: só a mesma conexão confirma depois. */
+  whatsappConnectionId?: string | null;
+};
+
+export async function saveInformativeDraft(input: SaveInformativeDraftInput): Promise<{ id: string }> {
+  return withOrgTx(input.actor.orgId, (tx) => saveInformativeDraftTx(tx, input));
+}
+
+/**
+ * Mesma gravação dentro de uma transação já aberta: o WhatsApp grava a prévia,
+ * a resposta e a marcação da mensagem como lida juntas (2026-11-24).
+ */
+export async function saveInformativeDraftTx(tx: OrgTx, input: SaveInformativeDraftInput): Promise<{ id: string }> {
+  {
     const pendingDrafts = await tx
       .select({ id: schema.informatives.id })
       .from(schema.informatives)
@@ -719,7 +730,7 @@ export async function saveInformativeDraft(input: {
       .values({
         orgId: input.actor.orgId,
         requestedBy: input.actor.userId,
-        connectionId: input.connectionId,
+        whatsappConnectionId: input.whatsappConnectionId ?? null,
         source: input.source,
         sourceText: input.sourceText,
         model: input.model,
@@ -728,7 +739,7 @@ export async function saveInformativeDraft(input: {
       })
       .returning({ id: schema.informatives.id });
     return created;
-  });
+  }
 }
 
 /**

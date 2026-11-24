@@ -52,7 +52,7 @@ import { listActiveClans } from "@/lib/org";
 /**
  * Server Actions do painel de informativos.
  *
- * Segunda porta de entrada do mesmo pipeline do Telegram: extrai, roteia e
+ * Porta de entrada do mesmo pipeline do WhatsApp: extrai, roteia e
  * mostra a prévia. NADA é criado antes de uma confirmação explícita.
  * Decisão 9: líder de clã também opera informativo, não só admin/owner.
  */
@@ -640,7 +640,6 @@ export async function prepareStructuredInformative(
     model: STRUCTURED_INFORMATIVE_MODEL,
     sourceText,
     source: "panel",
-    connectionId: null,
   });
 
   if (parsed.data.flowId) {
@@ -784,7 +783,6 @@ export async function analyzeInformative(input: {
     // continua sendo a fonte dos dados cadastrais e sensíveis.
     sourceText: sourceToSave,
     source: "panel",
-    connectionId: null,
   });
 
   if (flowId) {

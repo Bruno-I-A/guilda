@@ -224,6 +224,48 @@ CREATE POLICY org_isolation ON tasks
 - **member**: criar tarefas (para si ou colegas da org), atualizar as suas,
   aprovar tarefas que criou
 
+## Avisos e missões pelo WhatsApp; sai o Telegram (decisão de 2026-11-24)
+
+Pedido do Bruno: tudo que ia pelo Telegram vai pelo WhatsApp do escritório, e o
+Telegram sai **de uma vez** (o código; as tabelas `telegram_*` ficam no banco sem
+uso até ele autorizar apagar). Desenho em
+`docs/superpowers/specs/2026-11-24-avisos-pelo-whatsapp-design.md`.
+
+- **Número confirmado** (`member_whatsapp_connections.verified_at`): o Perfil gera um
+  código (só o hash fica, 30 min) e a pessoa manda "GUILDA <código>" do próprio
+  WhatsApp (`wa.me` com a mensagem pronta). Sem confirmação, nada de aviso (nem os
+  antigos de novo cliente e de conversa encaminhada) e nada de comando; a mensagem
+  de número cadastrado e não confirmado volta a ser de cliente, no Atendimento.
+  Trocar o número zera a confirmação; sair da organização desliga e desconfirma.
+  **Não aceitar número digitado como identidade**: com missão por mensagem, quem
+  digitasse o número de outra pessoa criaria missão em nome dela.
+- **Avisos** (`src/lib/notices/`): o produtor descreve o aviso em dados (`Notice`) e
+  `enqueueMemberNotice`/`enqueueOrgNotice`/`enqueueClanNotice` enfileiram na
+  `member_whatsapp_outbox` (payload `version: 3`). Dentro da janela de 24 h sai texto
+  com o link e, quando há ação, botão de resposta (Iniciar missão, Aprovar, Retomar);
+  fora, um dos seis modelos Utility (`NOTICE_TEMPLATES`), preparados por um botão de
+  admin no Perfil (`member_whatsapp_templates`). O worker reconsulta modelo pendente a
+  cada 15 min. Silêncio adia (`defer_member_whatsapp_outbox`).
+- **Botão de link dos modelos é `https://<app>/w/{{1}}` com referência curta**
+  (`shortRef`: `t-<id>`, `m`, `f`, `ti`, `d`; a rota `/w/[ref]` resolve num conjunto
+  fechado). A Meta pode codificar `/`, `#` e `?` dentro da variável: não passar o
+  caminho cru.
+- **Regras novas**: missão de Informativo avisa quem a recebe, um aviso por pessoa
+  (`enqueueInformativeAssignmentNotices`; antes só o Mural avisava); ninguém é avisado
+  do que fez a si mesmo (missão para si, conclusão própria, XP do fechamento anual);
+  preferência de fechamentos começa **desligada** para quem não tinha no Telegram
+  (cada mudança de fechamento iria à Guilda inteira, e fora da janela custa). O aviso
+  do Fluxo no Societário saiu: o "novo cliente" já avisa o mesmo clã.
+- **Criar missão por mensagem**, igual ao Telegram: líder de clã, admin e dono; a IA dos
+  Informativos monta a prévia e a pessoa confirma pelo botão. A mensagem vai para
+  `member_whatsapp_commands` (única por wamid; o `guilda_app` não apaga) e o
+  `runMemberCommandCycle` do `support-worker` responde; a prévia, a resposta e a
+  marcação de lido gravam juntas (`saveInformativeDraftTx`). O Informativo guarda
+  `whatsapp_connection_id`: só o mesmo número confirma. Botões passam por
+  `transitionTaskForActor`, como a tela. Áudio ainda não (responde que lê só texto).
+- Lembretes do dia (prazo, fechamentos pendentes, resumo) rodam no `support-worker`
+  uma vez por minuto, no horário do resumo de cada um (`queueScheduledMemberNotices`).
+
 ## Recuperação de senha (decisão de 2026-11-11)
 
 Não há e-mail, então a recuperação é administrativa: em **Membros**, o menu do
@@ -706,7 +748,7 @@ pessoa. Consequências, todas já implementadas:
   mudou.
 - **`/closings` saiu da navegação global** e virou a aba Fechamentos da
   Contabilidade. A rota sobrevive apenas como **redirecionamento** (o botão
-  "Abrir fechamentos" das notificações do Telegram aponta para ela). Como
+  "Abrir fechamentos" das notificações antigas do Telegram aponta para ela). Como
   Fechamentos passou a viver em rota dinâmica, quem revalida usa
   `revalidatePath("/clans/[id]", "page")`.
 
@@ -779,7 +821,7 @@ status, prazo). A **origem virou o eixo principal** (`?view=standalone` ou
   pessoa termina em **entrega com retorno escrito obrigatório**
   (`awaiting_approval` exige nota). Quem pediu vê o retorno na lista ("Para você aprovar") e no
   detalhe, aprova com comentário opcional (vai para o histórico e para quem
-  entregou), e é avisado no Telegram quando o trabalho começa, quando a
+  entregou), e é avisado no WhatsApp quando o trabalho começa, quando a
   entrega chega (com o retorno no texto) e, no outro sentido, quem entregou
   recebe a aprovação com o comentário. "Você pediu" mostra a última
   movimentação de cada pedido.

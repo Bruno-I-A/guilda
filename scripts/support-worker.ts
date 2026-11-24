@@ -5,11 +5,22 @@ import { setTimeout as delay } from "node:timers/promises";
 import { isWhatsAppWebhookConfigured } from "../src/lib/whatsapp/config";
 import { runSupportInboundCycle } from "../src/lib/whatsapp/inbound-worker";
 import { runSupportOutboxCycle } from "../src/lib/whatsapp/outbound-worker";
+import { runMemberCommandCycle } from "../src/lib/whatsapp/member-commands";
 import { runMemberWhatsAppNotificationCycle } from "../src/lib/whatsapp/member-notification-worker";
+import { queueScheduledMemberNotices } from "../src/lib/notices/schedule";
 import { runSupportTriageCycle, supportAiMode } from "../src/lib/support/triage/shadow";
 import { isTranscriptionEnabled, runSupportTranscriptionCycle } from "../src/lib/support/transcription";
 
 const INTERVAL_MS = 2_000;
+
+/** Os lembretes do dia (prazo, fechamentos, resumo) rodam uma vez por minuto. */
+let lastScheduledMinute = "";
+async function queueScheduledOncePerMinute(): Promise<void> {
+  const minute = new Date().toISOString().slice(0, 16);
+  if (minute === lastScheduledMinute) return;
+  lastScheduledMinute = minute;
+  await queueScheduledMemberNotices();
+}
 
 async function main() {
   if (!isWhatsAppWebhookConfigured()) {
@@ -23,9 +34,12 @@ async function main() {
     const started = Date.now();
     try {
       await runSupportInboundCycle();
+      // Mensagens dos integrantes (pedido de missão, botões dos avisos).
+      await runMemberCommandCycle();
       // Antes da triagem: a leitura do turno espera o texto do áudio.
       await runSupportTranscriptionCycle();
       await runSupportOutboxCycle();
+      await queueScheduledOncePerMinute();
       await runMemberWhatsAppNotificationCycle();
       await runSupportTriageCycle();
     } catch (error) {

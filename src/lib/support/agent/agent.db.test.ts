@@ -175,7 +175,7 @@ beforeAll(async () => {
       ('m3', '${ORG}', 'rui', 'member', now()), ('m4', '${ORG}', 'maria', 'member', now());
     INSERT INTO clans (id, org_id, name, slug) VALUES ('${FISCAL}', '${ORG}', 'Fiscal', 'fiscal');
     INSERT INTO clan_memberships (org_id, clan_id, user_id) VALUES ('${ORG}', '${FISCAL}', 'ana'), ('${ORG}', '${FISCAL}', 'rui'), ('${ORG}', '${FISCAL}', 'maria');
-    INSERT INTO member_whatsapp_connections (org_id, user_id, phone_e164, last_inbound_at) VALUES ('${ORG}', 'ana', '+5554988887777', '2026-11-19T12:00:00Z');
+    INSERT INTO member_whatsapp_connections (org_id, user_id, phone_e164, last_inbound_at, verified_at) VALUES ('${ORG}', 'ana', '+5554988887777', '2026-11-19T12:00:00Z', '2026-11-19T11:00:00Z');
     INSERT INTO clients (id, org_id, name, tax_regime, cnpj) VALUES ('${COMPANY}', '${ORG}', 'ACADEMIA FORMA LTDA', 'simples', '33000167000101');
     INSERT INTO fiscal_portfolios (org_id, client_id, user_id, assigned_by) VALUES ('${ORG}', '${COMPANY}', 'ana', 'admin');
   `);
@@ -463,7 +463,7 @@ test("encaminhamento por assunto: a pessoa do assunto recebe a conversa e o avis
   await setAgent(true);
   await tx((t) => t.update(schema.clanMemberships).set({ isLeader: true }).where(eq(schema.clanMemberships.userId, "rui")));
   await tx((t) => t.update(schema.memberWhatsAppConnections).set({ lastInboundAt: at(900) }).where(eq(schema.memberWhatsAppConnections.userId, "ana")));
-  await tx((t) => t.insert(schema.memberWhatsAppConnections).values({ orgId: ORG, userId: "maria", phoneE164: "+5554977776666", lastInboundAt: at(900) }));
+  await tx((t) => t.insert(schema.memberWhatsAppConnections).values({ orgId: ORG, userId: "maria", phoneE164: "+5554977776666", lastInboundAt: at(900), verifiedAt: at(800) }));
   const { saveClanRoutingTopics } = await import("./routing");
   expect(
     await tx((t) =>

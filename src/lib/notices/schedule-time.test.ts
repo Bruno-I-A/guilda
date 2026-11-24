@@ -5,9 +5,9 @@ import {
   isScheduledMinute,
   timeToMinutes,
   zonedMinute,
-} from "./scheduler-time";
+} from "./schedule-time";
 
-describe("agenda Telegram", () => {
+describe("agenda dos avisos", () => {
   it("calcula data/minuto no fuso do usuário", () => {
     const value = zonedMinute(new Date("2026-08-12T11:00:00Z"), "America/Sao_Paulo");
     expect(value).toEqual({ date: "2026-08-12", time: "08:00", minutes: 480 });

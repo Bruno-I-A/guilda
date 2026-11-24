@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   isDetailedInformativeMessage,
-} from "./informative-detection";
+} from "./detection";
 
 describe("isDetailedInformativeMessage", () => {
   it.each([

@@ -11,9 +11,9 @@ import { syncClosingFromTask } from "@/lib/closings/task-sync";
 import { lockActiveClansForMembershipRead } from "@/lib/clans/locks";
 import { syncCommitmentPeriodFromTask } from "@/lib/commitments/task-sync";
 import { deactivateClosureClientWhenTasksFinish } from "@/lib/informatives/closure-completion";
-import { encodeTaskCallback } from "@/lib/telegram/endpoint";
-import { notificationPayload, enqueueTelegramNotificationIfEnabled } from "@/lib/telegram/notifications";
-import { taskUrl } from "@/lib/telegram/notification-payload";
+import { enqueueMemberNotice } from "@/lib/notices/enqueue";
+import { taskPath } from "@/lib/notices/links";
+import { taskButton } from "@/lib/notices/notice";
 
 export interface TaskActor {
   orgId: string;
@@ -175,45 +175,56 @@ export async function transitionTaskForActor(input: {
       await deactivateClosureClientWhenTasksFinish(tx, { orgId: actor.orgId, informativeId: task.informativeId });
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;
     if (input.to === "awaiting_approval") {
-      await enqueueTelegramNotificationIfEnabled(tx, {
+      const [person] = await tx
+        .select({ name: schema.user.name })
+        .from(schema.user)
+        .where(eq(schema.user.id, actor.userId))
+        .limit(1);
+      await enqueueMemberNotice(tx, {
         orgId: actor.orgId,
         userId: task.creatorId,
-        eventType: "task_awaiting_approval",
         dedupeKey: `task-event:${event.id}:awaiting`,
-        payload: notificationPayload(
-          "approvals",
-          `🛡️ Entrega para sua aprovação\n\n${task.title}\nRecompensa: ${task.xpValue} XP${input.note ? `\n\nRetorno: ${input.note}` : ""}`,
-          [[{ text: "Aprovar", callbackData: encodeTaskCallback("approve", task.id) }, { text: "Abrir", url: taskUrl(task.id, baseUrl) }]],
-        ),
+        preference: "approvals",
+        notice: {
+          family: "approval",
+          who: person?.name ?? "A pessoa responsável",
+          title: task.title,
+          xp: task.xpValue,
+          ...(input.note ? { note: input.note } : {}),
+          path: taskPath(task.id),
+          taskId: task.id,
+        },
       });
-    } else if (input.to === "completed" && task.assigneeId) {
+    } else if (input.to === "completed" && task.assigneeId && task.assigneeId !== actor.userId) {
       const approved = task.status === "awaiting_approval";
-      await enqueueTelegramNotificationIfEnabled(tx, {
+      await enqueueMemberNotice(tx, {
         orgId: actor.orgId,
         userId: task.assigneeId,
-        eventType: approved ? "task_approved" : "task_completed",
         dedupeKey: `task-event:${event.id}:completed`,
-        payload: notificationPayload(
-          "xp",
-          approved
-            ? `🏆 Entrega aprovada\n\n${task.title}\n+${task.xpValue} XP${input.note ? `\n\nComentário: ${input.note}` : ""}`
-            : `🏆 Missão concluída\n\n${task.title}\n+${task.xpValue} XP`,
-          [[{ text: "Ver missão", url: taskUrl(task.id, baseUrl) }]],
-        ),
+        preference: "xp",
+        notice: {
+          family: "mission_update",
+          title: task.title,
+          update: approved ? `Entrega aprovada, +${task.xpValue} XP` : `Missão concluída, +${task.xpValue} XP`,
+          ...(approved && input.note ? { detail: `Comentário: ${input.note}` } : {}),
+          path: taskPath(task.id),
+        },
       });
     } else if (input.to === "rejected" && task.assigneeId) {
-      await enqueueTelegramNotificationIfEnabled(tx, {
+      await enqueueMemberNotice(tx, {
         orgId: actor.orgId,
         userId: task.assigneeId,
-        eventType: "task_rejected",
         dedupeKey: `task-event:${event.id}:rejected`,
-        payload: notificationPayload(
-          "approvals",
-          `↩️ Missão devolvida para ajustes\n\n${task.title}\nMotivo: ${input.note ?? "Consulte a missão."}`,
-          [[{ text: "Retomar", callbackData: encodeTaskCallback("start", task.id) }, { text: "Abrir", url: taskUrl(task.id, baseUrl) }]],
-        ),
+        preference: "approvals",
+        notice: {
+          family: "mission_update",
+          title: task.title,
+          update: "Missão devolvida para ajustes",
+          detail: `Motivo: ${input.note ?? "consulte a missão"}`,
+          path: taskPath(task.id),
+          button: taskButton("resume", task.id),
+        },
       });
     } else if (
       input.to === "in_progress" &&
@@ -226,16 +237,31 @@ export async function transitionTaskForActor(input: {
         .where(eq(schema.user.id, actor.userId))
         .limit(1);
       const verb = task.status === "rejected" ? "retomou" : "iniciou";
-      await enqueueTelegramNotificationIfEnabled(tx, {
+      await enqueueMemberNotice(tx, {
         orgId: actor.orgId,
         userId: task.creatorId,
-        eventType: "task_started",
         dedupeKey: `task-event:${event.id}:started`,
-        payload: notificationPayload(
-          "tasks",
-          `▶️ ${person?.name ?? "A pessoa responsável"} ${verb} a missão\n\n${task.title}`,
-          [[{ text: "Ver missão", url: taskUrl(task.id, baseUrl) }]],
-        ),
+        preference: "tasks",
+        notice: {
+          family: "mission_update",
+          title: task.title,
+          update: `${person?.name ?? "A pessoa responsável"} ${verb} a missão`,
+          path: taskPath(task.id),
+        },
+      });
+    } else if (input.to === "cancelled" && task.assigneeId && task.assigneeId !== actor.userId) {
+      await enqueueMemberNotice(tx, {
+        orgId: actor.orgId,
+        userId: task.assigneeId,
+        dedupeKey: `task-event:${event.id}:cancelled`,
+        preference: "tasks",
+        notice: {
+          family: "mission_update",
+          title: task.title,
+          update: "Missão cancelada",
+          ...(input.note ? { detail: `Motivo: ${input.note}` } : {}),
+          path: taskPath(task.id),
+        },
       });
     }
 

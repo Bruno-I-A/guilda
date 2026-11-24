@@ -1188,10 +1188,14 @@ export const informativeStatus = pgEnum("telegram_ai_draft_status", [
   "cancelled",
 ]);
 
-/** Porta de entrada do informativo: bot do Telegram ou painel da Guilda. */
+/**
+ * Porta de entrada do informativo: painel ou WhatsApp do escritório
+ * (2026-11-24). `telegram` fica para o histórico: o bot saiu do código.
+ */
 export const informativeSource = pgEnum("informative_source", [
   "telegram",
   "panel",
+  "whatsapp",
 ]);
 
 /** Pedido físico que o dono encaminha ao Societário antes de virar informativo. */
@@ -1640,6 +1644,14 @@ export const memberWhatsAppConnections = pgTable(
     enabled: boolean("enabled").notNull().default(true),
     optedInAt: timestamp("opted_in_at", { withTimezone: true }).notNull().defaultNow(),
     lastInboundAt: timestamp("last_inbound_at", { withTimezone: true }),
+    /**
+     * Número provado por código (2026-11-24): a pessoa manda "GUILDA <código>"
+     * do próprio WhatsApp. Sem isso, nada de aviso nem de comando, porque o
+     * número digitado no Perfil não prova de quem é. Só o hash do código fica.
+     */
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    verificationCodeHash: varchar("verification_code_hash", { length: 64 }),
+    verificationExpiresAt: timestamp("verification_expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1699,6 +1711,87 @@ export const memberWhatsAppOutbox = pgTable(
 );
 
 /**
+ * Preferências dos avisos da Guilda (2026-11-24), copiadas das do Telegram.
+ * Quem não tinha começa com fechamentos desligado: no WhatsApp cada mudança
+ * de fechamento iria à Guilda inteira, e fora da janela cada aviso custa.
+ */
+export const memberNotificationPreferences = pgTable(
+  "member_notification_preferences",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    taskNotifications: boolean("task_notifications").notNull().default(true),
+    approvalNotifications: boolean("approval_notifications").notNull().default(true),
+    deadlineReminders: boolean("deadline_reminders").notNull().default(true),
+    xpNotifications: boolean("xp_notifications").notNull().default(true),
+    closingNotifications: boolean("closing_notifications").notNull().default(false),
+    campaignNotifications: boolean("campaign_notifications").notNull().default(true),
+    muralNotifications: boolean("mural_notifications").notNull().default(true),
+    dailySummary: boolean("daily_summary").notNull().default(false),
+    dailySummaryTime: time("daily_summary_time").notNull().default("08:00:00"),
+    timezone: varchar("timezone", { length: 64 }).notNull().default("America/Sao_Paulo"),
+    quietHoursStart: time("quiet_hours_start"),
+    quietHoursEnd: time("quiet_hours_end"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("member_notification_preferences_org_user_uidx").on(t.orgId, t.userId)],
+);
+
+/** Modelos Utility por chave (`novo_cliente`, `nova_missao`…), aprovados pela Meta. */
+export const memberWhatsAppTemplates = pgTable(
+  "member_whatsapp_templates",
+  {
+    orgId: text("org_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+    key: varchar("key", { length: 40 }).notNull(),
+    name: varchar("name", { length: 512 }).notNull(),
+    language: varchar("language", { length: 20 }).notNull().default("pt_BR"),
+    status: varchar("status", { length: 40 }).notNull().default("not_created"),
+    category: varchar("category", { length: 40 }),
+    templateId: varchar("template_id", { length: 64 }),
+    rejectedReason: text("rejected_reason"),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ name: "member_whatsapp_templates_pk", columns: [t.orgId, t.key] })],
+);
+
+/**
+ * Mensagem de um integrante com número confirmado: nunca vira Atendimento.
+ * Única pelo wamid, porque a Meta reenvia o webhook e a prévia não pode sair
+ * em dobro. Não se apaga; só a marcação de lido muda.
+ */
+export const memberWhatsAppCommands = pgTable(
+  "member_whatsapp_commands",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    connectionId: uuid("connection_id").notNull().references(() => memberWhatsAppConnections.id, { onDelete: "cascade" }),
+    externalId: varchar("external_id", { length: 255 }).notNull(),
+    kind: varchar("kind", { length: 20 }).$type<"text" | "button" | "other">().notNull(),
+    messageType: varchar("message_type", { length: 40 }).notNull(),
+    text: text("text"),
+    buttonId: varchar("button_id", { length: 255 }),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
+    status: varchar("status", { length: 20 }).$type<"pending" | "processing" | "done" | "failed">().notNull().default("pending"),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lockToken: uuid("lock_token"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    lastError: text("last_error"),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("member_whatsapp_commands_org_external_uidx").on(t.orgId, t.externalId),
+    index("member_whatsapp_commands_pending_idx").on(t.status, t.createdAt, t.lockedAt),
+    check("member_whatsapp_commands_kind_check", sql`${t.kind} IN ('text', 'button', 'other')`),
+    check("member_whatsapp_commands_status_check", sql`${t.status} IN ('pending', 'processing', 'done', 'failed')`),
+  ],
+);
+
+/**
  * Dedupe global de updates do Telegram. Não armazena payload nem dados do
  * tenant: a organização ainda é desconhecida quando o update chega.
  */
@@ -1736,6 +1829,8 @@ export const informatives = pgTable(
       .notNull()
       .references(() => user.id),
     connectionId: uuid("connection_id").references(() => telegramConnections.id),
+    /** Pedido pelo WhatsApp: só a mesma conexão confirma a prévia. */
+    whatsappConnectionId: uuid("whatsapp_connection_id").references(() => memberWhatsAppConnections.id, { onDelete: "set null" }),
     source: informativeSource("source").notNull().default("telegram"),
     sourceText: text("source_text").notNull(),
     model: varchar("model", { length: 80 }).notNull(),

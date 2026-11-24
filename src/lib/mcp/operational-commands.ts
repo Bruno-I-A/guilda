@@ -603,7 +603,6 @@ export async function createInformativeCommand(input: {
     model: STRUCTURED_INFORMATIVE_MODEL,
     sourceText: prepared.sourceText,
     source: "panel",
-    connectionId: null,
   });
   const result: OperationalCommandResult = {
     ok: true,

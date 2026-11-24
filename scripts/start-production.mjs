@@ -116,11 +116,6 @@ if (process.env.GUILDA_SERVICE === "fiscal") {
   }
 
   start("aplicação", ["server.js"]);
-  start("telegram-worker", [
-    "--conditions=react-server",
-    "--import=tsx",
-    "scripts/telegram-worker.ts",
-  ]);
   start("support-worker", [
     "--conditions=react-server",
     "--import=tsx",

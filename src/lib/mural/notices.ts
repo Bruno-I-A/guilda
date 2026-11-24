@@ -5,11 +5,8 @@ import * as schema from "@/db/schema";
 import type { FlowActivity, FlowQsaMember } from "@/domain/company-flow";
 import { TAX_REGIME_LABELS, type TaxRegime } from "@/lib/clients-ui";
 import { formatBRLCurrency } from "@/lib/currency";
-import { appUrl } from "@/lib/telegram/notification-payload";
-import {
-  enqueueTelegramOrgBroadcast,
-  notificationPayload,
-} from "@/lib/telegram/notifications";
+import { enqueueOrgNotice } from "@/lib/notices/enqueue";
+import { appLink } from "@/lib/notices/links";
 
 /**
  * Publicação de aviso no Mural da Guilda.
@@ -33,8 +30,12 @@ export interface PublishGuildNoticeInput {
   pinned?: boolean;
 }
 
+export function noticePathFor(noticeId: string): string {
+  return `mural#aviso-${noticeId}`;
+}
+
 export function noticeUrl(noticeId: string, baseUrl?: string): string {
-  return appUrl(`/mural#aviso-${noticeId}`, baseUrl);
+  return appLink(noticePathFor(noticeId), baseUrl ?? null);
 }
 
 /**
@@ -67,17 +68,17 @@ export async function publishGuildNotice(
   if (!created) return null;
 
   if (input.requiresAck) {
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;
-    await enqueueTelegramOrgBroadcast(tx, {
+    await enqueueOrgNotice(tx, {
       orgId: input.orgId,
-      eventType: "guild_notice_published",
       dedupeKey: `guild-notice:${created.id}`,
-      payload: notificationPayload(
-        "mural",
-        `📜 Aviso da Guilda\n\n${input.title}\n\nConfirme a leitura no mural.`,
-        [[{ text: "Abrir o mural", url: noticeUrl(created.id, baseUrl) }]],
-      ),
+      preference: "mural",
+      notice: {
+        family: "general",
+        heading: "Novo aviso no Mural",
+        summary: input.title,
+        detail: "Confirme a leitura no Mural.",
+        path: noticePathFor(created.id),
+      },
     });
   }
 

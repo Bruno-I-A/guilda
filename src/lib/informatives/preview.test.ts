@@ -12,7 +12,7 @@ vi.mock("@/lib/tasks/create", () => ({ createTaskRecord: vi.fn() }));
 
 import type { InformativeDraftPayload } from "@/lib/ai/informative-schema";
 
-import { draftPreview } from "./ai-informative";
+import { draftPreview } from "./preview";
 
 const CLAN_ID = "123e4567-e89b-12d3-a456-426614174000";
 

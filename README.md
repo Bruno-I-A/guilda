@@ -23,7 +23,7 @@ informativos e automações em uma única aplicação.
   honorários e declarações anuais do MEI.
 - Acompanha fechamentos contábeis e distribuição de lucros.
 - Conduz fluxos societários de abertura, alteração e baixa de empresas.
-- Transforma informativos em trabalho estruturado com apoio de IA e Telegram.
+- Transforma informativos em trabalho estruturado com apoio de IA, e avisa e recebe pedidos de missão pelo WhatsApp do escritório.
 
 ## Visão rápida
 
@@ -40,7 +40,7 @@ informativos e automações em uma única aplicação.
 ```mermaid
 flowchart LR
     U[Usuário] --> N[Next.js 16]
-    T[Telegram] --> N
+    T[WhatsApp] --> N
     N --> A[Server Actions e APIs]
     A --> R[Regras de domínio]
     A --> P[(PostgreSQL 17)]
@@ -71,7 +71,7 @@ Veja os detalhes em [Arquitetura](docs/architecture.md) e
 | Autenticação | Better Auth |
 | Validação | Zod |
 | Testes | Vitest, Playwright |
-| Integrações | Telegram, Claude API, BrasilAPI |
+| Integrações | WhatsApp Cloud API, Claude API, BrasilAPI |
 | Operação | Docker, Easypanel, GitHub Actions |
 
 ## Executando localmente

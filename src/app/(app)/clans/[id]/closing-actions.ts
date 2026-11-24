@@ -29,11 +29,7 @@ import {
 } from "@/lib/closings/period-writes";
 import { taskClosesPeriod } from "@/domain/closing-from-task";
 import { createTaskRecord } from "@/lib/tasks/create";
-import {
-  enqueueTelegramNotificationIfEnabled,
-  enqueueTelegramOrgBroadcast,
-  notificationPayload,
-} from "@/lib/telegram/notifications";
+import { enqueueOrgNotice } from "@/lib/notices/enqueue";
 
 /**
  * Server Actions dos Fechamentos da Contabilidade.
@@ -303,23 +299,16 @@ export async function setClosingStatus(
       ),
       columns: { name: true },
     });
-    await enqueueTelegramOrgBroadcast(tx, {
+    await enqueueOrgNotice(tx, {
       orgId: ctx.orgId,
-      eventType: `closing_${parsed.data.status}`,
       dedupeKey: `closing:${row.id}:status:${parsed.data.status}:${Date.now()}`,
-      payload: notificationPayload(
-        "closings",
-        `📚 Fechamento ${parsed.data.status === "completed" ? "concluído" : parsed.data.status === "blocked" ? "com pendência" : "reaberto"}\n\n${client?.name ?? "Empresa"} — ${row.title}`,
-        process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL
-          ? [[{
-              text: "Abrir fechamentos",
-              url: new URL(
-                "/closings",
-                process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL,
-              ).toString(),
-            }]]
-          : undefined,
-      ),
+      preference: "closings",
+      notice: {
+        family: "general",
+        heading: `Fechamento ${parsed.data.status === "completed" ? "concluído" : parsed.data.status === "blocked" ? "com pendência" : "reaberto"}`,
+        summary: `${client?.name ?? "Empresa"}, ${row.title}`,
+        path: "closings",
+      },
     });
     return { ok: true };
   });
@@ -466,28 +455,8 @@ export async function setYearClosed(
       (entry) => entry.userId === ctx.userId && entry.amount > 0,
     );
 
-    if (xpAwarded) {
-      await enqueueTelegramNotificationIfEnabled(tx, {
-        orgId: ctx.orgId,
-        userId: ctx.userId,
-        eventType: "closing_year_xp",
-        dedupeKey: `closing-year:${annual.id}:xp`,
-        payload: notificationPayload(
-          "xp",
-          `🏆 Fechamento anual concluído\n\n+${CLOSING_YEAR_XP} XP`,
-          process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL
-            ? [[{
-                text: "Ver perfil",
-                url: new URL(
-                  "/profile",
-                  process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL,
-                ).toString(),
-              }]]
-            : undefined,
-        ),
-      });
-    }
-
+    // O XP do fechamento anual vai para quem fechou, que já vê o crédito na
+    // tela: sem aviso a si mesmo pelo WhatsApp (2026-11-24).
     return {
       ok: true,
       data: { xpAwarded, xp: CLOSING_YEAR_XP },
