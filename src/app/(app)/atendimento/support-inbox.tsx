@@ -43,7 +43,7 @@ function AgentTestChip() {
   return (
     <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-xs text-foreground">
       <Bot className="size-3" aria-hidden />
-      Teste do agente
+      IA atendendo
     </span>
   );
 }
@@ -115,7 +115,7 @@ function QueueItem({ row, active, filter, now }: { row: SupportQueueRow; active:
           <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             {attention ? <span className="inline-flex shrink-0 items-center gap-1 font-medium text-destructive"><span className="size-1.5 rounded-full bg-destructive" /> Precisa de pessoa</span> : null}
             {row.status === "waiting_customer" ? <span className="shrink-0">Aguardando cliente</span> : null}
-            {row.agentTest ? <span className="inline-flex shrink-0 items-center gap-1"><Bot className="size-3" aria-hidden /> Teste da IA</span> : null}
+            {row.agentTest ? <span className="inline-flex shrink-0 items-center gap-1"><Bot className="size-3" aria-hidden /> IA atendendo</span> : null}
             {row.aiUrgent ? <span className="shrink-0 text-warning">Urgente pela IA</span> : null}
             <span className="truncate">{row.assignedToMe ? "Com você" : (row.assigneeName ?? row.clanName ?? "Sem setor")}</span>
           </span>

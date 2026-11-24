@@ -139,3 +139,12 @@ O agente lê o expediente no início de cada leitura do turno (`turn.ts`) e pass
 - Mostrar "fora do expediente" na fila do Atendimento.
 - Horário diferente por clã.
 - Feriados estaduais e municipais automáticos.
+
+## Feito assim (23/11/2026)
+
+- Plano em `docs/superpowers/plans/2026-11-23-expediente-e-agente-ligado.md`, seguido sem mudança de desenho.
+- O selo da conversa com o agente ativo passou de "Teste do agente" para **"IA atendendo"**, que vale nos dois modos.
+- Os eventos novos aparecem na conversa como "Agente de IA começou o atendimento" e "<pessoa> desligou o agente de IA". Os rótulos antigos do teste continuam valendo para o histórico.
+- A tela foi medida renderizada, com a fonte Geist, em 375 e 1280 px:
+  - no celular cada período fica numa linha e nada passa da largura;
+  - no desktop cada dia fica numa linha e os três modos aparecem lado a lado.
