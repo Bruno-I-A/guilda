@@ -15,7 +15,7 @@ import { buildInformativeDraft, draftIsBlocked, saveInformativeDraftTx, type Inf
 import { draftPreview } from "@/lib/informatives/preview";
 import { enqueueMemberReply } from "@/lib/notices/enqueue";
 import { appLink } from "@/lib/notices/links";
-import { messageDraftPreview, planFromInformative } from "@/lib/tasks/message-draft-plan";
+import { messageDraftPreview, needsInformative, planFromInformative } from "@/lib/tasks/message-draft-plan";
 import { decideMessageMissionDraft, saveMessageMissionDraftTx } from "@/lib/tasks/message-drafts";
 import { transitionTaskForActor } from "@/lib/tasks/transition-service";
 
@@ -281,8 +281,10 @@ function understoodLine(understood: string | undefined): string {
 }
 
 /**
- * O pedido em texto (escrito, transcrito ou lido do arquivo) vira prévia. Quem
- * lida com Informativo segue por ele; os demais, por missão avulsa.
+ * O pedido em texto (escrito, transcrito ou lido do arquivo) vira prévia de
+ * missão avulsa, para todos. Só o que precisa de Informativo (empresa nova,
+ * alteração, baixa, Mural, distribuição, fechamento) segue por ele, e só para
+ * líder, admin e dono (`needsInformative`, 2026-11-24).
  */
 async function handleRequest(claimed: Claim, command: Command, actor: InformativeActor, text: string, understood?: string): Promise<void> {
   const informative = await withOrgTx(claimed.orgId, (tx) => handlesInformatives(tx, claimed.orgId, actor.userId));
@@ -292,7 +294,7 @@ async function handleRequest(claimed: Claim, command: Command, actor: Informativ
     return;
   }
 
-  if (!informative) {
+  if (!informative || !needsInformative(draft.payload)) {
     const planned = planFromInformative(draft.payload);
     if (!planned.ok) {
       await replyAndFinish(claimed, command, `${understoodLine(understood)}${planned.message}`);

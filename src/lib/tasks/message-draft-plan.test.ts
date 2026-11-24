@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { InformativeDraftPayload } from "@/lib/ai/informative-schema";
 
-import { messageDraftPreview, parseMessageMissionPlan, planFromInformative } from "./message-draft-plan";
+import { messageDraftPreview, needsInformative, parseMessageMissionPlan, planFromInformative } from "./message-draft-plan";
 
 const CLAN = "123e4567-e89b-12d3-a456-426614174000";
 
@@ -70,6 +70,17 @@ describe("missão avulsa por mensagem", () => {
     expect(planFromInformative(base as unknown as InformativeDraftPayload)).toMatchObject({ ok: false });
     const many = Array.from({ length: 11 }, (_, i) => ({ ...core, title: `T${i}`, dueDate: null, assignmentType: "clan", assigneeId: null, assigneeName: null, clanId: CLAN, clanName: "RH" }));
     expect(planFromInformative({ ...base, tasks: many } as unknown as InformativeDraftPayload)).toMatchObject({ ok: false, message: expect.stringContaining("até 10") });
+  });
+
+  it("só empresa, Mural, distribuição e fechamento precisam do Informativo", () => {
+    const task = { ...core, title: "Comprar chopp", dueDate: null, assignmentType: "individual", assigneeId: "ana", assigneeName: "Ana", clanId: CLAN, clanName: "RH" };
+    const plain = { ...base, tasks: [task] } as unknown as InformativeDraftPayload;
+    expect(needsInformative(plain)).toBe(false);
+    expect(needsInformative({ ...plain, kind: "new_client" } as InformativeDraftPayload)).toBe(true);
+    expect(needsInformative({ ...plain, kind: "client_closure" } as InformativeDraftPayload)).toBe(true);
+    expect(needsInformative({ ...plain, freeNotice: { title: "Aviso", body: "Sem expediente" } } as unknown as InformativeDraftPayload)).toBe(true);
+    expect(needsInformative({ ...plain, company: { ...plain.company, createClient: true } } as InformativeDraftPayload)).toBe(true);
+    expect(needsInformative({ ...plain, tasks: [{ ...task, category: "closing_period" }] } as unknown as InformativeDraftPayload)).toBe(true);
   });
 
   it("payload adulterado não passa", () => {

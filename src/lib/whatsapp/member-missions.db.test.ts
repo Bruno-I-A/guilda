@@ -224,16 +224,45 @@ describe("resposta escrita, texto curto e falha", () => {
   });
 });
 
-describe("líder de clã continua pelo Informativo", () => {
-  test("o pedido do líder vira Informativo pedido pelo WhatsApp, com a conexão dele", async () => {
+describe("líder de clã: avulsa no dia a dia, Informativo só para empresa", () => {
+  test("pedido simples do líder vira missão avulsa, sem Informativo nem Mural", async () => {
     draftPayload.current = payloadFor([
-      { ...core, title: "Conferir notas de entrada", dueDate: null, assignmentType: "individual", assigneeId: "rui", assigneeName: "Rui Lima", clanId: FISCAL, clanName: "Fiscal" },
+      { ...core, title: "Comprar chopp para o Bruno", dueDate: null, assignmentType: "individual", assigneeId: "rui", assigneeName: "Rui Lima", clanId: FISCAL, clanName: "Fiscal" },
     ]);
-    await send("lider", "w.lider.1", { text: "Rui, conferir as notas de entrada" });
+    await send("lider", "w.lider.1", { text: "Rui, comprar um chopp para o Bruno, prioridade alta" });
+    await cycle();
+    expect(await db.select().from(schema.informatives).where(eq(schema.informatives.requestedBy, "lider"))).toHaveLength(0);
+    const [draft] = await db.select().from(schema.memberMissionDrafts).where(eq(schema.memberMissionDrafts.requestedBy, "lider"));
+    const decision = (await repliesTo("lider")).filter((r) => r.key.endsWith(":decision")).at(-1);
+    expect(decision?.buttons?.[0].id).toBe(`mission:confirm:${draft.id}`);
+    await send("lider", "w.lider.sim", { text: "sim" });
+    await cycle();
+    const [task] = await db.select().from(schema.tasks).where(eq(schema.tasks.title, "Comprar chopp para o Bruno"));
+    expect(task).toMatchObject({ creatorId: "lider", assigneeId: "rui", informativeId: null });
+    expect(await db.select().from(schema.guildNotices)).toHaveLength(0);
+  });
+
+  test("Informativo de empresa (alteração) do líder segue pelo Informativo, com a conexão dele", async () => {
+    draftPayload.current = { ...payloadFor([
+      { ...core, title: "Atualizar o endereço no cadastro", dueDate: null, assignmentType: "individual", assigneeId: "rui", assigneeName: "Rui Lima", clanId: FISCAL, clanName: "Fiscal" },
+    ]), kind: "client_change" };
+    await send("lider", "w.lider.2", { text: "Alteração da ACME: novo endereço, Rui atualiza o cadastro" });
     await cycle();
     const [informative] = await db.select().from(schema.informatives).where(and(eq(schema.informatives.requestedBy, "lider"), isNull(schema.informatives.connectionId)));
     expect(informative).toMatchObject({ source: "whatsapp", whatsappConnectionId: connections.lider, status: "pending" });
-    const decision = (await repliesTo("lider")).find((r) => r.key.endsWith(":decision"));
+    const decision = (await repliesTo("lider")).filter((r) => r.key.endsWith(":decision")).at(-1);
     expect(decision?.buttons?.[0].id).toBe(`draft:confirm:${informative.id}`);
   });
+
+  test("integrante comum com Informativo de empresa cria só a missão avulsa", async () => {
+    draftPayload.current = { ...payloadFor([
+      { ...core, title: "Conferir o contrato social", dueDate: null, assignmentType: "individual", assigneeId: "rui", assigneeName: "Rui Lima", clanId: FISCAL, clanName: "Fiscal" },
+    ]), kind: "client_change" };
+    await send("ana", "w.ana.empresa", { text: "Alteração da ACME, Rui confere o contrato social" });
+    await cycle();
+    expect(await db.select().from(schema.informatives).where(eq(schema.informatives.requestedBy, "ana"))).toHaveLength(0);
+    const decision = (await repliesTo("ana")).filter((r) => r.key.endsWith(":decision")).at(-1);
+    expect(decision?.buttons?.[0].id).toMatch(/^mission:confirm:/);
+  });
 });
+

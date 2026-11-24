@@ -259,10 +259,13 @@ uso até ele autorizar apagar). Desenho em
 - **Criar missão por mensagem: todo integrante, por texto, áudio, foto ou PDF**
   (2026-11-24, segundo pedido do Bruno no mesmo dia; o primeiro desenho era só líder).
   A mesma IA dos Informativos lê o pedido, em dois caminhos:
-  - **líder de clã, admin e dono → Informativo**, como no Telegram (pode criar empresa,
-    Fluxo, fechamento e aviso no Mural). O Informativo guarda `whatsapp_connection_id`:
+  - **Pedido é missão avulsa, para todos, inclusive líder, admin e dono** (correção do
+    Bruno no primeiro teste: "comprar um chopp" para o Rafa virou missão de Informativo com
+    aviso no Mural para a Guilda inteira). Só vai pelo **Informativo** o que precisa dele
+    (`needsInformative`: empresa nova, alteração, baixa, aviso para o Mural, distribuição,
+    fechamento), e só para líder, admin e dono. O Informativo guarda `whatsapp_connection_id`:
     só o mesmo número confirma (`draft:confirm|cancel:<id>`).
-  - **os demais → missão avulsa** (`member_mission_drafts`, migração 0113;
+  - **a missão avulsa** (`member_mission_drafts`, migração 0113;
     `planFromInformative` e `decideMessageMissionDraft` em `src/lib/tasks/`), com a
     régua do formulário: pessoa da organização com o clã tirado dos vínculos dela
     (`activeClanMembershipsForUser` + `resolveAssigneeClan`) ou clã ativo; empresa só se

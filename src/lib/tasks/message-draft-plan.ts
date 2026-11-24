@@ -36,6 +36,21 @@ export type PlanResult =
   | Readonly<{ ok: true; plan: MessageMissionPlan; notes: readonly string[] }>
   | Readonly<{ ok: false; message: string }>;
 
+/**
+ * O pedido pelo WhatsApp é missão avulsa, para todos (2026-11-24: o Bruno pediu
+ * "comprar um chopp" para o Rafa e saiu missão de Informativo com aviso no Mural
+ * para a Guilda inteira). Só vai pelo Informativo, e só para líder, admin e dono,
+ * o que precisa dele: empresa nova, alteração ou baixa, aviso para o Mural,
+ * distribuição de lucros e fechamento.
+ */
+export function needsInformative(payload: InformativeDraftPayload): boolean {
+  return payload.kind !== "general_task"
+    || payload.freeNotice !== null
+    || payload.commitments.length > 0
+    || payload.company.createClient
+    || payload.tasks.some((task) => task.category !== "general");
+}
+
 export function planFromInformative(payload: InformativeDraftPayload): PlanResult {
   if (payload.unresolvedAssignees.length > 0) {
     return {
