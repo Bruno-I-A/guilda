@@ -7,10 +7,12 @@ import { and, asc, count, desc, eq, inArray, isNotNull, isNull, ne, notInArray, 
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import {
+  contactName,
   conversationAfterTeamReply,
   deliveryFailureMessage,
   deliveryState,
   messageLabel,
+  normalizeContactName,
   replyBlockReason,
   statusAfterCustomerMessage,
   type DeliveryState,
@@ -70,6 +72,8 @@ export interface SupportQueueRow {
   lastMessage: string | null;
   /** A última fala é do cliente: alguém ainda precisa responder. */
   waitingReply: boolean;
+  /** Quem falou por último, quando não foi o cliente: a prévia mostra "Você:" ou "IA:". */
+  lastAuthor: "team" | "ai" | null;
   /** A IA, em sombra, leu como urgente. Só marca: a fila continua por ordem de chegada. */
   aiUrgent: boolean;
   /** Rodada do teste do agente aberta: a IA está conversando com o cliente. */
@@ -89,6 +93,7 @@ export async function loadSupportQueue(
       aiTestStartedAt: c.aiTestStartedAt,
       lastMessageAt: c.lastMessageAt,
       displayName: contacts.displayName,
+      customName: contacts.customName,
       phone: contacts.phoneE164,
       whatsappId: contacts.whatsappId,
       clientName: schema.clients.name,
@@ -132,7 +137,7 @@ export async function loadSupportQueue(
       return {
         id: row.id,
         status: row.status,
-        contactName: row.displayName ?? row.phone ?? row.whatsappId,
+        contactName: contactName(row),
         phone: row.phone,
         clientName: row.clientName,
         clanName: row.clanName,
@@ -141,6 +146,7 @@ export async function loadSupportQueue(
         lastMessageAt: row.lastMessageAt?.toISOString() ?? null,
         lastMessage: last ? messageLabel(last) : null,
         waitingReply: last?.actor === "customer" && row.status !== "resolved",
+        lastAuthor: !last || last.actor === "customer" ? null : last.actor === "ai" ? "ai" : "team",
         aiUrgent: row.status !== "resolved" && suggestions.get(row.id)?.urgency === "alta",
         agentTest: row.status === "ai_active" && row.aiTestStartedAt !== null,
       };
@@ -183,6 +189,9 @@ export interface SupportConversationView {
   clanName: string | null;
   contactId: string;
   contactName: string;
+  /** Nome no perfil do WhatsApp; o da equipe (customName) vence na tela (2026-11-24). */
+  whatsAppName: string | null;
+  customName: string | null;
   phone: string | null;
   /** Empresa desta conversa (2026-11-23): uma das empresas do número. */
   client: { id: string; name: string; cnpj: string | null; taxRegime: string } | null;
@@ -205,6 +214,9 @@ function eventLabel(eventType: string, actor: string | null, detail: Record<stri
   if (eventType === "ai_resumed" && detail.reason === "agent_live") return "Agente de IA começou o atendimento";
   if (eventType === "ai_paused" && detail.reason === "test_disabled") return `${who} desligou o teste do agente`;
   if (eventType === "ai_paused" && detail.reason === "agent_disabled") return `${who} desligou o agente de IA`;
+  if (eventType === "contact_renamed") {
+    return typeof detail.name === "string" ? `${who} chamou o contato de "${detail.name}"` : `${who} voltou ao nome do WhatsApp`;
+  }
   if (eventType === "assigned" && detail.reason === "replied") return `${who} respondeu e ficou com a conversa`;
   if (eventType === "assigned") return typeof detail.note === "string" ? `${who}: ${detail.note}` : `${who} assumiu a conversa`;
   if (eventType === "resolved") return `${who} resolveu a conversa`;
@@ -232,6 +244,7 @@ export async function loadSupportConversation(
       contactId: contacts.id,
       clientId: c.clientId,
       displayName: contacts.displayName,
+      customName: contacts.customName,
       phone: contacts.phoneE164,
       whatsappId: contacts.whatsappId,
       clanName: schema.clans.name,
@@ -264,7 +277,7 @@ export async function loadSupportConversation(
     .orderBy(desc(messages.occurredAt))
     .limit(MESSAGE_LIMIT);
 
-  const contactName = row.displayName ?? row.phone ?? row.whatsappId;
+  const name = contactName(row);
   const events = schema.supportMessageEvents;
   const outboundIds = recent.filter((message) => message.direction === "outbound").map((message) => message.id);
   const deliveries = outboundIds.length
@@ -302,7 +315,7 @@ export async function loadSupportConversation(
         id: message.id,
         at: message.occurredAt.toISOString(),
         direction: message.direction,
-        author: message.direction === "inbound" ? contactName : message.source === "business_app" ? "Celular" : message.source === "guilda_ai" ? "IA" : (message.sender ?? "Equipe"),
+        author: message.direction === "inbound" ? name : message.source === "business_app" ? "Celular" : message.source === "guilda_ai" ? "IA" : (message.sender ?? "Equipe"),
         text: messageLabel(message),
         isText: message.text !== null,
         image: message.messageType === "image" && typeof message.content.id === "string"
@@ -390,7 +403,9 @@ export async function loadSupportConversation(
     assigneeName: row.assigneeName,
     clanName: row.clanName,
     contactId: row.contactId,
-    contactName,
+    contactName: name,
+    whatsAppName: row.displayName,
+    customName: row.customName,
     phone: row.phone,
     client: client ?? null,
     contactClients: linkedClients,
@@ -662,6 +677,36 @@ export async function setSupportConversationClient(tx: OrgTx, input: Command & {
     conversationId: row.id,
     note: name ? `marcou a conversa como da ${name}` : "tirou a empresa da conversa",
     clientId: input.clientId,
+  });
+  return { ok: true };
+}
+
+/**
+ * Nome do contato dado pela equipe (2026-11-24, pedido do Bruno): vale para o
+ * número em todas as conversas dele e não muda nada no WhatsApp do cliente.
+ * Vazio volta ao nome do perfil. A troca fica no histórico desta conversa.
+ */
+export async function renameSupportContact(tx: OrgTx, input: Command & { name: string }): Promise<ActionResult> {
+  const row = await lockConversation(tx, input);
+  if (!row) return err(NOT_FOUND);
+  const name = normalizeContactName(input.name);
+  const [contact] = await tx
+    .select({ customName: contacts.customName })
+    .from(contacts)
+    .where(and(eq(contacts.orgId, input.orgId), eq(contacts.id, row.contactId)));
+  if (!contact) return err(NOT_FOUND);
+  if ((contact.customName ?? null) === name) return { ok: true };
+  await tx
+    .update(contacts)
+    .set({ customName: name, updatedAt: input.now })
+    .where(and(eq(contacts.orgId, input.orgId), eq(contacts.id, row.contactId)));
+  await tx.insert(schema.supportConversationEvents).values({
+    orgId: input.orgId,
+    conversationId: row.id,
+    eventType: "contact_renamed",
+    actorUserId: input.viewer.userId,
+    source: "guilda_attendant",
+    detail: { name, previous: contact.customName ?? null },
   });
   return { ok: true };
 }

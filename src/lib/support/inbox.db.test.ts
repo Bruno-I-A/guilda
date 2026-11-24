@@ -686,3 +686,28 @@ test("nota de voz: a mesma régua da resposta, entra uma vez só e sai à Meta c
     failure: "A Meta não aceitou o arquivo. (código 131053 da Meta)",
   });
 }, 30_000);
+
+test("o nome dado pela equipe vence o do WhatsApp, sobrevive a mensagem nova e fica no histórico", async () => {
+  const { renameSupportContact, loadSupportConversation, loadSupportQueue } = await import("./inbox");
+  const phone = "5554911110777";
+  const { id } = await customerSays(phone, "Oi", new Date(NOW.getTime() - 120_000), "KS");
+  const base = { orgId: ORG, conversationId: id, now: NOW };
+  const view = () => tx((t) => loadSupportConversation(t, { ...base, viewer: rh }));
+
+  // Qualquer integrante troca o nome (2026-11-24), inclusive de outro clã.
+  expect(await tx((t) => renameSupportContact(t, { ...base, viewer: rh, name: "  Karina   do Supermercado " }))).toEqual({ ok: true });
+  expect(await view()).toMatchObject({ contactName: "Karina do Supermercado", customName: "Karina do Supermercado", whatsAppName: "KS" });
+
+  // A Meta reescreve o nome do perfil a cada mensagem; o da equipe continua.
+  await customerSays(phone, "Bom dia", new Date(NOW.getTime() - 60_000), "K.S. Mercado");
+  expect(await view()).toMatchObject({ contactName: "Karina do Supermercado", whatsAppName: "K.S. Mercado" });
+  const queue = await tx((t) => loadSupportQueue(t, { orgId: ORG, viewer: rh, filter: "open" }));
+  expect(queue.rows.find((row) => row.id === id)).toMatchObject({ contactName: "Karina do Supermercado", waitingReply: true, lastAuthor: null });
+
+  // Vazio volta ao nome do WhatsApp; as duas trocas ficam no histórico.
+  expect(await tx((t) => renameSupportContact(t, { ...base, viewer: rh, name: "   " }))).toEqual({ ok: true });
+  const back = await view();
+  expect(back?.contactName).toBe("K.S. Mercado");
+  const events = back?.timeline.filter((item) => item.kind === "event").map((item) => item.text);
+  expect(events).toEqual(expect.arrayContaining(['Rui chamou o contato de "Karina do Supermercado"', "Rui voltou ao nome do WhatsApp"]));
+});

@@ -2,9 +2,12 @@ import { describe, expect, test } from "vitest";
 
 import {
   contactInitials,
+  contactName,
   conversationAfterTeamReply,
   deliveryFailureMessage,
   enterSends,
+  formatPhone,
+  normalizeContactName,
   deliveryState,
   elapsedLabel,
   messageLabel,
@@ -34,6 +37,26 @@ describe("responder", () => {
     expect(replyWindowIsOpen(new Date(NOW.getTime() - 86_399_000), NOW)).toBe(true);
     expect(replyWindowIsOpen(new Date(NOW.getTime() - 86_400_000), NOW)).toBe(false);
     expect(replyWindowIsOpen(null, NOW)).toBe(false);
+  });
+});
+
+describe("nome do contato (2026-11-24)", () => {
+  test("o nome dado pela equipe vence o do WhatsApp; sem nenhum, o telefone formatado", () => {
+    const base = { customName: null, displayName: "KS", phone: "+5554999307239", whatsappId: "5554999307239" };
+    expect(contactName({ ...base, customName: "Karina (Supermercado Ipiranga)" })).toBe("Karina (Supermercado Ipiranga)");
+    expect(contactName(base)).toBe("KS");
+    expect(contactName({ ...base, displayName: null })).toBe("(54) 99930-7239");
+    expect(contactName({ ...base, displayName: "  ", phone: null })).toBe("(54) 99930-7239");
+  });
+  test("o nome digitado é limpo; vazio volta ao do WhatsApp", () => {
+    expect(normalizeContactName("  Karina   da  Padaria ")).toBe("Karina da Padaria");
+    expect(normalizeContactName("   ")).toBeNull();
+    expect(normalizeContactName("x".repeat(100))).toHaveLength(80);
+  });
+  test("telefone do Brasil fica legível; de fora, como veio", () => {
+    expect(formatPhone("+5554999307239")).toBe("(54) 99930-7239");
+    expect(formatPhone("555433441234")).toBe("(54) 3344-1234");
+    expect(formatPhone("+14155552671")).toBe("+14155552671");
   });
 });
 
