@@ -287,6 +287,11 @@ export const clientNfseInvoices = pgTable(
     xmlGz: bytea("xml_gz"),
     lastError: text("last_error"),
     attemptCount: integer("attempt_count").notNull().default(0),
+    /**
+     * Alguma tentativa caiu no meio (rede, tempo esgotado) sem resposta clara:
+     * a nota pode ter saído. Só sem isso o E0014 troca a série sozinho (2026-11-25).
+     */
+    emissionUncertain: boolean("emission_uncertain").notNull().default(false),
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
     lockedAt: timestamp("locked_at", { withTimezone: true }),
     lockToken: uuid("lock_token"),

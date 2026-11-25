@@ -629,14 +629,25 @@ test("E0014 sem a nota na consulta da DPS: procura nas notas guardadas pela aba 
   expect(await storedNoteByDps(ORG, MERCADO, "905", 2)).toBeNull();
 
   const e0014 = { kind: "failed" as const, message: "E0014: Conjunto de Série, Número... já existe.", errors: [{ code: "E0014", message: "já existe" }] };
+  const claim = (dpsNumber: number, emissionUncertain = false) => ({ clientId: ACADEMIA, dpsSeries: "905", dpsNumber, emissionUncertain });
   // Achada: segue como nota achada pela DPS (o ciclo confere se é desta emissão ou de outro sistema).
-  const found = await resolveTakenDps(ORG, { clientId: ACADEMIA, dpsSeries: "905", dpsNumber: 1 }, e0014, 2);
-  expect(found).toMatchObject({ outcome: { kind: "issued", accessKey: "43149022330001670001010090500000000000000000000001", nfseNumber: "55", foundByDps: true } });
-  expect(found?.xml).toContain("<nDPS>1</nDPS>");
-  // Não achada: não emite em outra série às cegas; pede a leitura da aba XML.
-  const missing = await resolveTakenDps(ORG, { clientId: ACADEMIA, dpsSeries: "905", dpsNumber: 9 }, e0014, 2);
-  expect(missing?.outcome).toMatchObject({ kind: "failed", message: expect.stringContaining('Rodar agora" na aba XML') });
-  expect(missing?.xml).toBeNull();
+  const found = await resolveTakenDps(ORG, claim(1), e0014, 2);
+  expect(found).toMatchObject({ kind: "found", outcome: { kind: "issued", accessKey: "43149022330001670001010090500000000000000000000001", nfseNumber: "55", foundByDps: true } });
+  expect(found?.kind === "found" && found.xml).toContain("<nDPS>1</nDPS>");
+  // Não achada e nenhum envio incerto: a nota não saiu por aqui, a empresa passa para a próxima série.
+  expect(await resolveTakenDps(ORG, claim(9), e0014, 2)).toEqual({ kind: "move" });
+  // Não achada depois de um envio que caiu no meio: pode ter saído, pede a conferência.
+  const check = await resolveTakenDps(ORG, claim(9, true), e0014, 2);
+  expect(check).toMatchObject({ kind: "check", outcome: { kind: "failed", message: expect.stringContaining("Confira no Portal Nacional") } });
   // Outro erro não passa por aqui.
-  expect(await resolveTakenDps(ORG, { clientId: ACADEMIA, dpsSeries: "905", dpsNumber: 1 }, { kind: "failed", message: "E0312", errors: [{ code: "E0312", message: "x" }] }, 2)).toBeNull();
+  expect(await resolveTakenDps(ORG, claim(1), { kind: "failed", message: "E0312", errors: [{ code: "E0312", message: "x" }] }, 2)).toBeNull();
+
+  // Tentativa que cai no meio (rede, tempo esgotado) marca a nota: o E0014 dela não troca a série sozinho.
+  const { claimClientNfseJob, finishClientNfseJob } = await import("./service");
+  const queued = await claimClientNfseJob(ORG);
+  expect(queued).not.toBeNull();
+  expect(queued!.emissionUncertain).toBe(false);
+  await finishClientNfseJob(ORG, queued!, { kind: "retry", message: "Sem resposta do Sistema Nacional.", delayMinutes: 1 }, null);
+  const [row] = await withOrgTx(ORG, (tx) => tx.select().from(schema.clientNfseInvoices).where(eq(schema.clientNfseInvoices.id, queued!.id)));
+  expect(row.emissionUncertain).toBe(true);
 }, 60_000);
