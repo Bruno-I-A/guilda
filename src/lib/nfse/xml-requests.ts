@@ -194,6 +194,8 @@ export interface XmlCompanyView {
   clientId: string;
   name: string;
   cnpj: string | null;
+  /** Pessoa responsável na Carteira Fiscal; null = ainda não distribuída. */
+  portfolioUserId: string | null;
   /** Código na Domínio: dá o nome "<código>-<razão social>" à pasta do .zip. */
   dominioCode: string | null;
   /** Emite NFS-e: a Ficha Fiscal manda; sem marcação, o CNAE principal sugere. */
@@ -230,11 +232,24 @@ export async function loadXmlCompanies(
   const cl = schema.clients;
   const c = schema.nfseClientCertificates;
   const fp = schema.fiscalClientProfiles;
+  const portfolio = schema.fiscalPortfolios;
   const rows = await tx
-    .select({ clientId: cl.id, name: cl.name, cnpj: cl.cnpj, dominioCode: cl.dominioCode, cnaeCode: cl.cnaeCode, issuer: fp.nfseIssuerApplicability })
+    .select({
+      clientId: cl.id,
+      name: cl.name,
+      cnpj: cl.cnpj,
+      dominioCode: cl.dominioCode,
+      cnaeCode: cl.cnaeCode,
+      issuer: fp.nfseIssuerApplicability,
+      portfolioUserId: portfolio.userId,
+    })
     .from(cl)
     .leftJoin(c, and(eq(c.orgId, cl.orgId), eq(c.clientId, cl.id)))
     .leftJoin(fp, and(eq(fp.orgId, cl.orgId), eq(fp.clientId, cl.id)))
+    .leftJoin(
+      portfolio,
+      and(eq(portfolio.orgId, cl.orgId), eq(portfolio.clientId, cl.id)),
+    )
     .where(and(eq(cl.orgId, input.orgId), ne(cl.taxRegime, "mei"), or(eq(cl.active, true), isNotNull(c.id))))
     .orderBy(asc(cl.name));
   const clientIds = rows.map((row) => row.clientId);
