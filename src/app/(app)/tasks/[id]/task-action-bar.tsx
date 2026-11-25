@@ -326,7 +326,7 @@ export function TaskActionBar({
           disabled={pending}
           onClick={() => setSubmitOpen(true)}
         >
-          <Send aria-hidden /> Entregar com retorno
+          <Send aria-hidden /> Entregar
         </Button>
       ) : null}
 
@@ -460,15 +460,15 @@ export function TaskActionBar({
       <Dialog open={submitOpen} onOpenChange={(open) => { if (!pending) setSubmitOpen(open); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Entregar com retorno</DialogTitle>
+            <DialogTitle>Entregar</DialogTitle>
             <DialogDescription>
-              Conte o que foi feito. {task.creatorName} recebe este retorno,
-              confere e aprova — só então os {task.xpValue} XP são creditados.
-              Se faltar algo, a missão volta para você com a explicação.
+              {task.creatorName} confere e aprova; só então os {task.xpValue} XP
+              são creditados. Se faltar algo, a missão volta para você com a
+              explicação.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
-            <Label htmlFor="submit-note">Retorno para {task.creatorName}</Label>
+            <Label htmlFor="submit-note">Retorno para {task.creatorName} (opcional)</Label>
             <Textarea
               id="submit-note"
               disabled={pending}
@@ -480,8 +480,8 @@ export function TaskActionBar({
               autoFocus
             />
             <p className="text-xs text-muted-foreground">
-              Obrigatório: é a única forma de quem pediu saber o resultado sem
-              ter que perguntar.
+              Conte o que foi feito quando houver algo a dizer: o retorno vai
+              junto no aviso a {task.creatorName}.
             </p>
           </div>
           <DialogFooter className="gap-2">
@@ -489,7 +489,7 @@ export function TaskActionBar({
               Voltar
             </Button>
             <Button
-              disabled={pending || submitNote.trim().length < 3}
+              disabled={pending}
               onClick={() => {
                 run(
                   () =>
@@ -497,7 +497,7 @@ export function TaskActionBar({
                       taskId: task.id,
                       note: submitNote.trim(),
                     }),
-                  `Entregue. ${task.creatorName} recebeu o seu retorno.`,
+                  `Entregue. Agora falta a aprovação de ${task.creatorName}.`,
                   undefined,
                   () => {
                     setSubmitOpen(false);

@@ -187,14 +187,14 @@ export function createGuildaMcpServer(actor: McpActor): McpServer {
     "entregar_missao",
     {
       title: "Entregar missão para aprovação",
-      description: "Registra o retorno obrigatório e envia uma missão feita para aprovação de quem pediu.",
-      inputSchema: z.object({ ...commandFields, retorno: z.string().trim().min(3).max(2000) }),
+      description: "Envia uma missão feita para aprovação de quem pediu, com o retorno (opcional) do que foi feito.",
+      inputSchema: z.object({ ...commandFields, retorno: z.string().trim().max(2000).optional() }),
       annotations: { idempotentHint: true },
     },
     async ({ mission_id, idempotency_key, retorno }) => {
       const denied = requireScope(actor, "missions:write");
       if (denied) return denied;
-      const result = await transitionMissionCommand({ actor, tool: "entregar_missao", idempotencyKey: idempotency_key, missionId: mission_id, to: "awaiting_approval", allowedFrom: ["in_progress"], note: retorno });
+      const result = await transitionMissionCommand({ actor, tool: "entregar_missao", idempotencyKey: idempotency_key, missionId: mission_id, to: "awaiting_approval", allowedFrom: ["in_progress"], note: retorno || undefined });
       return result.ok ? text(result) : failure(result.error);
     },
   );

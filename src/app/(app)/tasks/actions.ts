@@ -442,32 +442,16 @@ export async function claimTask(input: {
       fromClanId: task.clanId,
       toClanId: task.clanId,
     });
-    const [event] = await tx
-      .insert(schema.taskEvents)
-      .values({
-        orgId: ctx.orgId,
-        taskId: task.id,
-        actorId: ctx.userId,
-        fromStatus: "pending",
-        toStatus: "in_progress",
-        note: "Missão assumida e iniciada.",
-      })
-      .returning({ id: schema.taskEvents.id });
+    await tx.insert(schema.taskEvents).values({
+      orgId: ctx.orgId,
+      taskId: task.id,
+      actorId: ctx.userId,
+      fromStatus: "pending",
+      toStatus: "in_progress",
+      note: "Missão assumida e iniciada.",
+    });
 
-    if (task.creatorId !== ctx.userId) {
-      await enqueueMemberNotice(tx, {
-        orgId: ctx.orgId,
-        userId: task.creatorId,
-        dedupeKey: `task-event:${event.id}:started`,
-        preference: "tasks",
-        notice: {
-          family: "mission_update",
-          title: task.title,
-          update: `${membership.name} assumiu e iniciou a missão`,
-          path: taskPath(task.id),
-        },
-      });
-    }
+    // Assumir e iniciar não avisa quem pediu (2026-11-25, pedido do Bruno).
 
     return { ok: true };
   });
@@ -651,11 +635,7 @@ export async function startTask(input: { taskId: string }): Promise<ActionResult
 
 const submitSchema = z.object({
   taskId: z.uuid(),
-  note: z
-    .string()
-    .trim()
-    .min(3, "Conte o que foi feito: quem pediu precisa desse retorno.")
-    .max(2000, "Retorno muito longo."),
+  note: z.string().trim().max(2000, "Retorno muito longo.").optional(),
 });
 
 /**
@@ -663,13 +643,13 @@ const submitSchema = z.object({
  *
  * É o caminho ÚNICO de uma missão criada por outra pessoa: ela não conclui
  * sozinha (ver authorizeTransition). A nota é o RETORNO — o que foi feito, o
- * dado que faltava, a dúvida — e é obrigatória (decisão de 2026-09-03): quem
- * pediu precisa receber algo além de uma mudança de status, e a missão não
- * tem outro canal de conversa. Sem retorno, o pedido voltava mudo.
+ * dado que faltava, a dúvida. Era obrigatória (2026-09-03) e virou opcional
+ * em 2026-11-25, a pedido do Bruno: a entrega já avisa quem pediu, e exigir
+ * texto para "comprar um energético" só atrapalha.
  */
 export async function submitTaskForApproval(input: {
   taskId: string;
-  note: string;
+  note?: string;
 }): Promise<ActionResult> {
   const parsed = submitSchema.safeParse(input);
   if (!parsed.success) {
@@ -679,7 +659,7 @@ export async function submitTaskForApproval(input: {
     taskId: parsed.data.taskId,
     to: "awaiting_approval",
     allowedFrom: ["in_progress"],
-    note: parsed.data.note,
+    note: parsed.data.note || undefined,
   });
 }
 
