@@ -27,7 +27,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { FiscalApplicability } from "@/domain/fiscal-control";
+import {
+  fiscalProfileMissingFields,
+  type FiscalApplicability,
+} from "@/domain/fiscal-control";
 
 import { saveFiscalClientProfile } from "./fiscal-actions";
 import { companyDisplayName } from "@/domain/company-display-name";
@@ -52,6 +55,12 @@ export interface FiscalProfileView {
   deliveryApplicability: FiscalApplicability;
   factorRApplicability: FiscalApplicability;
   nfseIssuerApplicability: FiscalApplicability;
+  spedApplicability: FiscalApplicability;
+  giaApplicability: FiscalApplicability;
+  deisApplicability: FiscalApplicability;
+  pgdasApplicability: FiscalApplicability;
+  efdContributionsApplicability: FiscalApplicability;
+  mitApplicability: FiscalApplicability;
   deliveryChannel: string | null;
   revenueReference: string | null;
   permanentNotes: string | null;
@@ -75,6 +84,12 @@ const FIELD_LABELS: Record<string, string> = {
   deliveryApplicability: "Entrega",
   factorRApplicability: "Fator R",
   nfseIssuerApplicability: "Emite NFS-e",
+  spedApplicability: "SPED",
+  giaApplicability: "GIA",
+  deisApplicability: "DEIS",
+  pgdasApplicability: "PGDAS",
+  efdContributionsApplicability: "EFD Contribuições",
+  mitApplicability: "MIT",
   deliveryChannel: "Entrega",
   revenueReference: "Referência de faturamento",
   permanentNotes: "Observações",
@@ -147,12 +162,34 @@ export function FiscalProfileDialog({
   const [deliveryApplicability, setDeliveryApplicability] = useState(profile.deliveryApplicability);
   const [factorR, setFactorR] = useState(profile.factorRApplicability);
   const [nfseIssuer, setNfseIssuer] = useState(profile.nfseIssuerApplicability);
+  const [sped, setSped] = useState(profile.spedApplicability);
+  const [gia, setGia] = useState(profile.giaApplicability);
+  const [deis, setDeis] = useState(profile.deisApplicability);
+  const [pgdas, setPgdas] = useState(profile.pgdasApplicability);
+  const [efdContributions, setEfdContributions] = useState(
+    profile.efdContributionsApplicability,
+  );
+  const [mit, setMit] = useState(profile.mitApplicability);
   const [delivery, setDelivery] = useState(profile.deliveryChannel ?? "");
   const [revenue, setRevenue] = useState(profile.revenueReference ?? "");
   const [notes, setNotes] = useState(profile.permanentNotes ?? "");
-  const hasUnknown = [movements, incoming, outgoing, guide, nfs, deliveryApplicability, factorR].some(
-    (value) => value === "unknown",
-  );
+  const currentMissingFields = fiscalProfileMissingFields({
+    profileExists: true,
+    movementsApplicability: movements,
+    incomingApplicability: incoming,
+    outgoingApplicability: outgoing,
+    guideApplicability: guide,
+    nfsApplicability: nfs,
+    deliveryApplicability,
+    factorRApplicability: factorR,
+    spedApplicability: sped,
+    giaApplicability: gia,
+    deisApplicability: deis,
+    pgdasApplicability: pgdas,
+    efdContributionsApplicability: efdContributions,
+    mitApplicability: mit,
+    deliveryChannel: delivery,
+  });
 
   function resetFromProfile() {
     setMovements(profile.movementsApplicability);
@@ -163,6 +200,12 @@ export function FiscalProfileDialog({
     setDeliveryApplicability(profile.deliveryApplicability);
     setFactorR(profile.factorRApplicability);
     setNfseIssuer(profile.nfseIssuerApplicability);
+    setSped(profile.spedApplicability);
+    setGia(profile.giaApplicability);
+    setDeis(profile.deisApplicability);
+    setPgdas(profile.pgdasApplicability);
+    setEfdContributions(profile.efdContributionsApplicability);
+    setMit(profile.mitApplicability);
     setDelivery(profile.deliveryChannel ?? "");
     setRevenue(profile.revenueReference ?? "");
     setNotes(profile.permanentNotes ?? "");
@@ -182,6 +225,12 @@ export function FiscalProfileDialog({
         deliveryApplicability,
         factorRApplicability: factorR,
         nfseIssuerApplicability: nfseIssuer,
+        spedApplicability: sped,
+        giaApplicability: gia,
+        deisApplicability: deis,
+        pgdasApplicability: pgdas,
+        efdContributionsApplicability: efdContributions,
+        mitApplicability: mit,
         deliveryChannel: delivery,
         revenueReference: revenue,
         permanentNotes: notes,
@@ -219,9 +268,9 @@ export function FiscalProfileDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {profile.missingFields.length > 0 ? (
+        {currentMissingFields.length > 0 ? (
           <div className="rounded-lg border border-warning/35 bg-warning/10 p-3 text-xs">
-            Ficha incompleta: revise {profile.missingFields.join(", ")}.
+            Ficha incompleta: revise {currentMissingFields.join(", ")}.
           </div>
         ) : null}
 
@@ -237,6 +286,23 @@ export function FiscalProfileDialog({
             {/* Opcional: "Não informado" usa a sugestão do CNAE na aba XML das notas. */}
             <ApplicabilityField id={`${clientId}-nfse-issuer`} label="Emite NFS-e (serviço)" value={nfseIssuer} disabled={!canManage} onValueChange={setNfseIssuer} />
           </div>
+
+          <section className="grid gap-3 border-t pt-4">
+            <div>
+              <h3>Informativos</h3>
+              <p className="text-sm text-muted-foreground">
+                Obrigações e declarações que se aplicam à empresa.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <ApplicabilityField id={`${clientId}-sped`} label="SPED" value={sped} disabled={!canManage} onValueChange={setSped} />
+              <ApplicabilityField id={`${clientId}-gia`} label="GIA" value={gia} disabled={!canManage} onValueChange={setGia} />
+              <ApplicabilityField id={`${clientId}-deis`} label="DEIS" value={deis} disabled={!canManage} onValueChange={setDeis} />
+              <ApplicabilityField id={`${clientId}-pgdas`} label="PGDAS" value={pgdas} disabled={!canManage} onValueChange={setPgdas} />
+              <ApplicabilityField id={`${clientId}-efd-contributions`} label="EFD Contribuições" value={efdContributions} disabled={!canManage} onValueChange={setEfdContributions} />
+              <ApplicabilityField id={`${clientId}-mit`} label="MIT" value={mit} disabled={!canManage} onValueChange={setMit} />
+            </div>
+          </section>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
@@ -301,7 +367,7 @@ export function FiscalProfileDialog({
 
         {canManage ? (
           <DialogFooter>
-            <Button type="button" disabled={pending || hasUnknown || !delivery.trim()} onClick={save}>
+            <Button type="button" disabled={pending || currentMissingFields.length > 0} onClick={save}>
               Salvar ficha
             </Button>
           </DialogFooter>

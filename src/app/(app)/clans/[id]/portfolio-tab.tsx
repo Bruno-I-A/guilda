@@ -96,6 +96,13 @@ export async function PortfolioTab({
           schema.fiscalClientProfiles.factorRApplicability,
         nfseIssuerApplicability:
           schema.fiscalClientProfiles.nfseIssuerApplicability,
+        spedApplicability: schema.fiscalClientProfiles.spedApplicability,
+        giaApplicability: schema.fiscalClientProfiles.giaApplicability,
+        deisApplicability: schema.fiscalClientProfiles.deisApplicability,
+        pgdasApplicability: schema.fiscalClientProfiles.pgdasApplicability,
+        efdContributionsApplicability:
+          schema.fiscalClientProfiles.efdContributionsApplicability,
+        mitApplicability: schema.fiscalClientProfiles.mitApplicability,
         deliveryChannel: schema.fiscalClientProfiles.deliveryChannel,
         revenueReference: schema.fiscalClientProfiles.revenueReference,
         permanentNotes: schema.fiscalClientProfiles.permanentNotes,
@@ -175,6 +182,13 @@ export async function PortfolioTab({
     const nfsApplicability = detail?.nfsApplicability ?? "unknown";
     const deliveryApplicability = detail?.deliveryApplicability ?? "unknown";
     const factorRApplicability = detail?.factorRApplicability ?? "unknown";
+    const spedApplicability = detail?.spedApplicability ?? "unknown";
+    const giaApplicability = detail?.giaApplicability ?? "unknown";
+    const deisApplicability = detail?.deisApplicability ?? "unknown";
+    const pgdasApplicability = detail?.pgdasApplicability ?? "unknown";
+    const efdContributionsApplicability =
+      detail?.efdContributionsApplicability ?? "unknown";
+    const mitApplicability = detail?.mitApplicability ?? "unknown";
     const deliveryChannel = detail?.deliveryChannel ?? null;
     return {
       id: clientId,
@@ -193,6 +207,12 @@ export async function PortfolioTab({
         deliveryApplicability,
         factorRApplicability,
         nfseIssuerApplicability: detail?.nfseIssuerApplicability ?? "unknown",
+        spedApplicability,
+        giaApplicability,
+        deisApplicability,
+        pgdasApplicability,
+        efdContributionsApplicability,
+        mitApplicability,
         deliveryChannel,
         revenueReference: detail?.revenueReference ?? null,
         permanentNotes:
@@ -206,6 +226,12 @@ export async function PortfolioTab({
           nfsApplicability,
           deliveryApplicability,
           factorRApplicability,
+          spedApplicability,
+          giaApplicability,
+          deisApplicability,
+          pgdasApplicability,
+          efdContributionsApplicability,
+          mitApplicability,
           deliveryChannel,
         }),
         history: (historyByClient.get(clientId) ?? []).map((event) => ({

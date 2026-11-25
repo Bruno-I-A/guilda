@@ -2379,6 +2379,13 @@ export type FiscalClientProfileSnapshot = {
   factorRApplicability: (typeof fiscalApplicability.enumValues)[number];
   /** Ausente nas versões anteriores a 2026-10-20. */
   nfseIssuerApplicability?: (typeof fiscalApplicability.enumValues)[number];
+  /** Ausentes nas versões anteriores a 2026-11-25. */
+  spedApplicability?: (typeof fiscalApplicability.enumValues)[number];
+  giaApplicability?: (typeof fiscalApplicability.enumValues)[number];
+  deisApplicability?: (typeof fiscalApplicability.enumValues)[number];
+  pgdasApplicability?: (typeof fiscalApplicability.enumValues)[number];
+  efdContributionsApplicability?: (typeof fiscalApplicability.enumValues)[number];
+  mitApplicability?: (typeof fiscalApplicability.enumValues)[number];
   revenueReference: string | null;
   permanentNotes: string | null;
 };
@@ -2441,6 +2448,26 @@ export const fiscalClientProfiles = pgTable(
     // "Emite NFS-e (serviço)": quem aparece na aba XML das notas. "unknown"
     // cai na sugestão do CNAE principal (src/domain/nfse-service.ts).
     nfseIssuerApplicability: fiscalApplicability("nfse_issuer_applicability")
+      .notNull()
+      .default("unknown"),
+    spedApplicability: fiscalApplicability("sped_applicability")
+      .notNull()
+      .default("unknown"),
+    giaApplicability: fiscalApplicability("gia_applicability")
+      .notNull()
+      .default("unknown"),
+    deisApplicability: fiscalApplicability("deis_applicability")
+      .notNull()
+      .default("unknown"),
+    pgdasApplicability: fiscalApplicability("pgdas_applicability")
+      .notNull()
+      .default("unknown"),
+    efdContributionsApplicability: fiscalApplicability(
+      "efd_contributions_applicability",
+    )
+      .notNull()
+      .default("unknown"),
+    mitApplicability: fiscalApplicability("mit_applicability")
       .notNull()
       .default("unknown"),
     revenueReference: numeric("revenue_reference", { precision: 15, scale: 2 }),
