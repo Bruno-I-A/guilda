@@ -177,3 +177,11 @@ vamos habilitar para entender áudios e imagens também". O que mudou:
   guardado. Vídeo e outros formatos recebem a explicação do que se lê.
 - **Privacidade**: o áudio da equipe vai à OpenAI e a foto/PDF à Anthropic, como já
   acontece com o texto do Informativo. É conteúdo interno do escritório.
+
+## Adendo 2 (2026-11-24): pedido pelo WhatsApp é missão avulsa, inclusive do líder
+
+No primeiro teste que deu certo, o Bruno (dono) pediu "comprar um chopp para o Bruno" para o
+Rafa e a Guilda criou missão de Informativo, com aviso "Missões geradas" no Mural para todos.
+Correção dele: "isso é só uma missão avulsa pro Rafa". Agora todo pedido vira missão avulsa;
+só segue pelo Informativo, e só para líder, admin e dono, o que precisa dele: empresa nova,
+alteração ou baixa, aviso para o Mural, distribuição de lucros e fechamento (`needsInformative`).
