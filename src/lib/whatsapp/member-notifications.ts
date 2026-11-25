@@ -92,31 +92,6 @@ export function memberSupportHandoffMessage(payload: MemberSupportPayload): stri
   ].join("\n");
 }
 
-function appBaseUrl(): string | null {
-  return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") || null;
-}
-
-/** Integrantes do clã com o WhatsApp confirmado no Perfil e os avisos ligados. */
-async function clanMembersWithWhatsApp(tx: OrgTx, orgId: string, clanId: string): Promise<{ userId: string }[]> {
-  return tx
-    .selectDistinct({ userId: schema.clanMemberships.userId })
-    .from(schema.clanMemberships)
-    .innerJoin(schema.member, and(
-      eq(schema.member.organizationId, schema.clanMemberships.orgId),
-      eq(schema.member.userId, schema.clanMemberships.userId),
-    ))
-    .innerJoin(schema.memberWhatsAppConnections, and(
-      eq(schema.memberWhatsAppConnections.orgId, schema.clanMemberships.orgId),
-      eq(schema.memberWhatsAppConnections.userId, schema.clanMemberships.userId),
-      eq(schema.memberWhatsAppConnections.enabled, true),
-      isNotNull(schema.memberWhatsAppConnections.verifiedAt),
-    ))
-    .where(and(
-      eq(schema.clanMemberships.orgId, orgId),
-      eq(schema.clanMemberships.clanId, clanId),
-    ));
-}
-
 /**
  * Enfileira o aviso de conversa encaminhada pelo agente para quem foi escolhido
  * (a pessoa do assunto, o líder ou o clã inteiro, em routing.ts). Só recebe
@@ -172,33 +147,4 @@ export async function enqueueMemberSupportHandoffNotifications(
 
 export function hasOpenMemberWhatsAppWindow(lastInboundAt: Date | null, now = new Date()): boolean {
   return Boolean(lastInboundAt && now.getTime() - lastInboundAt.getTime() < MEMBER_WINDOW_MS);
-}
-
-/**
- * Enfileira para cada integrante ativo do clã. A unicidade por fluxo+usuário
- * evita aviso duplicado quando o formulário é reenviado.
- */
-export async function enqueueMemberNewClientNotifications(
-  tx: OrgTx,
-  input: { orgId: string; clanId: string; companyFlowId: string; companyName: string; clanName: string },
-): Promise<void> {
-  const members = await clanMembersWithWhatsApp(tx, input.orgId, input.clanId);
-
-  const appUrl = appBaseUrl();
-  const payload: MemberNotificationPayload = {
-    version: 1,
-    title: "Novo cliente",
-    companyName: input.companyName.slice(0, 180),
-    clanName: input.clanName.slice(0, 100),
-    url: appUrl ? `${appUrl}/clans/${input.clanId}?flow=${input.companyFlowId}` : "Abra a Guilda para ver o novo cliente.",
-  };
-  for (const member of members) {
-    await tx.insert(schema.memberWhatsAppOutbox).values({
-      orgId: input.orgId,
-      userId: member.userId,
-      companyFlowId: input.companyFlowId,
-      dedupeKey: `company-flow:${input.companyFlowId}:user:${member.userId}`,
-      payload,
-    }).onConflictDoNothing();
-  }
 }

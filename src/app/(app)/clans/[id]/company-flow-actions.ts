@@ -46,7 +46,6 @@ import {
 import { lookupCnpj, type CnpjLookupData } from "@/lib/cnpj-lookup";
 import { completeTaskFromSystem } from "@/lib/tasks/complete";
 import { createTaskRecord } from "@/lib/tasks/create";
-import { enqueueMemberNewClientNotifications } from "@/lib/whatsapp/member-notifications";
 
 const activitySchema = z.object({
   code: z.string().trim().max(12).nullable().optional(),
@@ -541,11 +540,6 @@ export async function createCompanyFlow(
       data.clanId,
       "company_flow",
     );
-    const [clanDestinatario] = await tx
-      .select({ name: schema.clans.name })
-      .from(schema.clans)
-      .where(and(eq(schema.clans.orgId, ctx.orgId), eq(schema.clans.id, data.clanId)))
-      .limit(1);
     const nomeEmpresa = companyFlowDisplayName({
       kind: data.kind,
       existingClientName: existingClient?.name ?? null,
@@ -584,15 +578,9 @@ export async function createCompanyFlow(
         eq(schema.companyFlows.id, flow.id),
       ));
 
-    // A equipe inteira do clã fica sabendo pelo aviso de novo cliente no
-    // WhatsApp (o broadcast do Telegram saiu em 2026-11-24: repetia o mesmo).
-    await enqueueMemberNewClientNotifications(tx, {
-      orgId: ctx.orgId,
-      clanId: data.clanId,
-      companyFlowId: flow.id,
-      companyName: nomeEmpresa,
-      clanName: clanDestinatario?.name ?? "Clã responsável",
-    });
+    // `createTaskRecord` já manda o único aviso necessário: nominal para quem
+    // tem a atribuição "Atende os Fluxos" ou para o clã quando não há titular.
+    // O antigo broadcast de "Novo cliente" repetia o mesmo Fluxo no WhatsApp.
 
     if (encryptedSecret) {
       await tx.insert(schema.companyFlowSecrets).values({
