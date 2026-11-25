@@ -288,7 +288,7 @@ function understoodLine(understood: string | undefined): string {
  */
 async function handleRequest(claimed: Claim, command: Command, actor: InformativeActor, text: string, understood?: string): Promise<void> {
   const informative = await withOrgTx(claimed.orgId, (tx) => handlesInformatives(tx, claimed.orgId, actor.userId));
-  const draft = await buildInformativeDraft(actor, text);
+  const draft = await buildInformativeDraft(actor, text, undefined, undefined, { explicitRequest: true });
   if (!draft.ok) {
     await replyAndFinish(claimed, command, `${understoodLine(understood)}${draft.message}`);
     return;
