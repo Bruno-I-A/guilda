@@ -496,6 +496,12 @@ que as empresas-cliente emitem todo mês, **pelo CNPJ e com o A1 de cada uma**
   próxima série que nenhuma nota guardada (inclusive cancelada) nem pedida usa,
   renumera a nota a partir de 1 e a devolve à fila, até 5 vezes por passada.
   Só depois disso falha com a mensagem do que há na outra nota.
+- **E0014 sem a nota na consulta da DPS (2026-11-25, US HAIR, DPS 900/1)**: o Sistema Nacional
+  diz que a DPS já gerou nota, mas `GET /dps/{id}` não a devolve. `resolveTakenDps` procura a nota
+  pela série e número nas emitidas que a aba XML guardou (`storedNoteByDps`, `nfseXmlDps`): achada,
+  segue o caminho da nota achada pela DPS (é desta emissão e é adotada, ou é de outro sistema e a
+  empresa passa para a próxima série). Não achada, **não troca a série às cegas** (poderia duplicar
+  uma nota nossa cuja resposta se perdeu): a mensagem pede "Rodar agora" na aba XML e "Tentar de novo".
 - O PDF sai no app, do XML guardado na emissão (o certificado do escritório
   não busca nota de cliente). Sem e-mail ao tomador e sem MEI na v1.
 - **Retenções configuráveis (2026-11-03, pedido do Bruno)**: cada tomador

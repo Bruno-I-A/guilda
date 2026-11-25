@@ -29,6 +29,13 @@ export function issuedBeforeRequest(issuedAt: Date | null, requestedAt: Date): b
   return issuedAt !== null && issuedAt.getTime() < requestedAt.getTime() - REQUEST_TOLERANCE_MS;
 }
 
+/** Série e número da DPS que gerou a nota (a numeração é por CNPJ e município). */
+export function nfseXmlDps(xml: string): { series: string | null; number: number | null } {
+  const series = firstElementText(xml, "serie")?.trim().replace(/^0+(?=\d)/, "") ?? null;
+  const number = Number.parseInt(firstElementText(xml, "nDPS") ?? "", 10);
+  return { series, number: Number.isSafeInteger(number) ? number : null };
+}
+
 /** A data de emissão que a própria nota traz na DPS. */
 export function nfseXmlIssuedAt(xml: string): Date | null {
   const text = firstElementText(xml, "dhEmi");
