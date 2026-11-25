@@ -51,6 +51,12 @@ const profileSchema = z.object({
   factorRApplicability: applicabilitySchema,
   // Opcional: "não informado" usa a sugestão do CNAE na aba XML das notas.
   nfseIssuerApplicability: applicabilitySchema.default("unknown"),
+  spedApplicability: applicabilitySchema,
+  giaApplicability: applicabilitySchema,
+  deisApplicability: applicabilitySchema,
+  pgdasApplicability: applicabilitySchema,
+  efdContributionsApplicability: applicabilitySchema,
+  mitApplicability: applicabilitySchema,
   deliveryChannel: z
     .string()
     .trim()
@@ -66,19 +72,32 @@ const profileSchema = z.object({
     .trim()
     .max(4000, "Observações muito longas.")
     .optional(),
-}).refine(
-  (value) =>
-    [
-      value.movementsApplicability,
-      value.incomingApplicability,
-      value.outgoingApplicability,
-      value.guideApplicability,
-      value.nfsApplicability,
-      value.deliveryApplicability,
-      value.factorRApplicability,
-    ].every((item) => item !== "unknown"),
-  "Revise todos os campos marcados como não informados.",
-);
+})
+  .refine(
+    (value) =>
+      [
+        value.movementsApplicability,
+        value.incomingApplicability,
+        value.outgoingApplicability,
+        value.guideApplicability,
+        value.nfsApplicability,
+        value.deliveryApplicability,
+        value.factorRApplicability,
+        value.spedApplicability,
+        value.giaApplicability,
+        value.deisApplicability,
+        value.pgdasApplicability,
+        value.efdContributionsApplicability,
+        value.mitApplicability,
+      ].every((item) => item !== "unknown"),
+    "Revise todos os campos marcados como não informados.",
+  )
+  .refine(
+    (value) =>
+      value.deliveryApplicability !== "required" ||
+      Boolean(value.deliveryChannel.trim()),
+    "Informe o canal de envio da guia.",
+  );
 
 async function requireFiscalClan(
   tx: OrgTx,
@@ -114,6 +133,12 @@ function changedProfileFields(
     ["deliveryApplicability", current.deliveryApplicability, next.deliveryApplicability],
     ["factorRApplicability", current.factorRApplicability, next.factorRApplicability],
     ["nfseIssuerApplicability", current.nfseIssuerApplicability, next.nfseIssuerApplicability],
+    ["spedApplicability", current.spedApplicability, next.spedApplicability],
+    ["giaApplicability", current.giaApplicability, next.giaApplicability],
+    ["deisApplicability", current.deisApplicability, next.deisApplicability],
+    ["pgdasApplicability", current.pgdasApplicability, next.pgdasApplicability],
+    ["efdContributionsApplicability", current.efdContributionsApplicability, next.efdContributionsApplicability],
+    ["mitApplicability", current.mitApplicability, next.mitApplicability],
     ["deliveryChannel", current.deliveryChannel ?? "", next.deliveryApplicability === "required" ? next.deliveryChannel : ""],
     ["revenueReference", current.revenueReference ?? "", next.revenueReference ?? ""],
     ["permanentNotes", current.permanentNotes ?? "", next.permanentNotes ?? ""],
@@ -177,6 +202,12 @@ export async function saveFiscalClientProfile(
       deliveryApplicability: data.deliveryApplicability,
       factorRApplicability: data.factorRApplicability,
       nfseIssuerApplicability: data.nfseIssuerApplicability,
+      spedApplicability: data.spedApplicability,
+      giaApplicability: data.giaApplicability,
+      deisApplicability: data.deisApplicability,
+      pgdasApplicability: data.pgdasApplicability,
+      efdContributionsApplicability: data.efdContributionsApplicability,
+      mitApplicability: data.mitApplicability,
       deliveryChannel: data.deliveryApplicability === "required" ? data.deliveryChannel || null : null,
       revenueReference: data.revenueReference || null,
       permanentNotes: data.permanentNotes || null,
@@ -210,6 +241,12 @@ export async function saveFiscalClientProfile(
           "deliveryApplicability",
           "factorRApplicability",
           "nfseIssuerApplicability",
+          "spedApplicability",
+          "giaApplicability",
+          "deisApplicability",
+          "pgdasApplicability",
+          "efdContributionsApplicability",
+          "mitApplicability",
           "deliveryChannel",
           "revenueReference",
           "permanentNotes",
