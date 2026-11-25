@@ -45,6 +45,8 @@ export interface ClientNfseClaim extends NfseJob {
   providerCnpj: string;
   template: NfseIssuerTemplate | null;
   requestedAt: Date;
+  /** Alguma tentativa caiu no meio sem resposta clara: a nota pode ter saído. */
+  emissionUncertain: boolean;
 }
 
 export async function claimClientNfseJob(orgId: string): Promise<ClientNfseClaim | null> {
@@ -98,6 +100,7 @@ export async function claimClientNfseJob(orgId: string): Promise<ClientNfseClaim
       providerCnpj: row.providerCnpj,
       template: parseNfseIssuerTemplate(row.template),
       requestedAt: row.createdAt,
+      emissionUncertain: row.emissionUncertain,
     };
   });
 }
@@ -146,7 +149,13 @@ export async function finishClientNfseJob(
         : outcome.kind === "failed"
           ? { ...release, status: "failed", lastError: outcome.message }
           : outcome.kind === "retry"
-            ? { ...release, lastError: outcome.message, nextAttemptAt: new Date(now.getTime() + outcome.delayMinutes * 60_000) }
+            ? {
+                ...release,
+                lastError: outcome.message,
+                nextAttemptAt: new Date(now.getTime() + outcome.delayMinutes * 60_000),
+                // Emissão que caiu no meio pode ter gerado a nota: o E0014 não troca a série sozinho.
+                ...(claim.status === "queued" ? { emissionUncertain: true } : {}),
+              }
             : outcome.kind === "cancelled"
               ? { ...release, status: "cancelled", cancelledAt: now, lastError: null }
               : { ...release, status: "issued", lastError: `Cancelamento recusado: ${outcome.message}`, cancelRequestedBy: null, cancelReasonCode: null, cancelReasonText: null };
@@ -295,33 +304,39 @@ export async function storedNoteByDps(orgId: string, clientId: string, series: s
 
 /**
  * E0014: o Sistema Nacional diz que a DPS já gerou uma nota, mas a consulta da
- * DPS não a devolve (a nota pode ser de outro sistema da empresa). Sem saber de
- * quem é, emitir em outra série poderia duplicar uma nota nossa cuja resposta se
- * perdeu. Por isso a nota é procurada nas emitidas que a aba XML guardou: achada,
- * segue o caminho da nota achada pela DPS (é desta emissão e é adotada, ou é de
- * outro sistema e a empresa passa para a próxima série). Não achada, a mensagem
- * pede a leitura da aba XML antes do Tentar de novo (2026-11-25, US HAIR, DPS 900/1).
+ * DPS não a devolve (2026-11-25, Estética Urban, DPS 900/1, sem nota nenhuma
+ * no Portal). Primeiro a nota é procurada nas emitidas que a aba XML guardou:
+ * achada, segue o caminho da nota achada pela DPS (é desta emissão e é
+ * adotada, ou é de outro sistema e a empresa passa para a próxima série).
+ *
+ * Não achada, a DPS está ocupada por algo que a Guilda não vê. Se nenhuma
+ * tentativa desta nota caiu no meio do envio, ela não saiu por aqui: a
+ * empresa passa para a próxima série sozinha (`move`), como o Bruno pediu.
+ * Só depois de um envio incerto a nota pode ter saído, e aí a troca às cegas
+ * duplicaria: pede a conferência antes.
  */
 export async function resolveTakenDps(
   orgId: string,
-  claim: Pick<ClientNfseClaim, "clientId" | "dpsSeries" | "dpsNumber">,
+  claim: Pick<ClientNfseClaim, "clientId" | "dpsSeries" | "dpsNumber" | "emissionUncertain">,
   outcome: NfseJobOutcome,
   environment: 1 | 2,
-): Promise<{ outcome: NfseJobOutcome; xml: string | null } | null> {
+): Promise<{ kind: "found"; outcome: NfseJobOutcome; xml: string } | { kind: "move" } | { kind: "check"; outcome: NfseJobOutcome } | null> {
   if (outcome.kind !== "failed" || !outcome.errors.some((error) => error.code === "E0014")) return null;
   const stored = await storedNoteByDps(orgId, claim.clientId, claim.dpsSeries, claim.dpsNumber);
   if (stored) {
     return {
+      kind: "found",
       outcome: { kind: "issued", accessKey: stored.accessKey, nfseNumber: firstElementText(stored.xml, "nNFSe"), environment, foundByDps: true },
       xml: stored.xml,
     };
   }
+  if (!claim.emissionUncertain) return { kind: "move" };
   return {
+    kind: "check",
     outcome: {
       ...outcome,
-      message: `${outcome.message} A DPS ${claim.dpsSeries}/${claim.dpsNumber} já foi usada por uma nota que a Guilda ainda não leu. Rode "Rodar agora" na aba XML e depois "Tentar de novo": se a nota for desta emissão, ela é registrada; se for de outro sistema, a Guilda passa para a próxima série sozinha.`,
+      message: `${outcome.message} Uma tentativa anterior desta nota caiu no meio do envio, então ela pode já ter saído. Confira no Portal Nacional: se não houver nota com a DPS ${claim.dpsSeries}/${claim.dpsNumber}, troque a série nos Dados fiscais e clique em "Tentar de novo"; se houver, rode "Rodar agora" na aba XML e depois "Tentar de novo" para a Guilda registrá-la.`,
     },
-    xml: null,
   };
 }
 
@@ -385,9 +400,20 @@ export async function runClientNfseQueue(
       }
       // E0014 sem a nota na consulta da DPS: procura nas notas guardadas pela aba XML.
       const taken = await resolveTakenDps(orgId, claim, outcome, tpAmb);
-      if (taken) {
+      if (taken?.kind === "found") {
         outcome = taken.outcome;
         xml = taken.xml;
+      } else if (taken?.kind === "check") {
+        outcome = taken.outcome;
+      } else if (taken?.kind === "move") {
+        // A DPS está ocupada no Sistema Nacional e esta nota nunca saiu por aqui: próxima série.
+        const moves = seriesMoves.get(claim.issuerId) ?? 0;
+        const moved = moves < MAX_SERIES_MOVES ? await moveToNextSeries(orgId, claim) : null;
+        if (moved) {
+          seriesMoves.set(claim.issuerId, moves + 1);
+          console.log(`Nota de cliente ${claim.id}: DPS ${moved.from}/${claim.dpsNumber} ocupada no Sistema Nacional (E0014), renumerada para ${moved.to}/${moved.number}.`);
+          continue;
+        }
       }
       // A nota ACHADA pela DPS pode ser de outro sistema e precisa ser conferida.
       // Sem XML não se adota no escuro: erro, e o Tentar de novo confere depois.
