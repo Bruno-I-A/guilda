@@ -858,12 +858,14 @@ status, prazo). A **origem virou o eixo principal** (`?view=standalone` ou
   **removido no mesmo dia a pedido do Bruno** — ele quer um único caminho
   completo, não um atalho. Não reintroduzir sem ele pedir.
 - **Retorno para quem pediu** (2026-09-03): missão **avulsa** criada para outra
-  pessoa termina em **entrega com retorno escrito obrigatório**
-  (`awaiting_approval` exige nota). Quem pediu vê o retorno na lista ("Para você aprovar") e no
-  detalhe, aprova com comentário opcional (vai para o histórico e para quem
-  entregou), e é avisado no WhatsApp quando o trabalho começa, quando a
-  entrega chega (com o retorno no texto) e, no outro sentido, quem entregou
-  recebe a aprovação com o comentário. "Você pediu" mostra a última
+  pessoa termina em **entrega** (`awaiting_approval`) que quem pediu aprova. **O retorno
+  escrito virou opcional em 2026-11-25** (pedido do Bruno: exigir texto para "comprar um
+  energético" só atrapalha); o botão é "Entregar" e o MCP `entregar_missao` aceita sem
+  retorno. Quem pediu vê o retorno, quando houver, na lista ("Para você aprovar") e no
+  detalhe, aprova com comentário opcional (vai para o histórico e para quem entregou), e é
+  avisado no WhatsApp quando a entrega chega (com o retorno no texto) e, no outro sentido,
+  quem entregou recebe a aprovação com o comentário. **Início e retomada não avisam**
+  (2026-11-25): só missão nova, entrega e conclusão. "Você pediu" mostra a última
   movimentação de cada pedido.
 - **Informativos** (`informative_id` preenchido): lidas como **pacote por
   empresa**, com o progresso do conjunto (`src/domain/mission-triage.ts`).
@@ -872,7 +874,7 @@ status, prazo). A **origem virou o eixo principal** (`?view=standalone` ou
   `task.fromInformative` em `authorizeTransition`): ali não existe "quem
   pediu" — o pedido veio do Informativo, e quem consta como criador só
   preparou o pacote. Cobrar dele uma aprovação transformava rotina do clã em
-  vai-e-volta sem leitor. "Entregar com retorno" continua no botão como
+  vai-e-volta sem leitor. "Entregar" continua no botão como
   **opção** (secundário ao lado de Concluir), nunca como obrigação. A régua de
   aprovação obrigatória segue valendo para as avulsas — não unificar as duas.
 

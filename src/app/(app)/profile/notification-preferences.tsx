@@ -29,7 +29,7 @@ export type NotificationPreferencesView = {
 type ToggleName = Exclude<keyof NotificationPreferencesView, "dailySummaryTime" | "timezone" | "quietHoursStart" | "quietHoursEnd" | "dailySummary">;
 
 const OPTIONS: readonly { name: ToggleName; label: string; description: string }[] = [
-  { name: "taskNotifications", label: "Missões", description: "Missão nova, início, transferência e cancelamento." },
+  { name: "taskNotifications", label: "Missões", description: "Missão nova, transferência e cancelamento." },
   { name: "approvalNotifications", label: "Aprovações", description: "Entregas para você aprovar e devoluções." },
   { name: "deadlineReminders", label: "Prazos", description: "Missão que vence hoje ou está atrasada." },
   { name: "xpNotifications", label: "XP", description: "Missão aprovada ou concluída por outra pessoa." },

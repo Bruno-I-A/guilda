@@ -226,29 +226,8 @@ export async function transitionTaskForActor(input: {
           button: taskButton("resume", task.id),
         },
       });
-    } else if (
-      input.to === "in_progress" &&
-      (task.status === "pending" || task.status === "rejected") &&
-      task.creatorId !== actor.userId
-    ) {
-      const [person] = await tx
-        .select({ name: schema.user.name })
-        .from(schema.user)
-        .where(eq(schema.user.id, actor.userId))
-        .limit(1);
-      const verb = task.status === "rejected" ? "retomou" : "iniciou";
-      await enqueueMemberNotice(tx, {
-        orgId: actor.orgId,
-        userId: task.creatorId,
-        dedupeKey: `task-event:${event.id}:started`,
-        preference: "tasks",
-        notice: {
-          family: "mission_update",
-          title: task.title,
-          update: `${person?.name ?? "A pessoa responsável"} ${verb} a missão`,
-          path: taskPath(task.id),
-        },
-      });
+    // Início e retomada não avisam quem pediu (2026-11-25, pedido do Bruno): só missão
+    // nova, entrega e conclusão.
     } else if (input.to === "cancelled" && task.assigneeId && task.assigneeId !== actor.userId) {
       await enqueueMemberNotice(tx, {
         orgId: actor.orgId,
