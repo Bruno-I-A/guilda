@@ -90,6 +90,12 @@ export interface FiscalProfileCompletenessFacts {
   nfsApplicability?: FiscalApplicability | null;
   deliveryApplicability?: FiscalApplicability | null;
   factorRApplicability?: FiscalApplicability | null;
+  spedApplicability?: FiscalApplicability | null;
+  giaApplicability?: FiscalApplicability | null;
+  deisApplicability?: FiscalApplicability | null;
+  pgdasApplicability?: FiscalApplicability | null;
+  efdContributionsApplicability?: FiscalApplicability | null;
+  mitApplicability?: FiscalApplicability | null;
   deliveryChannel?: string | null;
 }
 
@@ -109,6 +115,12 @@ export function fiscalProfileMissingFields(
   if (!profile.guideApplicability || profile.guideApplicability === "unknown") missing.push("guia");
   if (!profile.nfsApplicability || profile.nfsApplicability === "unknown") missing.push("notas fiscais");
   if (!profile.factorRApplicability || profile.factorRApplicability === "unknown") missing.push("Fator R");
+  if (!profile.spedApplicability || profile.spedApplicability === "unknown") missing.push("SPED");
+  if (!profile.giaApplicability || profile.giaApplicability === "unknown") missing.push("GIA");
+  if (!profile.deisApplicability || profile.deisApplicability === "unknown") missing.push("DEIS");
+  if (!profile.pgdasApplicability || profile.pgdasApplicability === "unknown") missing.push("PGDAS");
+  if (!profile.efdContributionsApplicability || profile.efdContributionsApplicability === "unknown") missing.push("EFD Contribuições");
+  if (!profile.mitApplicability || profile.mitApplicability === "unknown") missing.push("MIT");
   if (!profile.deliveryApplicability || profile.deliveryApplicability === "unknown") missing.push("entrega");
   else if (profile.deliveryApplicability === "required" && !profile.deliveryChannel?.trim()) missing.push("canal de entrega");
   return missing;

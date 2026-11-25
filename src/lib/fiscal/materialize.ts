@@ -26,6 +26,12 @@ export function fiscalProfileSnapshot(
     deliveryChannel: profile.deliveryChannel,
     factorRApplicability: profile.factorRApplicability,
     nfseIssuerApplicability: profile.nfseIssuerApplicability,
+    spedApplicability: profile.spedApplicability,
+    giaApplicability: profile.giaApplicability,
+    deisApplicability: profile.deisApplicability,
+    pgdasApplicability: profile.pgdasApplicability,
+    efdContributionsApplicability: profile.efdContributionsApplicability,
+    mitApplicability: profile.mitApplicability,
     revenueReference: profile.revenueReference,
     permanentNotes: profile.permanentNotes,
   };

@@ -83,6 +83,12 @@ describe("controle fiscal mensal", () => {
         nfsApplicability: "not_applicable",
         deliveryApplicability: "required",
         factorRApplicability: "not_required",
+        spedApplicability: "required",
+        giaApplicability: "not_required",
+        deisApplicability: "not_applicable",
+        pgdasApplicability: "required",
+        efdContributionsApplicability: "required",
+        mitApplicability: "not_required",
         deliveryChannel: "Onvio",
       }),
     ).toEqual([]);
@@ -93,7 +99,20 @@ describe("controle fiscal mensal", () => {
         deliveryApplicability: "unknown",
         deliveryChannel: " ",
       }),
-    ).toEqual(["entrada", "saída", "guia", "notas fiscais", "Fator R", "entrega"]);
+    ).toEqual([
+      "entrada",
+      "saída",
+      "guia",
+      "notas fiscais",
+      "Fator R",
+      "SPED",
+      "GIA",
+      "DEIS",
+      "PGDAS",
+      "EFD Contribuições",
+      "MIT",
+      "entrega",
+    ]);
     expect(
       fiscalProfileMissingFields({
         profileExists: true,
@@ -104,6 +123,12 @@ describe("controle fiscal mensal", () => {
         nfsApplicability: "not_required",
         deliveryApplicability: "required",
         factorRApplicability: "unknown",
+        spedApplicability: "not_required",
+        giaApplicability: "not_required",
+        deisApplicability: "not_required",
+        pgdasApplicability: "not_required",
+        efdContributionsApplicability: "not_required",
+        mitApplicability: "not_required",
         deliveryChannel: "Onvio",
       }),
     ).toEqual(["movimentos", "Fator R"]);
@@ -115,8 +140,31 @@ describe("controle fiscal mensal", () => {
       guideApplicability: "not_required",
       nfsApplicability: "not_required",
       factorRApplicability: "not_required",
+      spedApplicability: "not_required",
+      giaApplicability: "not_required",
+      deisApplicability: "not_required",
+      pgdasApplicability: "not_required",
+      efdContributionsApplicability: "not_required",
+      mitApplicability: "not_required",
       deliveryApplicability: "required",
       deliveryChannel: null,
     })).toEqual(["canal de entrega"]);
+    expect(fiscalProfileMissingFields({
+      profileExists: true,
+      movementsApplicability: "not_required",
+      incomingApplicability: "not_required",
+      outgoingApplicability: "not_required",
+      guideApplicability: "not_required",
+      nfsApplicability: "not_required",
+      factorRApplicability: "not_required",
+      spedApplicability: "not_required",
+      giaApplicability: "not_required",
+      deisApplicability: "not_required",
+      pgdasApplicability: "not_required",
+      efdContributionsApplicability: "not_required",
+      mitApplicability: "not_required",
+      deliveryApplicability: "not_required",
+      deliveryChannel: null,
+    })).toEqual([]);
   });
 });

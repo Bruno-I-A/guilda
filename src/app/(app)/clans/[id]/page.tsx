@@ -400,6 +400,7 @@ export default async function ClanPage({
             clanId={clan.id}
             canManage={canManageFiscalPortfolio(clanFacts)}
             isAdmin={isAdminRole(role)}
+            memberships={memberships}
             requestedYear={fiscalYear}
             requestedMonth={fiscalMonth}
           />
