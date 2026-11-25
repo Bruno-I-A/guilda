@@ -3,7 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 
-import { and, asc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
@@ -25,7 +25,7 @@ import { vaultEnvelopeSchema, VaultError, type VaultKey } from "@/lib/nfse/vault
 import { firstElementText } from "@/lib/nfse/xml";
 
 import { nextDpsSeriesAfter } from "./suggest";
-import { dpsConflictMessage, issuedBeforeRequest, nfseDateLabel, nfseXmlIssuedAt, nfseXmlMismatch } from "./verify";
+import { dpsConflictMessage, issuedBeforeRequest, nfseDateLabel, nfseXmlDps, nfseXmlIssuedAt, nfseXmlMismatch } from "./verify";
 
 /**
  * O lado do serviço fiscal das notas dos clientes: reivindica uma nota da
@@ -275,6 +275,57 @@ async function storedNoteXml(orgId: string, accessKey: string): Promise<string |
 }
 
 /**
+ * A nota da empresa que usou esta série e número de DPS, entre as que a rotina
+ * da aba XML guardou (inclusive cancelada: a DPS continua ocupada).
+ */
+export async function storedNoteByDps(orgId: string, clientId: string, series: string, number: number): Promise<{ accessKey: string; xml: string } | null> {
+  const n = schema.nfseIssuedNotes;
+  const wanted = series.trim().replace(/^0+(?=\d)/, "");
+  const rows = await withOrgTx(orgId, (tx) => tx.select({ accessKey: n.accessKey, xmlGz: n.xmlGz }).from(n)
+    .where(and(eq(n.orgId, orgId), eq(n.clientId, clientId)))
+    .orderBy(desc(n.issuedAt))
+    .limit(20_000));
+  for (const row of rows) {
+    const xml = gunzipSync(Buffer.from(row.xmlGz)).toString("utf8");
+    const dps = nfseXmlDps(xml);
+    if (dps.series === wanted && dps.number === number) return { accessKey: row.accessKey, xml };
+  }
+  return null;
+}
+
+/**
+ * E0014: o Sistema Nacional diz que a DPS já gerou uma nota, mas a consulta da
+ * DPS não a devolve (a nota pode ser de outro sistema da empresa). Sem saber de
+ * quem é, emitir em outra série poderia duplicar uma nota nossa cuja resposta se
+ * perdeu. Por isso a nota é procurada nas emitidas que a aba XML guardou: achada,
+ * segue o caminho da nota achada pela DPS (é desta emissão e é adotada, ou é de
+ * outro sistema e a empresa passa para a próxima série). Não achada, a mensagem
+ * pede a leitura da aba XML antes do Tentar de novo (2026-11-25, US HAIR, DPS 900/1).
+ */
+export async function resolveTakenDps(
+  orgId: string,
+  claim: Pick<ClientNfseClaim, "clientId" | "dpsSeries" | "dpsNumber">,
+  outcome: NfseJobOutcome,
+  environment: 1 | 2,
+): Promise<{ outcome: NfseJobOutcome; xml: string | null } | null> {
+  if (outcome.kind !== "failed" || !outcome.errors.some((error) => error.code === "E0014")) return null;
+  const stored = await storedNoteByDps(orgId, claim.clientId, claim.dpsSeries, claim.dpsNumber);
+  if (stored) {
+    return {
+      outcome: { kind: "issued", accessKey: stored.accessKey, nfseNumber: firstElementText(stored.xml, "nNFSe"), environment, foundByDps: true },
+      xml: stored.xml,
+    };
+  }
+  return {
+    outcome: {
+      ...outcome,
+      message: `${outcome.message} A DPS ${claim.dpsSeries}/${claim.dpsNumber} já foi usada por uma nota que a Guilda ainda não leu. Rode "Rodar agora" na aba XML e depois "Tentar de novo": se a nota for desta emissão, ela é registrada; se for de outro sistema, a Guilda passa para a próxima série sozinha.`,
+    },
+    xml: null,
+  };
+}
+
+/**
  * Consome a fila das notas dos clientes até esvaziar. A conexão de cada
  * empresa fica aberta só durante esta chamada. `office` é o A1 do escritório,
  * para as empresas que emitem por procuração.
@@ -331,6 +382,12 @@ export async function runClientNfseQueue(
         }
         xml ??= await storedNoteXml(orgId, outcome.accessKey);
         if (!outcome.nfseNumber && xml) outcome = { ...outcome, nfseNumber: firstElementText(xml, "nNFSe") };
+      }
+      // E0014 sem a nota na consulta da DPS: procura nas notas guardadas pela aba XML.
+      const taken = await resolveTakenDps(orgId, claim, outcome, tpAmb);
+      if (taken) {
+        outcome = taken.outcome;
+        xml = taken.xml;
       }
       // A nota ACHADA pela DPS pode ser de outro sistema e precisa ser conferida.
       // Sem XML não se adota no escuro: erro, e o Tentar de novo confere depois.

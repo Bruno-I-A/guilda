@@ -610,3 +610,33 @@ test("descartar: só nota com erro, sai da lista e a nota fixa volta a poder ser
   const noKey = await withOrgTx(ORG, (tx) => tx.update(invoices).set({ status: "cancelled" }).where(eq(invoices.id, other.id))).then(() => "gravou", () => "recusou");
   expect(noKey).toBe("recusou");
 }, 60_000);
+
+test("E0014 sem a nota na consulta da DPS: procura nas notas guardadas pela aba XML", async () => {
+  const { gzipSync } = await import("node:zlib");
+  const { withOrgTx } = await import("@/db/org-tx");
+  const { resolveTakenDps, storedNoteByDps } = await import("./service");
+  const { nfseXmlDps } = await import("./verify");
+
+  const noteXml = (series: string, number: string, nfse: string) =>
+    `<NFSe><infNFSe><nNFSe>${nfse}</nNFSe><DPS><infDPS><dhEmi>2026-11-20T10:00:00-03:00</dhEmi><serie>${series}</serie><nDPS>${number}</nDPS></infDPS></DPS></infNFSe></NFSe>`;
+  expect(nfseXmlDps(noteXml("00905", "7", "1"))).toEqual({ series: "905", number: 7 });
+
+  await withOrgTx(ORG, (tx) => tx.insert(schema.nfseIssuedNotes).values([
+    { orgId: ORG, clientId: ACADEMIA, accessKey: "43149022330001670001010090500000000000000000000001", nsu: 901, issuedAt: new Date("2026-11-20T13:00:00Z"), xmlGz: gzipSync(noteXml("905", "1", "55")) },
+    { orgId: ORG, clientId: ACADEMIA, accessKey: "43149022330001670001010090500000000000000000000002", nsu: 902, issuedAt: new Date("2026-11-21T13:00:00Z"), xmlGz: gzipSync(noteXml("905", "2", "56")) },
+  ]));
+  expect((await storedNoteByDps(ORG, ACADEMIA, "905", 2))?.accessKey).toBe("43149022330001670001010090500000000000000000000002");
+  expect(await storedNoteByDps(ORG, MERCADO, "905", 2)).toBeNull();
+
+  const e0014 = { kind: "failed" as const, message: "E0014: Conjunto de Série, Número... já existe.", errors: [{ code: "E0014", message: "já existe" }] };
+  // Achada: segue como nota achada pela DPS (o ciclo confere se é desta emissão ou de outro sistema).
+  const found = await resolveTakenDps(ORG, { clientId: ACADEMIA, dpsSeries: "905", dpsNumber: 1 }, e0014, 2);
+  expect(found).toMatchObject({ outcome: { kind: "issued", accessKey: "43149022330001670001010090500000000000000000000001", nfseNumber: "55", foundByDps: true } });
+  expect(found?.xml).toContain("<nDPS>1</nDPS>");
+  // Não achada: não emite em outra série às cegas; pede a leitura da aba XML.
+  const missing = await resolveTakenDps(ORG, { clientId: ACADEMIA, dpsSeries: "905", dpsNumber: 9 }, e0014, 2);
+  expect(missing?.outcome).toMatchObject({ kind: "failed", message: expect.stringContaining('Rodar agora" na aba XML') });
+  expect(missing?.xml).toBeNull();
+  // Outro erro não passa por aqui.
+  expect(await resolveTakenDps(ORG, { clientId: ACADEMIA, dpsSeries: "905", dpsNumber: 1 }, { kind: "failed", message: "E0312", errors: [{ code: "E0312", message: "x" }] }, 2)).toBeNull();
+}, 60_000);
