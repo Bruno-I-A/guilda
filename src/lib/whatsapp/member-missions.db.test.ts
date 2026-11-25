@@ -114,6 +114,9 @@ describe("integrante que não lidera clã pede missão avulsa", () => {
     const preview = replies.find((r) => r.key.endsWith(":preview"));
     const decision = replies.find((r) => r.key.endsWith(":decision"));
     expect(preview?.text).toContain("1. Ana Souza: Conferir a folha de novembro");
+    // Pelo WhatsApp a leitura é sempre de pedido explícito: "jogar padel" também é missão.
+    const { buildInformativeDraft } = await import("@/lib/informatives/draft");
+    expect(vi.mocked(buildInformativeDraft).mock.calls.at(-1)?.[4]).toEqual({ explicitRequest: true });
     expect(decision?.buttons?.map((b) => b.title)).toEqual(["Criar 1 missão", "Cancelar"]);
     expect(await db.select().from(schema.informatives)).toHaveLength(0);
 

@@ -13,7 +13,6 @@ import {
 } from "./notice";
 
 const TASK = "11111111-1111-4111-8111-111111111111";
-const base = "https://guilda.example";
 
 describe("modelos dos avisos", () => {
   it("nenhum corpo termina em variável e cada variável tem exemplo", () => {
@@ -46,9 +45,9 @@ describe("aviso de nova missão", () => {
   };
 
   it("dentro da janela vai com o link e o botão Iniciar", () => {
-    const text = noticeText(notice, base);
+    const text = noticeText(notice);
     expect(text).toContain("Nova missão para você");
-    expect(text).toContain(`Abrir: ${base}/tasks/${TASK}`);
+    expect(text).not.toMatch(/https?:|Abrir:/);
     expect(noticeButtons(notice)).toEqual([{ id: `task:start:${TASK}`, title: "Iniciar missão" }]);
   });
 
@@ -73,7 +72,7 @@ describe("aviso de entrega para aprovação", () => {
   });
 
   it("o retorno aparece no texto", () => {
-    expect(noticeText(notice, base)).toContain("Retorno: Tudo certo\nconferido");
+    expect(noticeText(notice)).toContain("Retorno: Tudo certo\nconferido");
   });
 });
 
@@ -81,7 +80,7 @@ describe("demais famílias", () => {
   it("prazo diz se vence hoje ou está atrasada", () => {
     const notice: Notice = { family: "deadline", title: "Folha", overdue: true, due: "20/11/2026", xp: 30, path: `tasks/${TASK}` };
     expect(noticeTemplate(notice).bodyParams).toEqual(["Folha", "está atrasada (prazo 20/11/2026)"]);
-    expect(noticeText(notice, base)).toMatch(/^Missão atrasada/);
+    expect(noticeText(notice)).toMatch(/^Missão atrasada/);
   });
 
   it("aviso geral junta título e resumo numa variável", () => {
@@ -90,9 +89,9 @@ describe("demais famílias", () => {
     expect(noticeButtons(notice)).toEqual([]);
   });
 
-  it("sem endereço do app o link fica relativo", () => {
+  it("o texto não leva link: a ação vem nos botões (pedido do Bruno)", () => {
     const notice: Notice = { family: "daily_summary", open: 2, available: 1, xp: 300, path: "dashboard" };
-    expect(noticeText(notice, null)).toContain("Abrir: /dashboard");
+    expect(noticeText(notice)).toBe("Resumo da Guilda\n\n2 missão(ões) em aberto com você\n1 disponível(is) nos seus clãs\n300 XP no total");
   });
 });
 

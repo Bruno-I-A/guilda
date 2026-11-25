@@ -1,4 +1,4 @@
-import { appLink, shortRef } from "./links";
+import { shortRef } from "./links";
 
 /**
  * Aviso da Guilda pelo WhatsApp (2026-11-24, substitui o Telegram).
@@ -176,22 +176,25 @@ function lines(...parts: (string | false | null | undefined)[]): string {
   return parts.filter((part): part is string => typeof part === "string").join("\n");
 }
 
-/** Texto do aviso dentro da janela, com o link no fim. */
-export function noticeText(notice: Notice, baseUrl: string | null): string {
-  const link = `Abrir: ${appLink(notice.path, baseUrl)}`;
+/**
+ * Texto do aviso dentro da janela. Sem link (2026-11-24, pedido do Bruno: "não
+ * precisa enviar"): a ação vem nos botões, e o modelo de fora da janela leva o
+ * botão "Abrir na Guilda".
+ */
+export function noticeText(notice: Notice): string {
   switch (notice.family) {
     case "new_mission":
-      return lines(notice.heading, "", notice.title, notice.context && `Onde: ${notice.context}`, ...(notice.items ?? []).map((item) => `• ${item}`), `Prazo: ${notice.due}`, `Recompensa: ${notice.xp} XP`, "", link);
+      return lines(notice.heading, "", notice.title, notice.context && `Onde: ${notice.context}`, ...(notice.items ?? []).map((item) => `• ${item}`), `Prazo: ${notice.due}`, `Recompensa: ${notice.xp} XP`);
     case "approval":
-      return lines("Entrega para a sua aprovação", "", notice.title, `Quem entregou: ${notice.who}`, `Recompensa: ${notice.xp} XP`, notice.note && "", notice.note && `Retorno: ${notice.note}`, "", link);
+      return lines("Entrega para a sua aprovação", "", notice.title, `Quem entregou: ${notice.who}`, `Recompensa: ${notice.xp} XP`, notice.note && "", notice.note && `Retorno: ${notice.note}`);
     case "mission_update":
-      return lines(notice.update, "", notice.title, notice.detail, "", link);
+      return lines(notice.update, "", notice.title, notice.detail);
     case "deadline":
-      return lines(notice.overdue ? "Missão atrasada" : "Missão vence hoje", "", notice.title, `Prazo: ${notice.due}`, `Recompensa: ${notice.xp} XP`, "", link);
+      return lines(notice.overdue ? "Missão atrasada" : "Missão vence hoje", "", notice.title, `Prazo: ${notice.due}`, `Recompensa: ${notice.xp} XP`);
     case "daily_summary":
-      return lines("Resumo da Guilda", "", `${notice.open} missão(ões) em aberto com você`, `${notice.available} disponível(is) nos seus clãs`, `${notice.xp} XP no total`, "", link);
+      return lines("Resumo da Guilda", "", `${notice.open} missão(ões) em aberto com você`, `${notice.available} disponível(is) nos seus clãs`, `${notice.xp} XP no total`);
     case "general":
-      return lines(notice.heading, "", notice.summary, notice.detail, "", link);
+      return lines(notice.heading, "", notice.summary, notice.detail);
   }
 }
 

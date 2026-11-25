@@ -6,7 +6,6 @@ import { db } from "@/db";
 import { withOrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 import { preferenceEnabled } from "@/lib/notices/enqueue";
-import { appBaseUrl } from "@/lib/notices/links";
 import {
   NOTICE_TEMPLATES,
   noticeButtons,
@@ -125,7 +124,7 @@ async function send(item: Loaded, access: Access, config: MetaServerConfig, fetc
   }
   if (p.version === 3) {
     if (open) {
-      const text = noticeText(p.notice, appBaseUrl());
+      const text = noticeText(p.notice);
       const buttons = noticeButtons(p.notice);
       if (buttons.length) await sendWhatsAppButtons({ ...base, text, buttons }, config, fetchImpl);
       else await sendWhatsAppText({ ...base, text }, config, fetchImpl);

@@ -242,7 +242,7 @@ uso até ele autorizar apagar). Desenho em
 - **Avisos** (`src/lib/notices/`): o produtor descreve o aviso em dados (`Notice`) e
   `enqueueMemberNotice`/`enqueueOrgNotice`/`enqueueClanNotice` enfileiram na
   `member_whatsapp_outbox` (payload `version: 3`). Dentro da janela de 24 h sai texto
-  com o link e, quando há ação, botão de resposta (Iniciar missão, Aprovar, Retomar);
+  (sem link) e, quando há ação, botão de resposta (Iniciar missão, Aprovar, Retomar);
   fora, um dos seis modelos Utility (`NOTICE_TEMPLATES`), preparados por um botão de
   admin no Perfil (`member_whatsapp_templates`). O worker reconsulta modelo pendente a
   cada 15 min. Silêncio adia (`defer_member_whatsapp_outbox`).
@@ -280,6 +280,11 @@ uso até ele autorizar apagar). Desenho em
   A mensagem vai para `member_whatsapp_commands` (única por wamid; o `guilda_app` não
   apaga) e o `runMemberCommandCycle` do `support-worker` responde; a prévia, a resposta e
   a marcação de lido gravam juntas. Botões dos avisos passam por `transitionTaskForActor`.
+  - **Pedido pelo WhatsApp é sempre explícito** (`buildInformativeDraft(..., { explicitRequest: true })`):
+    a IA não decide se "é trabalho do escritório". "Rafa, jogar padel na sexta" voltava "não
+    identifiquei" porque o prompt só aceitava ação operacional. O painel e o MCP seguem sem a regra.
+  - **Aviso sem link no texto** (pedido do Bruno): a ação vem nos botões; o modelo de fora da
+    janela leva o botão "Abrir na Guilda".
   - **Resposta da IA é limpa antes de validar** (`informativeOutputFormat`, vale também para o
     painel e o Fluxo): a IA devolvia texto vazio onde o esquema pede uma letra ("too_small") e o
     SDK recusava a resposta inteira. Vazio vira nulo, descrição e trecho herdam o título, item

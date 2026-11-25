@@ -130,6 +130,8 @@ export async function buildInformativeDraft(
   sourceText: string,
   resolvedCompany?: ResolvedCompany,
   flowContext?: CompanyFlowDraftContext,
+  /** Pedido direto pelo WhatsApp: toda atividade pedida é missão (2026-11-24). */
+  options: { explicitRequest?: boolean } = {},
 ): Promise<BuildInformativeDraftResult> {
   const [members, clients, activeClanMemberships, activeClans, routingRules] =
     await Promise.all([
@@ -211,6 +213,7 @@ export async function buildInformativeDraft(
         activeClans,
         `${actor.orgId}:${actor.userId}`,
         Boolean(resolvedCompany),
+        Boolean(options.explicitRequest),
       );
 
   // Com empresa resolvida por CNPJ, o pedido de missão já é certo — é o
@@ -218,7 +221,9 @@ export async function buildInformativeDraft(
   // complementar, nunca o único sinal de "isto é uma missão": mesmo um texto
   // sem nenhuma linha acionável ainda gera a missão garantida do Fiscal
   // (abaixo), então a checagem da IA não pode bloquear aqui.
-  if (!resolvedCompany && !flowContext && !extracted.data.isMissionRequest) {
+  // Pedido explícito com tarefa extraída passa mesmo que a IA hesite no "é pedido?".
+  const explicitWithTasks = Boolean(options.explicitRequest) && extracted.data.tasks.length > 0;
+  if (!resolvedCompany && !flowContext && !extracted.data.isMissionRequest && !explicitWithTasks) {
     return {
       ok: false,
       message:
