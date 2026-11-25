@@ -3,6 +3,7 @@ import { previousEmissionMonth } from "@/domain/nfse-xml";
 import { loadVaultPublicKey, loadXmlCompanies, loadXmlCredentialsView, loadXmlRoutineView } from "@/lib/nfse/xml-requests";
 
 import { XmlNotesBoard } from "./xml-notes-board";
+import type { ClanMemberView } from "./page";
 
 function parsePeriod(year: string | undefined, month: string | undefined, now: Date): { year: number; month: number } {
   const parsedYear = Number(year);
@@ -24,6 +25,7 @@ export async function XmlNotesTab({
   clanId,
   canManage,
   isAdmin,
+  memberships,
   requestedYear,
   requestedMonth,
 }: {
@@ -32,6 +34,7 @@ export async function XmlNotesTab({
   canManage: boolean;
   /** Só admin muda o padrão de credencial do escritório. */
   isAdmin: boolean;
+  memberships: readonly ClanMemberView[];
   requestedYear?: string;
   requestedMonth?: string;
 }) {
@@ -54,6 +57,7 @@ export async function XmlNotesTab({
       routine={routine}
       credentials={credentials}
       companies={companies}
+      portfolioMembers={memberships.map(({ userId, name }) => ({ userId, name }))}
       vaultKey={vaultKey}
     />
   );

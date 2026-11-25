@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, Download, Search, Files, ShieldCheck, Building2, Activity, Timer } from "lucide-react";
+import { Activity, AlertTriangle, BriefcaseBusiness, Building2, Check, ChevronLeft, ChevronRight, Download, Files, Search, ShieldCheck, Timer, UserRoundX } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCnpj } from "@/domain/cnpj";
 import { certificateState, emissionRangeLabel, isEmissionMonthInProgress, previousEmissionMonth, summarizeCertificates } from "@/domain/nfse-xml";
+import { groupXmlCompaniesByPortfolio } from "@/domain/xml-portfolio";
 import type { ClientCertificateView, XmlCompanyView, XmlCredentialsView, XmlRoutineView } from "@/lib/nfse/xml-requests";
 import { cn } from "@/lib/utils";
 
@@ -248,6 +249,7 @@ export function XmlNotesBoard({
   routine,
   credentials,
   companies,
+  portfolioMembers,
   vaultKey,
 }: {
   clanId: string;
@@ -258,6 +260,7 @@ export function XmlNotesBoard({
   routine: XmlRoutineView;
   credentials: XmlCredentialsView;
   companies: readonly XmlCompanyView[];
+  portfolioMembers: readonly { userId: string; name: string }[];
   vaultKey: { keyId: string; publicKeySpki: string } | null;
 }) {
   const now = useMemo(() => new Date(), []);
@@ -353,6 +356,10 @@ export function XmlNotesBoard({
       return true;
     });
   }, [scoped, filter, problemIds, query]);
+  const visiblePortfolios = useMemo(
+    () => groupXmlCompaniesByPortfolio(portfolioMembers, visible),
+    [portfolioMembers, visible],
+  );
 
   const filters: { key: Filter; label: string }[] = [
     { key: "all", label: "Sem filtro" },
@@ -571,47 +578,64 @@ export function XmlNotesBoard({
             ) : null}
           </div>
         ) : (
-          <ul className="grid min-w-0 gap-3">
-            {visible.map((company) => (
-              <li key={company.clientId} className={cn("grid min-w-0 gap-4 rounded-md border border-l-2 bg-card/60 p-4 transition-colors hover:bg-accent/10 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center", problemIds.has(company.clientId) ? "border-l-destructive" : company.notes.total > 0 ? "border-l-primary" : "border-l-border")}>
-                <div className="grid min-w-0 gap-0.5 text-sm">
-                  <span className="truncate font-medium">{companyDisplayName(company.name)}</span>
-                  <span className="font-mono text-xs text-muted-foreground">{company.cnpj ? formatCnpj(company.cnpj) : "sem CNPJ no cadastro"}</span>
-                  <span>
-                    {company.credential.mode === "proxy" ? (
-                      <ProxyStatusLine clanId={clanId} company={company} canManage={canManage} />
-                    ) : (
-                      <CertificateStatus certificate={company.certificate} now={now} />
-                    )}
+          <div className="grid gap-6">
+            {visiblePortfolios.map((portfolio) => (
+              <section key={portfolio.key} className="grid gap-2">
+                <div className="flex items-center gap-2 border-b border-border/70 pb-2">
+                  {portfolio.userId ? (
+                    <BriefcaseBusiness className="size-4 text-primary" aria-hidden />
+                  ) : (
+                    <UserRoundX className="size-4 text-warning" aria-hidden />
+                  )}
+                  <h3>{portfolio.userId ? `Carteira de ${portfolio.name}` : portfolio.name}</h3>
+                  <span className="font-mono text-sm tabular-nums text-muted-foreground">
+                    {portfolio.companies.length}
                   </span>
-                  <span className="text-xs"><SyncStatus company={company} now={now} /></span>
-                  <details className="mt-2"><summary className="min-h-11 cursor-pointer py-3 text-xs text-muted-foreground hover:text-foreground">Cadastro, credencial e código Domínio{company.dominioCode ? ` · ${company.dominioCode}` : " · código não informado"}</summary><div className="grid gap-2 border-t pt-3"><CredentialModeField clanId={clanId} company={company} canManage={canManage} /><ServiceToggle clanId={clanId} company={company} canManage={canManage} /><DominioCodeField key={company.dominioCode ?? ""} clanId={clanId} company={company} canManage={canManage} /></div></details>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                  <span className="rounded-md border bg-background/50 px-3 py-2 font-mono text-sm tabular-nums">
-                    {company.notes.total} XML · {monthName}
-                    {company.notes.cancelled > 0 ? ` · ${company.notes.cancelled} cancelada(s)` : ""}
-                  </span>
-                  {canManage && company.notes.total > 0 ? (
-                    <Button asChild size="sm" variant="outline">
-                      <a href={xmlHref(clanId, year, month, company.clientId)}><Download aria-hidden /> Baixar XML</a>
-                    </Button>
-                  ) : null}
-                  {/* Por procuração o certificado da empresa não é usado. */}
-                  {company.credential.mode === "certificate" ? (
-                    <ClientCertificateDialog
-                      clanId={clanId}
-                      clientId={company.clientId}
-                      clientName={company.name}
-                      certificate={company.certificate}
-                      vaultKey={vaultKey}
-                      canManage={canManage}
-                    />
-                  ) : null}
-                </div>
-              </li>
+                <ul className="grid min-w-0 gap-3">
+                  {portfolio.companies.map((company) => (
+                    <li key={company.clientId} className={cn("grid min-w-0 gap-4 rounded-md border border-l-2 bg-card/60 p-4 transition-colors hover:bg-accent/10 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center", problemIds.has(company.clientId) ? "border-l-destructive" : company.notes.total > 0 ? "border-l-primary" : "border-l-border")}>
+                      <div className="grid min-w-0 gap-0.5 text-sm">
+                        <span className="truncate font-medium">{companyDisplayName(company.name)}</span>
+                        <span className="font-mono text-xs text-muted-foreground">{company.cnpj ? formatCnpj(company.cnpj) : "sem CNPJ no cadastro"}</span>
+                        <span>
+                          {company.credential.mode === "proxy" ? (
+                            <ProxyStatusLine clanId={clanId} company={company} canManage={canManage} />
+                          ) : (
+                            <CertificateStatus certificate={company.certificate} now={now} />
+                          )}
+                        </span>
+                        <span className="text-xs"><SyncStatus company={company} now={now} /></span>
+                        <details className="mt-2"><summary className="min-h-11 cursor-pointer py-3 text-xs text-muted-foreground hover:text-foreground">Cadastro, credencial e código Domínio{company.dominioCode ? ` · ${company.dominioCode}` : " · código não informado"}</summary><div className="grid gap-2 border-t pt-3"><CredentialModeField clanId={clanId} company={company} canManage={canManage} /><ServiceToggle clanId={clanId} company={company} canManage={canManage} /><DominioCodeField key={company.dominioCode ?? ""} clanId={clanId} company={company} canManage={canManage} /></div></details>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                        <span className="rounded-md border bg-background/50 px-3 py-2 font-mono text-sm tabular-nums">
+                          {company.notes.total} XML · {monthName}
+                          {company.notes.cancelled > 0 ? ` · ${company.notes.cancelled} cancelada(s)` : ""}
+                        </span>
+                        {canManage && company.notes.total > 0 ? (
+                          <Button asChild size="sm" variant="outline">
+                            <a href={xmlHref(clanId, year, month, company.clientId)}><Download aria-hidden /> Baixar XML</a>
+                          </Button>
+                        ) : null}
+                        {/* Por procuração o certificado da empresa não é usado. */}
+                        {company.credential.mode === "certificate" ? (
+                          <ClientCertificateDialog
+                            clanId={clanId}
+                            clientId={company.clientId}
+                            clientName={company.name}
+                            certificate={company.certificate}
+                            vaultKey={vaultKey}
+                            canManage={canManage}
+                          />
+                        ) : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             ))}
-          </ul>
+          </div>
         )}
       </section>
     </div>
