@@ -15,8 +15,9 @@ import {
 const TASK = "11111111-1111-4111-8111-111111111111";
 
 describe("modelos dos avisos", () => {
-  it("nenhum corpo termina em variável e cada variável tem exemplo", () => {
+  it("nenhum corpo começa ou termina em variável e cada variável tem exemplo", () => {
     for (const template of Object.values(NOTICE_TEMPLATES)) {
+      expect(template.body.trim()).not.toMatch(/^\{\{\d+\}\}/);
       expect(template.body.trim()).not.toMatch(/\{\{\d+\}\}\.?$/);
       const variables = template.body.match(/\{\{\d+\}\}/g) ?? [];
       expect(template.examples).toHaveLength(variables.length);
