@@ -263,6 +263,38 @@ test("aguardar, voltar quando o cliente escreve, resolver e reabrir", async () =
   expect(await tx((t) => reopenSupportConversation(t, base))).toEqual({ ok: false, error: expect.stringContaining("outra conversa") });
 });
 
+test("atendimento novo mostra os atendimentos anteriores do mesmo contato no histórico", async () => {
+  const { loadSupportConversation, resolveSupportConversation } = await import("./inbox");
+  const phone = "5554911110091";
+  const first = await customerSays(phone, "Primeiro assunto", new Date(NOW.getTime() - 120_000));
+  const base = { orgId: ORG, viewer: admin, now: NOW };
+  await tx((t) => resolveSupportConversation(t, { ...base, conversationId: first.id }));
+
+  await customerSays(phone, "Novo assunto", new Date(NOW.getTime() - 60_000));
+  const conversations = await tx((t) =>
+    t
+      .select({ id: schema.supportConversations.id })
+      .from(schema.supportConversations)
+      .innerJoin(schema.supportContacts, eq(schema.supportContacts.id, schema.supportConversations.contactId))
+      .where(eq(schema.supportContacts.whatsappId, phone)),
+  );
+  const second = conversations.find((conversation) => conversation.id !== first.id)!;
+  const current = await tx((t) => loadSupportConversation(t, { ...base, conversationId: second.id }));
+  expect(current?.history).toEqual([
+    expect.objectContaining({
+      id: first.id,
+      status: "resolved",
+      lastMessage: "Primeiro assunto",
+      resolvedAt: NOW.toISOString(),
+    }),
+  ]);
+
+  const previous = await tx((t) => loadSupportConversation(t, { ...base, conversationId: first.id }));
+  expect(previous?.history).toEqual([
+    expect.objectContaining({ id: second.id, status: "needs_human", lastMessage: "Novo assunto", resolvedAt: null }),
+  ]);
+});
+
 test("transferir confere clã e pessoa na organização e leva a conversa para a fila certa", async () => {
   const { transferSupportConversation, loadSupportQueue } = await import("./inbox");
   const { id } = await customerSays("5554911110007", "Oi");

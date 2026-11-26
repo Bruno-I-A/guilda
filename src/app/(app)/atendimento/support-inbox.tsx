@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Hand, ImageOff, LoaderCircle, Maximize2, Paperclip, Plus, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Hand, History, ImageOff, LoaderCircle, Maximize2, Paperclip, Plus, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -415,7 +415,7 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
   );
 }
 
-function ConversationPanel({ conversation, filter, onContext }: { conversation: SupportConversationView; filter: SupportFilter; onContext: () => void }) {
+function ConversationPanel({ conversation, filter, onContext, onHistory }: { conversation: SupportConversationView; filter: SupportFilter; onContext: () => void; onHistory: () => void }) {
   const { pending, run } = useCommand();
   const end = useRef<HTMLLIElement>(null);
   const size = conversation.timeline.length;
@@ -452,7 +452,12 @@ function ConversationPanel({ conversation, filter, onContext }: { conversation: 
               {conversation.assigneeName ? ` · ${conversation.assignedToMe ? "com você" : `com ${conversation.assigneeName}`}` : ""}
             </span>
           </div>
-          <Button type="button" size="sm" variant="ghost" onClick={onContext}><Building2 aria-hidden /> Contexto</Button>
+          <div className="flex items-center gap-1">
+            <Button type="button" size="sm" variant="ghost" onClick={onHistory}>
+              <History aria-hidden /> Histórico{conversation.history.length > 0 ? ` (${conversation.history.length})` : ""}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={onContext}><Building2 aria-hidden /> Contexto</Button>
+          </div>
         </div>
         <div className="flex min-w-0 items-center justify-end gap-1 overflow-x-auto border-t px-3 py-2">
           {conversation.phone ? (
@@ -490,6 +495,31 @@ function ConversationPanel({ conversation, filter, onContext }: { conversation: 
       </ol>
       <Composer key={`${conversation.id}-${conversation.replyBlocked ?? "ok"}`} conversation={conversation} />
     </section>
+  );
+}
+
+function ConversationHistory({ conversation, filter }: { conversation: SupportConversationView; filter: SupportFilter }) {
+  if (conversation.history.length === 0) {
+    return <p className="px-5 py-6 text-sm text-muted-foreground">Este é o primeiro atendimento deste contato.</p>;
+  }
+  return (
+    <ol className="grid content-start divide-y overflow-y-auto" aria-label="Atendimentos anteriores deste contato">
+      {conversation.history.map((item) => {
+        const activityAt = item.lastMessageAt ?? item.startedAt;
+        return (
+          <li key={item.id}>
+            <Link href={inboxHref(filter, item.id)} className="grid min-h-20 gap-1 px-5 py-3 transition-colors hover:bg-accent/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+              <span className="flex min-w-0 items-center justify-between gap-3">
+                <span className="text-sm font-medium">{dayLabel(activityAt)} · {shortTime(activityAt)}</span>
+                <StatusChip status={item.status} />
+              </span>
+              <span className="truncate text-sm text-muted-foreground">{item.lastMessage ?? "Atendimento sem mensagens"}</span>
+              {item.clientName ? <span className="truncate text-xs text-muted-foreground">{companyDisplayName(item.clientName)}</span> : null}
+            </Link>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -755,6 +785,7 @@ export function SupportInbox({
 }) {
   const router = useRouter();
   const [contextOpen, setContextOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const clock = useMemo(() => new Date(now), [now]);
 
   // A resposta chega pelo processo em segundo plano: a tela busca enquanto está à vista.
@@ -805,8 +836,16 @@ export function SupportInbox({
       {conversation ? (
         <>
           <div className="grid min-h-0 min-w-0">
-            <ConversationPanel key={conversation.id} conversation={conversation} filter={filter} onContext={() => setContextOpen(true)} />
+            <ConversationPanel key={conversation.id} conversation={conversation} filter={filter} onContext={() => setContextOpen(true)} onHistory={() => setHistoryOpen(true)} />
           </div>
+          <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+            <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">
+              <SheetHeader className="border-b px-5 py-4">
+                <SheetTitle>Histórico de {conversation.contactName}</SheetTitle>
+              </SheetHeader>
+              <ConversationHistory conversation={conversation} filter={filter} />
+            </SheetContent>
+          </Sheet>
           <Sheet open={contextOpen} onOpenChange={setContextOpen}>
             <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">
               <SheetHeader className="border-b px-5 py-4">
