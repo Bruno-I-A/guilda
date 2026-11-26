@@ -32,6 +32,7 @@ export function fiscalProfileSnapshot(
     pgdasApplicability: profile.pgdasApplicability,
     efdContributionsApplicability: profile.efdContributionsApplicability,
     mitApplicability: profile.mitApplicability,
+    sedifApplicability: profile.sedifApplicability,
     revenueReference: profile.revenueReference,
     permanentNotes: profile.permanentNotes,
   };

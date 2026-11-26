@@ -103,6 +103,7 @@ export async function PortfolioTab({
         efdContributionsApplicability:
           schema.fiscalClientProfiles.efdContributionsApplicability,
         mitApplicability: schema.fiscalClientProfiles.mitApplicability,
+        sedifApplicability: schema.fiscalClientProfiles.sedifApplicability,
         deliveryChannel: schema.fiscalClientProfiles.deliveryChannel,
         revenueReference: schema.fiscalClientProfiles.revenueReference,
         permanentNotes: schema.fiscalClientProfiles.permanentNotes,
@@ -189,6 +190,7 @@ export async function PortfolioTab({
     const efdContributionsApplicability =
       detail?.efdContributionsApplicability ?? "unknown";
     const mitApplicability = detail?.mitApplicability ?? "unknown";
+    const sedifApplicability = detail?.sedifApplicability ?? "unknown";
     const deliveryChannel = detail?.deliveryChannel ?? null;
     return {
       id: clientId,
@@ -213,6 +215,7 @@ export async function PortfolioTab({
         pgdasApplicability,
         efdContributionsApplicability,
         mitApplicability,
+        sedifApplicability,
         deliveryChannel,
         revenueReference: detail?.revenueReference ?? null,
         permanentNotes:
@@ -232,6 +235,7 @@ export async function PortfolioTab({
           pgdasApplicability,
           efdContributionsApplicability,
           mitApplicability,
+          sedifApplicability,
           deliveryChannel,
         }),
         history: (historyByClient.get(clientId) ?? []).map((event) => ({

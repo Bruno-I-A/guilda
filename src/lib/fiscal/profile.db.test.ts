@@ -32,7 +32,7 @@ beforeAll(async () => {
 
 afterAll(() => client.close());
 
-test("Ficha Fiscal persiste os seis informativos no perfil e no snapshot", async () => {
+test("Ficha Fiscal persiste os sete informativos no perfil e no snapshot", async () => {
   const { withOrgTx } = await import("@/db/org-tx");
   const [created] = await withOrgTx(ORG, (tx) =>
     tx
@@ -53,6 +53,7 @@ test("Ficha Fiscal persiste os seis informativos no perfil e no snapshot", async
     pgdasApplicability: "unknown",
     efdContributionsApplicability: "unknown",
     mitApplicability: "unknown",
+    sedifApplicability: "unknown",
   });
 
   const [updated] = await withOrgTx(ORG, (tx) =>
@@ -65,6 +66,7 @@ test("Ficha Fiscal persiste os seis informativos no perfil e no snapshot", async
         pgdasApplicability: "required",
         efdContributionsApplicability: "required",
         mitApplicability: "not_required",
+        sedifApplicability: "required",
       })
       .where(eq(schema.fiscalClientProfiles.id, created.id))
       .returning(),
@@ -77,5 +79,6 @@ test("Ficha Fiscal persiste os seis informativos no perfil e no snapshot", async
     pgdasApplicability: "required",
     efdContributionsApplicability: "required",
     mitApplicability: "not_required",
+    sedifApplicability: "required",
   });
 });
