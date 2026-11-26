@@ -435,7 +435,9 @@ export async function createWhatsAppUtilityTemplate(
       name: input.name,
       language: "pt_BR",
       category: "UTILITY",
-      allow_category_change: true,
+      // Nunca transformar silenciosamente um aviso operacional em Marketing:
+      // se a Meta discordar da categoria Utility, deve recusar o modelo.
+      allow_category_change: false,
       components: [
         { type: "BODY", text: input.body, example: { body_text: [input.examples] } },
         ...(input.buttons?.length
