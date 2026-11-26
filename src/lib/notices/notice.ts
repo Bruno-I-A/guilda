@@ -108,7 +108,7 @@ export type MemberTemplateKey = NoticeTemplateKey | "novo_cliente";
 
 export type NoticeTemplateDefinition = Readonly<{
   name: string;
-  /** Corpo do modelo. Nunca termina em variável: a Meta recusa. */
+  /** Corpo do modelo. Nunca começa nem termina em variável: a Meta recusa. */
   body: string;
   examples: readonly string[];
   /** Resposta rápida antes do botão de link (só o Aprovar). */
@@ -127,8 +127,10 @@ export const NOTICE_TEMPLATES: Record<NoticeTemplateKey, NoticeTemplateDefinitio
     examples: ["Conferir a folha de outubro (clã RH)", "25/11/2026", "50"],
   },
   aprovacao: {
-    name: "guilda_aprovacao",
-    body: "{{1}} entregou a missão {{2}} para a sua aprovação. Recompensa: {{3}} XP. Aprove por aqui ou abra a missão pelo botão abaixo.",
+    // O v1 começava por {{1}} e foi recusado pela Meta. Nome novo permite
+    // enviar o texto corrigido sem ficar preso ao modelo rejeitado existente.
+    name: "guilda_aprovacao_v2",
+    body: "Atenção: {{1}} entregou a missão {{2}} para a sua aprovação. Recompensa: {{3}} XP. Aprove por aqui ou abra a missão pelo botão abaixo.",
     examples: ["Ana Souza", "Conferir a folha de outubro", "50"],
     quickReply: "Aprovar",
   },
