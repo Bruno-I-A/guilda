@@ -206,6 +206,16 @@ export interface SupportConversationView {
   aiSuggestion: (SupportAiSuggestion & { sectorLabel: string; clan: { id: string; name: string } | null }) | null;
   /** Rodada do teste do agente aberta: a IA está conversando com o cliente. */
   agentTest: boolean;
+  /** Atendimentos anteriores do mesmo número neste WhatsApp, do mais recente ao mais antigo. */
+  history: {
+    id: string;
+    status: SupportStatus;
+    startedAt: string;
+    lastMessageAt: string | null;
+    resolvedAt: string | null;
+    lastMessage: string | null;
+    clientName: string | null;
+  }[];
 }
 
 function eventLabel(eventType: string, actor: string | null, detail: Record<string, unknown>, status: string | undefined): string | null {
@@ -258,6 +268,40 @@ export async function loadSupportConversation(
     .leftJoin(schema.user, eq(schema.user.id, c.assignedUserId))
     .where(and(eq(c.orgId, input.orgId), eq(c.id, input.conversationId)));
   if (!row) return null;
+
+  const historyRows = await tx
+    .select({
+      id: c.id,
+      status: c.status,
+      createdAt: c.createdAt,
+      lastMessageAt: c.lastMessageAt,
+      resolvedAt: c.resolvedAt,
+      clientName: schema.clients.name,
+    })
+    .from(c)
+    .leftJoin(schema.clients, and(eq(schema.clients.orgId, c.orgId), eq(schema.clients.id, c.clientId)))
+    .where(and(
+      eq(c.orgId, input.orgId),
+      eq(c.channelId, row.channelId),
+      eq(c.contactId, row.contactId),
+      ne(c.id, row.id),
+    ))
+    .orderBy(desc(c.lastMessageAt), desc(c.createdAt))
+    .limit(50);
+  const historyIds = historyRows.map((conversation) => conversation.id);
+  const historyMessages = historyIds.length
+    ? await tx
+        .selectDistinctOn([messages.conversationId], {
+          conversationId: messages.conversationId,
+          text: messages.text,
+          messageType: messages.messageType,
+          actor: messages.actor,
+        })
+        .from(messages)
+        .where(and(eq(messages.orgId, input.orgId), inArray(messages.conversationId, historyIds)))
+        .orderBy(messages.conversationId, desc(messages.occurredAt))
+    : [];
+  const historyMessageByConversation = new Map(historyMessages.map((message) => [message.conversationId, message]));
 
   const recent = await tx
     .select({
@@ -397,6 +441,18 @@ export async function loadSupportConversation(
     id: row.id,
     status: row.status,
     agentTest: row.status === "ai_active" && row.aiTestStartedAt !== null,
+    history: historyRows.map((conversation) => {
+      const lastMessage = historyMessageByConversation.get(conversation.id);
+      return {
+        id: conversation.id,
+        status: conversation.status,
+        startedAt: conversation.createdAt.toISOString(),
+        lastMessageAt: conversation.lastMessageAt?.toISOString() ?? null,
+        resolvedAt: conversation.resolvedAt?.toISOString() ?? null,
+        lastMessage: lastMessage ? messageLabel(lastMessage) : null,
+        clientName: conversation.clientName,
+      };
+    }),
     assignedToMe: row.assignedUserId === input.viewer.userId,
     assignedUserId: row.assignedUserId,
     assignedClanId: row.assignedClanId,
