@@ -57,6 +57,7 @@ const profileSchema = z.object({
   pgdasApplicability: applicabilitySchema,
   efdContributionsApplicability: applicabilitySchema,
   mitApplicability: applicabilitySchema,
+  sedifApplicability: applicabilitySchema,
   deliveryChannel: z
     .string()
     .trim()
@@ -89,6 +90,7 @@ const profileSchema = z.object({
         value.pgdasApplicability,
         value.efdContributionsApplicability,
         value.mitApplicability,
+        value.sedifApplicability,
       ].every((item) => item !== "unknown"),
     "Revise todos os campos marcados como não informados.",
   )
@@ -139,6 +141,7 @@ function changedProfileFields(
     ["pgdasApplicability", current.pgdasApplicability, next.pgdasApplicability],
     ["efdContributionsApplicability", current.efdContributionsApplicability, next.efdContributionsApplicability],
     ["mitApplicability", current.mitApplicability, next.mitApplicability],
+    ["sedifApplicability", current.sedifApplicability, next.sedifApplicability],
     ["deliveryChannel", current.deliveryChannel ?? "", next.deliveryApplicability === "required" ? next.deliveryChannel : ""],
     ["revenueReference", current.revenueReference ?? "", next.revenueReference ?? ""],
     ["permanentNotes", current.permanentNotes ?? "", next.permanentNotes ?? ""],
@@ -208,6 +211,7 @@ export async function saveFiscalClientProfile(
       pgdasApplicability: data.pgdasApplicability,
       efdContributionsApplicability: data.efdContributionsApplicability,
       mitApplicability: data.mitApplicability,
+      sedifApplicability: data.sedifApplicability,
       deliveryChannel: data.deliveryApplicability === "required" ? data.deliveryChannel || null : null,
       revenueReference: data.revenueReference || null,
       permanentNotes: data.permanentNotes || null,
@@ -247,6 +251,7 @@ export async function saveFiscalClientProfile(
           "pgdasApplicability",
           "efdContributionsApplicability",
           "mitApplicability",
+          "sedifApplicability",
           "deliveryChannel",
           "revenueReference",
           "permanentNotes",

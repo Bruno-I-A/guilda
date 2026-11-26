@@ -2386,6 +2386,8 @@ export type FiscalClientProfileSnapshot = {
   pgdasApplicability?: (typeof fiscalApplicability.enumValues)[number];
   efdContributionsApplicability?: (typeof fiscalApplicability.enumValues)[number];
   mitApplicability?: (typeof fiscalApplicability.enumValues)[number];
+  /** Ausente nas versões anteriores a 2026-11-26. */
+  sedifApplicability?: (typeof fiscalApplicability.enumValues)[number];
   revenueReference: string | null;
   permanentNotes: string | null;
 };
@@ -2468,6 +2470,9 @@ export const fiscalClientProfiles = pgTable(
       .notNull()
       .default("unknown"),
     mitApplicability: fiscalApplicability("mit_applicability")
+      .notNull()
+      .default("unknown"),
+    sedifApplicability: fiscalApplicability("sedif_applicability")
       .notNull()
       .default("unknown"),
     revenueReference: numeric("revenue_reference", { precision: 15, scale: 2 }),

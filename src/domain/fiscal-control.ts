@@ -96,6 +96,7 @@ export interface FiscalProfileCompletenessFacts {
   pgdasApplicability?: FiscalApplicability | null;
   efdContributionsApplicability?: FiscalApplicability | null;
   mitApplicability?: FiscalApplicability | null;
+  sedifApplicability?: FiscalApplicability | null;
   deliveryChannel?: string | null;
 }
 
@@ -121,6 +122,7 @@ export function fiscalProfileMissingFields(
   if (!profile.pgdasApplicability || profile.pgdasApplicability === "unknown") missing.push("PGDAS");
   if (!profile.efdContributionsApplicability || profile.efdContributionsApplicability === "unknown") missing.push("EFD Contribuições");
   if (!profile.mitApplicability || profile.mitApplicability === "unknown") missing.push("MIT");
+  if (!profile.sedifApplicability || profile.sedifApplicability === "unknown") missing.push("SEDIF");
   if (!profile.deliveryApplicability || profile.deliveryApplicability === "unknown") missing.push("entrega");
   else if (profile.deliveryApplicability === "required" && !profile.deliveryChannel?.trim()) missing.push("canal de entrega");
   return missing;
