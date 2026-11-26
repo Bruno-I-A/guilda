@@ -137,23 +137,23 @@ export const NOTICE_TEMPLATES: Record<NoticeTemplateKey, NoticeTemplateDefinitio
     quickReply: "Aprovar",
   },
   missao_atualizada: {
-    name: "guilda_missao_atualizada",
-    body: "Atualização da missão {{1}}: {{2}}. Abra pelo botão abaixo para ver o histórico.",
+    name: "guilda_missao_atualizada_v2",
+    body: "O registro de trabalho {{1}} teve esta alteração: {{2}}. Consulte o histórico pelo botão abaixo.",
     examples: ["Conferir a folha de outubro", "Ana Souza iniciou a missão"],
   },
   prazo: {
-    name: "guilda_prazo",
-    body: "Lembrete da Guilda: a missão {{1}} {{2}}. Abra pelo botão abaixo para ver os detalhes.",
+    name: "guilda_prazo_v2",
+    body: "O prazo do registro de trabalho {{1}} {{2}}. Consulte os detalhes pelo botão abaixo.",
     examples: ["Conferir a folha de outubro", "vence hoje (25/11/2026)"],
   },
   resumo: {
-    name: "guilda_resumo",
-    body: "Seu resumo da Guilda: {{1}} missões em aberto com você, {{2}} disponíveis nos seus clãs e {{3}} XP no total. Abra pelo botão abaixo para ver a lista.",
-    examples: ["4", "2", "1250"],
+    name: "guilda_resumo_v2",
+    body: "Há {{1}} registros de trabalho sob sua responsabilidade e {{2}} disponíveis para atribuição. Consulte a lista pelo botão abaixo.",
+    examples: ["4", "2"],
   },
   aviso: {
-    name: "guilda_aviso",
-    body: "Aviso da Guilda: {{1}}. Abra pelo botão abaixo para ver os detalhes.",
+    name: "guilda_aviso_v2",
+    body: "O registro operacional recebeu esta atualização: {{1}}. Consulte os detalhes pelo botão abaixo.",
     examples: ["Fechamento concluído, ACME Comércio Ltda, Balanço 2025"],
   },
 };
@@ -249,7 +249,7 @@ export function noticeTemplate(notice: Notice): NoticeTemplateCall {
     case "daily_summary":
       return {
         key: "resumo",
-        bodyParams: [templateParam(notice.open, 10), templateParam(notice.available, 10), templateParam(notice.xp, 12)],
+        bodyParams: [templateParam(notice.open, 10), templateParam(notice.available, 10)],
         urlRef,
       };
     case "general":
