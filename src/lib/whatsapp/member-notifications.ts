@@ -5,7 +5,8 @@ import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import type { OrgTx } from "@/db/org-tx";
 import * as schema from "@/db/schema";
 
-export const MEMBER_NEW_CLIENT_TEMPLATE = "guilda_novo_cliente";
+// O v1 foi classificado como Marketing; o v2 é somente atualização operacional.
+export const MEMBER_NEW_CLIENT_TEMPLATE = "guilda_novo_cliente_v2";
 /** Janela de 24 horas da Meta, com 10 minutos de folga. */
 export const MEMBER_WINDOW_MS = (24 * 60 - 10) * 60 * 1000;
 
@@ -79,7 +80,7 @@ export function memberNewClientMessage(payload: MemberNotificationPayload): stri
 }
 
 export function memberNewClientTemplateParams(payload: MemberNotificationPayload): string[] {
-  return [payload.companyName.slice(0, 80), payload.clanName.slice(0, 60), payload.url.slice(0, 200)];
+  return [payload.companyName.slice(0, 80), payload.clanName.slice(0, 60)];
 }
 
 export function memberSupportHandoffMessage(payload: MemberSupportPayload): string {

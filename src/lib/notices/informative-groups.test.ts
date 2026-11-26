@@ -23,7 +23,7 @@ describe("aviso das missões de Informativo", () => {
     const [ana] = groupInformativeNotices({ requesterId: "lider", companyName: "ACME Ltda", tasks });
     expect(ana.notice).toMatchObject({ title: "2 missões de ACME Ltda", due: "27/11/2026 (a mais próxima)", xp: 70, path: "tasks?view=informative" });
     expect(noticeText(ana.notice)).toContain("• Pró-labore — ACME");
-    expect(noticeTemplate(ana.notice)).toMatchObject({ key: "nova_missao", bodyParams: ["2 missões de ACME Ltda", "27/11/2026 (a mais próxima)", "70"], urlRef: "ti" });
+    expect(noticeTemplate(ana.notice)).toMatchObject({ key: "nova_missao", bodyParams: ["2 missões de ACME Ltda", "27/11/2026 (a mais próxima)"], urlRef: "ti" });
   });
 
   it("uma missão só vai com o botão Iniciar", () => {

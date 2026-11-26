@@ -264,6 +264,20 @@ describe("cliente seguro da Meta", () => {
     );
   });
 
+  test("não permite que a Meta reclassifique silenciosamente um modelo Utility", async () => {
+    const fetchMock = fetchReturning({ id: "template-1", status: "PENDING" });
+    await createWhatsAppUtilityTemplate({
+      wabaId: "111111", accessToken: "EA-token", name: "guilda_novo_cliente_v2",
+      body: "Cadastro operacional criado para a empresa {{1}}. Consulte o registro na Guilda.", examples: ["ACME"],
+    }, config, fetchMock);
+
+    const [, init] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      category: "UTILITY",
+      allow_category_change: false,
+    });
+  });
+
   test("baixa foto por uma URL temporária sem expor o token", async () => {
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const fetchMock = vi
