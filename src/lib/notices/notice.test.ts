@@ -93,6 +93,7 @@ describe("demais famílias", () => {
   it("o texto não leva link: a ação vem nos botões (pedido do Bruno)", () => {
     const notice: Notice = { family: "daily_summary", open: 2, available: 1, xp: 300, path: "dashboard" };
     expect(noticeText(notice)).toBe("Resumo da Guilda\n\n2 missão(ões) em aberto com você\n1 disponível(is) nos seus clãs\n300 XP no total");
+    expect(noticeTemplate(notice)).toEqual({ key: "resumo", bodyParams: ["2", "1"], urlRef: "d" });
   });
 });
 
