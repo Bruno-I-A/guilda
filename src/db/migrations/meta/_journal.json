@@ -813,6 +813,13 @@
       "when": 1795802400000,
       "tag": "0115_fiscal-profile-informatives",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1795806000000,
+      "tag": "0116_fiscal-profile-sedif",
+      "breakpoints": true
     }
   ]
 }

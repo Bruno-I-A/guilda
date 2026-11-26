@@ -61,6 +61,7 @@ export interface FiscalProfileView {
   pgdasApplicability: FiscalApplicability;
   efdContributionsApplicability: FiscalApplicability;
   mitApplicability: FiscalApplicability;
+  sedifApplicability: FiscalApplicability;
   deliveryChannel: string | null;
   revenueReference: string | null;
   permanentNotes: string | null;
@@ -90,6 +91,7 @@ const FIELD_LABELS: Record<string, string> = {
   pgdasApplicability: "PGDAS",
   efdContributionsApplicability: "EFD Contribuições",
   mitApplicability: "MIT",
+  sedifApplicability: "SEDIF",
   deliveryChannel: "Entrega",
   revenueReference: "Referência de faturamento",
   permanentNotes: "Observações",
@@ -170,6 +172,7 @@ export function FiscalProfileDialog({
     profile.efdContributionsApplicability,
   );
   const [mit, setMit] = useState(profile.mitApplicability);
+  const [sedif, setSedif] = useState(profile.sedifApplicability);
   const [delivery, setDelivery] = useState(profile.deliveryChannel ?? "");
   const [revenue, setRevenue] = useState(profile.revenueReference ?? "");
   const [notes, setNotes] = useState(profile.permanentNotes ?? "");
@@ -188,6 +191,7 @@ export function FiscalProfileDialog({
     pgdasApplicability: pgdas,
     efdContributionsApplicability: efdContributions,
     mitApplicability: mit,
+    sedifApplicability: sedif,
     deliveryChannel: delivery,
   });
 
@@ -206,6 +210,7 @@ export function FiscalProfileDialog({
     setPgdas(profile.pgdasApplicability);
     setEfdContributions(profile.efdContributionsApplicability);
     setMit(profile.mitApplicability);
+    setSedif(profile.sedifApplicability);
     setDelivery(profile.deliveryChannel ?? "");
     setRevenue(profile.revenueReference ?? "");
     setNotes(profile.permanentNotes ?? "");
@@ -231,6 +236,7 @@ export function FiscalProfileDialog({
         pgdasApplicability: pgdas,
         efdContributionsApplicability: efdContributions,
         mitApplicability: mit,
+        sedifApplicability: sedif,
         deliveryChannel: delivery,
         revenueReference: revenue,
         permanentNotes: notes,
@@ -301,6 +307,7 @@ export function FiscalProfileDialog({
               <ApplicabilityField id={`${clientId}-pgdas`} label="PGDAS" value={pgdas} disabled={!canManage} onValueChange={setPgdas} />
               <ApplicabilityField id={`${clientId}-efd-contributions`} label="EFD Contribuições" value={efdContributions} disabled={!canManage} onValueChange={setEfdContributions} />
               <ApplicabilityField id={`${clientId}-mit`} label="MIT" value={mit} disabled={!canManage} onValueChange={setMit} />
+              <ApplicabilityField id={`${clientId}-sedif`} label="SEDIF" value={sedif} disabled={!canManage} onValueChange={setSedif} />
             </div>
           </section>
 

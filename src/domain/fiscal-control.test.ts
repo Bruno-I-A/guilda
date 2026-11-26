@@ -89,6 +89,7 @@ describe("controle fiscal mensal", () => {
         pgdasApplicability: "required",
         efdContributionsApplicability: "required",
         mitApplicability: "not_required",
+        sedifApplicability: "required",
         deliveryChannel: "Onvio",
       }),
     ).toEqual([]);
@@ -111,6 +112,7 @@ describe("controle fiscal mensal", () => {
       "PGDAS",
       "EFD Contribuições",
       "MIT",
+      "SEDIF",
       "entrega",
     ]);
     expect(
@@ -129,6 +131,7 @@ describe("controle fiscal mensal", () => {
         pgdasApplicability: "not_required",
         efdContributionsApplicability: "not_required",
         mitApplicability: "not_required",
+        sedifApplicability: "not_required",
         deliveryChannel: "Onvio",
       }),
     ).toEqual(["movimentos", "Fator R"]);
@@ -146,6 +149,7 @@ describe("controle fiscal mensal", () => {
       pgdasApplicability: "not_required",
       efdContributionsApplicability: "not_required",
       mitApplicability: "not_required",
+      sedifApplicability: "not_required",
       deliveryApplicability: "required",
       deliveryChannel: null,
     })).toEqual(["canal de entrega"]);
@@ -163,6 +167,7 @@ describe("controle fiscal mensal", () => {
       pgdasApplicability: "not_required",
       efdContributionsApplicability: "not_required",
       mitApplicability: "not_required",
+      sedifApplicability: "not_required",
       deliveryApplicability: "not_required",
       deliveryChannel: null,
     })).toEqual([]);
