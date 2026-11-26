@@ -48,7 +48,7 @@ beforeAll(async () => {
       ('${ORG}', 'fechada', '+5554922220000', now(), '${hoursAgo(30).toISOString()}'),
       ('${ORG}', 'sem-prova', '+5554933330000', NULL, '${hoursAgo(1).toISOString()}');
     INSERT INTO member_whatsapp_templates (org_id, key, name, language, status, checked_at) VALUES
-      ('${ORG}', 'nova_missao', 'guilda_nova_missao', 'pt_BR', 'APPROVED', now()),
+      ('${ORG}', 'nova_missao', 'guilda_nova_missao_v2', 'pt_BR', 'APPROVED', now()),
       ('${ORG}', 'aprovacao', 'guilda_aprovacao', 'pt_BR', 'PENDING', now());
   `);
   await import("./member-notification-worker");
@@ -90,9 +90,9 @@ test("janela fechada: sai o modelo aprovado com as variáveis e o link curto", a
     to: "5554922220000",
     type: "template",
     template: {
-      name: "guilda_nova_missao",
+      name: "guilda_nova_missao_v2",
       components: [
-        { type: "body", parameters: [{ text: "Folha" }, { text: "25/11/2026" }, { text: "40" }] },
+        { type: "body", parameters: [{ text: "Folha" }, { text: "25/11/2026" }] },
         { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: `t-${TASK}` }] },
       ],
     },

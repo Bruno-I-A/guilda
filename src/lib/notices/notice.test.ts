@@ -55,7 +55,7 @@ describe("aviso de nova missão", () => {
   it("fora da janela vira o modelo nova_missao com o caminho no botão", () => {
     expect(noticeTemplate(notice)).toEqual({
       key: "nova_missao",
-      bodyParams: ["Conferir a folha (clã RH)", "25/11/2026", "50"],
+      bodyParams: ["Conferir a folha (clã RH)", "25/11/2026"],
       urlRef: `t-${TASK}`,
     });
   });

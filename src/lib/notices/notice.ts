@@ -122,9 +122,11 @@ export type NoticeTemplateDefinition = Readonly<{
  */
 export const NOTICE_TEMPLATES: Record<NoticeTemplateKey, NoticeTemplateDefinition> = {
   nova_missao: {
-    name: "guilda_nova_missao",
-    body: "Nova missão na Guilda: {{1}}. Prazo: {{2}}. Recompensa: {{3}} XP. Abra pelo botão abaixo para ver os detalhes.",
-    examples: ["Conferir a folha de outubro (clã RH)", "25/11/2026", "50"],
+    // O v1 mencionava "Recompensa" e XP; a Meta o classificou como Marketing.
+    // O v2 descreve somente a atribuição operacional e seu prazo.
+    name: "guilda_nova_missao_v2",
+    body: "Atribuição de trabalho registrada para você: {{1}}. Data limite: {{2}}. Consulte os detalhes pelo botão abaixo.",
+    examples: ["Conferir a folha de outubro (clã RH)", "25/11/2026"],
   },
   aprovacao: {
     // O v1 começava por {{1}} e foi recusado pela Meta. Nome novo permite
@@ -222,7 +224,7 @@ export function noticeTemplate(notice: Notice): NoticeTemplateCall {
     case "new_mission":
       return {
         key: "nova_missao",
-        bodyParams: [templateParam(notice.context ? `${notice.title} (${notice.context})` : notice.title, 160), templateParam(notice.due, 40), templateParam(notice.xp, 10)],
+        bodyParams: [templateParam(notice.context ? `${notice.title} (${notice.context})` : notice.title, 160), templateParam(notice.due, 40)],
         urlRef,
       };
     case "approval":

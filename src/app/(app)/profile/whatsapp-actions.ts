@@ -169,15 +169,16 @@ export async function saveNotificationPreferences(input: z.input<typeof preferen
   return { ok: true };
 }
 
-// A Meta recusa variável no fim do BODY — inclusive quando vem seguida de ponto.
-const NEW_CLIENT_BODY = "Novo cliente na Guilda: {{1}}. Clã responsável: {{2}}. Abra os detalhes em {{3}} e dê sequência ao atendimento.";
+// Estritamente operacional: o v1 tinha link e chamada para atendimento e foi
+// classificado como Marketing. A Meta recusa variável no fim do BODY.
+const NEW_CLIENT_BODY = "Cadastro operacional criado para a empresa {{1}}. Setor responsável: {{2}}. Consulte o registro na Guilda.";
 
 type TemplateSpec = Readonly<{ key: MemberTemplateKey; name: string; body: string; examples: readonly string[]; buttons: WhatsAppTemplateButtonDefinition[] }>;
 
 function templateSpecs(baseUrl: string): TemplateSpec[] {
   const link = (): WhatsAppTemplateButtonDefinition => ({ type: "URL", text: "Abrir na Guilda", url: `${baseUrl}/w/{{1}}`, example: `${baseUrl}/w/${TEMPLATE_URL_EXAMPLE}` });
   return [
-    { key: "novo_cliente", name: MEMBER_NEW_CLIENT_TEMPLATE, body: NEW_CLIENT_BODY, examples: ["ACME Comércio Ltda", "Fiscal", `${baseUrl}/clans/exemplo?flow=exemplo`], buttons: [] },
+    { key: "novo_cliente", name: MEMBER_NEW_CLIENT_TEMPLATE, body: NEW_CLIENT_BODY, examples: ["ACME Comércio Ltda", "Fiscal"], buttons: [] },
     ...Object.entries(NOTICE_TEMPLATES).map(([key, template]) => ({
       key: key as MemberTemplateKey,
       name: template.name,

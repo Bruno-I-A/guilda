@@ -64,6 +64,6 @@ describe("avisos WhatsApp para integrantes", () => {
 
   test("mantém texto e variáveis do modelo com o mesmo contexto", () => {
     expect(memberNewClientMessage(payload)).toContain("ACME Comércio Ltda");
-    expect(memberNewClientTemplateParams(payload)).toEqual([payload.companyName, payload.clanName, payload.url]);
+    expect(memberNewClientTemplateParams(payload)).toEqual([payload.companyName, payload.clanName]);
   });
 });
