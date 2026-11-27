@@ -111,6 +111,7 @@ async function triageOne(orgId: string, candidate: Candidate, options: OpcoesCla
   const result = await classify(claimed.input.current, claimed.input.history, {
     ...options,
     knowledge: claimed.knowledge,
+    contextoEmpresa: claimed.input.contextoEmpresa,
   });
   const fallback = result.classificacao.fallback?.motivo ?? null;
   await withOrgTx(orgId, (tx) =>

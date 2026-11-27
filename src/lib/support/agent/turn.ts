@@ -282,6 +282,7 @@ export async function runAgentTurn(
       perguntasFeitas: claimed.facts.questionsAsked,
       roster: claimed.roster,
       anexo: loaded?.anexo ?? null,
+      contextoEmpresa: claimed.input.contextoEmpresa,
     });
     decision = decideAfterClassifying({ result, facts: claimed.facts, clans: claimed.clans, now, hours });
   }
