@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCnpj } from "@/domain/cnpj";
+import { agentConversationHint, type AgentMode } from "@/domain/support-agent";
 import { SUPPORT_UPLOAD_ACCEPT, SUPPORT_UPLOAD_MAX_FILES, validateSupportCaption, validateSupportUpload } from "@/domain/support-upload";
 import { contactInitials, DELIVERY_LABELS, elapsedLabel, enterSends, formatPhone, SUPPORT_FILTERS, SUPPORT_STATUS_LABELS, type DeliveryState, type SupportFilter, type SupportStatus } from "@/domain/support-inbox";
 import type { ActionResult } from "@/lib/action-context";
@@ -442,7 +443,7 @@ function Composer({ conversation, replyingTo, onCancelReply }: { conversation: S
   );
 }
 
-function ConversationPanel({ conversation, filter, forwardTargets, historyShown, onContext, onTransfer }: { conversation: SupportConversationView; filter: SupportFilter; forwardTargets: readonly SupportForwardTarget[]; historyShown: boolean; onContext: () => void; onTransfer: () => void }) {
+function ConversationPanel({ conversation, filter, forwardTargets, historyShown, agentMode, onContext, onTransfer }: { conversation: SupportConversationView; filter: SupportFilter; forwardTargets: readonly SupportForwardTarget[]; historyShown: boolean; agentMode: AgentMode; onContext: () => void; onTransfer: () => void }) {
   const { pending, run } = useCommand();
   const end = useRef<HTMLLIElement>(null);
   const historyStart = useRef<HTMLLIElement>(null);
@@ -495,6 +496,10 @@ function ConversationPanel({ conversation, filter, forwardTargets, historyShown,
               {conversation.phone ? formatPhone(conversation.phone) : "Número não informado"} · {conversation.client?.name ?? "Empresa não vinculada"}
               {conversation.assigneeName ? ` · ${conversation.assignedToMe ? "com você" : `com ${conversation.assigneeName}`}` : ""}
             </span>
+            <span className={cn("flex items-center gap-1 text-xs", conversation.status === "ai_active" ? "text-primary" : "text-muted-foreground")}>
+              <Bot className="size-3.5 shrink-0" aria-hidden />
+              {agentConversationHint(conversation.status, agentMode)}
+            </span>
           </div>
           <div className="flex items-center gap-1">
             {conversation.previousConversationCount > 0 ? (
@@ -523,7 +528,7 @@ function ConversationPanel({ conversation, filter, forwardTargets, historyShown,
             <>
               <Button type="button" size="sm" variant="outline" disabled={pending} onClick={onTransfer}><ArrowRightLeft aria-hidden /> Transferir</Button>
               {conversation.assignedToMe && conversation.status === "human_active" ? <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => run(() => markWaiting(id))}><Clock aria-hidden /> Aguardar cliente</Button> : null}
-              <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => run(() => resolveConversation(id))}><CheckIcon aria-hidden /> Resolver</Button>
+              <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => run(() => resolveConversation(id), () => toast.success(agentConversationHint("resolved", agentMode)))}><CheckIcon aria-hidden /> Resolver</Button>
             </>
           )}
         </div>
@@ -590,9 +595,12 @@ function AiSuggestion({ conversation }: { conversation: SupportConversationView 
   if (!suggestion) return null;
   const alreadyThere = suggestion.clan && conversation.assignedClanId === suggestion.clan.id;
   return (
-    <section className="grid gap-1.5 rounded-md border border-dashed p-2.5 text-sm" aria-label="Leitura da IA">
-      <p className="flex items-center gap-1.5 hud-label"><Bot className="size-3.5" aria-hidden /> Leitura da IA · teste</p>
-      <p className="text-xs text-muted-foreground">Nada disto foi enviado ao cliente.</p>
+    <section className="grid gap-1.5 rounded-md border border-dashed p-2.5 text-sm" aria-label="Última leitura da IA">
+      <p className="flex items-center gap-1.5 hud-label"><Bot className="size-3.5" aria-hidden /> Última leitura da IA</p>
+      <p className="text-xs text-muted-foreground">
+        {suggestion.mode === "shadow" ? "Análise interna; nada foi enviado ao cliente." : "Leitura usada pelo agente neste atendimento."}
+        {` · ${dayLabel(suggestion.at)} às ${shortTime(suggestion.at)}`}
+      </p>
       {suggestion.fallbackReason === "confianca_baixa" ? (
         <p>Não entendeu o assunto. Perguntaria ao cliente do que se trata.</p>
       ) : (
@@ -827,6 +835,7 @@ export function SupportInbox({
   members,
   forwardTargets,
   channels,
+  agentMode,
   isAdmin,
 }: {
   now: string;
@@ -841,6 +850,7 @@ export function SupportInbox({
   members: readonly Option[];
   forwardTargets: readonly SupportForwardTarget[];
   channels: number;
+  agentMode: AgentMode;
   isAdmin: boolean;
 }) {
   const router = useRouter();
@@ -896,7 +906,7 @@ export function SupportInbox({
       {conversation ? (
         <>
           <div className="grid min-h-0 min-w-0">
-            <ConversationPanel key={conversation.id} conversation={conversation} filter={filter} forwardTargets={forwardTargets} historyShown={historyShown} onContext={() => setContextOpen(true)} onTransfer={() => setTransferOpen(true)} />
+            <ConversationPanel key={conversation.id} conversation={conversation} filter={filter} forwardTargets={forwardTargets} historyShown={historyShown} agentMode={agentMode} onContext={() => setContextOpen(true)} onTransfer={() => setTransferOpen(true)} />
           </div>
           <Sheet open={transferOpen} onOpenChange={setTransferOpen}>
             <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">

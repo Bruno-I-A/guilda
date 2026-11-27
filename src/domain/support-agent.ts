@@ -1,3 +1,5 @@
+import type { SupportStatus } from "./support-inbox";
+
 /**
  * Teste do agente no WhatsApp (decisão de 2026-11-19): uma palavra-chave no
  * começo da mensagem do cliente abre uma rodada em que a IA conversa de
@@ -29,6 +31,17 @@ export function matchTestKeyword(text: string | null, keyword: string | null): {
 /** Modo do agente (2026-11-23): desligado, só teste (palavra-chave) ou todos os clientes. */
 export type AgentMode = "off" | "test" | "live";
 export const AGENT_MODES = ["off", "test", "live"] as const satisfies readonly AgentMode[];
+
+/** Explica o estado real da IA sem confundir a última leitura com atividade atual. */
+export function agentConversationHint(status: SupportStatus, mode: AgentMode): string {
+  if (status === "ai_active") return "IA ativa nesta conversa.";
+  if (status === "human_active") return "IA pausada enquanto a equipe atende.";
+  if (status === "waiting_customer") return "IA pausada enquanto aguarda o cliente.";
+  if (status === "needs_human") return "IA pausada; aguardando a equipe.";
+  if (mode === "live") return "Resolvida. A IA volta automaticamente quando o cliente escrever.";
+  if (mode === "test") return "Resolvida. A IA só volta com a palavra-chave de teste.";
+  return "Resolvida. A próxima mensagem vai para a equipe.";
+}
 
 /**
  * Mensagem da IA só sai à Meta com o agente ligado (teste ou todos), dentro

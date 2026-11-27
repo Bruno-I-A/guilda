@@ -10,6 +10,7 @@ import type { OrgRole } from "@/domain/task-state";
 import { listActiveClans, listOrgMembers } from "@/lib/org";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 import { countActiveSupportChannels, loadSupportConversation, loadSupportForwardTargets, loadSupportQueue, loadSupportViewer } from "@/lib/support/inbox";
+import { loadAgentSettings } from "@/lib/support/agent/settings";
 
 import { SupportInbox } from "./support-inbox";
 import { AtendimentoSectionHeader } from "./section-header";
@@ -35,6 +36,7 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
       const queue = await loadSupportQueue(tx, { orgId: session.orgId, viewer, filter });
       const conversation = selectedId ? await loadSupportConversation(tx, { orgId: session.orgId, viewer, conversationId: selectedId, now, includeHistory: historyShown }) : null;
       const channels = await countActiveSupportChannels(tx, session.orgId);
+      const agent = await loadAgentSettings(tx, session.orgId);
       const forwardTargets = conversation ? await loadSupportForwardTargets(tx, session.orgId) : [];
       // A busca de empresa é local, como na criação de missão: só quando há conversa aberta.
       const clients = conversation && !conversation.client
@@ -44,7 +46,7 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
             .where(and(eq(schema.clients.orgId, session.orgId), eq(schema.clients.active, true)))
             .orderBy(asc(schema.clients.name))
         : [];
-      return { queue, conversation, channels, clients, forwardTargets };
+      return { queue, conversation, channels, clients, forwardTargets, agentMode: agent.mode };
     }),
     listActiveClans(session.orgId),
     listOrgMembers(session.orgId),
@@ -65,6 +67,7 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
         clans={clans.map((clan) => ({ id: clan.id, name: clan.name }))}
         members={members.map((person) => ({ id: person.userId, name: person.name }))}
         channels={data.channels}
+        agentMode={data.agentMode}
         forwardTargets={data.forwardTargets}
         isAdmin={isAdminRole(role)}
       />
