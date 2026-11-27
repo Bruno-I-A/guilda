@@ -18,7 +18,7 @@ export const metadata: Metadata = { title: "Atendimento" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export default async function AtendimentoPage({ searchParams }: { searchParams: Promise<{ c?: string; f?: string }> }) {
+export default async function AtendimentoPage({ searchParams }: { searchParams: Promise<{ c?: string; f?: string; h?: string }> }) {
   const session = await requireOrgSession();
   const member = await getActiveMember();
   if (!member) redirect("/onboarding");
@@ -26,13 +26,14 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
   const params = await searchParams;
   const filter = parseSupportFilter(params.f);
   const selectedId = params.c && UUID.test(params.c) ? params.c : null;
+  const historyShown = params.h === "1";
   const now = new Date();
 
   const [data, clans, members] = await Promise.all([
     withOrgTx(session.orgId, async (tx) => {
       const viewer = await loadSupportViewer(tx, { orgId: session.orgId, userId: session.user.id, role });
       const queue = await loadSupportQueue(tx, { orgId: session.orgId, viewer, filter });
-      const conversation = selectedId ? await loadSupportConversation(tx, { orgId: session.orgId, viewer, conversationId: selectedId, now }) : null;
+      const conversation = selectedId ? await loadSupportConversation(tx, { orgId: session.orgId, viewer, conversationId: selectedId, now, includeHistory: historyShown }) : null;
       const channels = await countActiveSupportChannels(tx, session.orgId);
       const forwardTargets = conversation ? await loadSupportForwardTargets(tx, session.orgId) : [];
       // A busca de empresa é local, como na criação de missão: só quando há conversa aberta.
@@ -58,6 +59,7 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
         queue={data.queue.rows}
         counts={data.queue.counts}
         conversation={data.conversation}
+        historyShown={historyShown}
         notFound={Boolean(selectedId) && !data.conversation}
         clients={data.clients}
         clans={clans.map((clan) => ({ id: clan.id, name: clan.name }))}

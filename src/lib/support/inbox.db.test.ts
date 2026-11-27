@@ -314,7 +314,7 @@ test("aguardar, voltar quando o cliente escreve, resolver e reabrir", async () =
   expect(await tx((t) => reopenSupportConversation(t, base))).toEqual({ ok: false, error: expect.stringContaining("outra conversa") });
 });
 
-test("atendimento novo mostra os atendimentos anteriores do mesmo contato no histórico", async () => {
+test("atendimento novo revela as mensagens anteriores no próprio chat e em ordem", async () => {
   const { loadSupportConversation, resolveSupportConversation } = await import("./inbox");
   const phone = "5554911110091";
   const first = await customerSays(phone, "Primeiro assunto", new Date(NOW.getTime() - 120_000));
@@ -330,19 +330,20 @@ test("atendimento novo mostra os atendimentos anteriores do mesmo contato no his
       .where(eq(schema.supportContacts.whatsappId, phone)),
   );
   const second = conversations.find((conversation) => conversation.id !== first.id)!;
-  const current = await tx((t) => loadSupportConversation(t, { ...base, conversationId: second.id }));
-  expect(current?.history).toEqual([
-    expect.objectContaining({
-      id: first.id,
-      status: "resolved",
-      lastMessage: "Primeiro assunto",
-      resolvedAt: NOW.toISOString(),
-    }),
-  ]);
+  const collapsed = await tx((t) => loadSupportConversation(t, { ...base, conversationId: second.id }));
+  expect(collapsed?.previousConversationCount).toBe(1);
+  expect(collapsed?.previousTimeline).toEqual([]);
 
-  const previous = await tx((t) => loadSupportConversation(t, { ...base, conversationId: first.id }));
-  expect(previous?.history).toEqual([
-    expect.objectContaining({ id: second.id, status: "needs_human", lastMessage: "Novo assunto", resolvedAt: null }),
+  const revealed = await tx((t) => loadSupportConversation(t, { ...base, conversationId: second.id, includeHistory: true }));
+  expect(revealed?.previousTimeline.filter((item) => item.kind === "message")).toEqual([
+    expect.objectContaining({ kind: "message", text: "Primeiro assunto", canReply: false, canForward: false }),
+  ]);
+  expect([
+    ...revealed!.previousTimeline,
+    ...revealed!.timeline,
+  ].sort((a, b) => a.at.localeCompare(b.at)).filter((item) => item.kind === "message").map((item) => item.text)).toEqual([
+    "Primeiro assunto",
+    "Novo assunto",
   ]);
 });
 
