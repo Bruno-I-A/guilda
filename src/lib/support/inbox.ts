@@ -205,6 +205,7 @@ export type SupportTimelineItem =
       /** Áudio recebido (2026-11-23): toca pela rota da Guilda, com o texto da transcrição. */
       audio: { src: string; transcript: string | null; status: TranscriptionStatus | null } | null;
       canReply: boolean;
+      canForward: boolean;
       replyTo: { author: string; text: string } | null;
       forwarded: boolean;
       delivery: DeliveryState | null;
@@ -240,16 +241,9 @@ export interface SupportConversationView {
   aiSuggestion: (SupportAiSuggestion & { sectorLabel: string; clan: { id: string; name: string } | null }) | null;
   /** Rodada do teste do agente aberta: a IA está conversando com o cliente. */
   agentTest: boolean;
-  /** Atendimentos anteriores do mesmo número neste WhatsApp, do mais recente ao mais antigo. */
-  history: {
-    id: string;
-    status: SupportStatus;
-    startedAt: string;
-    lastMessageAt: string | null;
-    resolvedAt: string | null;
-    lastMessage: string | null;
-    clientName: string | null;
-  }[];
+  /** Mensagens de atendimentos anteriores, exibidas no próprio chat quando solicitado. */
+  previousTimeline: SupportTimelineItem[];
+  previousConversationCount: number;
 }
 
 function eventLabel(eventType: string, actor: string | null, detail: Record<string, unknown>, status: string | undefined): string | null {
@@ -275,7 +269,7 @@ function eventLabel(eventType: string, actor: string | null, detail: Record<stri
 
 export async function loadSupportConversation(
   tx: OrgTx,
-  input: { orgId: string; viewer: SupportViewer; conversationId: string; now: Date },
+  input: { orgId: string; viewer: SupportViewer; conversationId: string; now: Date; includeHistory?: boolean },
 ): Promise<SupportConversationView | null> {
   const [row] = await tx
     .select({
@@ -306,36 +300,39 @@ export async function loadSupportConversation(
   const historyRows = await tx
     .select({
       id: c.id,
-      status: c.status,
       createdAt: c.createdAt,
-      lastMessageAt: c.lastMessageAt,
       resolvedAt: c.resolvedAt,
-      clientName: schema.clients.name,
     })
     .from(c)
-    .leftJoin(schema.clients, and(eq(schema.clients.orgId, c.orgId), eq(schema.clients.id, c.clientId)))
     .where(and(
       eq(c.orgId, input.orgId),
       eq(c.channelId, row.channelId),
       eq(c.contactId, row.contactId),
       ne(c.id, row.id),
     ))
-    .orderBy(desc(c.lastMessageAt), desc(c.createdAt))
-    .limit(50);
+    .orderBy(asc(c.createdAt));
   const historyIds = historyRows.map((conversation) => conversation.id);
-  const historyMessages = historyIds.length
+  const previousMessages = input.includeHistory && historyIds.length
     ? await tx
-        .selectDistinctOn([messages.conversationId], {
+        .select({
+          id: messages.id,
           conversationId: messages.conversationId,
+          direction: messages.direction,
+          actor: messages.actor,
+          source: messages.source,
           text: messages.text,
           messageType: messages.messageType,
-          actor: messages.actor,
+          content: messages.content,
+          externalMessageId: messages.externalMessageId,
+          replyToExternalMessageId: messages.replyToExternalMessageId,
+          occurredAt: messages.occurredAt,
+          sender: schema.user.name,
         })
         .from(messages)
+        .leftJoin(schema.user, eq(schema.user.id, messages.sentByUserId))
         .where(and(eq(messages.orgId, input.orgId), inArray(messages.conversationId, historyIds)))
-        .orderBy(messages.conversationId, desc(messages.occurredAt))
+        .orderBy(asc(messages.occurredAt))
     : [];
-  const historyMessageByConversation = new Map(historyMessages.map((message) => [message.conversationId, message]));
 
   const recent = await tx
     .select({
@@ -359,7 +356,8 @@ export async function loadSupportConversation(
 
   const name = contactName(row);
   const events = schema.supportMessageEvents;
-  const outboundIds = recent.filter((message) => message.direction === "outbound").map((message) => message.id);
+  const loadedMessages = [...previousMessages, ...recent];
+  const outboundIds = loadedMessages.filter((message) => message.direction === "outbound").map((message) => message.id);
   const deliveries = outboundIds.length
     ? await tx.select({ messageId: events.messageId, eventType: events.eventType, detail: events.detail }).from(events).where(and(eq(events.orgId, input.orgId), inArray(events.messageId, outboundIds)))
     : [];
@@ -367,11 +365,11 @@ export async function loadSupportConversation(
   const transcripts = await loadTranscriptions(
     tx,
     input.orgId,
-    recent.filter((message) => message.messageType === "audio").map((message) => message.id),
+    loadedMessages.filter((message) => message.messageType === "audio").map((message) => message.id),
   );
 
   const externalIdByMessage = new Map<string, string>();
-  for (const message of recent) {
+  for (const message of loadedMessages) {
     if (message.externalMessageId) externalIdByMessage.set(message.id, message.externalMessageId);
   }
   for (const event of deliveries) {
@@ -380,7 +378,7 @@ export async function loadSupportConversation(
     }
   }
   const messageByExternalId = new Map(
-    recent.flatMap((message) => {
+    loadedMessages.flatMap((message) => {
       const externalId = externalIdByMessage.get(message.id);
       return externalId ? [[externalId, message] as const] : [];
     }),
@@ -402,8 +400,7 @@ export async function loadSupportConversation(
     .where(and(eq(eventsTable.orgId, input.orgId), eq(eventsTable.conversationId, row.id)))
     .orderBy(asc(eventsTable.createdAt));
 
-  const timeline: SupportTimelineItem[] = [
-    ...recent.map((message): SupportTimelineItem => {
+  const toTimelineMessage = (message: (typeof recent)[number], historical: boolean): SupportTimelineItem => {
       const own = deliveries.filter((event) => event.messageId === message.id);
       const failed = own.find((event) => event.eventType === "failed");
       const quoted = message.replyToExternalMessageId ? messageByExternalId.get(message.replyToExternalMessageId) : undefined;
@@ -438,7 +435,8 @@ export async function loadSupportConversation(
               status: transcripts.get(message.id)?.status ?? null,
             }
           : null,
-        canReply: externalIdByMessage.has(message.id),
+        canReply: !historical && externalIdByMessage.has(message.id),
+        canForward: !historical && (message.text !== null || ["image", "document", "audio"].includes(message.messageType)),
         replyTo: message.replyToExternalMessageId
           ? {
               author: quoted?.direction === "inbound" ? name : quoted?.source === "business_app" ? "Celular" : quoted?.source === "guilda_ai" ? "IA" : (quoted?.sender ?? "Equipe"),
@@ -449,13 +447,28 @@ export async function loadSupportConversation(
         delivery: message.direction === "outbound" && message.source !== "business_app" ? deliveryState(own.map((event) => event.eventType)) : null,
         failure: failed ? deliveryFailureMessage(failed.detail) : null,
       };
-    }),
+  };
+
+  const timeline: SupportTimelineItem[] = [
+    ...recent.map((message) => toTimelineMessage(message, false)),
     ...notes.map((note): SupportTimelineItem => ({ kind: "note", id: note.id, at: note.createdAt.toISOString(), author: note.author, text: note.text })),
     ...history.flatMap((event): SupportTimelineItem[] => {
       const text = eventLabel(event.eventType, event.actor, event.detail, "waiting");
       return text ? [{ kind: "event", id: event.id, at: event.createdAt.toISOString(), text }] : [];
     }),
   ].sort((a, b) => a.at.localeCompare(b.at));
+
+  const previousTimeline: SupportTimelineItem[] = input.includeHistory
+    ? [
+        ...historyRows.flatMap((conversation): SupportTimelineItem[] => [
+          { kind: "event", id: `history-start-${conversation.id}`, at: conversation.createdAt.toISOString(), text: "Atendimento anterior" },
+          ...(conversation.resolvedAt
+            ? [{ kind: "event" as const, id: `history-end-${conversation.id}`, at: conversation.resolvedAt.toISOString(), text: "Atendimento encerrado" }]
+            : []),
+        ]),
+        ...previousMessages.map((message) => toTimelineMessage(message, true)),
+      ].sort((a, b) => a.at.localeCompare(b.at))
+    : [];
 
   const [lastCustomer] = await tx
     .select({ occurredAt: messages.occurredAt, text: messages.text })
@@ -502,18 +515,8 @@ export async function loadSupportConversation(
     id: row.id,
     status: row.status,
     agentTest: row.status === "ai_active" && row.aiTestStartedAt !== null,
-    history: historyRows.map((conversation) => {
-      const lastMessage = historyMessageByConversation.get(conversation.id);
-      return {
-        id: conversation.id,
-        status: conversation.status,
-        startedAt: conversation.createdAt.toISOString(),
-        lastMessageAt: conversation.lastMessageAt?.toISOString() ?? null,
-        resolvedAt: conversation.resolvedAt?.toISOString() ?? null,
-        lastMessage: lastMessage ? messageLabel(lastMessage) : null,
-        clientName: conversation.clientName,
-      };
-    }),
+    previousTimeline,
+    previousConversationCount: historyRows.length,
     assignedToMe: row.assignedUserId === input.viewer.userId,
     assignedUserId: row.assignedUserId,
     assignedClanId: row.assignedClanId,

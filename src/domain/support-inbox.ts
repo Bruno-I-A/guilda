@@ -9,7 +9,7 @@ export type SupportStatus = "ai_active" | "needs_human" | "human_active" | "wait
 
 export const SUPPORT_STATUS_LABELS: Record<SupportStatus, string> = {
   ai_active: "IA atendendo",
-  needs_human: "Precisa de pessoa",
+  needs_human: "Aguardando resposta",
   human_active: "Em atendimento",
   waiting_customer: "Aguardando cliente",
   resolved: "Resolvida",
@@ -23,7 +23,7 @@ export type SupportFilter = "open" | "needs_human" | "mine";
 
 export const SUPPORT_FILTERS: readonly { key: SupportFilter; label: string }[] = [
   { key: "open", label: "Abertas" },
-  { key: "needs_human", label: "Precisa de pessoa" },
+  { key: "needs_human", label: "Aguardando resposta" },
   { key: "mine", label: "Minhas" },
 ];
 

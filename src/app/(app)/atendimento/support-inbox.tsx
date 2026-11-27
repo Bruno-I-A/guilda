@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, ArrowRightLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Forward, Hand, History, ImageOff, LoaderCircle, Maximize2, Paperclip, Plus, Reply, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRightLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Forward, History, ImageOff, LoaderCircle, Maximize2, Paperclip, Plus, Reply, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -19,7 +19,7 @@ import { APP_TIME_ZONE } from "@/lib/date-time";
 import type { SupportConversationView, SupportForwardTarget, SupportQueueRow, SupportTimelineItem } from "@/lib/support/inbox";
 import { cn } from "@/lib/utils";
 
-import { addContactCompany, addNote, forwardMessage, markWaiting, removeContactCompany, reopenConversation, resolveConversation, sendReply, setConversationCompany, takeConversation, transferConversation } from "./actions";
+import { addContactCompany, addNote, forwardMessage, markWaiting, removeContactCompany, reopenConversation, resolveConversation, sendReply, setConversationCompany, transferConversation } from "./actions";
 import { MessageAudio } from "./message-audio";
 import { MessageFile } from "./message-file";
 import { ComposerAttachmentList } from "./composer-attachments";
@@ -70,10 +70,11 @@ function dayLabel(value: string): string {
   return DAY_FORMAT.format(date).replace(/^./, (letter) => letter.toUpperCase());
 }
 
-function inboxHref(filter: SupportFilter, conversationId?: string): string {
+function inboxHref(filter: SupportFilter, conversationId?: string, showHistory = false): string {
   const params = new URLSearchParams();
   if (filter !== "open") params.set("f", filter);
   if (conversationId) params.set("c", conversationId);
+  if (showHistory) params.set("h", "1");
   const query = params.toString();
   return query ? `/atendimento?${query}` : "/atendimento";
 }
@@ -142,7 +143,7 @@ export function QueueItem({ row, active, filter, now }: { row: SupportQueueRow; 
           {hasMeta ? (
             <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
               {phone ? <span className="shrink-0 tabular-nums">{phone}</span> : null}
-              {attention ? <span className="inline-flex shrink-0 items-center gap-1 font-medium text-destructive"><span className="size-1.5 rounded-full bg-destructive" /> Precisa de pessoa</span> : null}
+              {attention ? <span className="inline-flex shrink-0 items-center gap-1 font-medium text-destructive"><span className="size-1.5 rounded-full bg-destructive" /> Aguardando resposta</span> : null}
               {row.status === "waiting_customer" ? <span className="shrink-0">Aguardando cliente</span> : null}
               {row.agentTest ? <span className="inline-flex shrink-0 items-center gap-1"><Bot className="size-3" aria-hidden /> IA atendendo</span> : null}
               {row.aiUrgent ? <span className="shrink-0 text-warning">Urgente pela IA</span> : null}
@@ -218,7 +219,6 @@ function TimelineItem({ item, onReply, onForward }: { item: SupportTimelineItem;
     );
   }
   const outbound = item.direction === "outbound";
-  const canForward = item.isText || Boolean(item.image || item.file || item.audio);
   return (
     <li className={cn("flex py-1", outbound ? "justify-end" : "justify-start")}>
       <div className={cn(
@@ -265,7 +265,7 @@ function TimelineItem({ item, onReply, onForward }: { item: SupportTimelineItem;
         ) : null}
         <span className={cn("flex items-center justify-end gap-1", outbound ? "text-primary-foreground/80" : "text-muted-foreground")}>
           {item.canReply ? <Button type="button" size="icon-sm" variant="ghost" className="touch-target" aria-label="Responder esta mensagem" onClick={() => onReply(item)}><Reply aria-hidden /></Button> : null}
-          {canForward ? <Button type="button" size="icon-sm" variant="ghost" className="touch-target" aria-label="Encaminhar esta mensagem" onClick={() => onForward(item)}><Forward aria-hidden /></Button> : null}
+          {item.canForward ? <Button type="button" size="icon-sm" variant="ghost" className="touch-target" aria-label="Encaminhar esta mensagem" onClick={() => onForward(item)}><Forward aria-hidden /></Button> : null}
         </span>
       </div>
     </li>
@@ -442,16 +442,23 @@ function Composer({ conversation, replyingTo, onCancelReply }: { conversation: S
   );
 }
 
-function ConversationPanel({ conversation, filter, forwardTargets, onContext, onHistory, onTransfer }: { conversation: SupportConversationView; filter: SupportFilter; forwardTargets: readonly SupportForwardTarget[]; onContext: () => void; onHistory: () => void; onTransfer: () => void }) {
+function ConversationPanel({ conversation, filter, forwardTargets, historyShown, onContext, onTransfer }: { conversation: SupportConversationView; filter: SupportFilter; forwardTargets: readonly SupportForwardTarget[]; historyShown: boolean; onContext: () => void; onTransfer: () => void }) {
   const { pending, run } = useCommand();
   const end = useRef<HTMLLIElement>(null);
+  const historyStart = useRef<HTMLLIElement>(null);
+  const wasHistoryShown = useRef(historyShown);
   const [replyingTo, setReplyingTo] = useState<MessageItem | null>(null);
   const [forwarding, setForwarding] = useState<MessageItem | null>(null);
   const [forwardQuery, setForwardQuery] = useState("");
-  const size = conversation.timeline.length;
+  const visibleTimeline = historyShown
+    ? [...conversation.previousTimeline, ...conversation.timeline].sort((a, b) => a.at.localeCompare(b.at))
+    : conversation.timeline;
+  const size = visibleTimeline.length;
   useEffect(() => {
-    end.current?.scrollIntoView({ block: "end" });
-  }, [size, conversation.id]);
+    if (historyShown && !wasHistoryShown.current) historyStart.current?.scrollIntoView({ block: "start" });
+    else if (!historyShown) end.current?.scrollIntoView({ block: "end" });
+    wasHistoryShown.current = historyShown;
+  }, [size, conversation.id, historyShown]);
   const id = { conversationId: conversation.id };
   const resolved = conversation.status === "resolved";
   const targetMatches = useMemo(() => {
@@ -490,9 +497,13 @@ function ConversationPanel({ conversation, filter, forwardTargets, onContext, on
             </span>
           </div>
           <div className="flex items-center gap-1">
-            <Button type="button" size="sm" variant="ghost" onClick={onHistory}>
-              <History aria-hidden /> Histórico{conversation.history.length > 0 ? ` (${conversation.history.length})` : ""}
-            </Button>
+            {conversation.previousConversationCount > 0 ? (
+              <Button asChild size="sm" variant="ghost">
+                <Link href={inboxHref(filter, conversation.id, !historyShown)} scroll={false}>
+                  <History aria-hidden /> {historyShown ? "Ocultar anteriores" : `Mostrar anteriores (${conversation.previousConversationCount})`}
+                </Link>
+              </Button>
+            ) : null}
             <Button type="button" size="sm" variant="ghost" onClick={onContext}><Building2 aria-hidden /> Contexto</Button>
           </div>
         </div>
@@ -511,7 +522,6 @@ function ConversationPanel({ conversation, filter, forwardTargets, onContext, on
           ) : (
             <>
               <Button type="button" size="sm" variant="outline" disabled={pending} onClick={onTransfer}><ArrowRightLeft aria-hidden /> Transferir</Button>
-              {!conversation.assignedToMe ? <Button type="button" size="sm" disabled={pending} onClick={() => run(() => takeConversation(id))}><Hand aria-hidden /> Assumir</Button> : null}
               {conversation.assignedToMe && conversation.status === "human_active" ? <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => run(() => markWaiting(id))}><Clock aria-hidden /> Aguardar cliente</Button> : null}
               <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => run(() => resolveConversation(id))}><CheckIcon aria-hidden /> Resolver</Button>
             </>
@@ -519,9 +529,10 @@ function ConversationPanel({ conversation, filter, forwardTargets, onContext, on
         </div>
       </header>
       <ol className="mx-auto grid min-h-0 w-full max-w-6xl flex-1 content-start gap-1 overflow-y-auto bg-muted/25 p-3 sm:p-5 lg:px-8" aria-label="Histórico da conversa">
-        {conversation.timeline.map((item, index) => (
+        {historyShown ? <li ref={historyStart} className="sr-only">Início das mensagens anteriores</li> : null}
+        {visibleTimeline.map((item, index) => (
           <Fragment key={`${item.kind}-${item.id}`}>
-            {index === 0 || dayKey(conversation.timeline[index - 1]!.at) !== dayKey(item.at) ? (
+            {index === 0 || dayKey(visibleTimeline[index - 1]!.at) !== dayKey(item.at) ? (
               <li className="sticky top-2 z-10 mx-auto my-3 rounded-md border border-border/80 bg-background px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm">
                 {dayLabel(item.at)}
               </li>
@@ -564,31 +575,6 @@ function ConversationPanel({ conversation, filter, forwardTargets, onContext, on
         </DialogContent>
       </Dialog>
     </section>
-  );
-}
-
-function ConversationHistory({ conversation, filter }: { conversation: SupportConversationView; filter: SupportFilter }) {
-  if (conversation.history.length === 0) {
-    return <p className="px-5 py-6 text-sm text-muted-foreground">Este é o primeiro atendimento deste contato.</p>;
-  }
-  return (
-    <ol className="grid content-start divide-y overflow-y-auto" aria-label="Atendimentos anteriores deste contato">
-      {conversation.history.map((item) => {
-        const activityAt = item.lastMessageAt ?? item.startedAt;
-        return (
-          <li key={item.id}>
-            <Link href={inboxHref(filter, item.id)} className="grid min-h-20 gap-1 px-5 py-3 transition-colors hover:bg-accent/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
-              <span className="flex min-w-0 items-center justify-between gap-3">
-                <span className="text-sm font-medium">{dayLabel(activityAt)} · {shortTime(activityAt)}</span>
-                <StatusChip status={item.status} />
-              </span>
-              <span className="truncate text-sm text-muted-foreground">{item.lastMessage ?? "Atendimento sem mensagens"}</span>
-              {item.clientName ? <span className="truncate text-xs text-muted-foreground">{companyDisplayName(item.clientName)}</span> : null}
-            </Link>
-          </li>
-        );
-      })}
-    </ol>
   );
 }
 
@@ -825,7 +811,8 @@ function ContextPanel({ conversation, clients, clans, members }: { conversation:
 /**
  * Caixa de entrada (decisão de 2026-11-06): fila, conversa e empresa na mesma
  * tela; no celular, um passo de cada vez. Quem vê a conversa responde sem
- * assumir (2026-11-24); assumir continua sendo como se pega a conversa para si.
+ * assumir (2026-11-24). A primeira resposta já coloca a conversa com a pessoa
+ * que respondeu; não existe um passo separado de "Assumir" no fluxo normal.
  */
 export function SupportInbox({
   now,
@@ -833,6 +820,7 @@ export function SupportInbox({
   queue,
   counts,
   conversation,
+  historyShown,
   notFound,
   clients,
   clans,
@@ -846,6 +834,7 @@ export function SupportInbox({
   queue: readonly SupportQueueRow[];
   counts: Record<SupportFilter, number>;
   conversation: SupportConversationView | null;
+  historyShown: boolean;
   notFound: boolean;
   clients: readonly ClientOption[];
   clans: readonly Option[];
@@ -856,7 +845,6 @@ export function SupportInbox({
 }) {
   const router = useRouter();
   const [contextOpen, setContextOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const clock = useMemo(() => new Date(now), [now]);
 
@@ -892,12 +880,12 @@ export function SupportInbox({
               aria-current={filter === item.key ? "page" : undefined}
               className={cn("flex min-h-12 min-w-0 flex-col items-start justify-center gap-0.5 rounded-md border px-2 py-1 text-xs leading-tight transition-colors hover:bg-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", filter === item.key ? "border-primary/40 bg-primary/10 text-foreground" : "border-transparent text-muted-foreground")}
             >
-              <span className="truncate">{item.key === "needs_human" ? <><span className="sm:hidden">Pessoas</span><span className="hidden sm:inline">{item.label}</span></> : item.label}</span><span className="font-mono text-sm font-medium tabular-nums">{counts[item.key]}</span>
+              <span className="truncate">{item.key === "needs_human" ? <><span className="sm:hidden">Responder</span><span className="hidden sm:inline">{item.label}</span></> : item.label}</span><span className="font-mono text-sm font-medium tabular-nums">{counts[item.key]}</span>
             </Link>
           ))}
         </nav>
         {queue.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">{filter === "open" ? "Nenhuma conversa aguardando um atendente. As de outros setores aparecem para quem atende neles." : "Nenhuma conversa nesta situação."}</p>
+          <p className="p-4 text-sm text-muted-foreground">{filter === "open" ? "Nenhuma conversa aguardando resposta. As de outros setores também ficam visíveis para a equipe." : "Nenhuma conversa nesta situação."}</p>
         ) : (
           <ul className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto">
             {queue.map((row) => <QueueItem key={row.id} row={row} active={conversation?.id === row.id} filter={filter} now={clock} />)}
@@ -908,7 +896,7 @@ export function SupportInbox({
       {conversation ? (
         <>
           <div className="grid min-h-0 min-w-0">
-            <ConversationPanel key={conversation.id} conversation={conversation} filter={filter} forwardTargets={forwardTargets} onContext={() => setContextOpen(true)} onHistory={() => setHistoryOpen(true)} onTransfer={() => setTransferOpen(true)} />
+            <ConversationPanel key={conversation.id} conversation={conversation} filter={filter} forwardTargets={forwardTargets} historyShown={historyShown} onContext={() => setContextOpen(true)} onTransfer={() => setTransferOpen(true)} />
           </div>
           <Sheet open={transferOpen} onOpenChange={setTransferOpen}>
             <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">
@@ -919,14 +907,6 @@ export function SupportInbox({
                 <p className="text-sm text-muted-foreground">Envie o atendimento de {conversation.contactName} para um setor ou diretamente para uma pessoa.</p>
                 <TransferForm conversation={conversation} clans={clans} members={members} />
               </div>
-            </SheetContent>
-          </Sheet>
-          <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
-            <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">
-              <SheetHeader className="border-b px-5 py-4">
-                <SheetTitle>Histórico de {conversation.contactName}</SheetTitle>
-              </SheetHeader>
-              <ConversationHistory conversation={conversation} filter={filter} />
             </SheetContent>
           </Sheet>
           <Sheet open={contextOpen} onOpenChange={setContextOpen}>
