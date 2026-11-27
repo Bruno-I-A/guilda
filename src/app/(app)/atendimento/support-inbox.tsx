@@ -872,7 +872,7 @@ export function SupportInbox({
   return (
     <div className="grid h-full min-h-0 min-w-0 overflow-hidden border-y bg-card lg:grid-cols-[22rem_minmax(0,1fr)] lg:border-t-0">
       <section className={cn("min-h-0 min-w-0 flex-col bg-card lg:flex lg:border-r", selected ? "hidden" : "flex")} aria-label="Fila de conversas">
-        <nav className="grid shrink-0 grid-cols-3 gap-1 border-b bg-background/45 p-2" aria-label="Filtrar conversas">
+        <nav className="grid shrink-0 grid-cols-[minmax(0,0.8fr)_minmax(0,1.4fr)_minmax(0,0.8fr)] gap-1 border-b bg-background/45 p-2" aria-label="Filtrar conversas">
           {SUPPORT_FILTERS.map((item) => (
             <Link
               key={item.key}
@@ -880,7 +880,7 @@ export function SupportInbox({
               aria-current={filter === item.key ? "page" : undefined}
               className={cn("flex min-h-12 min-w-0 flex-col items-start justify-center gap-0.5 rounded-md border px-2 py-1 text-xs leading-tight transition-colors hover:bg-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", filter === item.key ? "border-primary/40 bg-primary/10 text-foreground" : "border-transparent text-muted-foreground")}
             >
-              <span className="truncate">{item.key === "needs_human" ? <><span className="sm:hidden">Responder</span><span className="hidden sm:inline">{item.label}</span></> : item.label}</span><span className="font-mono text-sm font-medium tabular-nums">{counts[item.key]}</span>
+              <span className="block w-full truncate" title={item.label}>{item.key === "needs_human" ? <><span className="sm:hidden">Responder</span><span className="hidden sm:inline">{item.label}</span></> : item.label}</span><span className="font-mono text-sm font-medium tabular-nums">{counts[item.key]}</span>
             </Link>
           ))}
         </nav>
