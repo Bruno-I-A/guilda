@@ -9,6 +9,7 @@ import { err, requireMemberContext, type ActionResult } from "@/lib/action-conte
 import {
   addSupportContactClient,
   addSupportNote,
+  forwardSupportMessage,
   loadSupportViewer,
   markSupportWaiting,
   removeSupportContactClient,
@@ -70,6 +71,7 @@ export async function reopenConversation(input: z.input<typeof idSchema>): Promi
 const replySchema = z.object({
   conversationId,
   requestId: z.uuid("Recarregue a página e tente de novo."),
+  replyToMessageId: z.uuid("Mensagem citada inválida.").nullable().optional(),
   // 4096 é o limite de texto da Cloud API.
   text: z.string().trim().min(1, "Escreva a mensagem.").max(4096, "Mensagem muito longa (até 4096 caracteres)."),
 });
@@ -78,6 +80,19 @@ export async function sendReply(input: z.input<typeof replySchema>): Promise<Act
   const parsed = replySchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Mensagem inválida.");
   return run((tx, base) => sendSupportReply(tx, { ...base, ...parsed.data }));
+}
+
+const forwardSchema = z.object({
+  conversationId,
+  sourceMessageId: z.uuid("Mensagem inválida."),
+  targetConversationId: z.uuid("Contato de destino inválido."),
+  requestId: z.uuid("Recarregue a página e tente de novo."),
+});
+
+export async function forwardMessage(input: z.input<typeof forwardSchema>): Promise<ActionResult> {
+  const parsed = forwardSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "Encaminhamento inválido.");
+  return run((tx, base) => forwardSupportMessage(tx, { ...base, ...parsed.data }));
 }
 
 const noteSchema = z.object({

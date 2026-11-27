@@ -209,7 +209,7 @@ export async function resolveCoexistencePhone(
 
 /** Envia texto pela Cloud API e devolve o id da mensagem na Meta (wamid). */
 export async function sendWhatsAppText(
-  input: { phoneNumberId: string; accessToken: string; to: string; text: string },
+  input: { phoneNumberId: string; accessToken: string; to: string; text: string; replyToMessageId?: string },
   config: MetaServerConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
@@ -221,6 +221,7 @@ export async function sendWhatsAppText(
       messaging_product: "whatsapp",
       recipient_type: "individual",
       to: input.to,
+      ...(input.replyToMessageId ? { context: { message_id: input.replyToMessageId } } : {}),
       type: "text",
       text: { preview_url: false, body: input.text },
     }),
@@ -264,7 +265,7 @@ export async function uploadWhatsAppMedia(
 
 /** Envia foto ou documento já carregado no mesmo número do WhatsApp. */
 export async function sendWhatsAppMedia(
-  input: { phoneNumberId: string; accessToken: string; to: string; kind: "image" | "document"; mediaId: string; filename?: string; caption?: string },
+  input: { phoneNumberId: string; accessToken: string; to: string; kind: "image" | "document"; mediaId: string; filename?: string; caption?: string; replyToMessageId?: string },
   config: MetaServerConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
@@ -277,7 +278,7 @@ export async function sendWhatsAppMedia(
   const response = await fetchImpl(graphUrl(config, `/${input.phoneNumberId}/messages`), {
     method: "POST",
     headers: { authorization: `Bearer ${input.accessToken}`, "content-type": "application/json" },
-    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: input.to, type: input.kind, [input.kind]: media }),
+    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: input.to, ...(input.replyToMessageId ? { context: { message_id: input.replyToMessageId } } : {}), type: input.kind, [input.kind]: media }),
     cache: "no-store",
     signal: AbortSignal.timeout(15_000),
   });
@@ -292,14 +293,14 @@ export async function sendWhatsAppMedia(
  * nota de voz. Sem o campo, a Meta trata como arquivo de áudio comum.
  */
 export async function sendWhatsAppAudio(
-  input: { phoneNumberId: string; accessToken: string; to: string; mediaId: string },
+  input: { phoneNumberId: string; accessToken: string; to: string; mediaId: string; replyToMessageId?: string },
   config: MetaServerConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   const response = await fetchImpl(graphUrl(config, `/${input.phoneNumberId}/messages`), {
     method: "POST",
     headers: { authorization: `Bearer ${input.accessToken}`, "content-type": "application/json" },
-    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: input.to, type: "audio", audio: { id: input.mediaId, voice: true } }),
+    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: input.to, ...(input.replyToMessageId ? { context: { message_id: input.replyToMessageId } } : {}), type: "audio", audio: { id: input.mediaId, voice: true } }),
     cache: "no-store",
     signal: AbortSignal.timeout(15_000),
   });

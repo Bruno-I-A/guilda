@@ -73,14 +73,16 @@ export async function POST(request: Request, context: { params: Promise<{ conver
   if (!form) return json(400, "Envie um arquivo.");
   const file = form.get("file");
   const requestId = requestIdSchema.safeParse(form.get("requestId"));
+  const replyToValue = form.get("replyToMessageId");
+  const replyToMessageId = replyToValue ? z.uuid().safeParse(replyToValue) : null;
   const rawCaption = form.get("caption");
-  if (!(file instanceof File) || !requestId.success || typeof rawCaption !== "string") return json(400, "Arquivo inválido.");
+  if (!(file instanceof File) || !requestId.success || (replyToMessageId && !replyToMessageId.success) || typeof rawCaption !== "string") return json(400, "Arquivo inválido.");
   const spec = validateSupportUpload(file);
   if (!spec.ok) return json(400, spec.error);
   const caption = validateSupportCaption(rawCaption);
   if (caption === null) return json(400, "Legenda muito longa (até 1024 caracteres).");
 
-  const base = { orgId: member.orgId, conversationId: parsed.data.conversationId, requestId: requestId.data };
+  const base = { orgId: member.orgId, conversationId: parsed.data.conversationId, requestId: requestId.data, replyToMessageId: replyToMessageId?.data ?? null };
   const permit = await withOrgTx(member.orgId, async (tx) => {
     const viewer = await loadSupportViewer(tx, { orgId: member.orgId, userId: member.userId, role: member.role });
     return checkSupportMediaReply(tx, { ...base, viewer, now: new Date() });
