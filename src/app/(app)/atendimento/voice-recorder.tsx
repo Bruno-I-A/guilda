@@ -22,7 +22,7 @@ function stopTracks(stream: MediaStream | null) {
  * durante a gravação para e envia, como no WhatsApp. Em 5 minutos a gravação
  * para e espera o clique: microfone esquecido ligado não vira áudio enviado.
  */
-export function VoiceRecorder({ conversationId, onActiveChange, disabled = false }: { conversationId: string; onActiveChange: (active: boolean) => void; disabled?: boolean }) {
+export function VoiceRecorder({ conversationId, replyToMessageId, onActiveChange, onSent, disabled = false }: { conversationId: string; replyToMessageId?: string | null; onActiveChange: (active: boolean) => void; onSent?: () => void; disabled?: boolean }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("idle");
   const [seconds, setSeconds] = useState(0);
@@ -60,6 +60,7 @@ export function VoiceRecorder({ conversationId, onActiveChange, disabled = false
     form.set("audio", audio.blob, "gravacao");
     // A mesma chave em toda nova tentativa: a nota nunca sai em dobro.
     form.set("requestId", audio.requestId);
+    if (replyToMessageId) form.set("replyToMessageId", replyToMessageId);
     try {
       const response = await fetch(`/api/atendimento/conversations/${conversationId}/audio`, { method: "POST", body: form });
       const result = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
@@ -75,6 +76,7 @@ export function VoiceRecorder({ conversationId, onActiveChange, disabled = false
     }
     recording.current = null;
     setPhase("idle");
+    onSent?.();
     router.refresh();
   }
 

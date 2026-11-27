@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, ArrowRightLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Hand, History, ImageOff, LoaderCircle, Maximize2, Paperclip, Plus, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRightLeft, Bot, Building2, CheckCheck, Clock, ExternalLink, Forward, Hand, History, ImageOff, LoaderCircle, Maximize2, Paperclip, Plus, Reply, RotateCcw, Search, Send, StickyNote, Check as CheckIcon, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -16,10 +16,10 @@ import { SUPPORT_UPLOAD_ACCEPT, SUPPORT_UPLOAD_MAX_FILES, validateSupportCaption
 import { contactInitials, DELIVERY_LABELS, elapsedLabel, enterSends, formatPhone, SUPPORT_FILTERS, SUPPORT_STATUS_LABELS, type DeliveryState, type SupportFilter, type SupportStatus } from "@/domain/support-inbox";
 import type { ActionResult } from "@/lib/action-context";
 import { APP_TIME_ZONE } from "@/lib/date-time";
-import type { SupportConversationView, SupportQueueRow, SupportTimelineItem } from "@/lib/support/inbox";
+import type { SupportConversationView, SupportForwardTarget, SupportQueueRow, SupportTimelineItem } from "@/lib/support/inbox";
 import { cn } from "@/lib/utils";
 
-import { addContactCompany, addNote, markWaiting, removeContactCompany, reopenConversation, resolveConversation, sendReply, setConversationCompany, takeConversation, transferConversation } from "./actions";
+import { addContactCompany, addNote, forwardMessage, markWaiting, removeContactCompany, reopenConversation, resolveConversation, sendReply, setConversationCompany, takeConversation, transferConversation } from "./actions";
 import { MessageAudio } from "./message-audio";
 import { MessageFile } from "./message-file";
 import { ComposerAttachmentList } from "./composer-attachments";
@@ -195,7 +195,9 @@ function MessageImage({ src, caption }: { src: string; caption: string | null })
   );
 }
 
-function TimelineItem({ item }: { item: SupportTimelineItem }) {
+type MessageItem = Extract<SupportTimelineItem, { kind: "message" }>;
+
+function TimelineItem({ item, onReply, onForward }: { item: SupportTimelineItem; onReply: (item: MessageItem) => void; onForward: (item: MessageItem) => void }) {
   if (item.kind === "event") {
     return (
       <li className="flex items-center gap-3 py-2 text-xs text-muted-foreground">
@@ -216,6 +218,7 @@ function TimelineItem({ item }: { item: SupportTimelineItem }) {
     );
   }
   const outbound = item.direction === "outbound";
+  const canForward = item.isText || Boolean(item.image || item.file || item.audio);
   return (
     <li className={cn("flex py-1", outbound ? "justify-end" : "justify-start")}>
       <div className={cn(
@@ -231,6 +234,13 @@ function TimelineItem({ item }: { item: SupportTimelineItem }) {
           <span className="font-medium">{item.author}</span>
           <span className="font-mono tabular-nums">{shortTime(item.at)}</span>
         </span>
+        {item.forwarded ? <span className={cn("flex items-center gap-1 text-xs", outbound ? "text-primary-foreground/75" : "text-muted-foreground")}><Forward className="size-3" aria-hidden /> Encaminhada</span> : null}
+        {item.replyTo ? (
+          <div className={cn("border-l-2 px-2 py-1 text-sm", outbound ? "border-primary-foreground/45 bg-background/10" : "border-primary/45 bg-muted/45")}>
+            <p className="text-xs font-medium">{item.replyTo.author}</p>
+            <p className="line-clamp-2 opacity-80">{item.replyTo.text}</p>
+          </div>
+        ) : null}
         {item.image ? (
           <>
             <MessageImage src={item.image.src} caption={item.image.caption} />
@@ -253,12 +263,16 @@ function TimelineItem({ item }: { item: SupportTimelineItem }) {
             {DELIVERY_ICONS[item.delivery]} {item.failure ?? DELIVERY_LABELS[item.delivery]}
           </span>
         ) : null}
+        <span className={cn("flex items-center justify-end gap-1", outbound ? "text-primary-foreground/80" : "text-muted-foreground")}>
+          {item.canReply ? <Button type="button" size="icon-sm" variant="ghost" className="touch-target" aria-label="Responder esta mensagem" onClick={() => onReply(item)}><Reply aria-hidden /></Button> : null}
+          {canForward ? <Button type="button" size="icon-sm" variant="ghost" className="touch-target" aria-label="Encaminhar esta mensagem" onClick={() => onForward(item)}><Forward aria-hidden /></Button> : null}
+        </span>
       </div>
     </li>
   );
 }
 
-function Composer({ conversation }: { conversation: SupportConversationView }) {
+function Composer({ conversation, replyingTo, onCancelReply }: { conversation: SupportConversationView; replyingTo: MessageItem | null; onCancelReply: () => void }) {
   const { pending, run } = useCommand();
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -270,7 +284,7 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
   // Chave do envio: clicar duas vezes não manda a mensagem em dobro.
   const [textRequestId, setTextRequestId] = useState(() => crypto.randomUUID());
   const canReply = !conversation.replyBlocked;
-  const effective = canReply ? mode : "note";
+  const effective = canReply ? (replyingTo ? "reply" : mode) : "note";
   // Gravando ou com áudio por enviar: o texto espera, para não sair nada pela metade.
   const [voiceActive, setVoiceActive] = useState(false);
 
@@ -296,6 +310,7 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
           // somente a primeira, como no envio múltiplo do aplicativo.
           form.set("caption", index === 0 ? caption : "");
           form.set("requestId", attachment.requestId);
+          if (replyingTo) form.set("replyToMessageId", replyingTo.id);
           const response = await fetch(`/api/atendimento/conversations/${conversation.id}/media`, { method: "POST", body: form, cache: "no-store" });
           // Recusa do proxy (arquivo grande demais, por exemplo) vem em HTML, não em JSON.
           const result = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
@@ -309,6 +324,7 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
           if (index === 0) setText("");
         }
         toast.success(files.length === 1 ? "Arquivo enviado." : `${files.length} arquivos enviados.`);
+        onCancelReply();
       } catch {
         toast.error(sent > 0
           ? `${sent} de ${files.length} arquivo(s) enviado(s). A conexão falhou no próximo; tente novamente.`
@@ -324,8 +340,9 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
     const done = () => {
       setText("");
       setTextRequestId(crypto.randomUUID());
+      onCancelReply();
     };
-    if (effective === "reply") run(() => sendReply({ conversationId: conversation.id, requestId: textRequestId, text: body }), done);
+    if (effective === "reply") run(() => sendReply({ conversationId: conversation.id, requestId: textRequestId, text: body, replyToMessageId: replyingTo?.id ?? null }), done);
     else run(() => addNote({ conversationId: conversation.id, text: body }), done);
   }
 
@@ -334,7 +351,7 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
       {conversation.replyBlocked ? <p className="text-xs text-muted-foreground">{conversation.replyBlocked} Você ainda pode deixar uma nota para a equipe.</p> : null}
       <div className="flex gap-1" role="group" aria-label="Tipo de texto">
         <Button type="button" size="sm" variant={effective === "reply" ? "secondary" : "ghost"} disabled={!canReply || voiceActive || uploading} aria-pressed={effective === "reply"} onClick={() => setMode("reply")}>Responder</Button>
-        <Button type="button" size="sm" variant={effective === "note" ? "secondary" : "ghost"} disabled={voiceActive || uploading} aria-pressed={effective === "note"} onClick={() => { setMode("note"); setFiles([]); if (fileInput.current) fileInput.current.value = ""; }}><StickyNote aria-hidden /> Nota interna</Button>
+        <Button type="button" size="sm" variant={effective === "note" ? "secondary" : "ghost"} disabled={voiceActive || uploading} aria-pressed={effective === "note"} onClick={() => { setMode("note"); setFiles([]); onCancelReply(); if (fileInput.current) fileInput.current.value = ""; }}><StickyNote aria-hidden /> Nota interna</Button>
       </div>
       <input
         ref={fileInput}
@@ -372,6 +389,16 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
           onRemove={(requestId) => setFiles((current) => current.filter((item) => item.requestId !== requestId))}
         />
       ) : null}
+      {effective === "reply" && replyingTo ? (
+        <div className="flex min-w-0 items-start gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm">
+          <Reply className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium">Respondendo a {replyingTo.author}</p>
+            <p className="truncate text-muted-foreground">{replyingTo.text}</p>
+          </div>
+          <Button type="button" size="icon-sm" variant="ghost" className="touch-target" aria-label="Cancelar resposta à mensagem" onClick={onCancelReply}><X aria-hidden /></Button>
+        </div>
+      ) : null}
       <Textarea
         rows={2}
         disabled={voiceActive || uploading}
@@ -399,7 +426,7 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
       <div className="flex min-w-0 items-center justify-between gap-2">
         {voiceActive ? null : <span className="hidden min-w-0 truncate text-xs text-muted-foreground sm:block" title="Enter envia · Shift + Enter quebra a linha">Enter envia · Shift + Enter quebra a linha</span>}
         <div className={cn("flex min-w-0 items-center gap-2", voiceActive ? "flex-1" : "ml-auto")}>
-          {effective === "reply" ? <VoiceRecorder conversationId={conversation.id} onActiveChange={setVoiceActive} disabled={files.length > 0 || uploading || pending} /> : null}
+          {effective === "reply" ? <VoiceRecorder conversationId={conversation.id} replyToMessageId={replyingTo?.id} onActiveChange={setVoiceActive} onSent={onCancelReply} disabled={files.length > 0 || uploading || pending} /> : null}
           {voiceActive ? null : (
             <>
               {effective === "reply" ? <Button type="button" size="sm" variant="outline" disabled={pending || uploading || files.length >= SUPPORT_UPLOAD_MAX_FILES} onClick={() => fileInput.current?.click()}><Paperclip aria-hidden /> {files.length > 0 ? "Anexar mais" : "Anexar"}</Button> : null}
@@ -415,15 +442,25 @@ function Composer({ conversation }: { conversation: SupportConversationView }) {
   );
 }
 
-function ConversationPanel({ conversation, filter, onContext, onHistory, onTransfer }: { conversation: SupportConversationView; filter: SupportFilter; onContext: () => void; onHistory: () => void; onTransfer: () => void }) {
+function ConversationPanel({ conversation, filter, forwardTargets, onContext, onHistory, onTransfer }: { conversation: SupportConversationView; filter: SupportFilter; forwardTargets: readonly SupportForwardTarget[]; onContext: () => void; onHistory: () => void; onTransfer: () => void }) {
   const { pending, run } = useCommand();
   const end = useRef<HTMLLIElement>(null);
+  const [replyingTo, setReplyingTo] = useState<MessageItem | null>(null);
+  const [forwarding, setForwarding] = useState<MessageItem | null>(null);
+  const [forwardQuery, setForwardQuery] = useState("");
   const size = conversation.timeline.length;
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
   }, [size, conversation.id]);
   const id = { conversationId: conversation.id };
   const resolved = conversation.status === "resolved";
+  const targetMatches = useMemo(() => {
+    const needle = normalize(forwardQuery.trim());
+    return forwardTargets
+      .filter((target) => target.conversationId !== conversation.id)
+      .filter((target) => !needle || normalize(`${target.contactName} ${target.phone ?? ""}`).includes(needle))
+      .slice(0, 40);
+  }, [conversation.id, forwardQuery, forwardTargets]);
 
   return (
     <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background" aria-label={`Conversa com ${conversation.contactName}`}>
@@ -489,12 +526,43 @@ function ConversationPanel({ conversation, filter, onContext, onHistory, onTrans
                 {dayLabel(item.at)}
               </li>
             ) : null}
-            <TimelineItem item={item} />
+            <TimelineItem item={item} onReply={setReplyingTo} onForward={setForwarding} />
           </Fragment>
         ))}
         <li ref={end} aria-hidden />
       </ol>
-      <Composer key={`${conversation.id}-${conversation.replyBlocked ?? "ok"}`} conversation={conversation} />
+      <Composer key={`${conversation.id}-${conversation.replyBlocked ?? "ok"}`} conversation={conversation} replyingTo={replyingTo} onCancelReply={() => setReplyingTo(null)} />
+      <Dialog open={forwarding !== null} onOpenChange={(open) => { if (!open) { setForwarding(null); setForwardQuery(""); } }}>
+        <DialogContent className="grid max-h-[min(42rem,calc(100dvh-2rem))] gap-3 overflow-hidden sm:max-w-md">
+          <DialogTitle>Encaminhar mensagem</DialogTitle>
+          <p className="text-sm text-muted-foreground">Escolha outro contato. O envio só será feito se a janela de atendimento dele estiver aberta.</p>
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <Input value={forwardQuery} onChange={(event) => setForwardQuery(event.target.value)} placeholder="Buscar nome ou telefone" className="pl-9" aria-label="Buscar contato para encaminhar" />
+          </div>
+          <ul className="grid min-h-0 gap-1 overflow-y-auto" aria-label="Contatos disponíveis">
+            {targetMatches.length === 0 ? <li className="py-4 text-center text-sm text-muted-foreground">Nenhum outro contato aberto.</li> : targetMatches.map((target) => (
+              <li key={target.conversationId}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-auto min-h-12 w-full justify-start px-3 py-2 text-left"
+                  disabled={pending || !forwarding}
+                  onClick={() => forwarding && run(
+                    () => forwardMessage({ conversationId: conversation.id, sourceMessageId: forwarding.id, targetConversationId: target.conversationId, requestId: crypto.randomUUID() }),
+                    () => { toast.success(`Mensagem encaminhada para ${target.contactName}.`); setForwarding(null); setForwardQuery(""); },
+                  )}
+                >
+                  <span className="grid min-w-0">
+                    <span className="truncate font-medium">{target.contactName}</span>
+                    {target.phone ? <span className="truncate font-mono text-xs text-muted-foreground">{formatPhone(target.phone)}</span> : null}
+                  </span>
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
@@ -769,6 +837,7 @@ export function SupportInbox({
   clients,
   clans,
   members,
+  forwardTargets,
   channels,
   isAdmin,
 }: {
@@ -781,6 +850,7 @@ export function SupportInbox({
   clients: readonly ClientOption[];
   clans: readonly Option[];
   members: readonly Option[];
+  forwardTargets: readonly SupportForwardTarget[];
   channels: number;
   isAdmin: boolean;
 }) {
@@ -838,7 +908,7 @@ export function SupportInbox({
       {conversation ? (
         <>
           <div className="grid min-h-0 min-w-0">
-            <ConversationPanel key={conversation.id} conversation={conversation} filter={filter} onContext={() => setContextOpen(true)} onHistory={() => setHistoryOpen(true)} onTransfer={() => setTransferOpen(true)} />
+            <ConversationPanel key={conversation.id} conversation={conversation} filter={filter} forwardTargets={forwardTargets} onContext={() => setContextOpen(true)} onHistory={() => setHistoryOpen(true)} onTransfer={() => setTransferOpen(true)} />
           </div>
           <Sheet open={transferOpen} onOpenChange={setTransferOpen}>
             <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">

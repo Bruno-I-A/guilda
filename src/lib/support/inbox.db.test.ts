@@ -194,6 +194,57 @@ test("quem vê responde sem assumir; a resposta vai para a fila uma vez, mesmo c
   expect(await current()).toMatchObject({ status: "human_active", assignedUserId: "ana" });
 });
 
+test("responder uma mensagem guarda e envia a citação certa", async () => {
+  const { sendSupportReply, loadSupportConversation } = await import("./inbox");
+  const phone = "5554911110071";
+  const { id } = await customerSays(phone, "Qual documento você precisa?");
+  const [original] = await tx((t) => t
+    .select({ id: schema.supportMessages.id, externalId: schema.supportMessages.externalMessageId })
+    .from(schema.supportMessages)
+    .where(and(eq(schema.supportMessages.conversationId, id), eq(schema.supportMessages.direction, "inbound"))));
+
+  expect((await tx((t) => sendSupportReply(t, {
+    orgId: ORG, viewer: admin, conversationId: id, now: NOW,
+    text: "O balanço de 2025.", requestId: uuid(71), replyToMessageId: original.id,
+  }))).ok).toBe(true);
+
+  const [sent] = await tx((t) => t.select().from(schema.supportMessages).where(and(eq(schema.supportMessages.conversationId, id), eq(schema.supportMessages.direction, "outbound"))));
+  expect(sent.replyToExternalMessageId).toBe(original.externalId);
+  const [outbox] = await tx((t) => t.select().from(schema.supportOutbox).where(eq(schema.supportOutbox.messageId, sent.id)));
+  expect(outbox.payload).toMatchObject({ to: phone, text: "O balanço de 2025.", contextMessageId: original.externalId });
+  const view = await tx((t) => loadSupportConversation(t, { orgId: ORG, viewer: admin, conversationId: id, now: NOW }));
+  expect(view?.timeline.find((item) => item.kind === "message" && item.id === sent.id)).toMatchObject({
+    replyTo: { author: "Maria", text: "Qual documento você precisa?" },
+  });
+});
+
+test("encaminhar reenvia ao outro contato e registra a origem", async () => {
+  const { forwardSupportMessage, loadSupportConversation, loadSupportForwardTargets } = await import("./inbox");
+  const sourcePhone = "5554911110072";
+  const targetPhone = "5554911110073";
+  const sourceConversation = await customerSays(sourcePhone, "Documento liberado");
+  const targetConversation = await customerSays(targetPhone, "Pode me mandar");
+  const [source] = await tx((t) => t
+    .select({ id: schema.supportMessages.id })
+    .from(schema.supportMessages)
+    .where(and(eq(schema.supportMessages.conversationId, sourceConversation.id), eq(schema.supportMessages.direction, "inbound"))));
+
+  const targets = await tx((t) => loadSupportForwardTargets(t, ORG));
+  expect(targets).toContainEqual(expect.objectContaining({ conversationId: targetConversation.id, contactName: "Maria" }));
+  expect((await tx((t) => forwardSupportMessage(t, {
+    orgId: ORG, viewer: admin, now: NOW,
+    conversationId: sourceConversation.id, sourceMessageId: source.id,
+    targetConversationId: targetConversation.id, requestId: uuid(72),
+  }))).ok).toBe(true);
+
+  const [forwarded] = await tx((t) => t.select().from(schema.supportMessages).where(and(eq(schema.supportMessages.conversationId, targetConversation.id), eq(schema.supportMessages.direction, "outbound"))));
+  expect(forwarded).toMatchObject({ text: "Documento liberado", content: { forwardedFromMessageId: source.id, forwardedFromConversationId: sourceConversation.id } });
+  const [outbox] = await tx((t) => t.select().from(schema.supportOutbox).where(eq(schema.supportOutbox.messageId, forwarded.id)));
+  expect(outbox.payload).toEqual({ to: targetPhone, text: "Documento liberado" });
+  const view = await tx((t) => loadSupportConversation(t, { orgId: ORG, viewer: admin, conversationId: targetConversation.id, now: NOW }));
+  expect(view?.timeline.find((item) => item.kind === "message" && item.id === forwarded.id)).toMatchObject({ forwarded: true });
+});
+
 test("anexo sai de conversa visível, fica no histórico e é enviado uma vez", async () => {
   const { checkSupportMediaReply, sendSupportMedia, loadSupportConversation } = await import("./inbox");
   const { runSupportOutboxCycle } = await import("@/lib/whatsapp/outbound-worker");
