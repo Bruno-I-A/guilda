@@ -80,6 +80,37 @@ export interface SupportQueueRow {
   agentTest: boolean;
 }
 
+export interface SupportForwardTarget {
+  conversationId: string;
+  contactName: string;
+  phone: string | null;
+  lastMessageAt: string | null;
+}
+
+/** Conversas abertas que podem receber um encaminhamento; a action confere a janela de 24 h. */
+export async function loadSupportForwardTargets(tx: OrgTx, orgId: string): Promise<SupportForwardTarget[]> {
+  const rows = await tx
+    .select({
+      conversationId: c.id,
+      displayName: contacts.displayName,
+      customName: contacts.customName,
+      whatsappId: contacts.whatsappId,
+      phone: contacts.phoneE164,
+      lastMessageAt: c.lastMessageAt,
+    })
+    .from(c)
+    .innerJoin(contacts, and(eq(contacts.orgId, c.orgId), eq(contacts.id, c.contactId)))
+    .where(and(eq(c.orgId, orgId), ne(c.status, "resolved")))
+    .orderBy(desc(c.lastMessageAt))
+    .limit(QUEUE_LIMIT);
+  return rows.map((row) => ({
+    conversationId: row.conversationId,
+    contactName: contactName(row),
+    phone: row.phone,
+    lastMessageAt: row.lastMessageAt?.toISOString() ?? null,
+  }));
+}
+
 export async function loadSupportQueue(
   tx: OrgTx,
   input: { orgId: string; viewer: SupportViewer; filter: SupportFilter },
@@ -173,6 +204,9 @@ export type SupportTimelineItem =
       file: { href: string; name: string; caption: string | null; isPdf: boolean } | null;
       /** Áudio recebido (2026-11-23): toca pela rota da Guilda, com o texto da transcrição. */
       audio: { src: string; transcript: string | null; status: TranscriptionStatus | null } | null;
+      canReply: boolean;
+      replyTo: { author: string; text: string } | null;
+      forwarded: boolean;
       delivery: DeliveryState | null;
       failure: string | null;
     }
@@ -312,6 +346,8 @@ export async function loadSupportConversation(
       text: messages.text,
       messageType: messages.messageType,
       content: messages.content,
+      externalMessageId: messages.externalMessageId,
+      replyToExternalMessageId: messages.replyToExternalMessageId,
       occurredAt: messages.occurredAt,
       sender: schema.user.name,
     })
@@ -334,6 +370,22 @@ export async function loadSupportConversation(
     recent.filter((message) => message.messageType === "audio").map((message) => message.id),
   );
 
+  const externalIdByMessage = new Map<string, string>();
+  for (const message of recent) {
+    if (message.externalMessageId) externalIdByMessage.set(message.id, message.externalMessageId);
+  }
+  for (const event of deliveries) {
+    if (event.eventType === "accepted" && typeof event.detail.wamid === "string") {
+      externalIdByMessage.set(event.messageId, event.detail.wamid);
+    }
+  }
+  const messageByExternalId = new Map(
+    recent.flatMap((message) => {
+      const externalId = externalIdByMessage.get(message.id);
+      return externalId ? [[externalId, message] as const] : [];
+    }),
+  );
+
   const notesTable = schema.supportConversationNotes;
   const notes = await tx
     .select({ id: notesTable.id, text: notesTable.text, createdAt: notesTable.createdAt, author: schema.user.name })
@@ -354,6 +406,7 @@ export async function loadSupportConversation(
     ...recent.map((message): SupportTimelineItem => {
       const own = deliveries.filter((event) => event.messageId === message.id);
       const failed = own.find((event) => event.eventType === "failed");
+      const quoted = message.replyToExternalMessageId ? messageByExternalId.get(message.replyToExternalMessageId) : undefined;
       return {
         kind: "message",
         id: message.id,
@@ -385,6 +438,14 @@ export async function loadSupportConversation(
               status: transcripts.get(message.id)?.status ?? null,
             }
           : null,
+        canReply: externalIdByMessage.has(message.id),
+        replyTo: message.replyToExternalMessageId
+          ? {
+              author: quoted?.direction === "inbound" ? name : quoted?.source === "business_app" ? "Celular" : quoted?.source === "guilda_ai" ? "IA" : (quoted?.sender ?? "Equipe"),
+              text: quoted ? messageLabel(quoted) : "Mensagem anterior",
+            }
+          : null,
+        forwarded: typeof message.content.forwardedFromMessageId === "string",
         delivery: message.direction === "outbound" && message.source !== "business_app" ? deliveryState(own.map((event) => event.eventType)) : null,
         failure: failed ? deliveryFailureMessage(failed.detail) : null,
       };
@@ -776,9 +837,11 @@ export async function addSupportNote(tx: OrgTx, input: Command & { text: string 
 }
 
 /** A mesma régua de texto e áudio, antes de carregar a mídia na Meta. */
-export async function checkSupportMediaReply(tx: OrgTx, input: Command & { requestId: string }): Promise<ActionResult<{ channelId: string; alreadyQueued: boolean }>> {
+export async function checkSupportMediaReply(tx: OrgTx, input: Command & { requestId: string; replyToMessageId?: string | null }): Promise<ActionResult<{ channelId: string; alreadyQueued: boolean }>> {
   const target = await replyTarget(tx, input);
   if (!("row" in target)) return target;
+  const reply = await replyExternalId(tx, { orgId: input.orgId, conversationId: target.row.id, messageId: input.replyToMessageId });
+  if (!reply.ok) return reply;
   return { ok: true, data: { channelId: target.row.channelId, alreadyQueued: target.duplicate } };
 }
 
@@ -787,12 +850,43 @@ export async function checkSupportMediaReply(tx: OrgTx, input: Command & { reque
  * processo de atendimento entrega à Meta. O telefone sai do cadastro do contato,
  * nunca do navegador. A chave do formulário impede a mensagem em dobro.
  */
-export async function sendSupportReply(tx: OrgTx, input: Command & { text: string; requestId: string }): Promise<ActionResult> {
+async function replyExternalId(
+  tx: OrgTx,
+  input: { orgId: string; conversationId: string; messageId: string | null | undefined },
+): Promise<ActionResult<{ externalId: string | null }>> {
+  if (!input.messageId) return { ok: true, data: { externalId: null } };
+  const [message] = await tx
+    .select({ id: messages.id, externalMessageId: messages.externalMessageId })
+    .from(messages)
+    .where(and(eq(messages.orgId, input.orgId), eq(messages.conversationId, input.conversationId), eq(messages.id, input.messageId)))
+    .limit(1);
+  if (!message) return err("A mensagem escolhida não pertence a esta conversa.");
+  if (message.externalMessageId) return { ok: true, data: { externalId: message.externalMessageId } };
+  const events = schema.supportMessageEvents;
+  const accepted = await tx
+    .select({ detail: events.detail })
+    .from(events)
+    .where(and(eq(events.orgId, input.orgId), eq(events.messageId, message.id), eq(events.eventType, "accepted")))
+    .orderBy(desc(events.occurredAt))
+    .limit(1);
+  const wamid = accepted[0]?.detail.wamid;
+  return typeof wamid === "string"
+    ? { ok: true, data: { externalId: wamid } }
+    : err("Essa mensagem ainda não pode ser citada no WhatsApp.");
+}
+
+export async function sendSupportReply(
+  tx: OrgTx,
+  input: Command & { text: string; requestId: string; replyToMessageId?: string | null },
+): Promise<ActionResult> {
   const target = await replyTarget(tx, input);
   if (!("row" in target)) return target;
   if (target.duplicate) return { ok: true };
   const { row, contact, queuedKey } = target;
   const events = schema.supportMessageEvents;
+  const reply = await replyExternalId(tx, { orgId: input.orgId, conversationId: row.id, messageId: input.replyToMessageId });
+  if (!reply.ok) return reply;
+  const replyToExternalId = reply.data?.externalId ?? null;
 
   const [message] = await tx
     .insert(messages)
@@ -805,20 +899,106 @@ export async function sendSupportReply(tx: OrgTx, input: Command & { text: strin
       source: "guilda_attendant",
       messageType: "text",
       text: input.text,
+      replyToExternalMessageId: replyToExternalId,
       sentByUserId: input.viewer.userId,
       occurredAt: input.now,
     })
     .returning({ id: messages.id });
   await tx.insert(events).values({ orgId: input.orgId, messageId: message.id, eventType: "queued", providerEventKey: queuedKey, occurredAt: input.now });
-  await tx.insert(schema.supportOutbox).values({ orgId: input.orgId, channelId: row.channelId, messageId: message.id, payload: { to: contact.whatsappId, text: input.text } });
+  await tx.insert(schema.supportOutbox).values({
+    orgId: input.orgId,
+    channelId: row.channelId,
+    messageId: message.id,
+    payload: { to: contact.whatsappId, text: input.text, ...(replyToExternalId ? { contextMessageId: replyToExternalId } : {}) },
+  });
   await afterTeamReply(tx, input, row);
+  return { ok: true };
+}
+
+/** Reenvia texto ou mídia a outra conversa do mesmo canal, com origem auditável na Guilda. */
+export async function forwardSupportMessage(
+  tx: OrgTx,
+  input: Command & { sourceMessageId: string; targetConversationId: string; requestId: string },
+): Promise<ActionResult> {
+  if (input.conversationId === input.targetConversationId) return err("Escolha outro contato para encaminhar.");
+  const [source] = await tx
+    .select({
+      id: messages.id,
+      conversationId: messages.conversationId,
+      channelId: messages.channelId,
+      messageType: messages.messageType,
+      text: messages.text,
+      content: messages.content,
+    })
+    .from(messages)
+    .where(and(eq(messages.orgId, input.orgId), eq(messages.conversationId, input.conversationId), eq(messages.id, input.sourceMessageId)))
+    .limit(1);
+  if (!source) return err("Mensagem de origem não encontrada.");
+  const mediaId = typeof source.content.id === "string" ? source.content.id : null;
+
+  let payload: Record<string, unknown>;
+  if (source.messageType === "text") {
+    payload = { text: source.text ?? "" };
+  } else if (source.messageType === "audio") {
+    if (!mediaId) return err("A mídia original não está mais disponível para encaminhar.");
+    payload = { audio: { id: mediaId } };
+  } else if (source.messageType === "image" || source.messageType === "document") {
+    if (!mediaId) return err("A mídia original não está mais disponível para encaminhar.");
+    payload = {
+      media: {
+        id: mediaId,
+        kind: source.messageType,
+        ...(typeof source.content.filename === "string" ? { filename: source.content.filename } : {}),
+        ...(typeof source.content.caption === "string" ? { caption: source.content.caption } : {}),
+      },
+    };
+  } else {
+    return err("Esse tipo de mensagem não pode ser encaminhado.");
+  }
+
+  const target = await replyTarget(tx, { ...input, conversationId: input.targetConversationId });
+  if (!("row" in target)) return target;
+  if (target.duplicate) return { ok: true };
+  if (target.row.channelId !== source.channelId) return err("Só é possível encaminhar pelo mesmo número do WhatsApp.");
+
+  const copied = {
+    ...source.content,
+    forwardedFromMessageId: source.id,
+    forwardedFromConversationId: source.conversationId,
+  };
+  const [message] = await tx
+    .insert(messages)
+    .values({
+      orgId: input.orgId,
+      channelId: target.row.channelId,
+      conversationId: target.row.id,
+      direction: "outbound",
+      actor: "attendant",
+      source: "guilda_attendant",
+      messageType: source.messageType,
+      text: source.text,
+      content: copied,
+      sentByUserId: input.viewer.userId,
+      occurredAt: input.now,
+    })
+    .returning({ id: messages.id });
+  await tx.insert(schema.supportMessageEvents).values({
+    orgId: input.orgId,
+    messageId: message.id,
+    eventType: "queued",
+    providerEventKey: target.queuedKey,
+    occurredAt: input.now,
+  });
+
+  await tx.insert(schema.supportOutbox).values({ orgId: input.orgId, channelId: target.row.channelId, messageId: message.id, payload: { to: target.contact.whatsappId, ...payload } });
+  await afterTeamReply(tx, { ...input, conversationId: input.targetConversationId }, target.row);
   return { ok: true };
 }
 
 /** Guarda só o id da mídia da Meta; o arquivo não vai para o Postgres. */
 export async function sendSupportMedia(
   tx: OrgTx,
-  input: Command & { requestId: string; mediaId: string; kind: "image" | "document"; mimeType: string; filename: string; caption: string },
+  input: Command & { requestId: string; mediaId: string; kind: "image" | "document"; mimeType: string; filename: string; caption: string; replyToMessageId?: string | null },
 ): Promise<ActionResult> {
   const spec = validateSupportUpload({ name: input.filename, type: input.mimeType, size: 1 });
   if (!/^\d{1,32}$/.test(input.mediaId) || input.caption.length > 1024 || !spec.ok || spec.value.kind !== input.kind) return err("Arquivo inválido.");
@@ -826,6 +1006,9 @@ export async function sendSupportMedia(
   if (!("row" in target)) return target;
   if (target.duplicate) return { ok: true };
   const { row, contact, queuedKey } = target;
+  const reply = await replyExternalId(tx, { orgId: input.orgId, conversationId: row.id, messageId: input.replyToMessageId });
+  if (!reply.ok) return reply;
+  const replyToExternalId = reply.data?.externalId ?? null;
 
   const content = {
     id: input.mediaId,
@@ -842,6 +1025,7 @@ export async function sendSupportMedia(
     source: "guilda_attendant",
     messageType: input.kind,
     content,
+    replyToExternalMessageId: replyToExternalId,
     sentByUserId: input.viewer.userId,
     occurredAt: input.now,
   }).returning({ id: messages.id });
@@ -850,7 +1034,7 @@ export async function sendSupportMedia(
     orgId: input.orgId,
     channelId: row.channelId,
     messageId: message.id,
-    payload: { to: contact.whatsappId, media: { id: input.mediaId, kind: input.kind, filename: input.filename, caption: input.caption } },
+    payload: { to: contact.whatsappId, media: { id: input.mediaId, kind: input.kind, filename: input.filename, caption: input.caption }, ...(replyToExternalId ? { contextMessageId: replyToExternalId } : {}) },
   });
   await afterTeamReply(tx, input, row);
   return { ok: true };
@@ -861,9 +1045,11 @@ export async function sendSupportMedia(
  * resposta em texto, para não gastar o envio com uma resposta que seria recusada.
  * Devolve o canal, de onde a rota tira o acesso à Meta.
  */
-export async function checkSupportAudioReply(tx: OrgTx, input: Command & { requestId: string }): Promise<ActionResult<{ channelId: string; duplicate: boolean }>> {
+export async function checkSupportAudioReply(tx: OrgTx, input: Command & { requestId: string; replyToMessageId?: string | null }): Promise<ActionResult<{ channelId: string; duplicate: boolean }>> {
   const target = await replyTarget(tx, input);
   if (!("row" in target)) return target;
+  const reply = await replyExternalId(tx, { orgId: input.orgId, conversationId: target.row.id, messageId: input.replyToMessageId });
+  if (!reply.ok) return reply;
   return { ok: true, data: { channelId: target.row.channelId, duplicate: target.duplicate } };
 }
 
@@ -871,12 +1057,15 @@ export async function checkSupportAudioReply(tx: OrgTx, input: Command & { reque
  * Nota de voz gravada na conversa (2026-11-23): o áudio já está na Meta
  * (`mediaId`); aqui entra a mensagem e a saída, como a resposta em texto.
  */
-export async function sendSupportAudioReply(tx: OrgTx, input: Command & { mediaId: string; requestId: string }): Promise<ActionResult> {
+export async function sendSupportAudioReply(tx: OrgTx, input: Command & { mediaId: string; requestId: string; replyToMessageId?: string | null }): Promise<ActionResult> {
   if (!/^\d{1,32}$/.test(input.mediaId)) return err("Áudio inválido.");
   const target = await replyTarget(tx, input);
   if (!("row" in target)) return target;
   if (target.duplicate) return { ok: true };
   const { row, contact, queuedKey } = target;
+  const reply = await replyExternalId(tx, { orgId: input.orgId, conversationId: row.id, messageId: input.replyToMessageId });
+  if (!reply.ok) return reply;
+  const replyToExternalId = reply.data?.externalId ?? null;
   const [message] = await tx
     .insert(messages)
     .values({
@@ -888,12 +1077,13 @@ export async function sendSupportAudioReply(tx: OrgTx, input: Command & { mediaI
       source: "guilda_attendant",
       messageType: "audio",
       content: { id: input.mediaId, mime_type: "audio/ogg", voice: true },
+      replyToExternalMessageId: replyToExternalId,
       sentByUserId: input.viewer.userId,
       occurredAt: input.now,
     })
     .returning({ id: messages.id });
   await tx.insert(schema.supportMessageEvents).values({ orgId: input.orgId, messageId: message.id, eventType: "queued", providerEventKey: queuedKey, occurredAt: input.now });
-  await tx.insert(schema.supportOutbox).values({ orgId: input.orgId, channelId: row.channelId, messageId: message.id, payload: { to: contact.whatsappId, audio: { id: input.mediaId } } });
+  await tx.insert(schema.supportOutbox).values({ orgId: input.orgId, channelId: row.channelId, messageId: message.id, payload: { to: contact.whatsappId, audio: { id: input.mediaId }, ...(replyToExternalId ? { contextMessageId: replyToExternalId } : {}) } });
   await afterTeamReply(tx, input, row);
   return { ok: true };
 }

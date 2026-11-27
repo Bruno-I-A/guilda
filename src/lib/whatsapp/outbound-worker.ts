@@ -139,6 +139,7 @@ async function deliver(claim: OutboxClaim, config: MetaServerConfig, fetchImpl: 
   }
   const to = typeof item.payload.to === "string" ? item.payload.to : "";
   const text = typeof item.payload.text === "string" ? item.payload.text : "";
+  const replyToMessageId = typeof item.payload.contextMessageId === "string" ? item.payload.contextMessageId : undefined;
   // Nota de voz (2026-11-23): o áudio já está na Meta; a saída só leva o id dele.
   const audio = item.payload.audio as { id?: unknown } | undefined;
   const audioId = typeof audio?.id === "string" && /^\d{1,32}$/.test(audio.id) ? audio.id : null;
@@ -150,7 +151,7 @@ async function deliver(claim: OutboxClaim, config: MetaServerConfig, fetchImpl: 
     let wamid: string;
     if (audio !== undefined) {
       if (!audioId) throw new MetaGraphError("send_message", 400);
-      wamid = await sendWhatsAppAudio({ ...target, mediaId: audioId }, config, fetchImpl);
+      wamid = await sendWhatsAppAudio({ ...target, mediaId: audioId, replyToMessageId }, config, fetchImpl);
     } else if (media !== undefined) {
       if (!media || typeof media !== "object" || Array.isArray(media)) throw new MetaGraphError("send_message", 400);
       const value = media as Record<string, unknown>;
@@ -163,9 +164,10 @@ async function deliver(claim: OutboxClaim, config: MetaServerConfig, fetchImpl: 
         mediaId: value.id,
         filename: typeof value.filename === "string" ? value.filename : undefined,
         caption: typeof value.caption === "string" ? value.caption : undefined,
+        replyToMessageId,
       }, config, fetchImpl);
     } else {
-      wamid = await sendWhatsAppText({ ...target, text }, config, fetchImpl);
+      wamid = await sendWhatsAppText({ ...target, text, replyToMessageId }, config, fetchImpl);
     }
     await recordAccepted(claim, item.messageId, wamid);
     await finishOutbox(claim, true, null);

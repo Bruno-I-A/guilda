@@ -41,12 +41,15 @@ export async function POST(request: Request, context: { params: Promise<{ conver
   }
   const file = form.get("audio");
   const requestId = z.uuid().safeParse(form.get("requestId"));
+  const replyToValue = form.get("replyToMessageId");
+  const replyToMessageId = replyToValue ? z.uuid().safeParse(replyToValue) : null;
   if (!requestId.success) return json({ ok: false, error: "Recarregue a página e tente de novo." }, 400);
+  if (replyToMessageId && !replyToMessageId.success) return json({ ok: false, error: "Mensagem citada inválida." }, 400);
   if (!(file instanceof Blob) || file.size === 0) return json({ ok: false, error: "A gravação veio vazia." }, 400);
   if (file.size > VOICE_NOTE_MAX_INPUT_BYTES) return json({ ok: false, error: "A gravação passou de 10 MB. Grave um áudio mais curto." }, 413);
   if (!audioBaseMime(file.type)) return json({ ok: false, error: "O navegador não gravou em áudio." }, 415);
 
-  const base = { orgId: member.orgId, conversationId: params.data.conversationId, requestId: requestId.data };
+  const base = { orgId: member.orgId, conversationId: params.data.conversationId, requestId: requestId.data, replyToMessageId: replyToMessageId?.data ?? null };
   const check = await withOrgTx(member.orgId, async (tx) => {
     const viewer = await loadSupportViewer(tx, { orgId: member.orgId, userId: member.userId, role: member.role });
     return checkSupportAudioReply(tx, { ...base, viewer, now: new Date() });

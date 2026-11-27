@@ -14,6 +14,7 @@ import {
   sendWhatsAppAudio,
   sendWhatsAppButtons,
   sendWhatsAppTemplate,
+  sendWhatsAppText,
   subscribeWhatsAppWebhook,
   uploadWhatsAppMedia,
 } from "./meta-client";
@@ -33,12 +34,12 @@ function fetchReturning(payload: unknown, status = 200) {
   ) as unknown as typeof fetch;
 }
 
-describe("avisos da Guilda pela Meta", () => {
-  function bodyOf(fetchImpl: typeof fetch): Record<string, unknown> {
-    const call = (fetchImpl as unknown as { mock: { calls: [unknown, RequestInit][] } }).mock.calls[0];
-    return JSON.parse(String(call[1].body));
-  }
+function bodyOf(fetchImpl: typeof fetch): Record<string, unknown> {
+  const call = (fetchImpl as unknown as { mock: { calls: [unknown, RequestInit][] } }).mock.calls[0];
+  return JSON.parse(String(call[1].body));
+}
 
+describe("avisos da Guilda pela Meta", () => {
   test("botões de resposta saem como mensagem interativa", async () => {
     const send = fetchReturning({ messages: [{ id: "wamid.btn" }] });
     const id = await sendWhatsAppButtons({ phoneNumberId: "222222", accessToken: "EA-token", to: "5554999990000", text: "Entrega para a sua aprovação", buttons: [{ id: "task:approve:1", title: "Aprovar" }] }, config, send);
@@ -72,6 +73,19 @@ describe("avisos da Guilda pela Meta", () => {
 });
 
 describe("cliente seguro da Meta", () => {
+  test("resposta citada leva o contexto da mensagem à Meta", async () => {
+    const send = fetchReturning({ messages: [{ id: "wamid.resposta" }] });
+    await sendWhatsAppText({
+      phoneNumberId: "222222", accessToken: "EA-token", to: "5554911110000",
+      text: "Segue a resposta", replyToMessageId: "wamid.original",
+    }, config, send);
+    expect(bodyOf(send)).toMatchObject({
+      type: "text",
+      context: { message_id: "wamid.original" },
+      text: { body: "Segue a resposta" },
+    });
+  });
+
   test("sobe arquivo no número conectado e envia o id como documento com legenda", async () => {
     const upload = fetchReturning({ id: "987654321" });
     const mediaId = await uploadWhatsAppMedia({
