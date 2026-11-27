@@ -31,6 +31,7 @@ const ORG = "org-agente";
 const FISCAL = "00000000-0000-4000-8000-0000000000f1";
 const CHANNEL = "00000000-0000-4000-8000-0000000000a1";
 const COMPANY = "00000000-0000-4000-8000-0000000000c1";
+const SECOND_COMPANY = "00000000-0000-4000-8000-0000000000c2";
 const T0 = new Date("2026-11-19T12:00:00Z").getTime(); // 09:00 em Brasília
 const admin: SupportViewer = { userId: "admin", role: "admin", clanIds: [] };
 const env = { ...process.env };
@@ -75,14 +76,14 @@ async function customerSays(whatsappId: string, text: string | Record<string, un
 }
 
 type Reply = { setor?: SetorValido; pergunta?: string; resposta?: string; fallback?: string; atendente?: string };
-const calls: { current: string; modo?: string; perguntasFeitas?: number }[] = [];
+const calls: { current: string; modo?: string; perguntasFeitas?: number; contextoEmpresa?: { empresaSelecionada: boolean; quantidadeEmpresasVinculadas: 0 | 1 | 2 } }[] = [];
 const rosters: string[][] = [];
 const anexos: (AnexoParaClassificacao | null)[] = [];
 let replies: Reply[] = [];
 let during: (() => Promise<unknown>) | null = null;
 
 const fake: Classifier = async (current, _history, options) => {
-  calls.push({ current, modo: options.modo, perguntasFeitas: options.perguntasFeitas });
+  calls.push({ current, modo: options.modo, perguntasFeitas: options.perguntasFeitas, contextoEmpresa: options.contextoEmpresa });
   rosters.push((options.roster ?? []).map((entry) => entry.id));
   anexos.push(options.anexo ?? null);
   if (during) {
@@ -176,7 +177,9 @@ beforeAll(async () => {
     INSERT INTO clans (id, org_id, name, slug) VALUES ('${FISCAL}', '${ORG}', 'Fiscal', 'fiscal');
     INSERT INTO clan_memberships (org_id, clan_id, user_id) VALUES ('${ORG}', '${FISCAL}', 'ana'), ('${ORG}', '${FISCAL}', 'rui'), ('${ORG}', '${FISCAL}', 'maria');
     INSERT INTO member_whatsapp_connections (org_id, user_id, phone_e164, last_inbound_at, verified_at) VALUES ('${ORG}', 'ana', '+5554988887777', '2026-11-19T12:00:00Z', '2026-11-19T11:00:00Z');
-    INSERT INTO clients (id, org_id, name, tax_regime, cnpj) VALUES ('${COMPANY}', '${ORG}', 'ACADEMIA FORMA LTDA', 'simples', '33000167000101');
+    INSERT INTO clients (id, org_id, name, tax_regime, cnpj) VALUES
+      ('${COMPANY}', '${ORG}', 'ACADEMIA FORMA LTDA', 'simples', '33000167000101'),
+      ('${SECOND_COMPANY}', '${ORG}', 'MERCADO DO CENTRO LTDA', 'simples', '11222333000144');
     INSERT INTO fiscal_portfolios (org_id, client_id, user_id, assigned_by) VALUES ('${ORG}', '${COMPANY}', 'ana', 'admin');
   `);
   await client.exec("SET ROLE guilda_app;");
@@ -256,18 +259,64 @@ test("a palavra abre a rodada, e só a palavra recebe o pedido de assunto sem ch
   expect(view?.timeline.some((item) => item.kind === "event" && item.text === "Teste do agente iniciado pela palavra-chave")).toBe(true);
 });
 
+test("o classificador recebe apenas os metadados mínimos do vínculo confirmado", async () => {
+  const whatsappId = "5554900000098";
+  setClock(80);
+  const id = await customerSays(whatsappId, "Oi", 60);
+  const { addSupportContactClient } = await import("../inbox");
+  await tx((t) => addSupportContactClient(t, { orgId: ORG, viewer: admin, conversationId: id, now: at(80), clientId: COMPANY }));
+  await setAgent(true);
+
+  setClock(120);
+  await customerSays(whatsappId, "Batata, preciso da guia do DAS", 100);
+  replies = [{ pergunta: "Qual empresa?" }];
+  await cycle();
+
+  expect(calls.some((call) => call.current === "preciso da guia do DAS" && call.modo === "conversa" && call.contextoEmpresa?.empresaSelecionada && call.contextoEmpresa.quantidadeEmpresasVinculadas === 1)).toBe(true);
+  expect(JSON.stringify(calls)).not.toContain("ACADEMIA FORMA LTDA");
+  const { resolveSupportConversation } = await import("../inbox");
+  await tx((t) => resolveSupportConversation(t, { orgId: ORG, viewer: admin, conversationId: id, now: at(130) }));
+});
+
+test("o classificador distingue contato ambíguo e conversa selecionada entre duas empresas", async () => {
+  const whatsappId = "5554900000097";
+  setClock(300);
+  const id = await customerSays(whatsappId, "Batata, preciso da guia", 280);
+  const { addSupportContactClient, setSupportConversationClient } = await import("../inbox");
+  await tx((t) => addSupportContactClient(t, { orgId: ORG, viewer: admin, conversationId: id, now: at(300), clientId: COMPANY }));
+  await tx((t) => addSupportContactClient(t, { orgId: ORG, viewer: admin, conversationId: id, now: at(301), clientId: SECOND_COMPANY }));
+  await tx((t) => setSupportConversationClient(t, { orgId: ORG, viewer: admin, conversationId: id, now: at(302), clientId: null }));
+  await setAgent(true);
+
+  setClock(330);
+  await customerSays(whatsappId, "Batata, pode recalcular?", 320);
+  replies = [{ pergunta: "De qual empresa?" }];
+  await cycle();
+  expect(calls.at(-1)?.contextoEmpresa).toEqual({ empresaSelecionada: false, quantidadeEmpresasVinculadas: 2 });
+
+  await tx((t) => setSupportConversationClient(t, { orgId: ORG, viewer: admin, conversationId: id, now: at(340), clientId: SECOND_COMPANY }));
+  setClock(360);
+  await customerSays(whatsappId, "Batata, preciso da guia dessa empresa", 350);
+  replies = [{ pergunta: "Qual guia?" }];
+  await cycle();
+  expect(calls.at(-1)?.contextoEmpresa).toEqual({ empresaSelecionada: true, quantidadeEmpresasVinculadas: 2 });
+  expect(JSON.stringify(calls)).not.toContain("MERCADO DO CENTRO LTDA");
+  const { resolveSupportConversation } = await import("../inbox");
+  await tx((t) => resolveSupportConversation(t, { orgId: ORG, viewer: admin, conversationId: id, now: at(370) }));
+});
+
 test("pergunta, resposta do cliente e encaminhamento ao clã; a palavra de novo reinicia", async () => {
   setClock(100);
   const id = await customerSays("5554900000003", "batata, preciso da guia do DAS", 70);
   replies = [{ pergunta: "De qual empresa?" }];
   await cycle();
-  expect(calls).toEqual([{ current: "preciso da guia do DAS", modo: "conversa", perguntasFeitas: 0 }]);
+  expect(calls).toEqual([{ current: "preciso da guia do DAS", modo: "conversa", perguntasFeitas: 0, contextoEmpresa: { empresaSelecionada: false, quantidadeEmpresasVinculadas: 0 } }]);
   expect(await aiTexts(id)).toEqual(["Bom dia! Só preciso confirmar: De qual empresa?"]);
 
   setClock(200);
   await customerSays("5554900000003", "da Academia", 150);
   await cycle();
-  expect(calls[1]).toEqual({ current: "da Academia", modo: "conversa", perguntasFeitas: 1 });
+  expect(calls[1]).toEqual({ current: "da Academia", modo: "conversa", perguntasFeitas: 1, contextoEmpresa: { empresaSelecionada: false, quantidadeEmpresasVinculadas: 0 } });
   expect((await aiTexts(id)).at(-1)).toBe("Encaminhei ao setor Fiscal. Uma pessoa da equipe continua o atendimento por aqui.");
   expect(await conversation(id)).toMatchObject({
     status: "needs_human",

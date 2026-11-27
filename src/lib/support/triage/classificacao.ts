@@ -105,6 +105,13 @@ export interface ResultadoClassificacao {
   tokensSaida: number;
 }
 
+/** Metadados mínimos do vínculo da conversa; não inclui nome, telefone ou CNPJ. */
+export interface ContextoEmpresaAtendimento {
+  empresaSelecionada: boolean;
+  /** 0, 1 ou 2 (2 significa duas ou mais). */
+  quantidadeEmpresasVinculadas: 0 | 1 | 2;
+}
+
 const CONFIANCA_MINIMA = 0.5;
 
 /**
@@ -421,6 +428,7 @@ export function montarSystemPrompt(
   anexo: boolean | "imagem" | "pdf",
   knowledge: readonly SupportKnowledgeSource[] = [],
   modo: ModoPrompt = "sombra",
+  contextoEmpresa?: ContextoEmpresaAtendimento,
 ): string {
   const temImagem = anexo === true || anexo === "imagem";
   return [
@@ -429,6 +437,7 @@ export function montarSystemPrompt(
     BLOCO_URGENCIA_CONFIANCA,
     BLOCO_LIMITES,
     BLOCO_JEITO_DO_ESCRITORIO,
+    blocoContextoEmpresa(contextoEmpresa),
     knowledgePromptBlock(knowledge),
     BLOCO_RESPOSTA_DIRETA,
     blocoRoster(roster),
@@ -438,6 +447,12 @@ export function montarSystemPrompt(
   ]
     .filter((secao) => secao !== "")
     .join("\n\n");
+}
+
+function blocoContextoEmpresa(contexto?: ContextoEmpresaAtendimento): string {
+  if (!contexto) return "";
+  const dados = JSON.stringify(contexto);
+  return `## CONTEXTO DA EMPRESA DA CONVERSA\nMetadados do cadastro interno (JSON): ${dados}.\n- Estes metadados indicam se a equipe ja associou esta conversa a uma empresa e quantas empresas estao vinculadas ao numero. Nao sao dados enviados pelo cliente.\n- Se empresaSelecionada for true, considere esta conversa associada a empresa escolhida no sistema; nao pergunte de qual empresa sem um conflito claro na mensagem atual.\n- Se nao houver empresa selecionada e quantidadeEmpresasVinculadas for 2, pergunte de qual empresa somente quando isso mudar como o pedido deve ser tratado. Nao escolha por suposicao.\n- Se quantidadeEmpresasVinculadas for 0, nao presuma qual empresa e nem peca CNPJ.\n- Se a mensagem atual parecer mencionar uma empresa diferente da selecao, peca confirmacao antes de qualquer orientacao ou acao especifica.\n- Nunca infira regime, pendencia, regularidade, valor ou situacao fiscal a partir deste contexto.`;
 }
 
 function classificacaoFallback(motivo: string): ClassificacaoIA {
@@ -458,6 +473,8 @@ export interface OpcoesClassificacao {
   roster?: readonly AtendenteRoster[];
   /** Foto ou PDF do turno (2026-11-23): só no teste do agente. */
   anexo?: AnexoParaClassificacao | null;
+  /** Estado do vínculo no cadastro, sem identificadores ou dados fiscais. */
+  contextoEmpresa?: ContextoEmpresaAtendimento;
 }
 
 export async function classificarMensagem(
@@ -504,6 +521,7 @@ export async function classificarMensagem(
         anexo?.tipo ?? false,
         opcoes.knowledge ?? [],
         opcoes.modo ?? "sombra",
+        opcoes.contextoEmpresa,
       ),
       messages: [
         {

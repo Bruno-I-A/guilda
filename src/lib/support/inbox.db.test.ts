@@ -381,6 +381,21 @@ test("vínculo com a empresa traz as missões abertas; empresa de outra organiza
   expect((await tx((t) => loadSupportConversation(t, base)))?.client).toBeNull();
 });
 
+test("RLS do vínculo de empresas esconde linhas e recusa gravação entre organizações", async () => {
+  const { addSupportContactClient } = await import("./inbox");
+  const { id } = await customerSays("5554911110021", "Oi");
+  const base = { orgId: ORG, viewer: admin, conversationId: id, now: NOW };
+  expect((await tx((t) => addSupportContactClient(t, { ...base, clientId: COMPANY }))).ok).toBe(true);
+  const [conversation] = await tx((t) =>
+    t.select({ contactId: schema.supportConversations.contactId }).from(schema.supportConversations).where(eq(schema.supportConversations.id, id)),
+  );
+
+  expect(await tx((t) => t.select().from(schema.supportContactClients).where(eq(schema.supportContactClients.contactId, conversation.contactId)), OTHER)).toEqual([]);
+  await expect(
+    tx((t) => t.insert(schema.supportContactClients).values({ orgId: ORG, contactId: conversation.contactId, clientId: COMPANY }), OTHER),
+  ).rejects.toThrow();
+});
+
 test("número em duas empresas: a conversa escolhe só entre as do número, e a nova nasce sem empresa", async () => {
   const { addSupportContactClient, removeSupportContactClient, setSupportConversationClient, resolveSupportConversation, loadSupportConversation } = await import("./inbox");
   const SECOND = "00000000-0000-4000-8000-0000000000c3";

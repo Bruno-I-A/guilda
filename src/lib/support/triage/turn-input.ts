@@ -7,7 +7,7 @@ import * as schema from "@/db/schema";
 import { matchTestKeyword } from "@/domain/support-agent";
 import { pickTurnAttachment, turnMessageText, type TurnAttachment } from "@/domain/support-attachment";
 
-import type { OpcoesClassificacao, ResultadoClassificacao } from "./classificacao";
+import type { ContextoEmpresaAtendimento, OpcoesClassificacao, ResultadoClassificacao } from "./classificacao";
 import type { MensagemHistoricoClassificacao } from "./contexto";
 
 /**
@@ -17,7 +17,7 @@ import type { MensagemHistoricoClassificacao } from "./contexto";
  */
 
 /** Bump quando o prompt mudar de verdade: a leitura antiga fica marcada com a versão dela. */
-export const TRIAGE_PROMPT_VERSION = "guilda-2026-11-23-v5";
+export const TRIAGE_PROMPT_VERSION = "guilda-2026-11-27-v6";
 
 const HISTORY_LIMIT = 20;
 
@@ -45,9 +45,36 @@ export async function loadTurnInput(
   orgId: string,
   candidate: Candidate,
   round: { startedAt: Date; keyword: string | null } | null = null,
-): Promise<{ current: string; history: MensagemHistoricoClassificacao[]; attachment: TurnAttachment | null }> {
+): Promise<{ current: string; history: MensagemHistoricoClassificacao[]; attachment: TurnAttachment | null; contextoEmpresa: ContextoEmpresaAtendimento }> {
   const m = schema.supportMessages;
   const t = schema.supportMessageTranscriptions;
+  const c = schema.supportConversations;
+  const [conversation] = await tx
+    .select({ clientId: c.clientId })
+    .from(c)
+    .where(and(eq(c.orgId, orgId), eq(c.id, candidate.conversationId), eq(c.contactId, candidate.contactId)));
+  const linkedCompanies = await tx
+    .select({ clientId: schema.supportContactClients.clientId })
+    .from(schema.supportContactClients)
+    .where(and(eq(schema.supportContactClients.orgId, orgId), eq(schema.supportContactClients.contactId, candidate.contactId)))
+    .limit(2);
+  const [selectedLink] = conversation?.clientId
+    ? await tx
+        .select({ clientId: schema.supportContactClients.clientId })
+        .from(schema.supportContactClients)
+        .where(and(
+          eq(schema.supportContactClients.orgId, orgId),
+          eq(schema.supportContactClients.contactId, candidate.contactId),
+          eq(schema.supportContactClients.clientId, conversation.clientId),
+        ))
+        .limit(1)
+    : [];
+  const linkedCompanyCount: ContextoEmpresaAtendimento["quantidadeEmpresasVinculadas"] =
+    linkedCompanies.length === 0 ? 0 : linkedCompanies.length === 1 ? 1 : 2;
+  const contextoEmpresa: ContextoEmpresaAtendimento = {
+    empresaSelecionada: Boolean(selectedLink),
+    quantidadeEmpresasVinculadas: linkedCompanyCount,
+  };
   const recent = await tx
     .select({ id: m.id, conversationId: m.conversationId, actor: m.actor, text: m.text, messageType: m.messageType, content: m.content, occurredAt: m.occurredAt, transcript: t.text })
     .from(m)
@@ -77,7 +104,7 @@ export async function loadTurnInput(
       conteudo: turnMessageText(message),
       ciclo: inRound(message) ? "atual" : "anterior",
     }));
-  return { current, history, attachment: round ? pickTurnAttachment(turn) : null };
+  return { current, history, attachment: round ? pickTurnAttachment(turn) : null, contextoEmpresa };
 }
 
 /** O que a tela mostra como "Leitura da IA": igual na sombra e no teste. */

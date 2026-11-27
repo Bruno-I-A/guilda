@@ -6,7 +6,25 @@ import {
   LIMITE_PERGUNTAS_ESCLARECIMENTO,
   aplicarGuardaEsclarecimento,
   aplicarGuardaRespostaDireta,
+  montarSystemPrompt,
 } from "./classificacao";
+
+test("o prompt usa apenas o estado mínimo do vínculo para desambiguar a empresa", () => {
+  const prompt = montarSystemPrompt([], 0, false, [], "conversa", {
+    empresaSelecionada: false,
+    quantidadeEmpresasVinculadas: 2,
+  });
+  assert.match(prompt, /quantidadeEmpresasVinculadas\":2/);
+  assert.ok(prompt.includes("Nao escolha por suposicao"));
+  assert.ok(prompt.includes("nao presuma qual empresa e nem peca CNPJ"));
+  assert.doesNotMatch(prompt, /CNPJ.*\d{8}/);
+
+  const selectedPrompt = montarSystemPrompt([], 0, false, [], "conversa", {
+    empresaSelecionada: true,
+    quantidadeEmpresasVinculadas: 1,
+  });
+  assert.ok(selectedPrompt.includes("nao pergunte de qual empresa sem um conflito claro"));
+});
 
 test("aplicarGuardaEsclarecimento aceita perguntas enquanto o teto não é atingido", () => {
   assert.equal(
