@@ -162,6 +162,7 @@ export async function runSupportTriageCycle(input: { now?: Date; limit?: number;
 }
 
 export interface SupportAiSuggestion {
+  mode: "shadow" | "conversation";
   sector: string;
   urgency: "baixa" | "media" | "alta";
   confidence: number;
@@ -187,6 +188,7 @@ export async function loadLatestSuggestions(tx: OrgTx, orgId: string, conversati
   for (const row of rows) {
     const result = (row.result ?? {}) as Record<string, unknown>;
     map.set(row.conversationId, {
+      mode: result.mode === "conversa" ? "conversation" : "shadow",
       sector: typeof result.sector === "string" ? result.sector : "outro",
       urgency: result.urgency === "alta" || result.urgency === "baixa" ? result.urgency : "media",
       confidence: typeof result.confidence === "number" ? result.confidence : 0,

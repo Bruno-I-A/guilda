@@ -1,6 +1,18 @@
 import { describe, expect, test } from "vitest";
 
-import { agentDeliveryBlock, matchTestKeyword, normalizeTestKeyword } from "./support-agent";
+import { agentConversationHint, agentDeliveryBlock, matchTestKeyword, normalizeTestKeyword } from "./support-agent";
+
+describe("estado visível do agente", () => {
+  test("distingue IA ativa, pausada e o comportamento depois de resolver", () => {
+    expect(agentConversationHint("ai_active", "live")).toBe("IA ativa nesta conversa.");
+    expect(agentConversationHint("human_active", "live")).toBe("IA pausada enquanto a equipe atende.");
+    expect(agentConversationHint("waiting_customer", "live")).toBe("IA pausada enquanto aguarda o cliente.");
+    expect(agentConversationHint("needs_human", "live")).toBe("IA pausada; aguardando a equipe.");
+    expect(agentConversationHint("resolved", "live")).toMatch(/volta automaticamente/);
+    expect(agentConversationHint("resolved", "test")).toMatch(/palavra-chave/);
+    expect(agentConversationHint("resolved", "off")).toMatch(/vai para a equipe/);
+  });
+});
 
 describe("palavra-chave do teste do agente", () => {
   test("normaliza para uma palavra sem acento e recusa o resto", () => {
