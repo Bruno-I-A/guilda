@@ -22,9 +22,19 @@ const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000);
 
 type Sent = { url: string; body: Record<string, unknown> };
 let sent: Sent[] = [];
+/** O que a Meta responde à consulta de modelo, por nome. */
+const atMeta: Record<string, { name: string; language: string; status: string; category: string }> = {};
+let templateLookups: string[] = [];
+const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } });
 const fakeFetch = (async (url: URL | string, init?: RequestInit) => {
+  const address = new URL(String(url));
+  if (address.pathname.endsWith("/message_templates")) {
+    const name = address.searchParams.get("name") ?? "";
+    templateLookups.push(name);
+    return json({ data: atMeta[name] ? [atMeta[name]] : [] });
+  }
   sent.push({ url: String(url), body: init?.body ? JSON.parse(String(init.body)) : {} });
-  return new Response(JSON.stringify({ messages: [{ id: `wamid.${sent.length}` }] }), { status: 200, headers: { "content-type": "application/json" } });
+  return json({ messages: [{ id: `wamid.${sent.length}` }] });
 }) as typeof fetch;
 
 beforeAll(async () => {
@@ -47,9 +57,11 @@ beforeAll(async () => {
       ('${ORG}', 'aberta', '+5554911110000', now(), '${hoursAgo(1).toISOString()}'),
       ('${ORG}', 'fechada', '+5554922220000', now(), '${hoursAgo(30).toISOString()}'),
       ('${ORG}', 'sem-prova', '+5554933330000', NULL, '${hoursAgo(1).toISOString()}');
-    INSERT INTO member_whatsapp_templates (org_id, key, name, language, status, checked_at) VALUES
-      ('${ORG}', 'nova_missao', 'guilda_nova_missao_v2', 'pt_BR', 'APPROVED', now()),
-      ('${ORG}', 'aprovacao', 'guilda_aprovacao', 'pt_BR', 'PENDING', now());
+    INSERT INTO member_whatsapp_templates (org_id, key, name, language, status, category, checked_at) VALUES
+      ('${ORG}', 'nova_missao', 'guilda_nova_missao_v2', 'pt_BR', 'APPROVED', 'UTILITY', now()),
+      ('${ORG}', 'aprovacao', 'guilda_aprovacao', 'pt_BR', 'PENDING', 'UTILITY', now()),
+      ('${ORG}', 'prazo', 'guilda_prazo_v2', 'pt_BR', 'APPROVED', 'MARKETING', now()),
+      ('${ORG}', 'missao_atualizada', 'guilda_missao_atualizada_v2', 'pt_BR', 'APPROVED', 'UTILITY', '${hoursAgo(30).toISOString()}');
   `);
   await import("./member-notification-worker");
 }, 120_000);
@@ -60,6 +72,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   sent = [];
+  templateLookups = [];
   await client.exec(`RESET ROLE; DELETE FROM member_whatsapp_outbox; DELETE FROM member_notification_preferences; SET ROLE guilda_app;`);
 });
 
@@ -103,6 +116,29 @@ test("janela fechada e modelo em análise consultado há pouco: não sai nem per
   await queue("fechada", "f2", approval);
   expect(await run()).toEqual({ claimed: 1, sent: 0 });
   expect(sent).toHaveLength(0);
+});
+
+test("modelo aprovado como Marketing não é usado: o aviso não sai", async () => {
+  await queue("fechada", "mk1", { version: 3, kind: "notice", preference: "deadlines", notice: { family: "deadline", title: "Folha", overdue: false, due: "25/11/2026", xp: 40, path: `tasks/${TASK}` } });
+  expect(await run()).toEqual({ claimed: 1, sent: 0 });
+  expect(sent).toHaveLength(0);
+  expect(templateLookups).toEqual([]);
+});
+
+test("o mesmo aviso dentro da janela sai como texto, sem modelo", async () => {
+  await queue("aberta", "mk3", { version: 3, kind: "notice", preference: "deadlines", notice: { family: "deadline", title: "Folha", overdue: false, due: "25/11/2026", xp: 40, path: `tasks/${TASK}` } });
+  expect(await run()).toEqual({ claimed: 1, sent: 1 });
+  expect(sent[0].body).toMatchObject({ type: "text" });
+});
+
+test("aprovado há mais de um dia é reconferido: reclassificado como Marketing, deixa de sair", async () => {
+  atMeta.guilda_missao_atualizada_v2 = { name: "guilda_missao_atualizada_v2", language: "pt_BR", status: "APPROVED", category: "MARKETING" };
+  await queue("fechada", "mk2", { version: 3, kind: "notice", preference: "tasks", notice: { family: "mission_update", title: "Folha", update: "Ana aprovou", path: `tasks/${TASK}` } });
+  expect(await run()).toEqual({ claimed: 1, sent: 0 });
+  expect(templateLookups).toEqual(["guilda_missao_atualizada_v2"]);
+  const [template] = await db.select().from(schema.memberWhatsAppTemplates).where(eq(schema.memberWhatsAppTemplates.key, "missao_atualizada"));
+  expect(template.category).toBe("MARKETING");
+  expect(Date.now() - (template.checkedAt?.getTime() ?? 0)).toBeLessThan(60_000);
 });
 
 test("número sem confirmação não recebe aviso, mas recebe a resposta do código", async () => {

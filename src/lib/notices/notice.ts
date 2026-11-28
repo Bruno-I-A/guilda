@@ -128,12 +128,16 @@ export const NOTICE_TEMPLATES: Record<NoticeTemplateKey, NoticeTemplateDefinitio
     body: "Atribuição de trabalho registrada para você: {{1}}. Data limite: {{2}}. Consulte os detalhes pelo botão abaixo.",
     examples: ["Conferir a folha de outubro (clã RH)", "25/11/2026"],
   },
+  // v3 (2026-11-28): a Meta ignora o pedido de Utility desde 04/2025 e aprova
+  // como Marketing o que lê como promoção, lembrete de "terminar uma ação" ou
+  // conteúdo pouco claro (o prazo_v2, com duas variáveis coladas, saiu Marketing;
+  // o aprovacao_v2 ainda falava em XP). A v3 escreve cada aviso como alerta da
+  // conta da pessoa, com campos rotulados como numa atualização de pedido: sem
+  // XP, sem convite a pegar mais trabalho e sem corpo que seja só variável.
   aprovacao: {
-    // O v1 começava por {{1}} e foi recusado pela Meta. Nome novo permite
-    // enviar o texto corrigido sem ficar preso ao modelo rejeitado existente.
-    name: "guilda_aprovacao_v2",
-    body: "Atenção: {{1}} entregou a missão {{2}} para a sua aprovação. Recompensa: {{3}} XP. Aprove por aqui ou abra a missão pelo botão abaixo.",
-    examples: ["Ana Souza", "Conferir a folha de outubro", "50"],
+    name: "guilda_aprovacao_v3",
+    body: "Ação necessária na sua conta da Guilda: uma entrega aguarda a sua aprovação. Atividade: {{1}}. Entregue por: {{2}}. Aprove pelo botão abaixo ou abra a atividade na Guilda.",
+    examples: ["Conferir a folha de outubro", "Ana Souza"],
     quickReply: "Aprovar",
   },
   missao_atualizada: {
@@ -142,19 +146,19 @@ export const NOTICE_TEMPLATES: Record<NoticeTemplateKey, NoticeTemplateDefinitio
     examples: ["Conferir a folha de outubro", "Ana Souza iniciou a missão"],
   },
   prazo: {
-    name: "guilda_prazo_v2",
-    body: "O prazo do registro de trabalho {{1}} {{2}}. Consulte os detalhes pelo botão abaixo.",
-    examples: ["Conferir a folha de outubro", "vence hoje (25/11/2026)"],
+    name: "guilda_prazo_v3",
+    body: "Alerta de prazo na sua conta da Guilda. Atividade atribuída a você: {{1}}. Situação: {{2}}. Os detalhes estão no botão abaixo.",
+    examples: ["Conferir a folha de outubro", "vence hoje, 25/11/2026"],
   },
   resumo: {
-    name: "guilda_resumo_v2",
-    body: "Há {{1}} registros de trabalho sob sua responsabilidade e {{2}} disponíveis para atribuição. Consulte a lista pelo botão abaixo.",
-    examples: ["4", "2"],
+    name: "guilda_resumo_v3",
+    body: "Resumo diário da sua conta na Guilda. Atividades atribuídas a você em aberto: {{1}}. A lista completa está no botão abaixo.",
+    examples: ["4"],
   },
   aviso: {
-    name: "guilda_aviso_v2",
-    body: "O registro operacional recebeu esta atualização: {{1}}. Consulte os detalhes pelo botão abaixo.",
-    examples: ["Fechamento concluído, ACME Comércio Ltda, Balanço 2025"],
+    name: "guilda_aviso_v3",
+    body: "Atualização registrada na sua conta da Guilda. Assunto: {{1}}. Referência: {{2}}. Os detalhes estão no botão abaixo.",
+    examples: ["Fechamento concluído", "ACME Comércio Ltda, Balanço 2025"],
   },
 };
 
@@ -230,7 +234,7 @@ export function noticeTemplate(notice: Notice): NoticeTemplateCall {
     case "approval":
       return {
         key: "aprovacao",
-        bodyParams: [templateParam(notice.who, 80), templateParam(notice.title, 160), templateParam(notice.xp, 10)],
+        bodyParams: [templateParam(notice.title, 160), templateParam(notice.who, 80)],
         urlRef,
         quickReplyPayload: taskButton("approve", notice.taskId).id,
       };
@@ -243,19 +247,19 @@ export function noticeTemplate(notice: Notice): NoticeTemplateCall {
     case "deadline":
       return {
         key: "prazo",
-        bodyParams: [templateParam(notice.title, 160), templateParam(notice.overdue ? `está atrasada (prazo ${notice.due})` : `vence hoje (${notice.due})`, 60)],
+        bodyParams: [templateParam(notice.title, 160), templateParam(notice.overdue ? `atrasada, prazo era ${notice.due}` : `vence hoje, ${notice.due}`, 60)],
         urlRef,
       };
     case "daily_summary":
       return {
         key: "resumo",
-        bodyParams: [templateParam(notice.open, 10), templateParam(notice.available, 10)],
+        bodyParams: [templateParam(notice.open, 10)],
         urlRef,
       };
     case "general":
       return {
         key: "aviso",
-        bodyParams: [templateParam(notice.detail ? `${notice.heading}, ${notice.summary}. ${notice.detail}` : `${notice.heading}, ${notice.summary}`, 400)],
+        bodyParams: [templateParam(notice.heading, 80), templateParam(notice.detail ? `${notice.summary}. ${notice.detail}` : notice.summary, 400)],
         urlRef,
       };
   }

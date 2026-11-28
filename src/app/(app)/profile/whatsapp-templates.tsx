@@ -22,8 +22,15 @@ const LABELS: Record<string, string> = {
 
 const ORDER = ["nova_missao", "aprovacao", "missao_atualizada", "prazo", "resumo", "aviso", "novo_cliente"];
 
-function statusLabel(status: string): { text: string; tone: string } {
-  switch (status) {
+function statusLabel(template: TemplateStatusView | undefined): { text: string; tone: string } {
+  if (!template) return { text: "Não criado", tone: "text-muted-foreground" };
+  if (template.outdated) return { text: "Versão nova: falta preparar", tone: "text-warning" };
+  // A Meta aprova como Marketing o que lê como promoção, mesmo pedido como
+  // Utility; a Guilda não usa esse modelo (custa cerca de dez vezes mais).
+  if (template.status === "APPROVED" && template.category === "MARKETING") {
+    return { text: "Aprovado como Marketing · não usado", tone: "text-destructive" };
+  }
+  switch (template.status) {
     case "APPROVED": return { text: "Aprovado", tone: "text-success" };
     case "PENDING":
     case "IN_APPEAL": return { text: "Em análise", tone: "text-warning" };
@@ -31,7 +38,7 @@ function statusLabel(status: string): { text: string; tone: string } {
     case "PAUSED":
     case "DISABLED": return { text: "Pausado", tone: "text-destructive" };
     case "not_created": return { text: "Não criado", tone: "text-muted-foreground" };
-    default: return { text: status, tone: "text-muted-foreground" };
+    default: return { text: template.status, tone: "text-muted-foreground" };
   }
 }
 
@@ -58,21 +65,23 @@ export function WhatsAppTemplates({ templates }: { templates: TemplateStatusView
           <h2>Modelos do WhatsApp</h2>
         </CardTitle>
         <CardDescription>
-          Fora das 24 horas depois da última mensagem da pessoa, o aviso só sai por modelo aprovado pela Meta. Cada envio por modelo custa alguns centavos.
+          Fora das 24 horas depois da última mensagem da pessoa, o aviso só sai por modelo aprovado pela Meta como Utilidade, que custa alguns centavos por envio. Modelo aprovado como Marketing não é usado.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
         <ul className="grid gap-1">
           {ORDER.map((key) => {
             const template = byKey.get(key);
-            const status = statusLabel(template?.status ?? "not_created");
+            const status = statusLabel(template);
             return (
               <li key={key} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b py-2 text-sm last:border-b-0">
-                <span className="font-medium">{LABELS[key]}</span>
-                <span className={cn("text-xs", status.tone)}>
-                  {status.text}
-                  {template?.category === "MARKETING" ? " · classificado como Marketing" : ""}
+                <span className="grid gap-0.5">
+                  <span className="font-medium">{LABELS[key]}</span>
+                  {template && !template.outdated ? (
+                    <span className="font-mono text-xs text-muted-foreground">{template.name}</span>
+                  ) : null}
                 </span>
+                <span className={cn("text-xs", status.tone)}>{status.text}</span>
                 {template?.rejectedReason && template.rejectedReason !== "NONE" ? (
                   <span className="basis-full text-xs text-muted-foreground">Motivo: {template.rejectedReason}</span>
                 ) : null}

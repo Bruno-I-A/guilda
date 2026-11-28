@@ -43,6 +43,8 @@ type Payload = MemberNotificationPayload | MemberSupportPayload | MemberV3Payloa
 
 /** Modelo pendente é reconsultado na Meta no máximo a cada 15 minutos. */
 const TEMPLATE_RECHECK_MS = 15 * 60 * 1000;
+/** Aprovado, uma vez por dia: a Meta reclassifica para Marketing depois de aprovar. */
+const APPROVED_RECHECK_MS = 24 * 60 * 60 * 1000;
 const QUIET_DEFER_MINUTES = 15;
 
 function payload(value: unknown): Payload | null {
@@ -91,15 +93,32 @@ async function load(claimed: Claim) {
 type Loaded = NonNullable<Awaited<ReturnType<typeof load>>>;
 type Access = NonNullable<Awaited<ReturnType<typeof loadWhatsAppChannelAccess>>>;
 
+type TemplateRow = Loaded["templates"][number];
+
 /**
- * Modelo que o aviso precisa. Pendente e consultado há mais de 15 minutos,
- * pergunta à Meta de novo: aprovado lá, passa a sair sem ninguém clicar.
+ * A Guilda só envia por modelo aprovado como Utility (2026-11-28): a Meta aprova
+ * como Marketing o que lê como promoção, e Marketing custa cerca de dez vezes
+ * mais. Classificado assim, o aviso fica para quando a pessoa abrir a janela.
  */
-async function approvedTemplate(item: Loaded, access: Access, key: MemberTemplateKey, config: MetaServerConfig, fetchImpl: typeof fetch) {
+export function isUsableTemplate(row: Pick<TemplateRow, "status" | "category">): boolean {
+  return row.status === "APPROVED" && row.category !== "MARKETING";
+}
+
+function templateSkipReason(row: TemplateRow | null, name: string): string {
+  if (row?.status === "APPROVED") return `Janela fechada e modelo ${row.name} classificado como Marketing pela Meta (não usado).`;
+  return `Janela fechada e modelo ${row?.name ?? name} ainda não aprovado.`;
+}
+
+/**
+ * Situação do modelo que o aviso precisa. Pendente consultado há mais de 15
+ * minutos, ou aprovado há mais de um dia, pergunta à Meta de novo: aprovado lá,
+ * passa a sair sem ninguém clicar; reclassificado como Marketing, deixa de sair.
+ */
+async function currentTemplate(item: Loaded, access: Access, key: MemberTemplateKey, config: MetaServerConfig, fetchImpl: typeof fetch): Promise<TemplateRow | null> {
   const row = item.templates.find((template) => template.key === key);
   if (!row || row.status === "not_created") return null;
-  if (row.status === "APPROVED") return row;
-  if (row.checkedAt && Date.now() - row.checkedAt.getTime() < TEMPLATE_RECHECK_MS) return null;
+  const recheckAfter = row.status === "APPROVED" ? APPROVED_RECHECK_MS : TEMPLATE_RECHECK_MS;
+  if (row.checkedAt && Date.now() - row.checkedAt.getTime() < recheckAfter) return row;
   const current = await getWhatsAppTemplate({ wabaId: access.channel.wabaId, accessToken: access.accessToken, name: row.name }, config, fetchImpl).catch(() => null);
   await withOrgTx(item.outbox.orgId, (tx) => tx.update(schema.memberWhatsAppTemplates)
     .set({
@@ -107,7 +126,7 @@ async function approvedTemplate(item: Loaded, access: Access, key: MemberTemplat
       ...(current ? { status: current.status, category: current.category ?? row.category, templateId: current.id ?? row.templateId, rejectedReason: current.rejectedReason ?? null, updatedAt: new Date() } : {}),
     })
     .where(and(eq(schema.memberWhatsAppTemplates.orgId, item.outbox.orgId), eq(schema.memberWhatsAppTemplates.key, key))));
-  return current?.status === "APPROVED" ? { ...row, status: "APPROVED", language: current.language } : null;
+  return current ? { ...row, status: current.status, category: current.category ?? row.category, language: current.language } : row;
 }
 
 /** Devolve o motivo quando não sai; `null` quando saiu. */
@@ -131,8 +150,8 @@ async function send(item: Loaded, access: Access, config: MetaServerConfig, fetc
       return null;
     }
     const call = noticeTemplate(p.notice);
-    const template = await approvedTemplate(item, access, call.key, config, fetchImpl);
-    if (!template) return `Janela fechada e modelo ${NOTICE_TEMPLATES[call.key].name} ainda não aprovado.`;
+    const template = await currentTemplate(item, access, call.key, config, fetchImpl);
+    if (!template || !isUsableTemplate(template)) return templateSkipReason(template, NOTICE_TEMPLATES[call.key].name);
     const buttons: WhatsAppTemplateButtonParam[] = call.quickReplyPayload
       ? [{ type: "quick_reply", index: 0, payload: call.quickReplyPayload }, { type: "url", index: 1, text: call.urlRef }]
       : [{ type: "url", index: 0, text: call.urlRef }];
@@ -146,8 +165,8 @@ async function send(item: Loaded, access: Access, config: MetaServerConfig, fetc
   }
   // O modelo aprovado fala de "novo cliente": conversa do Atendimento só sai dentro da janela.
   if (p.version === 2) return "Janela fechada: aviso de conversa do Atendimento ainda sem modelo aprovado.";
-  const template = await approvedTemplate(item, access, "novo_cliente", config, fetchImpl);
-  if (!template) return "Janela fechada e modelo Utility ainda não aprovado.";
+  const template = await currentTemplate(item, access, "novo_cliente", config, fetchImpl);
+  if (!template || !isUsableTemplate(template)) return templateSkipReason(template, MEMBER_NEW_CLIENT_TEMPLATE);
   await sendWhatsAppTemplate({ ...base, name: template.name || MEMBER_NEW_CLIENT_TEMPLATE, language: template.language, bodyParams: memberNewClientTemplateParams(p) }, config, fetchImpl);
   return null;
 }

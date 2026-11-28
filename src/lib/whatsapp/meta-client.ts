@@ -416,7 +416,9 @@ export async function getWhatsAppTemplate(
   const response = await fetchImpl(url, { method: "GET", headers: { authorization: `Bearer ${input.accessToken}` }, cache: "no-store", signal: AbortSignal.timeout(15_000) });
   const payload = await responsePayload(response);
   if (!response.ok || !Array.isArray(payload.data)) throw graphError("get_template", response, payload);
-  return payload.data.map(parseTemplate).find((template): template is WhatsAppTemplate => Boolean(template)) ?? null;
+  // O filtro por nome da Meta não é garantidamente exato: guilda_prazo não
+  // pode devolver o guilda_prazo_v3.
+  return payload.data.map(parseTemplate).find((template): template is WhatsAppTemplate => template?.name === input.name) ?? null;
 }
 
 export type WhatsAppTemplateButtonDefinition =
@@ -436,8 +438,9 @@ export async function createWhatsAppUtilityTemplate(
       name: input.name,
       language: "pt_BR",
       category: "UTILITY",
-      // Nunca transformar silenciosamente um aviso operacional em Marketing:
-      // se a Meta discordar da categoria Utility, deve recusar o modelo.
+      // Desde 04/2025 a Meta ignora este campo: se discordar de Utility, aprova
+      // como MARKETING mesmo assim. Quem barra o custo é o worker, que não usa
+      // modelo classificado como Marketing (`isUsableTemplate`).
       allow_category_change: false,
       components: [
         { type: "BODY", text: input.body, example: { body_text: [input.examples] } },

@@ -245,7 +245,17 @@ uso até ele autorizar apagar). Desenho em
   (sem link) e, quando há ação, botão de resposta (Iniciar missão, Aprovar, Retomar);
   fora, um dos seis modelos Utility (`NOTICE_TEMPLATES`), preparados por um botão de
   admin no Perfil (`member_whatsapp_templates`). O worker reconsulta modelo pendente a
-  cada 15 min. Silêncio adia (`defer_member_whatsapp_outbox`).
+  cada 15 min e o aprovado uma vez por dia. Silêncio adia (`defer_member_whatsapp_outbox`).
+- **Só modelo aprovado como Utilidade sai (2026-11-28)**: desde 04/2025 a Meta ignora
+  `allow_category_change` e aprova como **Marketing** (cerca de dez vezes mais caro) o que lê
+  como promoção, lembrete de "terminar uma ação" ou conteúdo pouco claro. O `prazo_v2` saiu
+  Marketing e o `aprovacao_v2` ainda falava em XP. `isUsableTemplate` não usa modelo
+  Marketing (o aviso fica para a janela aberta) e o Perfil mostra "Aprovado como Marketing ·
+  não usado". A v3 (aprovação, prazo, resumo, aviso) escreve cada aviso como alerta da conta
+  da pessoa, com campos rotulados ("Atividade: {{1}}. Situação: {{2}}."): **sem XP, sem
+  recompensa, sem convite a pegar mais trabalho, sem duas variáveis coladas e sem corpo que
+  seja quase só variável** (`notice.test.ts` reprova). Modelo novo sempre com nome novo: a
+  categoria de um modelo não se corrige, só se pede revisão no WhatsApp Manager.
 - **Botão de link dos modelos é `https://<app>/w/{{1}}` com referência curta**
   (`shortRef`: `t-<id>`, `m`, `f`, `ti`, `d`; a rota `/w/[ref]` resolve num conjunto
   fechado). A Meta pode codificar `/`, `#` e `?` dentro da variável: não passar o
