@@ -189,7 +189,15 @@ function templateSpecs(baseUrl: string): TemplateSpec[] {
   ];
 }
 
-export type TemplateStatusView = { key: string; name: string; status: string; category: string | null; rejectedReason: string | null };
+export type TemplateStatusView = {
+  key: string;
+  name: string;
+  status: string;
+  category: string | null;
+  rejectedReason: string | null;
+  /** O código pede outra versão do modelo; vale depois de "Preparar modelos". */
+  outdated?: boolean;
+};
 
 /**
  * Cria na Meta os modelos que faltam e atualiza a situação dos que existem.

@@ -26,6 +26,15 @@ describe("modelos dos avisos", () => {
     }
   });
 
+  it("nada que a Meta leia como Marketing: sem XP, sem recompensa, sem variáveis coladas", () => {
+    for (const template of Object.values(NOTICE_TEMPLATES)) {
+      const text = [template.body, ...template.examples].join(" ");
+      expect(text).not.toMatch(/\bXP\b|recompensa/i);
+      expect(template.body).not.toMatch(/\}\}\s*\{\{/);
+      expect(template.body.replace(/\{\{\d+\}\}/g, "").trim().length).toBeGreaterThan(60);
+    }
+  });
+
   it("variável sem quebra de linha, sem espaço longo e nunca vazia", () => {
     expect(templateParam("Linha 1\n\nLinha\t2     fim")).toBe("Linha 1 Linha 2 fim");
     expect(templateParam("   ")).toBe("-");
@@ -68,6 +77,7 @@ describe("aviso de entrega para aprovação", () => {
     expect(noticeButtons(notice)).toEqual([{ id: `task:approve:${TASK}`, title: "Aprovar" }]);
     const call = noticeTemplate(notice);
     expect(call.key).toBe("aprovacao");
+    expect(call.bodyParams).toEqual(["Folha", "Ana"]);
     expect(call.quickReplyPayload).toBe(`task:approve:${TASK}`);
     expect(NOTICE_TEMPLATES.aprovacao.quickReply).toBe("Aprovar");
   });
@@ -80,20 +90,22 @@ describe("aviso de entrega para aprovação", () => {
 describe("demais famílias", () => {
   it("prazo diz se vence hoje ou está atrasada", () => {
     const notice: Notice = { family: "deadline", title: "Folha", overdue: true, due: "20/11/2026", xp: 30, path: `tasks/${TASK}` };
-    expect(noticeTemplate(notice).bodyParams).toEqual(["Folha", "está atrasada (prazo 20/11/2026)"]);
+    expect(noticeTemplate(notice).bodyParams).toEqual(["Folha", "atrasada, prazo era 20/11/2026"]);
+    expect(noticeTemplate({ ...notice, overdue: false, due: "25/11/2026" }).bodyParams).toEqual(["Folha", "vence hoje, 25/11/2026"]);
     expect(noticeText(notice)).toMatch(/^Missão atrasada/);
   });
 
-  it("aviso geral junta título e resumo numa variável", () => {
+  it("aviso geral leva o assunto e a referência em variáveis separadas", () => {
     const notice: Notice = { family: "general", heading: "Fechamento concluído", summary: "ACME, Balanço 2025", path: "closings" };
-    expect(noticeTemplate(notice)).toEqual({ key: "aviso", bodyParams: ["Fechamento concluído, ACME, Balanço 2025"], urlRef: "f" });
+    expect(noticeTemplate(notice)).toEqual({ key: "aviso", bodyParams: ["Fechamento concluído", "ACME, Balanço 2025"], urlRef: "f" });
+    expect(noticeTemplate({ ...notice, detail: "Confirme a leitura no Mural." }).bodyParams[1]).toBe("ACME, Balanço 2025. Confirme a leitura no Mural.");
     expect(noticeButtons(notice)).toEqual([]);
   });
 
   it("o texto não leva link: a ação vem nos botões (pedido do Bruno)", () => {
     const notice: Notice = { family: "daily_summary", open: 2, available: 1, xp: 300, path: "dashboard" };
     expect(noticeText(notice)).toBe("Resumo da Guilda\n\n2 missão(ões) em aberto com você\n1 disponível(is) nos seus clãs\n300 XP no total");
-    expect(noticeTemplate(notice)).toEqual({ key: "resumo", bodyParams: ["2", "1"], urlRef: "d" });
+    expect(noticeTemplate(notice)).toEqual({ key: "resumo", bodyParams: ["2"], urlRef: "d" });
   });
 });
 

@@ -8,6 +8,7 @@ import {
   createWhatsAppUtilityTemplate,
   describeWhatsAppTemplateError,
   exchangeEmbeddedSignupCode,
+  getWhatsAppTemplate,
   resolveEmbeddedSignupWabaId,
   resolveCoexistencePhone,
   sendWhatsAppMedia,
@@ -278,7 +279,20 @@ describe("cliente seguro da Meta", () => {
     );
   });
 
-  test("não permite que a Meta reclassifique silenciosamente um modelo Utility", async () => {
+  test("consulta o modelo pelo nome exato, sem pegar outra versão", async () => {
+    const fetchMock = fetchReturning({
+      data: [
+        { id: "1", name: "guilda_prazo_v3", language: "pt_BR", status: "PENDING", category: "UTILITY" },
+        { id: "2", name: "guilda_prazo", language: "pt_BR", status: "APPROVED", category: "MARKETING" },
+      ],
+    });
+    await expect(getWhatsAppTemplate({ wabaId: "111111", accessToken: "EA-token", name: "guilda_prazo" }, config, fetchMock))
+      .resolves.toMatchObject({ id: "2", status: "APPROVED", category: "MARKETING" });
+    await expect(getWhatsAppTemplate({ wabaId: "111111", accessToken: "EA-token", name: "guilda_resumo_v3" }, config, fetchMock))
+      .resolves.toBeNull();
+  });
+
+  test("pede a categoria Utility ao criar o modelo", async () => {
     const fetchMock = fetchReturning({ id: "template-1", status: "PENDING" });
     await createWhatsAppUtilityTemplate({
       wabaId: "111111", accessToken: "EA-token", name: "guilda_novo_cliente_v2",

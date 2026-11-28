@@ -22,7 +22,8 @@ import { listMcpAgentKeys } from "@/lib/mcp/access";
 import { initials, ROLE_LABELS } from "@/lib/people";
 import { getActiveMember, requireOrgSession } from "@/lib/session";
 import { formatDateTime } from "@/lib/task-ui";
-import { hasOpenMemberWhatsAppWindow, MEMBER_WINDOW_MS } from "@/lib/whatsapp/member-notifications";
+import { NOTICE_TEMPLATES, type NoticeTemplateKey } from "@/lib/notices/notice";
+import { hasOpenMemberWhatsAppWindow, MEMBER_NEW_CLIENT_TEMPLATE, MEMBER_WINDOW_MS } from "@/lib/whatsapp/member-notifications";
 import {
   countCompletedTasks,
   getUserXpTotal,
@@ -166,6 +167,11 @@ export default async function ProfilePage() {
             status: template.status,
             category: template.category,
             rejectedReason: template.rejectedReason,
+            // O código já pede outra versão do modelo (ex.: a v3 de 28/11):
+            // só passa a valer depois de "Preparar modelos".
+            outdated: template.name !== (template.key === "novo_cliente"
+              ? MEMBER_NEW_CLIENT_TEMPLATE
+              : NOTICE_TEMPLATES[template.key as NoticeTemplateKey]?.name),
           }))}
         />
       ) : null}
